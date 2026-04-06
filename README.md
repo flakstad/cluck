@@ -46,7 +46,7 @@ The current implementation supports:
 - `#{1 2 3}` sets
 - `read-string`
 - `pr-str`, `str`, `println`, and `prn`
-- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, and `reduce`
+- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
@@ -58,7 +58,7 @@ Notes:
 - vectors are still ordinary CHICKEN vectors, so the host REPL prints them as `#(...)`
 - keywords, maps, and sets use custom record types so the host REPL can print them in Clojure-style form
 - the collection layer is mutable for now
-- the namespace layer is intentionally lightweight and registry-based; it is not full Clojure namespace resolution yet
+- the namespace layer is intentionally lightweight and uses separate public/import tables; it is not full Clojure namespace resolution yet
 - `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
 
 ## Performance Direction
@@ -66,7 +66,9 @@ Notes:
 `Cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
 
 - `map` and `filter` stay eager and return lists
+- `keep` and `map-indexed` are eager too, with vector-specialized fast paths
 - `mapv` and `filterv` are the vector-oriented fast paths
+- `empty?` should stay constant-time on the common collection shapes
 - `seq` should be a cheap adapter, not a place where we sort or realize expensive views
 - `pr-str` can stay slower and stable because printing is not the hot path
 - control-flow macros should expand directly and avoid runtime helper calls when possible
@@ -91,6 +93,28 @@ For a standalone terminal REPL:
 ```
 
 That file intentionally drops into the `Cluck` REPL, so it will appear to keep running until you exit the nested prompt.
+
+For a more convenient command-line entrypoint, use the launcher source:
+
+```scheme
+(load "Cluck-cli.scm")
+```
+
+It starts a REPL by default, but also accepts a few simple flags:
+
+```bash
+csi -q -s Cluck-cli.scm
+csi -q -s Cluck-cli.scm -e '(+ 1 2)'
+csi -q -s Cluck-cli.scm -l demo.clj.scm
+```
+
+To build a native launcher binary:
+
+```bash
+csc -k -v -O2 -strip -o build/cluck Cluck-cli.scm
+```
+
+That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the Cluck source files at startup, so it is a convenient distribution front-end rather than a fully embedded image.
 
 ## Demo program
 
@@ -136,7 +160,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 ## Namespaces
 
-`Cluck` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
+`Cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards
@@ -147,11 +171,13 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 - `ns-publics` returns a map of public vars in a namespace
 - `ns-resolve` looks up a var by namespace and symbol
 
-`ns` supports a small subset of `:require` directives:
+`ns` supports a focused subset of `:require` directives:
 
-- `[foo.bar :refer [x y]]` copies selected public vars into the current namespace registry
-- `[foo.bar :refer :all]` copies all public vars into the current namespace registry
+- `[foo.bar :refer [x y]]` imports selected public vars into the current namespace
+- `[foo.bar :refer :all]` imports all public vars into the current namespace
 - `[foo.bar :as fb]` registers an alias that `ns-resolve` can use
+- `[foo.bar :exclude [x y]]` skips selected vars when using `:refer :all`
+- `(:refer-clojure :exclude [...])` excludes selected core vars from the default core import set
 
 Namespace source files are located by namespace path, starting with:
 
@@ -159,7 +185,7 @@ Namespace source files are located by namespace path, starting with:
 - fallback lookups also check `foo/bar.scm`, `foo/bar.clj`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
 
-This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style symbol qualification is still future work.
+This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
 
 ## Module Demo
 
@@ -232,6 +258,12 @@ This suite compares:
 
 - `map` vs `mapv`
 - `filter` vs `filterv`
+- `keep`
+- `map-indexed`
+- `empty?`
+- `count`
+- `reduce`
+- `into`
 - list inputs vs vector inputs
 
 Run it with:
@@ -250,32 +282,40 @@ The benchmark prints per-case timings using CHICKEN's process timer, while exter
 
 On this machine with `5000` items and `100` rounds:
 
-- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `2.53s` real, `2.49s` user, about `27.5MB` RSS
-- native `./build/Cluck-collections-bench 5000 100`: `2.68s` real, `2.48s` user, about `26.7MB` RSS
+- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `3.53s` real, `3.49s` user, about `45MB` RSS
+- native `./build/Cluck-collections-bench 5000 100`: `3.58s` real, `3.54s` user, about `49MB` RSS
 - `build/Cluck-collections-bench.c`: `7.2K`
 - `build/Cluck-collections-bench`: `50K`
 
 Per-case timings from the benchmark run:
 
-- `map on list`: `239ms`
-- `mapv on list`: `239ms`
-- `map on vector`: `262ms`
-- `mapv on vector`: `185ms`
-- `filter on list`: `213ms`
-- `filterv on list`: `214ms`
-- `filter on vector`: `225ms`
-- `filterv on vector`: `178ms`
-- `count on list`: `86ms`
+- `map on list`: `234ms`
+- `mapv on list`: `233ms`
+- `map on vector`: `243ms`
+- `mapv on vector`: `179ms`
+- `filter on list`: `206ms`
+- `filterv on list`: `208ms`
+- `filter on vector`: `222ms`
+- `filterv on vector`: `173ms`
+- `keep on list`: `325ms`
+- `keep on vector`: `267ms`
+- `map-indexed on list`: `268ms`
+- `map-indexed on vector`: `180ms`
+- `count on list`: `85ms`
 - `count on vector`: `0ms`
-- `reduce on list`: `182ms`
-- `reduce on vector`: `125ms`
-- `into vector from list`: `142ms`
-- `into vector from vector`: `165ms`
+- `empty? on list`: `0ms`
+- `empty? on vector`: `0ms`
+- `reduce on list`: `177ms`
+- `reduce on vector`: `122ms`
+- `into vector from list`: `137ms`
+- `into vector from vector`: `160ms`
 
 The main takeaways are:
 
 - `mapv` is consistently the better choice for vector-oriented work
+- `keep` and `map-indexed` both benefit from direct vector paths when the input is a vector
 - the one-pass `filterv` path now beats the generic vector `filter`
+- `empty?` is now a direct shape check on the common collection types
 - `reduce` on vectors benefits from the direct index-based fast path
 - `count` on vectors is effectively free
 - `into` is still a linear copy path, which is fine for now but is worth revisiting if it becomes a hot spot
@@ -293,4 +333,4 @@ The main takeaways are:
 
  - Load `Cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
-- The codebase is still early and intentionally narrow. The next likely steps are namespace polish, broader eager collection coverage, and packaging.
+- The codebase is still early and intentionally narrow. The next likely steps are namespace polish and deeper packaging work.

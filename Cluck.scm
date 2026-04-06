@@ -29,6 +29,7 @@
 
 (define *ns* 'user)
 (define *Cluck-ns-registry* (make-hash-table))
+(define *Cluck-ns-imports* (make-hash-table))
 (define *Cluck-loaded-namespaces* (make-hash-table))
 (define *Cluck-loading-namespaces* (make-hash-table))
 (define *Cluck-ns-aliases* (make-hash-table))
@@ -55,6 +56,24 @@
 (define (find-ns ns)
   (hash-table-ref/default *Cluck-ns-registry* ns #f))
 
+(define (Cluck-ensure-ns-imports! ns)
+  (let ((existing (hash-table-ref/default *Cluck-ns-imports* ns #f)))
+    (if existing
+        existing
+        (let ((table (make-hash-table)))
+          (hash-table-set! *Cluck-ns-imports* ns table)
+          table))))
+
+(define (Cluck-reset-ns-imports! ns)
+  (let ((table (make-hash-table)))
+    (hash-table-set! *Cluck-ns-imports* ns table)
+    table))
+
+(define (Cluck-reset-ns-aliases! ns)
+  (let ((table (make-hash-table)))
+    (hash-table-set! *Cluck-ns-aliases* ns table)
+    table))
+
 (define (Cluck-ensure-ns-aliases! ns)
   (let ((existing (hash-table-ref/default *Cluck-ns-aliases* ns #f)))
     (if existing
@@ -67,19 +86,31 @@
   (hash-table-set! (Cluck-ensure-ns-aliases! ns) alias target)
   target)
 
-(define (Cluck-resolve-ns-table ns)
+(define (Cluck-resolved-ns-name ns)
   (let ((direct (find-ns ns)))
     (if direct
-        direct
+        ns
         (let ((aliases (hash-table-ref/default *Cluck-ns-aliases*
                                                 (current-ns)
                                                 #f)))
           (if aliases
               (let ((target (hash-table-ref/default aliases ns #f)))
                 (if target
-                    (find-ns target)
+                    target
                     #f))
               #f)))))
+
+(define (Cluck-resolve-ns-table ns)
+  (let ((resolved (Cluck-resolved-ns-name ns)))
+    (if resolved
+        (find-ns resolved)
+        #f)))
+
+(define (Cluck-resolve-ns-imports-table ns)
+  (let ((resolved (Cluck-resolved-ns-name ns)))
+    (if resolved
+        (hash-table-ref/default *Cluck-ns-imports* resolved #f)
+        #f)))
 
 (define (Cluck-ns-form->symbol form)
   (cond
@@ -116,11 +147,21 @@
 (define (ns-resolve ns sym)
   (let ((table (Cluck-resolve-ns-table ns)))
     (if table
-        (hash-table-ref/default table sym #f)
+        (let ((value (hash-table-ref/default table sym #f)))
+          (if value
+              value
+              (let ((imports (Cluck-resolve-ns-imports-table ns)))
+                (if imports
+                    (hash-table-ref/default imports sym #f)
+                    #f))))
         #f)))
 
 (define (Cluck-intern! ns sym value)
   (hash-table-set! (Cluck-ensure-ns! ns) sym value)
+  value)
+
+(define (Cluck-import! ns sym value)
+  (hash-table-set! (Cluck-ensure-ns-imports! ns) sym value)
   value)
 
 (define (Cluck-namespace->path ns)
@@ -232,6 +273,51 @@
     (or (and name (string=? name "all"))
         (and (symbol? x) (string=? (symbol->string x) "all")))))
 
+(define (Cluck-hash-table-keys table)
+  (let ((items '()))
+    (hash-table-for-each
+     table
+     (lambda (k v)
+       (set! items (cons k items))))
+    (reverse items)))
+
+(define (Cluck-namespace-public-symbols ns)
+  (let ((table (find-ns ns)))
+    (if table
+        (Cluck-hash-table-keys table)
+        '())))
+
+(define (Cluck-unique-symbols xs)
+  (let loop ((rest xs) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (let ((sym (car rest)))
+          (if (memq sym acc)
+              (loop (cdr rest) acc)
+              (loop (cdr rest) (cons sym acc)))))))
+
+(define (Cluck-symbol-list-diff xs exclude)
+  (let loop ((rest xs) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (let ((sym (car rest)))
+          (if (memq sym exclude)
+              (loop (cdr rest) acc)
+              (loop (cdr rest) (cons sym acc)))))))
+
+(define (Cluck-refer-core! exclude)
+  (let ((current (current-ns)))
+    (Cluck-reset-ns-imports! current)
+    (let loop ((xs (Cluck-core-public-bindings)))
+      (if (null? xs)
+          current
+          (let ((pair (car xs)))
+            (if (memq (car pair) exclude)
+                (loop (cdr xs))
+                (begin
+                  (Cluck-import! current (car pair) (cdr pair))
+                  (loop (cdr xs)))))))))
+
 (define (Cluck-refer-selected! target-ns names)
   (let ((current (current-ns)))
     (let loop ((xs names))
@@ -241,7 +327,7 @@
             (let ((value (ns-resolve target-ns sym)))
               (if value
                   (begin
-                    (Cluck-intern! current sym value)
+                    (Cluck-import! current sym value)
                     (loop (cdr xs)))
                   (error "cannot refer missing var" target-ns sym))))))))
 
@@ -252,51 +338,101 @@
           (hash-table-for-each
            table
            (lambda (sym value)
-             (Cluck-intern! current sym value)))
+             (Cluck-import! current sym value)))
           current)
         (error "cannot refer missing namespace" target-ns))))
 
+(define (Cluck-import-selected! target-ns names rename exclude)
+  (let ((current (current-ns)))
+    (let loop ((xs names))
+      (if (null? xs)
+          current
+          (let ((source (car xs)))
+            (if (memq source exclude)
+                (loop (cdr xs))
+                (let ((value (ns-resolve target-ns source)))
+                  (if value
+                      (let ((renamed (Cluck-alist-ref-pair source rename)))
+                        (Cluck-import! current
+                                       (if renamed (cdr renamed) source)
+                                       value)
+                        (loop (cdr xs)))
+                      (error "cannot refer missing var" target-ns source)))))))))
+
 (define (Cluck-require-vector-spec! spec)
-  (let ((xs (Cluck-vector-form->list spec)))
-    (if xs
-        (let ((target (Cluck-ns-form->symbol (car xs))))
-          (Cluck-require-namespace! target)
-          (let loop ((rest (cdr xs)) (alias #f) (refs '()) (refer-all? #f))
-            (cond
-              ((null? rest)
-               (if alias
-                   (Cluck-register-ns-alias! (current-ns) alias target)
-                   #f)
-               (cond
-                 (refer-all? (Cluck-refer-all! target))
-                 ((null? refs) #f)
-                 (else (Cluck-refer-selected! target refs)))
-               target)
-              ((let ((kw (Cluck-keyword-form-name (car rest))))
-                 (and kw (string=? kw "as")))
-               (if (null? (cdr rest))
-                   (error "require :as expects an alias" spec)
-                   (loop (cddr rest)
-                         (Cluck-ns-form->symbol (cadr rest))
-                         refs
-                         refer-all?)))
-              ((let ((kw (Cluck-keyword-form-name (car rest))))
-                 (and kw (string=? kw "refer")))
-               (if (null? (cdr rest))
-                   (error "require :refer expects a symbol vector or :all" spec)
-                   (let ((value (cadr rest)))
-                     (cond
-                       ((Cluck-all-marker? value)
-                        (loop (cddr rest) alias refs #t))
-                       (else
-                        (let ((syms (Cluck-symbol-list-form->list value)))
-                          (if syms
-                              (loop (cddr rest) alias (append refs syms) refer-all?)
-                              (error "require :refer expects a symbol vector or :all"
-                                     value))))))))
-              (else
-               (error "unsupported require option" (car rest))))))
-        (error "require spec must be a vector" spec))))
+  (##core#let ((xs (Cluck-vector-form->list spec)))
+    (##core#if (not xs)
+               (error "require spec must be a vector" spec)
+               (##core#let ((target (Cluck-ns-form->symbol (car xs))))
+                 (Cluck-require-namespace! target)
+                 (##core#let loop ((rest (cdr xs))
+                                   (alias #f)
+                                   (refs '())
+                                   (refer-all? #f)
+                                   (exclude '())
+                                   (rename '()))
+                   (##core#if (or (null? rest) (not (pair? rest)))
+                              (begin
+                                (if alias
+                                    (Cluck-register-ns-alias! (current-ns)
+                                                               alias
+                                                               target)
+                                    #f)
+                                (##core#let ((selected (if refer-all?
+                                                           (Cluck-namespace-public-symbols target)
+                                                           (Cluck-unique-symbols
+                                                            (append refs (map car rename))))))
+                                  (##core#let ((selected (Cluck-symbol-list-diff selected exclude)))
+                                    (if (null? selected)
+                                        target
+                                        (Cluck-import-selected! target selected rename exclude))))
+                                target)
+                              (##core#let ((option (car rest))
+                                            (kw (Cluck-keyword-form-name (car rest))))
+                                (##core#if (and kw (string=? kw "as"))
+                                           (if (null? (cdr rest))
+                                               (error "require :as expects an alias" spec)
+                                               (loop (cddr rest)
+                                                     (Cluck-ns-form->symbol (cadr rest))
+                                                     refs
+                                                     refer-all?
+                                                     exclude
+                                                     rename))
+                                           (##core#if (and kw (string=? kw "refer"))
+                                                      (if (null? (cdr rest))
+                                                          (error "require :refer expects a symbol vector or :all" spec)
+                                                          (##core#let ((value (cadr rest)))
+                                                            (if (Cluck-all-marker? value)
+                                                                (loop (cddr rest)
+                                                                      alias
+                                                                      refs
+                                                                      #t
+                                                                      exclude
+                                                                      rename)
+                                                                (##core#let ((syms (Cluck-symbol-list-form->list value)))
+                                                                  (if syms
+                                                                      (loop (cddr rest)
+                                                                            alias
+                                                                            (append refs syms)
+                                                                            refer-all?
+                                                                            exclude
+                                                                            rename)
+                                                                      (error "require :refer expects a symbol vector or :all"
+                                                                             value))))))
+                                                      (##core#if (and kw (string=? kw "exclude"))
+                                                                 (if (null? (cdr rest))
+                                                                     (error "require :exclude expects a symbol vector or list" spec)
+                                                                     (##core#let ((syms (Cluck-symbol-list-form->list (cadr rest))))
+                                                                       (if syms
+                                                                           (loop (cddr rest)
+                                                                                 alias
+                                                                                 refs
+                                                                                 refer-all?
+                                                                                 (append exclude syms)
+                                                                                 rename)
+                                                                           (error ":exclude expects a symbol vector or list"
+                                                                                  (cadr rest))))))
+                                                                 (error "unsupported require option" option))))))))))
 
 (define (Cluck-require-spec! spec)
   (cond
@@ -310,6 +446,23 @@
      (Cluck-require-spec! (cadr spec)))
     (else
      (error "require expects a namespace symbol or vector spec" spec))))
+
+(define (Cluck-refer-clojure-directive->exclude directive)
+  (let loop ((rest (cdr directive)) (exclude '()))
+    (cond
+      ((null? rest) (reverse exclude))
+      ((null? (cdr rest))
+       (error "refer-clojure directive expects option/value pairs" directive))
+      (else
+       (let ((kw (Cluck-keyword-form-name (car rest))))
+         (cond
+           ((and kw (string=? kw "exclude"))
+            (let ((syms (Cluck-symbol-list-form->list (cadr rest))))
+              (if syms
+                  (loop (cddr rest) (append syms exclude))
+                  (error ":exclude expects a symbol vector or list" (cadr rest)))))
+           (else
+            (error "unsupported refer-clojure option" (car rest)))))))))
 
 (define (Cluck-ns-directive->forms directive)
   (cond
@@ -578,7 +731,14 @@
     (else 0)))
 
 (define (empty? x)
-  (= (count x) 0))
+  (cond
+    ((or (nil? x) (null? x)) #t)
+    ((string? x) (= (string-length x) 0))
+    ((vector? x) (= (vector-length x) 0))
+    ((map? x) (= (hash-table-size (map-hash x)) 0))
+    ((set? x) (= (hash-table-size (set-hash x)) 0))
+    ((pair? x) #f)
+    (else #f)))
 
 (define (seq x)
   (Cluck-seq-list x))
@@ -874,6 +1034,51 @@
     ((vector? coll) (Cluck-filterv-vector pred coll))
     (else (list->vector (filter pred (seq coll))))))
 
+(define (Cluck-map-indexed-vector f vec)
+  (let* ((len (vector-length vec)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (loop (+ i 1)
+                (cons (f i (vector-ref vec i)) acc))))))
+
+(define (Cluck-map-indexed-seq f coll)
+  (let loop ((i 0) (xs (seq coll)) (acc '()))
+    (if (Cluck-empty-seq? xs)
+        (reverse acc)
+        (loop (+ i 1)
+              (cdr xs)
+              (cons (f i (car xs)) acc)))))
+
+(define (map-indexed f coll)
+  (cond
+    ((vector? coll) (Cluck-map-indexed-vector f coll))
+    (else (Cluck-map-indexed-seq f coll))))
+
+(define (Cluck-keep-vector f vec)
+  (let* ((len (vector-length vec)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (let ((value (f (vector-ref vec i))))
+            (if (nil? value)
+                (loop (+ i 1) acc)
+                (loop (+ i 1) (cons value acc))))))))
+
+(define (Cluck-keep-seq f coll)
+  (let loop ((xs (seq coll)) (acc '()))
+    (if (Cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((value (f (car xs))))
+          (if (nil? value)
+              (loop (cdr xs) acc)
+              (loop (cdr xs) (cons value acc)))))))
+
+(define (keep f coll)
+  (cond
+    ((vector? coll) (Cluck-keep-vector f coll))
+    (else (Cluck-keep-seq f coll))))
+
 (define (remove pred coll)
   (filter (lambda (x) (if (pred x) #f #t)) coll))
 
@@ -962,6 +1167,51 @@
 (define (not x)
   (if (truthy? x) #f #t))
 
+(define (Cluck-core-public-bindings)
+  (list
+   (cons 'current-ns current-ns)
+   (cons 'find-ns find-ns)
+   (cons 'all-ns all-ns)
+   (cons 'ns-publics ns-publics)
+   (cons 'ns-resolve ns-resolve)
+   (cons 'read-string read-string)
+   (cons 'pr-str pr-str)
+   (cons 'str str)
+   (cons 'println println)
+   (cons 'prn prn)
+   (cons 'keyword keyword)
+   (cons 'nil? nil?)
+   (cons 'false? false?)
+   (cons 'vector? vector?)
+   (cons 'map? map?)
+   (cons 'set? set?)
+   (cons 'keyword? keyword?)
+   (cons 'assoc Cluck-assoc)
+   (cons 'dissoc dissoc)
+   (cons 'conj conj)
+   (cons 'get Cluck-get)
+   (cons 'contains? Cluck-contains?)
+   (cons 'count count)
+   (cons 'seq seq)
+   (cons 'first first)
+   (cons 'rest rest)
+   (cons 'nth nth)
+   (cons 'map map)
+   (cons 'mapv mapv)
+   (cons 'filter filter)
+   (cons 'filterv filterv)
+   (cons 'map-indexed map-indexed)
+   (cons 'reduce reduce)
+   (cons 'some some)
+   (cons 'every? every?)
+   (cons 'empty? empty?)
+   (cons 'keep keep)
+   (cons 'into into)
+   (cons 'identity identity)
+   (cons 'inc inc)
+   (cons 'dec dec)
+   (cons 'not not)))
+
 (define (Cluck-vector-form->list x)
   (cond
     ((vector? x) (vector->list x))
@@ -996,8 +1246,10 @@
 (define (Cluck-alist-ref-pair key alist)
   (let loop ((xs alist))
     (cond
-      ((null? xs) #f)
-      ((eq? (caar xs) key) (car xs))
+      ((or (null? xs) (not (pair? xs))) #f)
+      ((and (pair? (car xs))
+            (eq? (caar xs) key))
+       (car xs))
       (else (loop (cdr xs))))))
 
 (define (Cluck-destructure-key-expr key)
@@ -1332,24 +1584,42 @@
                   (##core#let ((name (Cluck-ns-form->symbol (car parts)))
                                (rest (cdr parts)))
                     (Cluck-set-current-ns! name)
-                    (let loop ((xs rest) (forms '()) (saw-docstring? #f))
+                    (Cluck-reset-ns-aliases! name)
+                    (let loop ((xs rest)
+                               (forms '())
+                               (saw-docstring? #f)
+                               (core-excludes '()))
                       (cond
                         ((null? xs)
                          `(begin
                             (Cluck-set-current-ns! ',name)
+                            (Cluck-reset-ns-aliases! ',name)
+                            (Cluck-refer-core! ',(reverse core-excludes))
                             ,@forms))
                         ((string? (car xs))
                          (if saw-docstring?
                              (error "ns docstring must appear at most once" (car xs))
                              (if (null? forms)
-                                 (loop (cdr xs) forms #t)
+                                 (loop (cdr xs) forms #t core-excludes)
                                  (error "ns docstring must come before directives"
                                         (car xs)))))
                         (else
-                         (loop (cdr xs)
-                               (append forms
-                                       (Cluck-ns-directive->forms (car xs)))
-                               saw-docstring?))))))))))
+                         (let ((directive (car xs)))
+                           (let ((kw (Cluck-keyword-form-name (car directive))))
+                             (cond
+                               ((and kw (string=? kw "refer-clojure"))
+                                (loop (cdr xs)
+                                      forms
+                                      saw-docstring?
+                                      (append core-excludes
+                                              (Cluck-refer-clojure-directive->exclude
+                                               directive))))
+                               (else
+                                (loop (cdr xs)
+                                      (append forms
+                                              (Cluck-ns-directive->forms directive))
+                                      saw-docstring?
+                                      core-excludes))))))))))))))
 
 (define-syntax require
   (syntax-rules ()
@@ -1482,7 +1752,7 @@
 (define (Cluck-repl-evaluator expr)
   (call-with-values
    (lambda ()
-     (default-evaluator expr))
+     (eval expr (interaction-environment)))
    Cluck-repl-print-results))
 
 (define (Cluck-repl)

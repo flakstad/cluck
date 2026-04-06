@@ -47,6 +47,10 @@
 (assert-num= "let map as" 1 (count (let [{:as m :keys [a]} {:a 1}] m)))
 (assert-str= "mapv" "[2 3 4]" (pr-str (mapv inc [1 2 3])))
 (assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
+(assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
+(assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
+(assert-true "empty? vector" (empty? []))
+(assert-true "empty? list" (empty? '()))
 (assert-num= "fn vector destructuring" 3 ((fn [[a b]] (+ a b)) [1 2]))
 (assert-num= "fn map destructuring" 3 ((fn [{:keys [a b]}] (+ a b)) {:a 1 :b 2}))
 (defn pair-sum [[a b]]
@@ -67,6 +71,32 @@
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))
 (assert-true "ns current" (equal? (current-ns) 'Cluck.smoke))
 (assert-num= "ns publics" 123 (get (ns-publics (current-ns)) 'smoke-ns-value))
+(ns Cluck.smoke.ns-options
+  (:require [Cluck.math :refer :all :exclude [square]]))
+
+(define (ns-smoke-pass label)
+  (println "ok" label)
+  #t)
+
+(define (ns-assert-true label value)
+  (if value
+      (ns-smoke-pass label)
+      (error (string-append "smoke test failed: "
+                            label
+                            " expected truthy value"))))
+
+(define (ns-assert-num= label expected actual)
+  (if (= expected actual)
+      (ns-smoke-pass label)
+      (error (string-append "smoke test failed: "
+                            label
+                            " expected "
+                            (number->string expected)
+                            " got "
+                            (number->string actual)))))
+
+(ns-assert-num= "require exclude sum-of-squares" 14 (sum-of-squares [1 2 3]))
+(ns-assert-true "require exclude missing" (not (ns-resolve (current-ns) 'square)))
 (in-ns 'user)
 
 (println "smoke tests passed")
