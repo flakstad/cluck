@@ -1,6 +1,10 @@
-# scm-clj
+# Cluck
 
-`scm-clj` is an experimental Clojure-flavored language layer on top of CHICKEN Scheme.
+A Clojure-flavored language layer for CHICKEN Scheme.
+
+`Cluck` is an experimental Clojure-flavored language layer on top of CHICKEN Scheme.
+
+Some source files and build artifacts still use the historical `scm-clj` prefix.
 
 The goal is not to reimplement Clojure on the JVM. The goal is to get the parts of the Clojure experience that matter most for small native tools:
 
@@ -22,7 +26,7 @@ CHICKEN is a good fit for this project because it sits in a useful middle ground
 
 That makes it a strong host for an exploratory Lisp layer that wants to feel lighter than Clojure JVM, but still behave like a proper Lisp at the terminal.
 
-## What `scm-clj` is trying to do
+## What `Cluck` is trying to do
 
 The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 
@@ -59,7 +63,7 @@ Notes:
 
 ## Performance Direction
 
-`scm-clj` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
+`Cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
 
 - `map` and `filter` stay eager and return lists
 - `mapv` and `filterv` are the vector-oriented fast paths
@@ -86,7 +90,7 @@ For a standalone terminal REPL:
 (load "/Users/andreas/Projects/scm-clj/scm-clj-repl.scm")
 ```
 
-That file intentionally drops into the `scm-clj` REPL, so it will appear to keep running until you exit the nested prompt.
+That file intentionally drops into the Cluck REPL, so it will appear to keep running until you exit the nested prompt.
 
 ## Demo program
 
@@ -132,7 +136,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 ## Namespaces
 
-`scm-clj` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
+`Cluck` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
 
 - `ns` sets the active namespace
 - `in-ns` switches the active namespace
@@ -154,7 +158,7 @@ It is loaded by:
 
 - [`run-bench.scm`](./run-bench.scm)
 
-The benchmark builds a synthetic backlog, filters it, and prints a summary using the `scm-clj` runtime and namespace support.
+The benchmark builds a synthetic backlog, filters it, and prints a summary using the `Cluck` runtime and namespace support.
 
 Build the translated C and native binary with:
 
