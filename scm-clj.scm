@@ -138,8 +138,40 @@
 (define (scm-clj-map-entry->vector pair)
   (vector (car pair) (cdr pair)))
 
+(define (scm-clj-vector-append-list vec items)
+  (let* ((base-len (vector-length vec))
+         (add-len (length items))
+         (out (make-vector (+ base-len add-len))))
+    (let copy-loop ((i 0))
+      (if (= i base-len)
+          (let fill-loop ((rest items) (j base-len))
+            (if (null? rest)
+                out
+                (begin
+                  (vector-set! out j (car rest))
+                  (fill-loop (cdr rest) (+ j 1)))))
+          (begin
+            (vector-set! out i (vector-ref vec i))
+            (copy-loop (+ i 1)))))))
+
+(define (scm-clj-vector-append-vector vec items)
+  (let* ((base-len (vector-length vec))
+         (add-len (vector-length items))
+         (out (make-vector (+ base-len add-len))))
+    (let copy-base ((i 0))
+      (if (= i base-len)
+          (let fill-items ((j 0))
+            (if (= j add-len)
+                out
+                (begin
+                  (vector-set! out (+ base-len j) (vector-ref items j))
+                  (fill-items (+ j 1)))))
+          (begin
+            (vector-set! out i (vector-ref vec i))
+            (copy-base (+ i 1)))))))
+
 (define (scm-clj-vector-append vec items)
-  (list->vector (append (vector->list vec) items)))
+  (scm-clj-vector-append-list vec items))
 
 (define (scm-clj-vector-assoc vec idx value)
   (if (and (integer? idx) (>= idx 0))
@@ -620,20 +652,41 @@
     ((null? args)
      (error "reduce expects at least a collection"))
     ((null? (cdr args))
-     (let ((xs (seq (car args))))
-       (if (scm-clj-empty-seq? xs)
-           (error "reduce of empty collection with no initial value")
-           (let loop ((acc (car xs)) (rest-xs (cdr xs)))
-             (if (scm-clj-empty-seq? rest-xs)
-                 acc
-                 (loop (f acc (car rest-xs)) (cdr rest-xs)))))))
+     (let ((coll (car args)))
+       (cond
+         ((vector? coll)
+          (let ((len (vector-length coll)))
+            (if (= len 0)
+                (error "reduce of empty collection with no initial value")
+                (let loop ((i 1) (acc (vector-ref coll 0)))
+                  (if (= i len)
+                      acc
+                      (loop (+ i 1)
+                            (f acc (vector-ref coll i))))))))
+         (else
+          (let ((xs (seq coll)))
+            (if (scm-clj-empty-seq? xs)
+                (error "reduce of empty collection with no initial value")
+                (let loop ((acc (car xs)) (rest-xs (cdr xs)))
+                  (if (scm-clj-empty-seq? rest-xs)
+                      acc
+                      (loop (f acc (car rest-xs)) (cdr rest-xs))))))))))
     (else
      (let ((init (car args))
            (coll (cadr args)))
-       (let loop ((acc init) (xs (seq coll)))
-         (if (scm-clj-empty-seq? xs)
-             acc
-             (loop (f acc (car xs)) (cdr xs))))))))
+       (cond
+         ((vector? coll)
+          (let ((len (vector-length coll)))
+            (let loop ((i 0) (acc init))
+              (if (= i len)
+                  acc
+                  (loop (+ i 1)
+                        (f acc (vector-ref coll i)))))))
+         (else
+          (let loop ((acc init) (xs (seq coll)))
+            (if (scm-clj-empty-seq? xs)
+                acc
+                (loop (f acc (car xs)) (cdr xs))))))))))
 
 (define (some pred coll)
   (let loop ((xs (seq coll)))
@@ -658,11 +711,23 @@
 
 (define (dec x) (- x 1))
 
+(define (scm-clj-into-vector to from)
+  (cond
+    ((vector? from)
+     (scm-clj-vector-append-vector to from))
+    ((or (null? from) (pair? from))
+     (scm-clj-vector-append-list to from))
+    (else
+     (scm-clj-vector-append-list to (seq from)))))
+
 (define (into to from)
-  (let loop ((xs (seq from)) (acc to))
-    (if (scm-clj-empty-seq? xs)
-        acc
-        (loop (cdr xs) (conj acc (car xs))))))
+  (cond
+    ((vector? to) (scm-clj-into-vector to from))
+    (else
+     (let loop ((xs (seq from)) (acc to))
+       (if (scm-clj-empty-seq? xs)
+           acc
+           (loop (cdr xs) (conj acc (car xs))))))))
 
 (define (not x)
   (if (truthy? x) #f #t))

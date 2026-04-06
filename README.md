@@ -214,23 +214,35 @@ The benchmark prints per-case timings using CHICKEN's process timer, while exter
 
 On this machine with `5000` items and `100` rounds:
 
-- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `1.80s` real, `1.77s` user, about `26.1MB` RSS
-- native `./build/scm-clj-collections-bench 5000 100`: `1.80s` real, `1.76s` user, about `26.8MB` RSS
+- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `2.53s` real, `2.49s` user, about `27.5MB` RSS
+- native `./build/scm-clj-collections-bench 5000 100`: `2.68s` real, `2.48s` user, about `26.7MB` RSS
 - `build/scm-clj-collections-bench.c`: `7.2K`
 - `build/scm-clj-collections-bench`: `50K`
 
 Per-case timings from the benchmark run:
 
 - `map on list`: `239ms`
-- `mapv on list`: `236ms`
-- `map on vector`: `249ms`
-- `mapv on vector`: `184ms`
-- `filter on list`: `209ms`
-- `filterv on list`: `213ms`
-- `filter on vector`: `224ms`
-- `filterv on vector`: `176ms`
+- `mapv on list`: `239ms`
+- `map on vector`: `262ms`
+- `mapv on vector`: `185ms`
+- `filter on list`: `213ms`
+- `filterv on list`: `214ms`
+- `filter on vector`: `225ms`
+- `filterv on vector`: `178ms`
+- `count on list`: `86ms`
+- `count on vector`: `0ms`
+- `reduce on list`: `182ms`
+- `reduce on vector`: `125ms`
+- `into vector from list`: `142ms`
+- `into vector from vector`: `165ms`
 
-The main takeaway is that the vector fast paths are now paying off, especially for `mapv` and the one-pass `filterv` implementation on vectors.
+The main takeaways are:
+
+- `mapv` is consistently the better choice for vector-oriented work
+- the one-pass `filterv` path now beats the generic vector `filter`
+- `reduce` on vectors benefits from the direct index-based fast path
+- `count` on vectors is effectively free
+- `into` is still a linear copy path, which is fine for now but is worth revisiting if it becomes a hot spot
 
 ## Example
 

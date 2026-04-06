@@ -43,11 +43,22 @@
                       thunk
                       (thunk))))
 
+(defn bench-result-summary [value]
+  (cond
+    (or (map? value) (set? value) (vector? value) (pair? value) (string? value))
+    (str "count:" (count value))
+    (number? value)
+    (str "value:" value)
+    (nil? value)
+    "nil"
+    :else
+    (str "value:" (pr-str value))))
+
 (defn bench-case [label rounds thunk]
   (let [start (current-process-milliseconds)]
     (set! bench-sink (bench-case-aux rounds thunk nil))
     (let [elapsed (- (current-process-milliseconds) start)]
-      (println label ":" elapsed "ms" "count:" (count bench-sink))
+      (println label ":" elapsed "ms" "result:" (bench-result-summary bench-sink))
       elapsed)))
 
 (defn run-map-benchmarks [rounds data]
@@ -66,6 +77,24 @@
        (bench-case "filter on vector" rounds (fn [] (filter even? xv)))
        (bench-case "filterv on vector" rounds (fn [] (filterv even? xv))))))
 
+(defn run-count-benchmarks [rounds data]
+  (let [xs (get data :list)
+        xv (get data :vector)]
+    (+ (bench-case "count on list" rounds (fn [] (count xs)))
+       (bench-case "count on vector" rounds (fn [] (count xv))))))
+
+(defn run-reduce-benchmarks [rounds data]
+  (let [xs (get data :list)
+        xv (get data :vector)]
+    (+ (bench-case "reduce on list" rounds (fn [] (reduce + 0 xs)))
+       (bench-case "reduce on vector" rounds (fn [] (reduce + 0 xv))))))
+
+(defn run-into-benchmarks [rounds data]
+  (let [xs (get data :list)
+        xv (get data :vector)]
+    (+ (bench-case "into vector from list" rounds (fn [] (into [] xs)))
+       (bench-case "into vector from vector" rounds (fn [] (into [] xv))))))
+
 (defn collections-bench-main-with [n rounds]
   (let [data (make-data n)]
     (println "scm-clj collections benchmark")
@@ -78,6 +107,15 @@
     (println "Filter benchmarks:")
     (let [filter-total (run-filter-benchmarks rounds data)]
       (println "Filter total ms:" filter-total))
+    (println "Count benchmarks:")
+    (let [count-total (run-count-benchmarks rounds data)]
+      (println "Count total ms:" count-total))
+    (println "Reduce benchmarks:")
+    (let [reduce-total (run-reduce-benchmarks rounds data)]
+      (println "Reduce total ms:" reduce-total))
+    (println "Into benchmarks:")
+    (let [into-total (run-into-benchmarks rounds data)]
+      (println "Into total ms:" into-total))
     (println "Done.")
     data))
 
