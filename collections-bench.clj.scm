@@ -1,9 +1,9 @@
-;; Collections benchmark for scm-clj.
+;; Collections benchmark for Cluck.
 ;; Measures map/mapv and filter/filterv on list and vector inputs.
 
 (import (chicken time))
 
-(ns scm-clj.collections-bench)
+(ns Cluck.collections-bench)
 
 (def default-count 5000)
 (def default-rounds 100)
@@ -97,7 +97,7 @@
 
 (defn collections-bench-main-with [n rounds]
   (let [data (make-data n)]
-    (println "scm-clj collections benchmark")
+    (println "Cluck collections benchmark")
     (println "Namespace:" (current-ns))
     (println "Items:" n)
     (println "Rounds:" rounds)

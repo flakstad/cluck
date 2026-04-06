@@ -1,7 +1,7 @@
-;; Small application namespace that depends on scm-clj.math.
+;; Small application namespace that depends on Cluck.math.
 
-(ns scm-clj.app
-  (:require [scm-clj.math :as math :refer [square sum-of-squares]]))
+(ns Cluck.app
+  (:require [Cluck.math :as math :refer [square sum-of-squares]]))
 
 (defn report [xs]
   (let [first-value (first xs)

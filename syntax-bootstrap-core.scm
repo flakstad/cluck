@@ -5,53 +5,53 @@
         (chicken read-syntax)
         srfi-69)
 
-(define scm-clj-nil (list 'scm-clj-nil))
-(define nil scm-clj-nil)
+(define Cluck-nil (list 'Cluck-nil))
+(define nil Cluck-nil)
 (define true #t)
 (define false #f)
 
-(define-record-type scm-clj-keyword
-  (make-scm-clj-keyword namespace name)
-  scm-clj-keyword?
+(define-record-type Cluck-keyword
+  (make-Cluck-keyword namespace name)
+  Cluck-keyword?
   (namespace keyword-namespace)
   (name keyword-name))
 
-(define-record-type scm-clj-map
-  (make-scm-clj-map table)
-  scm-clj-map?
+(define-record-type Cluck-map
+  (make-Cluck-map table)
+  Cluck-map?
   (table map-hash))
 
-(define-record-type scm-clj-set
-  (make-scm-clj-set table)
-  scm-clj-set?
+(define-record-type Cluck-set
+  (make-Cluck-set table)
+  Cluck-set?
   (table set-hash))
 
-(define (scm-clj-delimiter-char? c)
+(define (Cluck-delimiter-char? c)
   (or (char-whitespace? c)
       (memv c '(#\( #\) #\[ #\] #\{ #\} #\" #\; #\, #\'))))
 
-(define (scm-clj-string-index-char s needle)
+(define (Cluck-string-index-char s needle)
   (let loop ((i 0))
     (cond
       ((= i (string-length s)) #f)
       ((char=? (string-ref s i) needle) i)
       (else (loop (+ i 1))))))
 
-(define (scm-clj-split-qualified-name s)
-  (let ((slash (scm-clj-string-index-char s #\/)))
+(define (Cluck-split-qualified-name s)
+  (let ((slash (Cluck-string-index-char s #\/)))
     (if slash
         (cons (substring s 0 slash)
               (substring s (+ slash 1) (string-length s)))
         (cons #f s))))
 
 (define (keyword? x)
-  (scm-clj-keyword? x))
+  (Cluck-keyword? x))
 
 (define (map? x)
-  (scm-clj-map? x))
+  (Cluck-map? x))
 
 (define (set? x)
-  (scm-clj-set? x))
+  (Cluck-set? x))
 
 (define (nil? x)
   (eq? x nil))
@@ -64,10 +64,10 @@
       #f
       (if (nil? x) #f #t)))
 
-(define (scm-clj-make-keyword namespace name)
-  (make-scm-clj-keyword namespace name))
+(define (Cluck-make-keyword namespace name)
+  (make-Cluck-keyword namespace name))
 
-(define (scm-clj-object->string x)
+(define (Cluck-object->string x)
   (cond
     ((string? x) x)
     ((symbol? x) (symbol->string x))
@@ -89,43 +89,43 @@
        (cond
          ((keyword? x) x)
          ((symbol? x)
-          (let* ((parts (scm-clj-split-qualified-name (symbol->string x))))
-            (scm-clj-make-keyword (car parts) (cdr parts))))
+          (let* ((parts (Cluck-split-qualified-name (symbol->string x))))
+            (Cluck-make-keyword (car parts) (cdr parts))))
          ((string? x)
-          (let* ((parts (scm-clj-split-qualified-name x)))
-            (scm-clj-make-keyword (car parts) (cdr parts))))
+          (let* ((parts (Cluck-split-qualified-name x)))
+            (Cluck-make-keyword (car parts) (cdr parts))))
          (else
-          (scm-clj-make-keyword #f (scm-clj-object->string x))))))
+          (Cluck-make-keyword #f (Cluck-object->string x))))))
     ((null? (cddr args))
-     (scm-clj-make-keyword
+     (Cluck-make-keyword
       (let ((ns (car args)))
-        (if (or (eq? ns #f) (eq? ns nil)) #f (scm-clj-object->string ns)))
+        (if (or (eq? ns #f) (eq? ns nil)) #f (Cluck-object->string ns)))
       (let ((name (cadr args)))
-        (scm-clj-object->string name))))
+        (Cluck-object->string name))))
     (else
      (error "keyword expects one or two arguments"))))
 
 (define (name x)
   (cond
     ((keyword? x) (keyword-name x))
-    ((symbol? x) (cdr (scm-clj-split-qualified-name (symbol->string x))))
+    ((symbol? x) (cdr (Cluck-split-qualified-name (symbol->string x))))
     ((string? x) x)
     (else (error "name expects a keyword, symbol, or string" x))))
 
 (define (namespace x)
   (cond
     ((keyword? x) (keyword-namespace x))
-    ((symbol? x) (car (scm-clj-split-qualified-name (symbol->string x))))
-    ((string? x) (car (scm-clj-split-qualified-name x)))
+    ((symbol? x) (car (Cluck-split-qualified-name (symbol->string x))))
+    ((string? x) (car (Cluck-split-qualified-name x)))
     (else #f)))
 
-(define (scm-clj-make-map)
-  (make-scm-clj-map (make-hash-table)))
+(define (Cluck-make-map)
+  (make-Cluck-map (make-hash-table)))
 
-(define (scm-clj-make-set)
-  (make-scm-clj-set (make-hash-table)))
+(define (Cluck-make-set)
+  (make-Cluck-set (make-hash-table)))
 
-(define (scm-clj-ensure-even-list items who)
+(define (Cluck-ensure-even-list items who)
   (let loop ((xs items))
     (cond
       ((null? xs) #t)
@@ -134,8 +134,8 @@
       (else (loop (cddr xs))))))
 
 (define (hash-map . kvs)
-  (let ((m (scm-clj-make-map)))
-    (scm-clj-ensure-even-list kvs 'hash-map)
+  (let ((m (Cluck-make-map)))
+    (Cluck-ensure-even-list kvs 'hash-map)
     (let loop ((xs kvs))
       (if (null? xs)
           m
@@ -144,7 +144,7 @@
             (loop (cddr xs)))))))
 
 (define (set . xs)
-  (let ((s (scm-clj-make-set)))
+  (let ((s (Cluck-make-set)))
     (let loop ((items xs))
       (if (null? items)
           s
@@ -154,7 +154,7 @@
 
 (define hash-set set)
 
-(define (scm-clj-normalize-vector v)
+(define (Cluck-normalize-vector v)
   (let* ((len (vector-length v))
          (out (make-vector len)))
     (let loop ((i 0))
@@ -164,16 +164,16 @@
             (vector-set! out i (normalize-edn (vector-ref v i)))
             (loop (+ i 1)))))))
 
-(define (scm-clj-normalize-list x)
+(define (Cluck-normalize-list x)
   (cond
     ((null? x) '())
     ((pair? x)
      (cons (normalize-edn (car x))
-           (scm-clj-normalize-list (cdr x))))
+           (Cluck-normalize-list (cdr x))))
     (else (normalize-edn x))))
 
-(define (scm-clj-normalize-map m)
-  (let ((out (scm-clj-make-map)))
+(define (Cluck-normalize-map m)
+  (let ((out (Cluck-make-map)))
     (hash-table-for-each
      (map-hash m)
      (lambda (k v)
@@ -182,8 +182,8 @@
                         (normalize-edn v))))
     out))
 
-(define (scm-clj-normalize-set s)
-  (let ((out (scm-clj-make-set)))
+(define (Cluck-normalize-set s)
+  (let ((out (Cluck-make-set)))
     (hash-table-for-each
      (set-hash s)
      (lambda (k v)
@@ -195,24 +195,24 @@
 (define (normalize-edn x)
   (cond
     ((keyword? x) x)
-    ((map? x) (scm-clj-normalize-map x))
-    ((set? x) (scm-clj-normalize-set x))
-    ((vector? x) (scm-clj-normalize-vector x))
+    ((map? x) (Cluck-normalize-map x))
+    ((set? x) (Cluck-normalize-set x))
+    ((vector? x) (Cluck-normalize-vector x))
     ((symbol? x)
      (cond
        ((eq? x 'nil) nil)
        ((eq? x 'true) true)
        ((eq? x 'false) false)
        (else x)))
-    ((pair? x) (scm-clj-normalize-list x))
+    ((pair? x) (Cluck-normalize-list x))
     (else x)))
 
-(define (scm-clj-string-input-port? port)
+(define (Cluck-string-input-port? port)
   (let ((name (port-name port)))
     (and (string? name)
          (string=? name "(string)"))))
 
-(define (scm-clj-source-form x)
+(define (Cluck-source-form x)
   (cond
     ((keyword? x)
      (let ((ns (keyword-namespace x))
@@ -226,25 +226,25 @@
         (map-hash x)
         (lambda (k v)
           (set! pairs
-                (cons (scm-clj-source-form v)
-                      (cons (scm-clj-source-form k) pairs)))))
+                (cons (Cluck-source-form v)
+                      (cons (Cluck-source-form k) pairs)))))
        `(hash-map ,@(reverse pairs))))
     ((set? x)
      (let ((items '()))
        (hash-table-for-each
         (set-hash x)
         (lambda (k v)
-          (set! items (cons (scm-clj-source-form k) items))))
+          (set! items (cons (Cluck-source-form k) items))))
        `(set ,@(reverse items))))
     ((vector? x)
      (let loop ((i 0) (items '()))
        (if (= i (vector-length x))
            `(vector ,@(reverse items))
            (loop (+ i 1)
-                 (cons (scm-clj-source-form (vector-ref x i)) items)))))
+                 (cons (Cluck-source-form (vector-ref x i)) items)))))
     ((pair? x)
-     (cons (scm-clj-source-form (car x))
-           (scm-clj-source-form (cdr x))))
+     (cons (Cluck-source-form (car x))
+           (Cluck-source-form (cdr x))))
     (else x)))
 
 (define (edn-clean-string s)
@@ -298,7 +298,7 @@
                           (scan-comment (+ i 1))))))))
       (scan-normal 0))))
 
-(define (scm-clj-read-forms s)
+(define (Cluck-read-forms s)
   (call-with-input-string
    (edn-clean-string s)
    (lambda (p)
@@ -308,13 +308,13 @@
            (loop (cdr forms)
                  (cons (normalize-edn (car forms)) acc)))))))
 
-(define (scm-clj-read-one s)
+(define (Cluck-read-one s)
   (call-with-input-string
    (edn-clean-string s)
    (lambda (p)
      (normalize-edn (read p)))))
 
-(define (scm-clj-read-balanced-content port close-char)
+(define (Cluck-read-balanced-content port close-char)
   (let ((out (open-output-string))
         (stack (list close-char)))
     (define (emit c)
@@ -407,7 +407,7 @@
 (define (read-keyword port)
   (let ((token (read-token
                 (lambda (c)
-                  (if (scm-clj-delimiter-char? c) #f #t))
+                  (if (Cluck-delimiter-char? c) #f #t))
                 port)))
     (if token
         (if (string=? token "")
@@ -416,23 +416,23 @@
                                         (char=? (string-ref token 0) #\:))
                                    (substring token 1 (string-length token))
                                    token))
-                   (parts (scm-clj-split-qualified-name normalized)))
-              (if (scm-clj-string-input-port? port)
+                   (parts (Cluck-split-qualified-name normalized)))
+              (if (Cluck-string-input-port? port)
                   (keyword (car parts) (cdr parts))
                   `(keyword ,normalized))))
         (error "empty keyword literal"))))
 
 (define (read-vector-literal port)
-  (let ((items (scm-clj-read-forms (scm-clj-read-balanced-content port #\]))))
-    (if (scm-clj-string-input-port? port)
+  (let ((items (Cluck-read-forms (Cluck-read-balanced-content port #\]))))
+    (if (Cluck-string-input-port? port)
         (list->vector items)
-        (cons 'vector (map scm-clj-source-form items)))))
+        (cons 'vector (map Cluck-source-form items)))))
 
 (define (read-map-literal port)
-  (let ((items (scm-clj-read-forms (scm-clj-read-balanced-content port #\}))))
-    (scm-clj-ensure-even-list items 'read-map-literal)
-    (if (scm-clj-string-input-port? port)
-        (let ((m (scm-clj-make-map)))
+  (let ((items (Cluck-read-forms (Cluck-read-balanced-content port #\}))))
+    (Cluck-ensure-even-list items 'read-map-literal)
+    (if (Cluck-string-input-port? port)
+        (let ((m (Cluck-make-map)))
           (let loop ((xs items))
             (if (null? xs)
                 m
@@ -444,17 +444,17 @@
               (cons 'hash-map acc)
               (loop (cddr xs)
                     (append acc
-                            (list (scm-clj-source-form (car xs))
-                                  (scm-clj-source-form (cadr xs))))))))))
+                            (list (Cluck-source-form (car xs))
+                                  (Cluck-source-form (cadr xs))))))))))
 
 (define (read-set-literal port)
-  (let ((items (scm-clj-read-forms (scm-clj-read-balanced-content port #\}))))
-    (if (scm-clj-string-input-port? port)
-        (let ((s (scm-clj-make-set)))
+  (let ((items (Cluck-read-forms (Cluck-read-balanced-content port #\}))))
+    (if (Cluck-string-input-port? port)
+        (let ((s (Cluck-make-set)))
           (let loop ((xs items))
             (if (null? xs)
                 s
                 (begin
                   (hash-table-set! (set-hash s) (car xs) #t)
                   (loop (cdr xs))))))
-        (cons 'set (map scm-clj-source-form items)))))
+        (cons 'set (map Cluck-source-form items)))))

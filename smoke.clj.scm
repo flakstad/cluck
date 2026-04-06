@@ -1,7 +1,7 @@
-;; Smoke tests for scm-clj.
-;; Load this after scm-clj-init.scm or via run-smoke-tests.scm.
+;; Smoke tests for Cluck.
+;; Load this after Cluck-init.scm or via run-smoke-tests.scm.
 
-(ns scm-clj.smoke)
+(ns Cluck.smoke)
 
 (define (smoke-pass label)
   (println "ok" label)
@@ -51,12 +51,12 @@
 (assert-true "seq map entry vector" (vector? (first (seq sample))))
 
 (def smoke-ns-value 123)
-(require [scm-clj.math :as math :refer [square sum-of-squares]])
+(require [Cluck.math :as math :refer [square sum-of-squares]])
 (assert-num= "require square" 25 (square 5))
 (assert-num= "require sum-of-squares" 14 (sum-of-squares [1 2 3]))
 (let [math-square (ns-resolve 'math 'square)]
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))
-(assert-true "ns current" (equal? (current-ns) 'scm-clj.smoke))
+(assert-true "ns current" (equal? (current-ns) 'Cluck.smoke))
 (assert-num= "ns publics" 123 (get (ns-publics (current-ns)) 'smoke-ns-value))
 (in-ns 'user)
 

@@ -1,6 +1,6 @@
-# scm-clj
+# Cluck
 
-`scm-clj` is an experimental Clojure-flavored language layer on top of CHICKEN Scheme.
+`Cluck` is an experimental Clojure-flavored language layer on top of CHICKEN Scheme.
 
 The goal is not to reimplement Clojure on the JVM. The goal is to get the parts of the Clojure experience that matter most for small native tools:
 
@@ -22,7 +22,7 @@ CHICKEN is a good fit for this project because it sits in a useful middle ground
 
 That makes it a strong host for an exploratory Lisp layer that wants to feel lighter than Clojure JVM, but still behave like a proper Lisp at the terminal.
 
-## What `scm-clj` is trying to do
+## What `Cluck` is trying to do
 
 The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 
@@ -60,7 +60,7 @@ Notes:
 
 ## Performance Direction
 
-`scm-clj` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
+`Cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
 
 - `map` and `filter` stay eager and return lists
 - `mapv` and `filterv` are the vector-oriented fast paths
@@ -73,10 +73,10 @@ The practical goal is to keep the syntax familiar while making the runtime feel 
 
 ## Loading it
 
-For Geiser or any other REPL where you want to return to the host prompt:
+From the repository root, in Geiser or any other REPL where you want to return to the host prompt:
 
 ```scheme
-(load "/Users/andreas/Projects/scm-clj/scm-clj-init.scm")
+(load "Cluck-init.scm")
 ```
 
 That loads the language layer and installs the reader syntax, but does not start a nested REPL.
@@ -84,10 +84,10 @@ That loads the language layer and installs the reader syntax, but does not start
 For a standalone terminal REPL:
 
 ```scheme
-(load "/Users/andreas/Projects/scm-clj/scm-clj-repl.scm")
+(load "Cluck-repl.scm")
 ```
 
-That file intentionally drops into the `scm-clj` REPL, so it will appear to keep running until you exit the nested prompt.
+That file intentionally drops into the `Cluck` REPL, so it will appear to keep running until you exit the nested prompt.
 
 ## Demo program
 
@@ -102,13 +102,13 @@ It is loaded by:
 Run it with CHICKEN's interpreter after checking out the repo:
 
 ```scheme
-(load "/Users/andreas/Projects/scm-clj/run-demo.scm")
+(load "run-demo.scm")
 ```
 
 Or from the command line:
 
 ```bash
-csi -q -s /Users/andreas/Projects/scm-clj/run-demo.scm
+csi -q -s run-demo.scm
 ```
 
 The demo prints a small report over a vector of maps and shows the syntax in action.
@@ -126,14 +126,14 @@ It is loaded by:
 Run it with:
 
 ```bash
-csi -q -s /Users/andreas/Projects/scm-clj/run-smoke-tests.scm
+csi -q -s run-smoke-tests.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
 
 ## Namespaces
 
-`scm-clj` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
+`Cluck` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards
@@ -162,8 +162,8 @@ This is enough to structure source files, inspect exports, and load small module
 
 There is a small require/ns demo in:
 
-- [`scm-clj/math.clj.scm`](./scm-clj/math.clj.scm)
-- [`scm-clj/app.clj.scm`](./scm-clj/app.clj.scm)
+- [`Cluck/math.clj.scm`](./Cluck/math.clj.scm)
+- [`Cluck/app.clj.scm`](./Cluck/app.clj.scm)
 
 It is loaded by:
 
@@ -172,10 +172,10 @@ It is loaded by:
 Run it with:
 
 ```bash
-csi -q -s /Users/andreas/Projects/scm-clj/run-require-demo.scm
+csi -q -s run-require-demo.scm
 ```
 
-The smoke tests also load `scm-clj.math` through `require` to verify namespace restoration and alias lookup.
+The smoke tests also load `Cluck.math` through `require` to verify namespace restoration and alias lookup.
 
 ## Native Build
 
@@ -187,34 +187,34 @@ It is loaded by:
 
 - [`run-bench.scm`](./run-bench.scm)
 
-The benchmark builds a synthetic backlog, filters it, and prints a summary using the `scm-clj` runtime and namespace support.
+The benchmark builds a synthetic backlog, filters it, and prints a summary using the `Cluck` runtime and namespace support.
 
 Build the translated C and native binary with:
 
 ```bash
-csc -k -v -O2 -strip -o build/scm-clj-bench run-bench.scm
+csc -k -v -O2 -strip -o build/Cluck-bench run-bench.scm
 ```
 
 That leaves:
 
-- `build/scm-clj-bench.c`
-- `build/scm-clj-bench`
+- `build/Cluck-bench.c`
+- `build/Cluck-bench`
 
 On this machine, the kept artifacts are about:
 
-- `build/scm-clj-bench.c`: `7.6K`
-- `build/scm-clj-bench`: `50K`
+- `build/Cluck-bench.c`: `7.6K`
+- `build/Cluck-bench`: `50K`
 
 Important caveat:
 
 - the current native build compiles the `run-bench.scm` wrapper
-- that wrapper still `load-relative`s `scm-clj-init.scm` and `bench.clj.scm` at startup
+- that wrapper still `load-relative`s `Cluck-init.scm` and `bench.clj.scm` at startup
 - so these timings are a measure of the current hosted language layer and runtime loader path, not yet a fully self-contained AOT image
 
 A 100000-item run on this machine produced:
 
 - interpreted `csi -q -s run-bench.scm 100000`: `13.35s` real, `12.83s` user
-- native `./build/scm-clj-bench 100000`: `13.53s` real, `12.82s` user
+- native `./build/Cluck-bench 100000`: `13.53s` real, `12.82s` user
 
 The workload is allocation-heavy, so the native binary is not dramatically faster yet. The useful result here is that we have a small native artifact and a clear baseline for future runtime work.
 
@@ -234,13 +234,13 @@ This suite compares:
 Run it with:
 
 ```bash
-csi -q -s /Users/andreas/Projects/scm-clj/run-collections-bench.scm 5000 100
+csi -q -s run-collections-bench.scm 5000 100
 ```
 
 Or build a native binary:
 
 ```bash
-csc -k -v -O2 -strip -o build/scm-clj-collections-bench run-collections-bench.scm
+csc -k -v -O2 -strip -o build/Cluck-collections-bench run-collections-bench.scm
 ```
 
 The benchmark prints per-case timings using CHICKEN's process timer, while external `time -l` is still the best way to inspect wall-clock, CPU, and memory behavior from the shell on macOS.
@@ -248,9 +248,9 @@ The benchmark prints per-case timings using CHICKEN's process timer, while exter
 On this machine with `5000` items and `100` rounds:
 
 - interpreted `csi -q -s run-collections-bench.scm 5000 100`: `2.53s` real, `2.49s` user, about `27.5MB` RSS
-- native `./build/scm-clj-collections-bench 5000 100`: `2.68s` real, `2.48s` user, about `26.7MB` RSS
-- `build/scm-clj-collections-bench.c`: `7.2K`
-- `build/scm-clj-collections-bench`: `50K`
+- native `./build/Cluck-collections-bench 5000 100`: `2.68s` real, `2.48s` user, about `26.7MB` RSS
+- `build/Cluck-collections-bench.c`: `7.2K`
+- `build/Cluck-collections-bench`: `50K`
 
 Per-case timings from the benchmark run:
 
@@ -288,6 +288,6 @@ The main takeaways are:
 
 ## Development notes
 
-- Load `scm-clj-init.scm` in a fresh process when testing changes to reader syntax or macros.
+ - Load `Cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
 - The codebase is still early and intentionally narrow. The next likely steps are namespace support, destructuring, and eventually immutable collections.

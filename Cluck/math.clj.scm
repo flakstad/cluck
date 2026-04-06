@@ -1,6 +1,6 @@
 ;; Small math namespace for require/ns smoke coverage.
 
-(ns scm-clj.math)
+(ns Cluck.math)
 
 (defn square [x]
   (* x x))

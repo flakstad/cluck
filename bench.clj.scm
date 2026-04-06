@@ -1,7 +1,7 @@
-;; Benchmark / CLI demo for scm-clj.
-;; Load this after scm-clj-init.scm or via run-bench.scm.
+;; Benchmark / CLI demo for Cluck.
+;; Load this after Cluck-init.scm or via run-bench.scm.
 
-(ns scm-clj.cli)
+(ns Cluck.cli)
 
 (def default-count 50000)
 
@@ -86,7 +86,7 @@
                  items))
 
 (defn bench-main-with-summary [n items summary]
-  (println "scm-clj benchmark")
+  (println "Cluck benchmark")
   (println "Namespace:" (current-ns))
   (println "Requested items:" n)
   (println "Actual items:" (count items))

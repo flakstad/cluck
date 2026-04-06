@@ -1,5 +1,5 @@
-;; Small demo program for scm-clj.
-;; Load this after scm-clj-init.scm or via run-demo.scm.
+;; Small demo program for Cluck.
+;; Load this after Cluck-init.scm or via run-demo.scm.
 
 (def backlog
   [{:id 101 :title "bootstrap reader" :status :done :priority 1 :tags #{:core :docs}}
@@ -10,7 +10,7 @@
    {:id 106 :title "package metadata" :status :todo :priority 3 :tags #{:docs}}])
 
 (def settings
-  (read-string "{:project \"scm-clj\" :owners #{:andreas} :mode :demo}"))
+  (read-string "{:project \"Cluck\" :owners #{:andreas} :mode :demo}"))
 
 (defn title-of [item]
   (get item :title))
@@ -44,7 +44,7 @@
   (let [open-items (filter unfinished? backlog)
         docs-items (items-with-tag backlog :docs)
         high-priority (filter (fn [item] (< (get item :priority) 3)) open-items)]
-    (println "scm-clj demo")
+    (println "Cluck demo")
     (println "Project settings:" settings)
     (println "Total items:" (count backlog))
     (println "Status counts:" (status-counts backlog))
