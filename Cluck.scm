@@ -731,7 +731,14 @@
     (else 0)))
 
 (define (empty? x)
-  (= (count x) 0))
+  (cond
+    ((or (nil? x) (null? x)) #t)
+    ((string? x) (= (string-length x) 0))
+    ((vector? x) (= (vector-length x) 0))
+    ((map? x) (= (hash-table-size (map-hash x)) 0))
+    ((set? x) (= (hash-table-size (set-hash x)) 0))
+    ((pair? x) #f)
+    (else #f)))
 
 (define (seq x)
   (Cluck-seq-list x))
@@ -1027,6 +1034,51 @@
     ((vector? coll) (Cluck-filterv-vector pred coll))
     (else (list->vector (filter pred (seq coll))))))
 
+(define (Cluck-map-indexed-vector f vec)
+  (let* ((len (vector-length vec)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (loop (+ i 1)
+                (cons (f i (vector-ref vec i)) acc))))))
+
+(define (Cluck-map-indexed-seq f coll)
+  (let loop ((i 0) (xs (seq coll)) (acc '()))
+    (if (Cluck-empty-seq? xs)
+        (reverse acc)
+        (loop (+ i 1)
+              (cdr xs)
+              (cons (f i (car xs)) acc)))))
+
+(define (map-indexed f coll)
+  (cond
+    ((vector? coll) (Cluck-map-indexed-vector f coll))
+    (else (Cluck-map-indexed-seq f coll))))
+
+(define (Cluck-keep-vector f vec)
+  (let* ((len (vector-length vec)))
+    (let loop ((i 0) (acc '()))
+      (if (= i len)
+          (reverse acc)
+          (let ((value (f (vector-ref vec i))))
+            (if (nil? value)
+                (loop (+ i 1) acc)
+                (loop (+ i 1) (cons value acc))))))))
+
+(define (Cluck-keep-seq f coll)
+  (let loop ((xs (seq coll)) (acc '()))
+    (if (Cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((value (f (car xs))))
+          (if (nil? value)
+              (loop (cdr xs) acc)
+              (loop (cdr xs) (cons value acc)))))))
+
+(define (keep f coll)
+  (cond
+    ((vector? coll) (Cluck-keep-vector f coll))
+    (else (Cluck-keep-seq f coll))))
+
 (define (remove pred coll)
   (filter (lambda (x) (if (pred x) #f #t)) coll))
 
@@ -1148,10 +1200,12 @@
    (cons 'mapv mapv)
    (cons 'filter filter)
    (cons 'filterv filterv)
+   (cons 'map-indexed map-indexed)
    (cons 'reduce reduce)
    (cons 'some some)
    (cons 'every? every?)
    (cons 'empty? empty?)
+   (cons 'keep keep)
    (cons 'into into)
    (cons 'identity identity)
    (cons 'inc inc)

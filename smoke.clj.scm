@@ -47,6 +47,10 @@
 (assert-num= "let map as" 1 (count (let [{:as m :keys [a]} {:a 1}] m)))
 (assert-str= "mapv" "[2 3 4]" (pr-str (mapv inc [1 2 3])))
 (assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
+(assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
+(assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
+(assert-true "empty? vector" (empty? []))
+(assert-true "empty? list" (empty? '()))
 (assert-num= "fn vector destructuring" 3 ((fn [[a b]] (+ a b)) [1 2]))
 (assert-num= "fn map destructuring" 3 ((fn [{:keys [a b]}] (+ a b)) {:a 1 :b 2}))
 (defn pair-sum [[a b]]

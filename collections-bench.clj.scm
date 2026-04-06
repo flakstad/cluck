@@ -1,5 +1,5 @@
 ;; Collections benchmark for Cluck.
-;; Measures map/mapv and filter/filterv on list and vector inputs.
+;; Measures eager collection helpers on list and vector inputs.
 
 (import (chicken time))
 
@@ -45,6 +45,8 @@
 
 (defn bench-result-summary [value]
   (cond
+    (boolean? value)
+    (str "bool:" (if value "true" "false"))
     (or (map? value) (set? value) (vector? value) (pair? value) (string? value))
     (str "count:" (count value))
     (number? value)
@@ -77,6 +79,24 @@
        (bench-case "filter on vector" rounds (fn [] (filter even? xv)))
        (bench-case "filterv on vector" rounds (fn [] (filterv even? xv))))))
 
+(defn run-keep-benchmarks [rounds data]
+  (let [xs (get data :list)
+        xv (get data :vector)]
+    (+ (bench-case "keep on list" rounds (fn [] (keep (fn [x] (if (even? x) x nil)) xs)))
+       (bench-case "keep on vector" rounds (fn [] (keep (fn [x] (if (even? x) x nil)) xv))))))
+
+(defn run-map-indexed-benchmarks [rounds data]
+  (let [xs (get data :list)
+        xv (get data :vector)]
+    (+ (bench-case "map-indexed on list" rounds (fn [] (map-indexed (fn [i x] (+ i x)) xs)))
+       (bench-case "map-indexed on vector" rounds (fn [] (map-indexed (fn [i x] (+ i x)) xv))))))
+
+(defn run-empty-benchmarks [rounds data]
+  (let [xs (get data :list)
+        xv (get data :vector)]
+    (+ (bench-case "empty? on list" rounds (fn [] (empty? xs)))
+       (bench-case "empty? on vector" rounds (fn [] (empty? xv))))))
+
 (defn run-count-benchmarks [rounds data]
   (let [xs (get data :list)
         xv (get data :vector)]
@@ -107,9 +127,18 @@
     (println "Filter benchmarks:")
     (let [filter-total (run-filter-benchmarks rounds data)]
       (println "Filter total ms:" filter-total))
+    (println "Keep benchmarks:")
+    (let [keep-total (run-keep-benchmarks rounds data)]
+      (println "Keep total ms:" keep-total))
+    (println "Map-indexed benchmarks:")
+    (let [map-indexed-total (run-map-indexed-benchmarks rounds data)]
+      (println "Map-indexed total ms:" map-indexed-total))
     (println "Count benchmarks:")
     (let [count-total (run-count-benchmarks rounds data)]
       (println "Count total ms:" count-total))
+    (println "Empty? benchmarks:")
+    (let [empty-total (run-empty-benchmarks rounds data)]
+      (println "Empty? total ms:" empty-total))
     (println "Reduce benchmarks:")
     (let [reduce-total (run-reduce-benchmarks rounds data)]
       (println "Reduce total ms:" reduce-total))

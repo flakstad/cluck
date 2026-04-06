@@ -44,7 +44,7 @@ The current implementation supports:
 - `#{1 2 3}` sets
 - `read-string`
 - `pr-str`, `str`, `println`, and `prn`
-- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, and `reduce`
+- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
@@ -64,7 +64,9 @@ Notes:
 `Cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
 
 - `map` and `filter` stay eager and return lists
+- `keep` and `map-indexed` are eager too, with vector-specialized fast paths
 - `mapv` and `filterv` are the vector-oriented fast paths
+- `empty?` should stay constant-time on the common collection shapes
 - `seq` should be a cheap adapter, not a place where we sort or realize expensive views
 - `pr-str` can stay slower and stable because printing is not the hot path
 - control-flow macros should expand directly and avoid runtime helper calls when possible
@@ -232,6 +234,12 @@ This suite compares:
 
 - `map` vs `mapv`
 - `filter` vs `filterv`
+- `keep`
+- `map-indexed`
+- `empty?`
+- `count`
+- `reduce`
+- `into`
 - list inputs vs vector inputs
 
 Run it with:
@@ -250,32 +258,40 @@ The benchmark prints per-case timings using CHICKEN's process timer, while exter
 
 On this machine with `5000` items and `100` rounds:
 
-- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `2.53s` real, `2.49s` user, about `27.5MB` RSS
-- native `./build/Cluck-collections-bench 5000 100`: `2.68s` real, `2.48s` user, about `26.7MB` RSS
+- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `3.53s` real, `3.49s` user, about `45MB` RSS
+- native `./build/Cluck-collections-bench 5000 100`: `3.58s` real, `3.54s` user, about `49MB` RSS
 - `build/Cluck-collections-bench.c`: `7.2K`
 - `build/Cluck-collections-bench`: `50K`
 
 Per-case timings from the benchmark run:
 
-- `map on list`: `239ms`
-- `mapv on list`: `239ms`
-- `map on vector`: `262ms`
-- `mapv on vector`: `185ms`
-- `filter on list`: `213ms`
-- `filterv on list`: `214ms`
-- `filter on vector`: `225ms`
-- `filterv on vector`: `178ms`
-- `count on list`: `86ms`
+- `map on list`: `234ms`
+- `mapv on list`: `233ms`
+- `map on vector`: `243ms`
+- `mapv on vector`: `179ms`
+- `filter on list`: `206ms`
+- `filterv on list`: `208ms`
+- `filter on vector`: `222ms`
+- `filterv on vector`: `173ms`
+- `keep on list`: `325ms`
+- `keep on vector`: `267ms`
+- `map-indexed on list`: `268ms`
+- `map-indexed on vector`: `180ms`
+- `count on list`: `85ms`
 - `count on vector`: `0ms`
-- `reduce on list`: `182ms`
-- `reduce on vector`: `125ms`
-- `into vector from list`: `142ms`
-- `into vector from vector`: `165ms`
+- `empty? on list`: `0ms`
+- `empty? on vector`: `0ms`
+- `reduce on list`: `177ms`
+- `reduce on vector`: `122ms`
+- `into vector from list`: `137ms`
+- `into vector from vector`: `160ms`
 
 The main takeaways are:
 
 - `mapv` is consistently the better choice for vector-oriented work
+- `keep` and `map-indexed` both benefit from direct vector paths when the input is a vector
 - the one-pass `filterv` path now beats the generic vector `filter`
+- `empty?` is now a direct shape check on the common collection types
 - `reduce` on vectors benefits from the direct index-based fast path
 - `count` on vectors is effectively free
 - `into` is still a linear copy path, which is fine for now but is worth revisiting if it becomes a hot spot
@@ -293,4 +309,4 @@ The main takeaways are:
 
  - Load `Cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
-- The codebase is still early and intentionally narrow. The next likely steps are namespace polish, broader eager collection coverage, and packaging.
+- The codebase is still early and intentionally narrow. The next likely steps are namespace polish, a cleaner launcher, and packaging.
