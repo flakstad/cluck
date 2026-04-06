@@ -1,0 +1,17 @@
+;; EDN helpers for Cluck.
+
+(ns cluck.edn
+  "EDN helpers for Cluck.")
+
+(define cluck-edn-core-read-string read-string)
+(define cluck-edn-core-pr-str pr-str)
+
+(defn read-string
+  "Read one EDN form from STRING."
+  [s]
+  (cluck-edn-core-read-string s))
+
+(defn pr-str
+  "Render values as EDN text."
+  [& xs]
+  (apply cluck-edn-core-pr-str xs))

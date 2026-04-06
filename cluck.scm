@@ -997,6 +997,30 @@
                    (cluck-hash-set! (map-hash result) k v))))
             (loop (cdr xs)))))))
 
+(define (merge-with f . maps)
+  (let ((result (if (null? maps) (hash-map) (car maps))))
+    (if (and (pair? maps) (not (map? result)))
+        (error "merge-with expects maps" result)
+        (let loop ((xs (cdr maps)))
+          (if (null? xs)
+              result
+              (begin
+                (let ((m (car xs)))
+                  (if (map? m)
+                      (hash-table-for-each
+                       (map-hash m)
+                       (lambda (k v)
+                         (if (cluck-hash-exists? (map-hash result) k)
+                             (cluck-hash-set! (map-hash result)
+                                              k
+                                              (f (cluck-hash-ref/default (map-hash result)
+                                                                         k
+                                                                         nil)
+                                                 v))
+                             (cluck-hash-set! (map-hash result) k v))))
+                      (error "merge-with expects maps" m)))
+                (loop (cdr xs))))))))
+
 (define (cluck-conj-map! m item)
   (cond
     ((map? item)
@@ -1165,6 +1189,122 @@
 (define (remove pred coll)
   (filter (lambda (x) (if (pred x) #f #t)) coll))
 
+(define (cluck-apply-tail x)
+  (cond
+    ((nil? x) '())
+    ((pair? x) x)
+    ((vector? x) (vector->list x))
+    ((or (map? x) (set? x) (string? x)) (seq x))
+    (else
+     (error "apply expects a sequence as the last argument" x))))
+
+(define (cluck-apply f . args)
+  (cond
+    ((null? args) (f))
+    (else
+     (let loop ((rest args) (prefix '()))
+       (if (null? (cdr rest))
+           (##sys#apply f (append (reverse prefix)
+                                  (cluck-apply-tail (car rest))))
+           (loop (cdr rest) (cons (car rest) prefix)))))))
+
+(define apply cluck-apply)
+
+(define (cluck-get-in coll ks . maybe-default)
+  (let ((default (if (null? maybe-default) nil (car maybe-default))))
+    (let loop ((current coll) (path (seq ks)))
+      (if (cluck-empty-seq? path)
+          current
+          (let ((missing (list 'cluck-get-in-missing)))
+            (let ((next (cluck-get current (car path) missing)))
+              (if (eq? next missing)
+                  default
+                  (loop next (cdr path)))))))))
+
+(define get-in cluck-get-in)
+
+(define (cluck-assoc-in coll ks value)
+  (let ((path (seq ks)))
+    (if (cluck-empty-seq? path)
+        value
+        (let* ((key (car path))
+               (rest (cdr path))
+               (container (cond
+                            ((map? coll) coll)
+                            ((vector? coll) coll)
+                            ((nil? coll) (hash-map))
+                            (else
+                             (error "assoc-in only supports maps and vectors" coll)))))
+          (if (cluck-empty-seq? rest)
+              (cluck-assoc container key value)
+              (let* ((missing (list 'cluck-assoc-in-missing))
+                     (child (cluck-get container key missing))
+                     (next (if (eq? child missing) (hash-map) child)))
+                (cluck-assoc container key
+                             (cluck-assoc-in next rest value))))))))
+
+(define assoc-in cluck-assoc-in)
+
+(define (update coll key f . args)
+  (cluck-assoc coll key (cluck-apply f (cons (cluck-get coll key nil) args))))
+
+(define (select-keys m ks)
+  (let ((result (hash-map)))
+    (if (map? m)
+        (let loop ((xs (seq ks)))
+          (if (cluck-empty-seq? xs)
+              result
+              (begin
+                (let ((k (car xs)))
+                  (if (cluck-hash-exists? (map-hash m) k)
+                      (cluck-hash-set! (map-hash result)
+                                       k
+                                       (cluck-hash-ref/default (map-hash m) k nil))
+                      #f))
+                (loop (cdr xs)))))
+        result)))
+
+(define (zipmap ks vs)
+  (let ((result (hash-map)))
+    (let loop ((keys (seq ks)) (vals (seq vs)))
+      (if (or (cluck-empty-seq? keys) (cluck-empty-seq? vals))
+          result
+          (begin
+            (cluck-hash-set! (map-hash result) (car keys) (car vals))
+            (loop (cdr keys) (cdr vals)))))))
+
+(define (mapcat f coll)
+  (cluck-apply append
+               (map (lambda (x)
+                      (let ((value (f x)))
+                        (if (nil? value)
+                            '()
+                            (seq value))))
+                    coll)))
+
+(define (partial f . args)
+  (lambda rest
+    (cluck-apply f (append args rest))))
+
+(define (comp . fs)
+  (cond
+    ((null? fs)
+     (lambda args
+       (if (cluck-empty-seq? args)
+           nil
+           (car args))))
+    ((null? (cdr fs))
+     (car fs))
+    (else
+     (let ((rev (reverse fs)))
+       (lambda args
+         (let loop ((rest (cdr rev))
+                    (result (cluck-apply (car rev) args)))
+           (if (null? rest)
+               result
+               (let ((next (car rest)))
+                 (loop (cdr rest) (next result))))))))))
+
 (define (reduce f . args)
   (cond
     ((null? args)
@@ -1263,6 +1403,9 @@
    (cons 'println println)
    (cons 'prn prn)
    (cons 'keyword keyword)
+   (cons 'hash-map hash-map)
+   (cons 'hash-set hash-set)
+   (cons 'set set)
    (cons 'nil? nil?)
    (cons 'false? false?)
    (cons 'vector? vector?)
@@ -1271,8 +1414,16 @@
    (cons 'keyword? keyword?)
    (cons 'assoc cluck-assoc)
    (cons 'dissoc dissoc)
+   (cons 'disj disj)
+   (cons 'merge merge)
+   (cons 'merge-with merge-with)
+   (cons 'keys keys)
+   (cons 'vals vals)
    (cons 'conj conj)
    (cons 'get cluck-get)
+   (cons 'get-in get-in)
+   (cons 'assoc-in assoc-in)
+   (cons 'update update)
    (cons 'contains? cluck-contains?)
    (cons 'count count)
    (cons 'seq seq)
@@ -1284,12 +1435,19 @@
    (cons 'filter filter)
    (cons 'filterv filterv)
    (cons 'map-indexed map-indexed)
+   (cons 'mapcat mapcat)
    (cons 'reduce reduce)
    (cons 'some some)
    (cons 'every? every?)
    (cons 'empty? empty?)
    (cons 'keep keep)
+   (cons 'remove remove)
    (cons 'into into)
+   (cons 'select-keys select-keys)
+   (cons 'zipmap zipmap)
+   (cons 'apply apply)
+   (cons 'partial partial)
+   (cons 'comp comp)
    (cons 'identity identity)
    (cons 'inc inc)
    (cons 'dec dec)
@@ -1308,6 +1466,9 @@
    (cons 'println "Print values with spaces and a trailing newline.")
    (cons 'prn "Print values with Cluck-readable rendering and a trailing newline.")
    (cons 'keyword "Create a keyword from a string or symbol.")
+   (cons 'hash-map "Create a mutable map from key/value pairs.")
+   (cons 'hash-set "Create a mutable set from items.")
+   (cons 'set "Create a mutable set from items.")
    (cons 'nil? "Return true when x is nil.")
    (cons 'false? "Return true when x is false.")
    (cons 'vector? "Return true when x is a vector.")
@@ -1316,8 +1477,16 @@
    (cons 'keyword? "Return true when x is a keyword.")
    (cons 'assoc "Associate KEY with VALUE in MAP or VECTOR.")
    (cons 'dissoc "Remove KEY from MAP.")
+   (cons 'disj "Remove items from a set.")
+   (cons 'merge "Merge maps from left to right, with later values winning.")
+   (cons 'merge-with "Merge maps from left to right, combining duplicates with F.")
+   (cons 'keys "Return a list of keys from MAP.")
+   (cons 'vals "Return a list of values from MAP.")
    (cons 'conj "Add one item to a collection.")
    (cons 'get "Look up KEY in MAP, SET, VECTOR, or sequence-backed collection.")
+   (cons 'get-in "Look up a nested path in a map or vector.")
+   (cons 'assoc-in "Associate VALUE at a nested path in a map or vector.")
+   (cons 'update "Update KEY in COLL by applying F to the current value.")
    (cons 'contains? "Return true when MAP, SET, or VECTOR contains KEY.")
    (cons 'count "Return the number of items in COLL.")
    (cons 'seq "Return a simple sequence view of COLL.")
@@ -1329,12 +1498,19 @@
    (cons 'filter "Return the items of COLL for which PRED is truthy.")
    (cons 'filterv "Return the matching items of COLL in a vector.")
    (cons 'map-indexed "Apply F to each item in COLL with its index.")
+   (cons 'mapcat "Map F across COLL and concatenate the resulting sequences.")
    (cons 'reduce "Reduce COLL with F, optionally starting from INIT.")
    (cons 'some "Return the first truthy result of applying PRED to COLL.")
    (cons 'every? "Return true when PRED is truthy for every item in COLL.")
    (cons 'empty? "Return true when COLL has no items.")
    (cons 'keep "Apply F to COLL and keep the non-nil results.")
+   (cons 'remove "Return the items of COLL for which PRED is falsey.")
    (cons 'into "Add all items from FROM into TO.")
+   (cons 'select-keys "Return a map containing only the requested keys.")
+   (cons 'zipmap "Create a map by pairing keys and values from two collections.")
+   (cons 'apply "Apply F to the supplied arguments, flattening the final sequence.")
+   (cons 'partial "Return a function with some leading arguments fixed.")
+   (cons 'comp "Compose functions from right to left.")
    (cons 'identity "Return x unchanged.")
    (cons 'inc "Add 1 to x.")
    (cons 'dec "Subtract 1 from x.")
@@ -1364,6 +1540,25 @@
           (loop (cdr xs))))))
 
 (cluck-install-core-docstrings!)
+
+(define (cluck-install-core-namespace!)
+  (let ((ns 'cluck.core))
+    (cluck-ensure-ns! ns)
+    (cluck-reset-ns-imports! ns)
+    (cluck-reset-ns-aliases! ns)
+    (let loop ((xs (cluck-core-public-bindings)))
+      (if (null? xs)
+          (void)
+          (begin
+            (let ((pair (car xs)))
+              (cluck-intern! ns (car pair) (cdr pair))
+              (let ((doc (cluck-core-doc-for (car pair))))
+                (if doc
+                    (cluck-put-doc! ns (car pair) doc)
+                    #f)))
+            (loop (cdr xs)))))))
+
+(cluck-install-core-namespace!)
 
 (define (cluck-vector-form->list x)
   (cond

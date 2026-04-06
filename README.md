@@ -54,6 +54,7 @@ The current implementation supports:
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
+- the public namespace layout is now mirrored through `cluck.core`, `cluck.string`, `cluck.set`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
 
 Notes:
 
@@ -205,14 +206,14 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 `cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
 
-The public namespace layout is meant to mirror Clojure's shape:
+The public namespace layout mirrors Clojure's shape:
 
 - `cluck.core`
 - `cluck.string`
 - `cluck.set`
 - `cluck.edn`
 
-The current source tree is still partly transitional, but that is the target naming convention for user-facing code.
+These namespaces are the intended public surface for user-facing code. The older `cluck.math` and `cluck.app` files remain as sample/demo namespaces.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards
@@ -236,6 +237,13 @@ Namespace source files are located by namespace path, starting with:
 - `foo.bar` -> `foo/bar.clk`
 - fallback lookups also check `foo/bar.clj.scm`, `foo/bar.scm`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
+
+The mirrored namespace files currently live at:
+
+- [`cluck/core.clk`](./cluck/core.clk)
+- [`cluck/string.clk`](./cluck/string.clk)
+- [`cluck/set.clk`](./cluck/set.clk)
+- [`cluck/edn.clk`](./cluck/edn.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
 

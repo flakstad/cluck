@@ -1,0 +1,5 @@
+;; Public core namespace for Cluck.
+;; The core bindings are installed by cluck.scm at bootstrap time.
+
+(ns cluck.core
+  "Public core namespace for Cluck.")

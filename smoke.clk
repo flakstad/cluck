@@ -61,6 +61,56 @@
 (assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
 (assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
 (assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
+(assert-str= "mapcat" "(1 1 2 2)" (pr-str (mapcat (fn [x] [x x]) [1 2])))
+(assert-str= "merge" "{:a 1 :b 2}" (pr-str (merge {:a 1} {:b 2})))
+(assert-str= "merge-with" "{:a 3 :b 2}" (pr-str (merge-with + {:a 1} {:a 2 :b 2})))
+(assert-num= "get-in" 3 (get-in {:a {:b 3}} [:a :b]))
+(assert-str= "assoc-in" "{:a {:b 2}}" (pr-str (assoc-in {} [:a :b] 2)))
+(assert-str= "update" "{:a 2}" (pr-str (update {:a 1} :a inc)))
+(assert-str= "select-keys" "{:a 1 :c 3}" (pr-str (select-keys {:a 1 :b 2 :c 3} [:a :c])))
+(assert-str= "zipmap" "{:a 1 :b 2}" (pr-str (zipmap [:a :b] [1 2])))
+(assert-str= "apply" "10" (pr-str (apply + 1 2 [3 4])))
+(assert-num= "partial" 6 ((partial + 1 2) 3))
+(assert-num= "comp" 9 ((comp inc inc inc) 6))
+(assert-str= "remove" "(1 3)" (pr-str (remove even? [1 2 3 4])))
+(assert-num= "keys count" 2 (count (keys sample)))
+(assert-num= "vals count" 2 (count (vals sample)))
+(require [cluck.core])
+(assert-true "core namespace exists" (find-ns 'cluck.core))
+(assert-true "core publics include map" (contains? (ns-publics 'cluck.core) 'map))
+(assert-true "core publics include set" (contains? (ns-publics 'cluck.core) 'set))
+(assert-true "core publics include hash-map" (contains? (ns-publics 'cluck.core) 'hash-map))
+(assert-str= "core hash-map" "{:a 1}" (pr-str (hash-map :a 1)))
+(assert-str= "core set" "#{1 2}" (pr-str (set 1 2)))
+(assert-str= "core disj" "#{1}" (pr-str (disj #{1 2 3} 2 3)))
+(require [cluck.string :refer [blank? join split-lines trim starts-with? ends-with?]])
+(assert-true "string blank? nil" (blank? nil))
+(assert-true "string blank? spaces" (blank? "   "))
+(assert-str= "string trim" "hello" (trim "  hello  "))
+(assert-str= "string join" "a,b,c" (join "," '("a" "b" "c")))
+(assert-str= "string split-lines" "(\"a\" \"b\")" (pr-str (split-lines "a\nb")))
+(assert-true "string starts-with?" (starts-with? "cluck" "cl"))
+(assert-true "string ends-with?" (ends-with? "cluck" "uck"))
+(require [cluck.set :refer [union intersection difference subset? superset?]])
+(assert-str= "set union" "#{1 2 3}" (pr-str (union #{1 2} #{2 3})))
+(assert-str= "set intersection" "#{2}" (pr-str (intersection #{1 2} #{2 3})))
+(assert-str= "set difference" "#{1}" (pr-str (difference #{1 2 3} #{2 3})))
+(assert-true "set subset?" (subset? #{1 2} #{1 2 3}))
+(assert-true "set superset?" (superset? #{1 2 3} #{1 2}))
+(require [cluck.edn :refer [read-string]])
+(assert-str= "edn read-string" "{:a 1}" (pr-str (read-string "{:a 1}")))
+(assert-str= "doc core namespace map"
+             "cluck.core/map\n\nApply F to each element of COLL and return a list of the results.\n"
+             (capture-output (lambda () (doc cluck.core/map))))
+(assert-str= "doc string join"
+             "cluck.string/join\n\nJoin COLL with SEP and return a string.\n"
+             (capture-output (lambda () (doc cluck.string/join))))
+(assert-str= "doc set union"
+             "cluck.set/union\n\nReturn a set containing all items from COLLS.\n"
+             (capture-output (lambda () (doc cluck.set/union))))
+(assert-str= "doc edn read-string"
+             "cluck.edn/read-string\n\nRead one EDN form from STRING.\n"
+             (capture-output (lambda () (doc cluck.edn/read-string))))
 (assert-true "defn doc output shows procedure"
              (string-prefix? "#<procedure"
                               (capture-output
@@ -71,9 +121,6 @@
 (assert-str= "doc local defn"
              "add2\n\nAdd 2 to X.\n"
              (capture-output (lambda () (doc add2))))
-(assert-str= "doc core map"
-             "map\n\nApply F to each element of COLL and return a list of the results.\n"
-             (capture-output (lambda () (doc map))))
 (assert-str= "doc core get"
              "get\n\nLook up KEY in MAP, SET, VECTOR, or sequence-backed collection.\n"
              (capture-output (lambda () (doc get))))

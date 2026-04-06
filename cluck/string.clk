@@ -1,0 +1,116 @@
+;; String helpers for Cluck.
+
+(ns cluck.string
+  "String helpers for Cluck.")
+
+(define (cluck-string-trim-left-index s)
+  (##core#let loop ((i 0) (len (string-length s)))
+    (cond
+      (= i len) len
+      (char-whitespace? (string-ref s i)) (loop (+ i 1) len)
+      else i)))
+
+(define (cluck-string-trim-right-index s)
+  (##core#let loop ((i (- (string-length s) 1)))
+    (cond
+      (< i 0) -1
+      (char-whitespace? (string-ref s i)) (loop (- i 1))
+      else i)))
+
+(defn blank?
+  "Return true when S is nil, empty, or whitespace only."
+  [s]
+  (cond
+    (nil? s) #t
+    (not (string? (str s))) #f
+    else
+    (##core#let ((text (str s)))
+      (##core#let loop ((i 0) (len (string-length text)))
+        (if (= i len)
+            #t
+            (if (char-whitespace? (string-ref text i))
+                (loop (+ i 1) len)
+                #f))))))
+
+(defn triml
+  "Trim leading whitespace from S."
+  [s]
+  (if (nil? s)
+      nil
+      (let* ((text (str s))
+             (start (cluck-string-trim-left-index text)))
+        (substring text start (string-length text)))))
+
+(defn trimr
+  "Trim trailing whitespace from S."
+  [s]
+  (if (nil? s)
+      nil
+      (let* ((text (str s))
+             (end (cluck-string-trim-right-index text)))
+        (if (< end 0)
+            ""
+            (substring text 0 (+ end 1))))))
+
+(defn trim
+  "Trim leading and trailing whitespace from S."
+  [s]
+  (if (nil? s)
+      nil
+      (triml (trimr s))))
+
+(defn starts-with?
+  "Return true when TEXT begins with PREFIX."
+  [text prefix]
+  (let* ((hay (str text))
+         (needle (str prefix))
+         (hay-len (string-length hay))
+         (needle-len (string-length needle)))
+    (and (<= needle-len hay-len)
+         (string=? needle (substring hay 0 needle-len)))))
+
+(defn ends-with?
+  "Return true when TEXT ends with SUFFIX."
+  [text suffix]
+  (let* ((hay (str text))
+         (needle (str suffix))
+         (hay-len (string-length hay))
+         (needle-len (string-length needle))
+         (start (- hay-len needle-len)))
+    (and (>= start 0)
+         (string=? needle (substring hay start hay-len)))))
+
+(defn join
+  "Join COLL with SEP and return a string."
+  [sep coll]
+  (##core#let ((separator (if (nil? sep) "" (str sep)))
+               (items (seq coll)))
+    (if (cluck-empty-seq? items)
+        ""
+        (##core#let ((port (open-output-string)))
+          (display (str (car items)) port)
+          (##core#let loop ((xs (cdr items)))
+            (if (cluck-empty-seq? xs)
+                (get-output-string port)
+                (begin
+                  (display separator port)
+                  (display (str (car xs)) port)
+                  (loop (cdr xs)))))))))
+
+(defn split-lines
+  "Split S into a list of lines."
+  [s]
+  (if (nil? s)
+      '()
+      (let* ((text (str s))
+             (len (string-length text)))
+        (##core#let loop ((i 0) (start 0) (acc '()))
+          (cond
+            (= i len)
+            (if (= start len)
+                (reverse acc)
+                (reverse (cons (substring text start len) acc)))
+            (char=? (string-ref text i) #\newline)
+            (loop (+ i 1) (+ i 1) (cons (substring text start i) acc))
+            else
+            (loop (+ i 1) start acc))))))
