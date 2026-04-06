@@ -134,6 +134,19 @@ csc -k -v -O2 -strip -o build/cluck cluck-cli.scm
 
 That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the cluck source files at startup, so it is a convenient distribution front-end rather than a fully embedded image.
 
+## Editor Support
+
+In Emacs, `cluck-mode` is a derived `clojure-mode` variant for indentation, paredit, folding, and syntax coloring.
+
+It is intentionally not wired to CIDER or LSP for Cluck buffers by default. The current workflow is:
+
+- edit `.clk` files in `cluck-mode`
+- start `./build/cluck` in a terminal or `vterm`
+- reload files with `(load "path/to/file.clk")`
+- use `-e` or `-l` for one-shot evaluation from the command line
+
+That keeps the editing experience light and avoids Clojure-specific REPL assumptions that do not fit Cluck yet.
+
 ## Demo program
 
 There is a small demo program in:
