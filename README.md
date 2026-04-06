@@ -185,6 +185,53 @@ A 100000-item run on this machine produced:
 
 The workload is allocation-heavy, so the native binary is not dramatically faster yet. The useful result here is that we have a small native artifact and a clear baseline for future runtime work.
 
+## Collections Benchmark
+
+There is also a smaller benchmark focused on the collection primitives we care about most in the language layer:
+
+- [`collections-bench.clj.scm`](./collections-bench.clj.scm)
+- [`run-collections-bench.scm`](./run-collections-bench.scm)
+
+This suite compares:
+
+- `map` vs `mapv`
+- `filter` vs `filterv`
+- list inputs vs vector inputs
+
+Run it with:
+
+```bash
+csi -q -s /Users/andreas/Projects/scm-clj/run-collections-bench.scm 5000 100
+```
+
+Or build a native binary:
+
+```bash
+csc -k -v -O2 -strip -o build/scm-clj-collections-bench run-collections-bench.scm
+```
+
+The benchmark prints per-case timings using CHICKEN's process timer, while external `time -l` is still the best way to inspect wall-clock, CPU, and memory behavior from the shell on macOS.
+
+On this machine with `5000` items and `100` rounds:
+
+- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `1.80s` real, `1.77s` user, about `26.1MB` RSS
+- native `./build/scm-clj-collections-bench 5000 100`: `1.80s` real, `1.76s` user, about `26.8MB` RSS
+- `build/scm-clj-collections-bench.c`: `7.2K`
+- `build/scm-clj-collections-bench`: `50K`
+
+Per-case timings from the benchmark run:
+
+- `map on list`: `239ms`
+- `mapv on list`: `236ms`
+- `map on vector`: `249ms`
+- `mapv on vector`: `184ms`
+- `filter on list`: `209ms`
+- `filterv on list`: `213ms`
+- `filter on vector`: `224ms`
+- `filterv on vector`: `176ms`
+
+The main takeaway is that the vector fast paths are now paying off, especially for `mapv` and the one-pass `filterv` implementation on vectors.
+
 ## Example
 
 ```scheme

@@ -582,21 +582,16 @@
 
 (define (scm-clj-filterv-vector pred vec)
   (let ((len (vector-length vec)))
-    (let count-loop ((i 0) (n 0))
-      (if (= i len)
-          (let ((out (make-vector n)))
-            (let fill-loop ((i 0) (j 0))
-              (if (= i len)
-                  out
-                  (let ((item (vector-ref vec i)))
-                    (if (pred item)
-                        (begin
-                          (vector-set! out j item)
-                          (fill-loop (+ i 1) (+ j 1)))
-                        (fill-loop (+ i 1) j))))))
-          (let ((item (vector-ref vec i)))
-            (count-loop (+ i 1)
-                        (if (pred item) (+ n 1) n)))))))
+    (let ((out (make-vector len)))
+      (let loop ((i 0) (j 0))
+        (if (= i len)
+            (vector-resize out j)
+            (let ((item (vector-ref vec i)))
+              (if (pred item)
+                  (begin
+                    (vector-set! out j item)
+                    (loop (+ i 1) (+ j 1)))
+                  (loop (+ i 1) j))))))))
 
 (define (mapv f coll)
   (cond
