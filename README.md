@@ -46,6 +46,7 @@ The current implementation supports:
 - `pr-str`, `str`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, and `reduce`
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
+- `require` plus `ns`-time `:require` directives for loading namespace files
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace
 
@@ -135,6 +136,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 `scm-clj` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
 
 - `ns` sets the active namespace
+- `require` loads namespace files and returns to the caller's namespace afterwards
 - `in-ns` switches the active namespace
 - `current-ns` returns the active namespace symbol
 - `find-ns` returns the registry entry for a namespace
@@ -142,7 +144,38 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 - `ns-publics` returns a map of public vars in a namespace
 - `ns-resolve` looks up a var by namespace and symbol
 
-This is enough to structure source files and inspect exports. Full Clojure-style resolution and `require` semantics are still future work.
+`ns` supports a small subset of `:require` directives:
+
+- `[foo.bar :refer [x y]]` copies selected public vars into the current namespace registry
+- `[foo.bar :refer :all]` copies all public vars into the current namespace registry
+- `[foo.bar :as fb]` registers an alias that `ns-resolve` can use
+
+Namespace source files are located by namespace path, starting with:
+
+- `foo.bar` -> `foo/bar.clj.scm`
+- fallback lookups also check `foo/bar.scm`, `foo/bar.clj`, and root-level `bar.*`
+- `src/` is searched as a secondary prefix
+
+This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style symbol qualification is still future work.
+
+## Module Demo
+
+There is a small require/ns demo in:
+
+- [`scm-clj/math.clj.scm`](./scm-clj/math.clj.scm)
+- [`scm-clj/app.clj.scm`](./scm-clj/app.clj.scm)
+
+It is loaded by:
+
+- [`run-require-demo.scm`](./run-require-demo.scm)
+
+Run it with:
+
+```bash
+csi -q -s /Users/andreas/Projects/scm-clj/run-require-demo.scm
+```
+
+The smoke tests also load `scm-clj.math` through `require` to verify namespace restoration and alias lookup.
 
 ## Native Build
 

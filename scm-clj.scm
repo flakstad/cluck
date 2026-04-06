@@ -1,8 +1,10 @@
 (import (except scheme assoc)
         (chicken base)
         (chicken csi)
+        (chicken file)
         (chicken load)
         (chicken port)
+        (chicken process-context)
         (chicken repl)
         (chicken syntax)
         srfi-69)
@@ -27,6 +29,9 @@
 
 (define *ns* 'user)
 (define *scm-clj-ns-registry* (make-hash-table))
+(define *scm-clj-loaded-namespaces* (make-hash-table))
+(define *scm-clj-loading-namespaces* (make-hash-table))
+(define *scm-clj-ns-aliases* (make-hash-table))
 
 (define (scm-clj-ensure-ns! ns)
   (let ((existing (hash-table-ref/default *scm-clj-ns-registry* ns #f)))
@@ -50,6 +55,32 @@
 (define (find-ns ns)
   (hash-table-ref/default *scm-clj-ns-registry* ns #f))
 
+(define (scm-clj-ensure-ns-aliases! ns)
+  (let ((existing (hash-table-ref/default *scm-clj-ns-aliases* ns #f)))
+    (if existing
+        existing
+        (let ((table (make-hash-table)))
+          (hash-table-set! *scm-clj-ns-aliases* ns table)
+          table))))
+
+(define (scm-clj-register-ns-alias! ns alias target)
+  (hash-table-set! (scm-clj-ensure-ns-aliases! ns) alias target)
+  target)
+
+(define (scm-clj-resolve-ns-table ns)
+  (let ((direct (find-ns ns)))
+    (if direct
+        direct
+        (let ((aliases (hash-table-ref/default *scm-clj-ns-aliases*
+                                                (current-ns)
+                                                #f)))
+          (if aliases
+              (let ((target (hash-table-ref/default aliases ns #f)))
+                (if target
+                    (find-ns target)
+                    #f))
+              #f)))))
+
 (define (scm-clj-ns-form->symbol form)
   (cond
     ((symbol? form) form)
@@ -72,7 +103,7 @@
     (reverse items)))
 
 (define (ns-publics ns)
-  (let ((table (find-ns ns)))
+  (let ((table (scm-clj-resolve-ns-table ns)))
     (if table
         (let ((m (scm-clj-make-map)))
           (hash-table-for-each
@@ -83,7 +114,7 @@
         (scm-clj-make-map))))
 
 (define (ns-resolve ns sym)
-  (let ((table (find-ns ns)))
+  (let ((table (scm-clj-resolve-ns-table ns)))
     (if table
         (hash-table-ref/default table sym #f)
         #f)))
@@ -91,6 +122,205 @@
 (define (scm-clj-intern! ns sym value)
   (hash-table-set! (scm-clj-ensure-ns! ns) sym value)
   value)
+
+(define (scm-clj-namespace->path ns)
+  (let* ((s (symbol->string ns))
+         (len (string-length s))
+         (p (open-output-string)))
+    (let loop ((i 0))
+      (if (= i len)
+          (get-output-string p)
+          (begin
+            (write-char (if (char=? (string-ref s i) #\.) #\/ (string-ref s i))
+                        p)
+            (loop (+ i 1)))))))
+
+(define (scm-clj-last-path-segment path)
+  (let loop ((i (- (string-length path) 1)))
+    (cond
+      ((< i 0) path)
+      ((char=? (string-ref path i) #\/)
+       (substring path (+ i 1) (string-length path)))
+      (else
+       (loop (- i 1))))))
+
+(define (scm-clj-root-candidates root)
+  (let prefix-loop ((prefixes '("" "src/")) (acc '()))
+    (if (null? prefixes)
+        (reverse acc)
+        (let ((prefix (car prefixes)))
+          (let suffix-loop ((suffixes '(".clj.scm" ".scm" ".clj")) (acc acc))
+            (if (null? suffixes)
+                (prefix-loop (cdr prefixes) acc)
+                (suffix-loop (cdr suffixes)
+                             (cons (string-append prefix root (car suffixes))
+                                   acc))))))))
+
+(define (scm-clj-module-candidates ns)
+  (let* ((path (scm-clj-namespace->path ns))
+         (base (scm-clj-last-path-segment path))
+         (roots (if (string=? path base)
+                    (list path)
+                    (list path base))))
+    (let root-loop ((rs roots) (acc '()))
+      (if (null? rs)
+          (reverse acc)
+          (root-loop (cdr rs)
+                     (append (scm-clj-root-candidates (car rs)) acc))))))
+
+(define (scm-clj-locate-module-file ns)
+  (let loop ((xs (scm-clj-module-candidates ns)))
+    (cond
+      ((null? xs) #f)
+      ((file-exists? (car xs)) (car xs))
+      (else (loop (cdr xs))))))
+
+(define (scm-clj-namespace-loaded? ns)
+  (hash-table-exists? *scm-clj-loaded-namespaces* ns))
+
+(define (scm-clj-namespace-loading? ns)
+  (hash-table-exists? *scm-clj-loading-namespaces* ns))
+
+(define (scm-clj-load-namespace-file! ns path)
+  (let ((saved-ns (current-ns)))
+    (hash-table-set! *scm-clj-loading-namespaces* ns #t)
+    (load path)
+    (hash-table-delete! *scm-clj-loading-namespaces* ns)
+    (scm-clj-set-current-ns! saved-ns)
+    (hash-table-set! *scm-clj-loaded-namespaces* ns path)
+    ns))
+
+(define (scm-clj-require-namespace! ns)
+  (cond
+    ((scm-clj-namespace-loaded? ns) ns)
+    ((scm-clj-namespace-loading? ns)
+     (error "circular require detected" ns))
+    (else
+     (let ((path (scm-clj-locate-module-file ns)))
+       (if path
+           (scm-clj-load-namespace-file! ns path)
+           (error "cannot locate namespace source file" ns))))))
+
+(define (scm-clj-symbol-list-form->list x)
+  (cond
+    ((vector? x) (vector->list x))
+    ((and (pair? x) (eq? (car x) 'vector)) (cdr x))
+    ((pair? x) x)
+    ((symbol? x) (list x))
+    ((string? x) (list (string->symbol x)))
+    (else #f)))
+
+(define (scm-clj-keyword-form-name x)
+  (cond
+    ((keyword? x) (name x))
+    ((and (pair? x)
+          (eq? (car x) 'keyword)
+          (pair? (cdr x))
+          (null? (cddr x))
+          (string? (cadr x)))
+     (cadr x))
+    ((and (pair? x)
+          (eq? (car x) 'quote)
+          (pair? (cdr x))
+          (null? (cddr x))
+          (keyword? (cadr x)))
+     (name (cadr x)))
+    (else #f)))
+
+(define (scm-clj-all-marker? x)
+  (let ((name (scm-clj-keyword-form-name x)))
+    (or (and name (string=? name "all"))
+        (and (symbol? x) (string=? (symbol->string x) "all")))))
+
+(define (scm-clj-refer-selected! target-ns names)
+  (let ((current (current-ns)))
+    (let loop ((xs names))
+      (if (null? xs)
+          current
+          (let ((sym (car xs)))
+            (let ((value (ns-resolve target-ns sym)))
+              (if value
+                  (begin
+                    (scm-clj-intern! current sym value)
+                    (loop (cdr xs)))
+                  (error "cannot refer missing var" target-ns sym))))))))
+
+(define (scm-clj-refer-all! target-ns)
+  (let ((table (find-ns target-ns)))
+    (if table
+        (let ((current (current-ns)))
+          (hash-table-for-each
+           table
+           (lambda (sym value)
+             (scm-clj-intern! current sym value)))
+          current)
+        (error "cannot refer missing namespace" target-ns))))
+
+(define (scm-clj-require-vector-spec! spec)
+  (let ((xs (scm-clj-vector-form->list spec)))
+    (if xs
+        (let ((target (scm-clj-ns-form->symbol (car xs))))
+          (scm-clj-require-namespace! target)
+          (let loop ((rest (cdr xs)) (alias #f) (refs '()) (refer-all? #f))
+            (cond
+              ((null? rest)
+               (if alias
+                   (scm-clj-register-ns-alias! (current-ns) alias target)
+                   #f)
+               (cond
+                 (refer-all? (scm-clj-refer-all! target))
+                 ((null? refs) #f)
+                 (else (scm-clj-refer-selected! target refs)))
+               target)
+              ((let ((kw (scm-clj-keyword-form-name (car rest))))
+                 (and kw (string=? kw "as")))
+               (if (null? (cdr rest))
+                   (error "require :as expects an alias" spec)
+                   (loop (cddr rest)
+                         (scm-clj-ns-form->symbol (cadr rest))
+                         refs
+                         refer-all?)))
+              ((let ((kw (scm-clj-keyword-form-name (car rest))))
+                 (and kw (string=? kw "refer")))
+               (if (null? (cdr rest))
+                   (error "require :refer expects a symbol vector or :all" spec)
+                   (let ((value (cadr rest)))
+                     (cond
+                       ((scm-clj-all-marker? value)
+                        (loop (cddr rest) alias refs #t))
+                       (else
+                        (let ((syms (scm-clj-symbol-list-form->list value)))
+                          (if syms
+                              (loop (cddr rest) alias (append refs syms) refer-all?)
+                              (error "require :refer expects a symbol vector or :all"
+                                     value))))))))
+              (else
+               (error "unsupported require option" (car rest))))))
+        (error "require spec must be a vector" spec))))
+
+(define (scm-clj-require-spec! spec)
+  (cond
+    ((scm-clj-vector-form->list spec) (scm-clj-require-vector-spec! spec))
+    ((symbol? spec) (scm-clj-require-namespace! spec))
+    ((string? spec) (scm-clj-require-namespace! (string->symbol spec)))
+    ((and (pair? spec)
+          (eq? (car spec) 'quote)
+          (pair? (cdr spec))
+          (null? (cddr spec)))
+     (scm-clj-require-spec! (cadr spec)))
+    (else
+     (error "require expects a namespace symbol or vector spec" spec))))
+
+(define (scm-clj-ns-directive->forms directive)
+  (cond
+    ((and (pair? directive)
+          (let ((kw (scm-clj-keyword-form-name (car directive))))
+            (and kw (string=? kw "require"))))
+     (map (lambda (spec)
+            `(scm-clj-require-spec! ',spec))
+          (cdr directive)))
+    (else
+     (error "ns directives are not yet supported" directive))))
 
 (define (scm-clj-collect-hash-pairs table)
   (let ((pairs '()))
@@ -831,20 +1061,34 @@
                   (error "ns expects a namespace name")
                   (##core#let ((name (scm-clj-ns-form->symbol (car parts)))
                                (rest (cdr parts)))
-                    (##core#if (and (pair? rest) (string? (car rest)))
-                               (begin
-                                 (set! rest (cdr rest))
-                                 (##core#if (pair? rest)
-                                            (error "ns directives are not yet supported" rest)
-                                            (begin
-                                              (scm-clj-set-current-ns! name)
-                                              `(scm-clj-set-current-ns! ',name))))
-                               (begin
-                                 (##core#if (pair? rest)
-                                            (error "ns directives are not yet supported" rest)
-                                            (begin
-                                              (scm-clj-set-current-ns! name)
-                                              `(scm-clj-set-current-ns! ',name)))))))))))
+                    (scm-clj-set-current-ns! name)
+                    (let loop ((xs rest) (forms '()) (saw-docstring? #f))
+                      (cond
+                        ((null? xs)
+                         `(begin
+                            (scm-clj-set-current-ns! ',name)
+                            ,@forms))
+                        ((string? (car xs))
+                         (if saw-docstring?
+                             (error "ns docstring must appear at most once" (car xs))
+                             (if (null? forms)
+                                 (loop (cdr xs) forms #t)
+                                 (error "ns docstring must come before directives"
+                                        (car xs)))))
+                        (else
+                         (loop (cdr xs)
+                               (append forms
+                                       (scm-clj-ns-directive->forms (car xs)))
+                               saw-docstring?))))))))))
+
+(define-syntax require
+  (syntax-rules ()
+    ((_ )
+     (begin))
+    ((_ spec ...)
+     (begin
+       (scm-clj-require-spec! 'spec)
+       ...))))
 
 (define-syntax in-ns
   (er-macro-transformer
