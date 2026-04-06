@@ -30,10 +30,16 @@
       (smoke-pass label)
       (smoke-fail label (number->string expected) (number->string actual))))
 
+(define (capture-output thunk)
+  (let [port (open-output-string)]
+    (parameterize ((current-output-port port))
+      (thunk))
+    (get-output-string port)))
+
 (def sample
   (read-string "{:a [1 2] :b #{3}}"))
 
-(defn add2 [x]
+(defn add2 "Add 2 to X." [x]
   (+ x 2))
 
 (assert-str= "keyword printer" ":foo" (pr-str :foo))
@@ -49,6 +55,9 @@
 (assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
 (assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
 (assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
+(assert-str= "doc local defn"
+             "add2\n\nAdd 2 to X.\n"
+             (capture-output (lambda () (doc add2))))
 (assert-true "empty? vector" (empty? []))
 (assert-true "empty? list" (empty? '()))
 (assert-num= "fn vector destructuring" 3 ((fn [[a b]] (+ a b)) [1 2]))
@@ -67,6 +76,9 @@
 (require [cluck.math :as math :refer [square sum-of-squares]])
 (assert-num= "require square" 25 (square 5))
 (assert-num= "require sum-of-squares" 14 (sum-of-squares [1 2 3]))
+(assert-str= "doc imported square"
+             "square\n\nReturn x squared.\n"
+             (capture-output (lambda () (doc square))))
 (let [math-square (ns-resolve 'math 'square)]
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))
 (assert-true "ns current" (equal? (current-ns) 'cluck.smoke))

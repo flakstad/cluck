@@ -30,6 +30,7 @@
 (define *ns* 'user)
 (define *cluck-ns-registry* (make-hash-table))
 (define *cluck-ns-imports* (make-hash-table))
+(define *cluck-docstrings* (make-hash-table))
 (define *cluck-loaded-namespaces* (make-hash-table))
 (define *cluck-loading-namespaces* (make-hash-table))
 (define *cluck-ns-aliases* (make-hash-table))
@@ -73,6 +74,75 @@
   (let ((table (make-hash-table)))
     (hash-table-set! *cluck-ns-aliases* ns table)
     table))
+
+(define (cluck-ensure-doc-table! ns)
+  (let ((existing (hash-table-ref/default *cluck-docstrings* ns #f)))
+    (if existing
+        existing
+        (let ((table (make-hash-table)))
+          (hash-table-set! *cluck-docstrings* ns table)
+          table))))
+
+(define (cluck-put-doc! ns sym doc)
+  (hash-table-set! (cluck-ensure-doc-table! ns) sym doc)
+  doc)
+
+(define (cluck-doc-for ns sym)
+  (let ((table (hash-table-ref/default *cluck-docstrings* ns #f)))
+    (if table
+        (hash-table-ref/default table sym #f)
+        #f)))
+
+(define (cluck-copy-doc! source-ns source-sym target-ns target-sym)
+  (let ((doc (cluck-doc-for source-ns source-sym)))
+    (if doc
+        (cluck-put-doc! target-ns target-sym doc)
+        #f)))
+
+(define (cluck-doc-search ns sym)
+  (let* ((target-sym (cond
+                       ((symbol? sym) sym)
+                       ((string? sym) (string->symbol sym))
+                       (else sym)))
+         (target-ns (and (symbol? target-sym)
+                         (namespace target-sym)))
+         (resolved-ns (and target-ns (string->symbol target-ns)))
+         (resolved-sym (if target-ns
+                           (string->symbol (name target-sym))
+                           target-sym)))
+    (or (and resolved-ns
+             (cluck-doc-for resolved-ns resolved-sym))
+        (cluck-doc-for ns resolved-sym)
+        (let loop ((namespaces (all-ns)))
+          (cond
+            ((null? namespaces) #f)
+            ((eq? (car namespaces) ns)
+             (loop (cdr namespaces)))
+            (else
+             (let ((doc (cluck-doc-for (car namespaces) resolved-sym)))
+               (if doc
+                   doc
+                   (loop (cdr namespaces))))))))))
+
+(define (cluck-show-doc sym)
+  (let ((doc (cluck-doc-search (current-ns) sym))
+        (target (cond
+                  ((symbol? sym) sym)
+                  ((string? sym) (string->symbol sym))
+                  (else sym))))
+    (if doc
+        (begin
+          (display (pr-str target))
+          (newline)
+          (newline)
+          (display doc)
+          (newline)
+          (void))
+        (begin
+          (display "No docstring for ")
+          (display (pr-str target))
+          (newline)
+          (void)))))
 
 (define (cluck-ensure-ns-aliases! ns)
   (let ((existing (hash-table-ref/default *cluck-ns-aliases* ns #f)))
@@ -328,6 +398,7 @@
               (if value
                   (begin
                     (cluck-import! current sym value)
+                    (cluck-copy-doc! target-ns sym current sym)
                     (loop (cdr xs)))
                   (error "cannot refer missing var" target-ns sym))))))))
 
@@ -338,7 +409,8 @@
           (hash-table-for-each
            table
            (lambda (sym value)
-             (cluck-import! current sym value)))
+             (cluck-import! current sym value)
+             (cluck-copy-doc! target-ns sym current sym)))
           current)
         (error "cannot refer missing namespace" target-ns))))
 
@@ -353,9 +425,9 @@
                 (let ((value (ns-resolve target-ns source)))
                   (if value
                       (let ((renamed (cluck-alist-ref-pair source rename)))
-                        (cluck-import! current
-                                       (if renamed (cdr renamed) source)
-                                       value)
+                        (let ((target (if renamed (cdr renamed) source)))
+                          (cluck-import! current target value)
+                          (cluck-copy-doc! target-ns source current target))
                         (loop (cdr xs)))
                       (error "cannot refer missing var" target-ns source)))))))))
 
@@ -1500,6 +1572,11 @@
       body
       (list `(let* ,bindings ,@body))))
 
+(define (cluck-split-docstring parts)
+  (if (and (pair? parts) (string? (car parts)))
+      (cons (car parts) (cdr parts))
+      (cons #f parts)))
+
 (define (cluck-parse-let-bindings bindings)
   (let ((xs (cluck-vector-form->list bindings)))
     (if xs
@@ -1536,10 +1613,23 @@
   (er-macro-transformer
    (lambda (form rename compare)
      (##core#let ((name (cadr form))
-                  (value (caddr form)))
-       `(begin
-          (define ,name ,value)
-          (cluck-intern! (current-ns) ',name ,name))))))
+                  (rest (cddr form)))
+       (##core#if (null? rest)
+                  (error "def expects a value")
+                  (##core#let ((doc-and-rest (cluck-split-docstring rest)))
+                    (##core#let ((doc (car doc-and-rest))
+                                 (value-rest (cdr doc-and-rest)))
+                      (##core#if (null? value-rest)
+                                 (error "def expects a value")
+                                 (##core#let ((value (car value-rest)))
+                                   (if doc
+                                       `(begin
+                                          (define ,name ,value)
+                                          (cluck-intern! (current-ns) ',name ,name)
+                                          (cluck-put-doc! (current-ns) ',name ,doc))
+                                       `(begin
+                                          (define ,name ,value)
+                                          (cluck-intern! (current-ns) ',name ,name))))))))))))
 
 (define-syntax fn
   (er-macro-transformer
@@ -1571,9 +1661,32 @@
    (lambda (form rename compare)
      (##core#let ((name (cadr form))
                   (body (cddr form)))
-       (##core#if (and (pair? body) (string? (car body)))
-           `(def ,name (fn ,@(cdr body)))
-           `(def ,name (fn ,@body)))))))
+       (##core#let ((doc-and-body (cluck-split-docstring body)))
+         (##core#let ((doc (car doc-and-body))
+                      (fn-body (cdr doc-and-body)))
+           (if doc
+               `(def ,name ,doc (fn ,@fn-body))
+               `(def ,name (fn ,@fn-body)))))))))
+
+(define-syntax doc
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (##core#let ((parts (cdr form)))
+       (##core#if (null? parts)
+                  (error "doc expects a symbol")
+                  (##core#let ((target (car parts)))
+                    (cond
+                      ((and (pair? target)
+                            (eq? (car target) 'quote)
+                            (pair? (cdr target))
+                            (null? (cddr target)))
+                       `(cluck-show-doc ',(cadr target)))
+                      ((symbol? target)
+                       `(cluck-show-doc ',target))
+                      ((string? target)
+                       `(cluck-show-doc ,target))
+                      (else
+                       (error "doc expects a symbol" target)))))))))
 
 (define-syntax ns
   (er-macro-transformer

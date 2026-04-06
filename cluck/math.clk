@@ -2,13 +2,13 @@
 
 (ns cluck.math)
 
-(defn square [x]
+(defn square "Return x squared." [x]
   (* x x))
 
-(defn sum-of-squares [xs]
+(defn sum-of-squares "Return the sum of the squares in XS." [xs]
   (reduce + 0 (mapv square xs)))
 
-(defn report [xs]
+(defn report "Return a summary map for XS." [xs]
   {:count (count xs)
    :sum (reduce + 0 xs)
    :sum-of-squares (sum-of-squares xs)})
