@@ -143,7 +143,9 @@ It also includes interactive eval helpers:
 - `C-x C-e` and `C-c C-e` evaluate the sexp before point and show an inline result overlay
 - `C-c C-c` evaluates the current top-level form with an inline result overlay
 - `C-c C-d` shows the docstring for the symbol at point in a dedicated buffer
-- `C-c C-r`, `C-c C-b`, and `C-c C-k` send a region or buffer and show inline results when the REPL returns output
+- inline overlays clear on the next command, so they behave more like transient feedback than permanent annotations
+- `C-c C-r`, `C-c C-b`, `C-c C-k`, and `C-c C-l` report in the echo area for larger evaluations and file loads
+- `M-.` jumps to the definition of the symbol at point, and `M-,` returns to the previous location
 
 It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:
 
@@ -151,6 +153,7 @@ It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Inst
 - start a Cluck REPL with `./build/cluck` or `cluck-repl.scm`
 - send the current form, region, buffer, or file from `cluck-mode`
 - use `C-x C-e` or `C-c C-e` for the previous sexp, `C-c C-c` for the current top-level form, `C-c C-r` for a selected region, `C-c C-b` or `C-c C-k` for the buffer, `C-c C-d` for docstrings, and `C-c C-l` to reload the file
+- use `M-.` to jump to definitions and `M-,` to jump back
 - use `C-c C-z` to switch to the REPL buffer
 
 That keeps the editing experience light and avoids Clojure-specific REPL assumptions that do not fit Cluck yet.

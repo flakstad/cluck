@@ -85,7 +85,7 @@
 
 (define (cluck-put-doc! ns sym doc)
   (hash-table-set! (cluck-ensure-doc-table! ns) sym doc)
-  doc)
+  (void))
 
 (define (cluck-doc-for ns sym)
   (let ((table (hash-table-ref/default *cluck-docstrings* ns #f)))

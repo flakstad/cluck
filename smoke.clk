@@ -55,6 +55,8 @@
 (assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
 (assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
 (assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
+(assert-str= "defn doc output quiet" ""
+             (capture-output (lambda () (defn doc-test "Quiet doc." [x] x))))
 (assert-str= "doc local defn"
              "add2\n\nAdd 2 to X.\n"
              (capture-output (lambda () (doc add2))))
