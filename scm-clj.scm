@@ -100,6 +100,22 @@
        (set! pairs (cons (cons k v) pairs))))
     pairs))
 
+(define (scm-clj-map-items m)
+  (let ((items '()))
+    (hash-table-for-each
+     (map-hash m)
+     (lambda (k v)
+       (set! items (cons (vector k v) items))))
+    items))
+
+(define (scm-clj-set-items s)
+  (let ((items '()))
+    (hash-table-for-each
+     (set-hash s)
+     (lambda (k v)
+       (set! items (cons k items))))
+    items))
+
 (define (scm-clj-sorted-map-pairs m)
   (scm-clj-sort-list
    (scm-clj-collect-hash-pairs (map-hash m))
@@ -149,11 +165,10 @@
     ((null? x) nil)
     ((pair? x) x)
     ((map? x)
-     (let ((items (map scm-clj-map-entry->vector
-                       (scm-clj-sorted-map-pairs x))))
+     (let ((items (scm-clj-map-items x)))
        (if (null? items) nil items)))
     ((set? x)
-     (let ((items (scm-clj-sorted-set-items x)))
+     (let ((items (scm-clj-set-items x)))
        (if (null? items) nil items)))
     ((vector? x)
      (let ((items (vector->list x)))
@@ -531,12 +546,22 @@
 
 (define (keys m)
   (if (map? m)
-      (map car (scm-clj-sorted-map-pairs m))
+      (let ((items '()))
+        (hash-table-for-each
+         (map-hash m)
+         (lambda (k v)
+           (set! items (cons k items))))
+        items)
       '()))
 
 (define (vals m)
   (if (map? m)
-      (map cdr (scm-clj-sorted-map-pairs m))
+      (let ((items '()))
+        (hash-table-for-each
+         (map-hash m)
+         (lambda (k v)
+           (set! items (cons v items))))
+        items)
       '()))
 
 (define (map f coll)
@@ -544,6 +569,39 @@
     (if (scm-clj-empty-seq? xs)
         (reverse acc)
         (loop (cdr xs) (cons (f (car xs)) acc)))))
+
+(define (scm-clj-mapv-vector f vec)
+  (let* ((len (vector-length vec))
+         (out (make-vector len)))
+    (let loop ((i 0))
+      (if (= i len)
+          out
+          (begin
+            (vector-set! out i (f (vector-ref vec i)))
+            (loop (+ i 1)))))))
+
+(define (scm-clj-filterv-vector pred vec)
+  (let ((len (vector-length vec)))
+    (let count-loop ((i 0) (n 0))
+      (if (= i len)
+          (let ((out (make-vector n)))
+            (let fill-loop ((i 0) (j 0))
+              (if (= i len)
+                  out
+                  (let ((item (vector-ref vec i)))
+                    (if (pred item)
+                        (begin
+                          (vector-set! out j item)
+                          (fill-loop (+ i 1) (+ j 1)))
+                        (fill-loop (+ i 1) j))))))
+          (let ((item (vector-ref vec i)))
+            (count-loop (+ i 1)
+                        (if (pred item) (+ n 1) n)))))))
+
+(define (mapv f coll)
+  (cond
+    ((vector? coll) (scm-clj-mapv-vector f coll))
+    (else (list->vector (map f (seq coll))))))
 
 (define (filter pred coll)
   (let loop ((xs (seq coll)) (acc '()))
@@ -553,6 +611,11 @@
           (if (pred item)
               (loop (cdr xs) (cons item acc))
               (loop (cdr xs) acc))))))
+
+(define (filterv pred coll)
+  (cond
+    ((vector? coll) (scm-clj-filterv-vector pred coll))
+    (else (list->vector (filter pred (seq coll))))))
 
 (define (remove pred coll)
   (filter (lambda (x) (if (pred x) #f #t)) coll))
@@ -737,18 +800,33 @@
   (or (and (symbol? x) (string=? (symbol->string x) "else"))
       (and (keyword? x) (string=? (name x) "else"))))
 
-(define (scm-clj-expand-cond clauses)
-  (##core#if (null? clauses)
-             'nil
-             (##core#if (null? (cdr clauses))
-                        (error "cond expects test/expression pairs")
-                        (##core#if (scm-clj-cond-else? (car clauses))
-                                   (##core#if (null? (cddr clauses))
-                                              (cadr clauses)
-                                              (error "cond else clause must be last"))
-                                   `(##core#if (truthy? ,(car clauses))
-                                               ,(cadr clauses)
-                                               ,(scm-clj-expand-cond (cddr clauses)))))))
+(define (scm-clj-inline-truthy-form test then else-part temp)
+  `(##core#let ((,temp ,test))
+     (##core#if (eq? ,temp false)
+                ,else-part
+                (##core#if (eq? ,temp nil)
+                           ,else-part
+                           ,then))))
+
+(define (scm-clj-expand-cond clauses rename)
+  (let loop ((rest clauses))
+    (cond
+      ((null? rest) 'nil)
+      ((null? (cdr rest))
+       (error "cond expects test/expression pairs"))
+      ((scm-clj-cond-else? (car rest))
+       (if (null? (cddr rest))
+           (cadr rest)
+           (error "cond else clause must be last")))
+      (else
+       (let ((tail (loop (cddr rest)))
+             (value (rename 'scm-clj-cond-value)))
+         `(##core#let ((,value ,(car rest)))
+            (##core#if (eq? ,value false)
+                       ,tail
+                       (##core#if (eq? ,value nil)
+                                  ,tail
+                                  ,(cadr rest)))))))))
 
 (define-syntax if
   (er-macro-transformer
@@ -756,33 +834,29 @@
      (##core#let ((test (cadr form))
                   (then (caddr form))
                   (else-part (##core#if (pair? (cdddr form)) (cadddr form) 'nil)))
-       `(##core#if (truthy? ,test) ,then ,else-part)))))
+       (scm-clj-inline-truthy-form test then else-part (rename 'scm-clj-if-value))))))
 
 (define-syntax when
   (syntax-rules ()
     ((_ test body ...)
-     (##core#if (truthy? test)
-                (##core#begin body ...)
-                nil))))
+     (if test (##core#begin body ...) nil))))
 
 (define-syntax when-not
   (syntax-rules ()
     ((_ test body ...)
-     (##core#if (truthy? test)
-                nil
-                (##core#begin body ...)))))
+     (if test nil (##core#begin body ...)))))
 
 (define-syntax if-not
   (syntax-rules ()
     ((_ test then else)
-     (##core#if (truthy? test) else then))
+     (if test else then))
     ((_ test then)
-     (##core#if (truthy? test) nil then))))
+     (if test nil then))))
 
 (define-syntax cond
   (er-macro-transformer
    (lambda (form rename compare)
-     (scm-clj-expand-cond (cdr form)))))
+     (scm-clj-expand-cond (cdr form) rename))))
 
 (define (scm-clj-thread-first-step x step)
   (##core#if (pair? step)

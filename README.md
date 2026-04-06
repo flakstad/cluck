@@ -44,7 +44,7 @@ The current implementation supports:
 - `#{1 2 3}` sets
 - `read-string`
 - `pr-str`, `str`, `println`, and `prn`
-- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `filter`, and `reduce`
+- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, and `reduce`
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace
@@ -55,6 +55,20 @@ Notes:
 - keywords, maps, and sets use custom record types so the host REPL can print them in Clojure-style form
 - the collection layer is mutable for now
 - the namespace layer is intentionally lightweight and registry-based; it is not full Clojure namespace resolution yet
+- `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
+
+## Performance Direction
+
+`scm-clj` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
+
+- `map` and `filter` stay eager and return lists
+- `mapv` and `filterv` are the vector-oriented fast paths
+- `seq` should be a cheap adapter, not a place where we sort or realize expensive views
+- `pr-str` can stay slower and stable because printing is not the hot path
+- control-flow macros should expand directly and avoid runtime helper calls when possible
+- Scheme tail recursion is enough for iterative code, so plain recursive helpers are fine where they stay tail-recursive
+
+The practical goal is to keep the syntax familiar while making the runtime feel closer to direct Scheme than to lazy Clojure.
 
 ## Loading it
 
