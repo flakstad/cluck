@@ -205,6 +205,15 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 `cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
 
+The public namespace layout is meant to mirror Clojure's shape:
+
+- `cluck.core`
+- `cluck.string`
+- `cluck.set`
+- `cluck.edn`
+
+The current source tree is still partly transitional, but that is the target naming convention for user-facing code.
+
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards
 - `in-ns` switches the active namespace
@@ -229,6 +238,17 @@ Namespace source files are located by namespace path, starting with:
 - `src/` is searched as a secondary prefix
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
+
+## Direction
+
+The next phase is about making Cluck prove itself on a real small program, not just adding syntax.
+
+- keep the runtime eager, direct, and mutable-first
+- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.set`, and related modules
+- expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
+- use one real dogfood app to drive the next round of API and namespace decisions
+- prefer a small native CLI or local data tool first; weather/forecast is a good candidate once HTTP support is in place
+- leave more ambitious graphics work, such as SDL3 drawing, for a later phase
 
 ## Module Demo
 
