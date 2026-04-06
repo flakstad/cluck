@@ -138,12 +138,13 @@ That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The
 
 In Emacs, `cluck-mode` is a derived `clojure-mode` variant for indentation, paredit, folding, and syntax coloring.
 
-It is intentionally not wired to CIDER or LSP for Cluck buffers by default. The current workflow is:
+It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:
 
 - edit `.clk` files in `cluck-mode`
-- start `./build/cluck` in a terminal or `vterm`
-- reload files with `(load "path/to/file.clk")`
-- use `-e` or `-l` for one-shot evaluation from the command line
+- start a Cluck REPL with `./build/cluck` or `cluck-repl.scm`
+- send the current form, region, buffer, or file from `cluck-mode`
+- use `C-x C-e` for the previous sexp, `C-c C-c` for the current top-level form, `C-c C-r` for a selected region, `C-c C-b` or `C-c C-k` for the buffer, and `C-c C-l` to reload the file
+- use `C-c C-z` to switch to the REPL buffer
 
 That keeps the editing experience light and avoids Clojure-specific REPL assumptions that do not fit Cluck yet.
 
