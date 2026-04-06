@@ -158,6 +158,12 @@ On this machine, the kept artifacts are about:
 - `build/scm-clj-bench.c`: `7.6K`
 - `build/scm-clj-bench`: `50K`
 
+Important caveat:
+
+- the current native build compiles the `run-bench.scm` wrapper
+- that wrapper still `load-relative`s `scm-clj-init.scm` and `bench.clj.scm` at startup
+- so these timings are a measure of the current hosted language layer and runtime loader path, not yet a fully self-contained AOT image
+
 A 100000-item run on this machine produced:
 
 - interpreted `csi -q -s run-bench.scm 100000`: `13.35s` real, `12.83s` user
