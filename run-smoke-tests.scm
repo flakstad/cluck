@@ -1,4 +1,4 @@
 (import (chicken load))
 
 (load-relative "Cluck-init.scm")
-(load-relative "smoke.clj.scm")
+(load-relative "smoke.clj")

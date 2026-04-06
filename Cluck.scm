@@ -190,7 +190,7 @@
     (if (null? prefixes)
         (reverse acc)
         (let ((prefix (car prefixes)))
-          (let suffix-loop ((suffixes '(".clj.scm" ".scm" ".clj")) (acc acc))
+          (let suffix-loop ((suffixes '(".clj" ".clj.scm" ".scm")) (acc acc))
             (if (null? suffixes)
                 (prefix-loop (cdr prefixes) acc)
                 (suffix-loop (cdr suffixes)

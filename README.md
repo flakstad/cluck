@@ -105,7 +105,7 @@ It starts a REPL by default, but also accepts a few simple flags:
 ```bash
 csi -q -s Cluck-cli.scm
 csi -q -s Cluck-cli.scm -e '(+ 1 2)'
-csi -q -s Cluck-cli.scm -l demo.clj.scm
+csi -q -s Cluck-cli.scm -l demo.clj
 ```
 
 To build a native launcher binary:
@@ -120,7 +120,7 @@ That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The
 
 There is a small demo program in:
 
-- [`demo.clj.scm`](./demo.clj.scm)
+- [`demo.clj`](./demo.clj)
 
 It is loaded by:
 
@@ -144,7 +144,7 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 There is also a small smoke-test harness in:
 
-- [`smoke.clj.scm`](./smoke.clj.scm)
+- [`smoke.clj`](./smoke.clj)
 
 It is loaded by:
 
@@ -181,8 +181,8 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 Namespace source files are located by namespace path, starting with:
 
-- `foo.bar` -> `foo/bar.clj.scm`
-- fallback lookups also check `foo/bar.scm`, `foo/bar.clj`, and root-level `bar.*`
+- `foo.bar` -> `foo/bar.clj`
+- fallback lookups also check `foo/bar.clj.scm`, `foo/bar.scm`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
@@ -191,8 +191,8 @@ This is enough to structure source files, inspect exports, and load small module
 
 There is a small require/ns demo in:
 
-- [`Cluck/math.clj.scm`](./Cluck/math.clj.scm)
-- [`Cluck/app.clj.scm`](./Cluck/app.clj.scm)
+- [`Cluck/math.clj`](./Cluck/math.clj)
+- [`Cluck/app.clj`](./Cluck/app.clj)
 
 It is loaded by:
 
@@ -210,7 +210,7 @@ The smoke tests also load `Cluck.math` through `require` to verify namespace res
 
 There is now a trivial CLI benchmark in:
 
-- [`bench.clj.scm`](./bench.clj.scm)
+- [`bench.clj`](./bench.clj)
 
 It is loaded by:
 
@@ -237,7 +237,7 @@ On this machine, the kept artifacts are about:
 Important caveat:
 
 - the current native build compiles the `run-bench.scm` wrapper
-- that wrapper still `load-relative`s `Cluck-init.scm` and `bench.clj.scm` at startup
+- that wrapper still `load-relative`s `Cluck-init.scm` and `bench.clj` at startup
 - so these timings are a measure of the current hosted language layer and runtime loader path, not yet a fully self-contained AOT image
 
 A 100000-item run on this machine produced:
@@ -251,7 +251,7 @@ The workload is allocation-heavy, so the native binary is not dramatically faste
 
 There is also a smaller benchmark focused on the collection primitives we care about most in the language layer:
 
-- [`collections-bench.clj.scm`](./collections-bench.clj.scm)
+- [`collections-bench.clj`](./collections-bench.clj)
 - [`run-collections-bench.scm`](./run-collections-bench.scm)
 
 This suite compares:
