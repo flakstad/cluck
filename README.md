@@ -56,7 +56,7 @@ Notes:
 - vectors are still ordinary CHICKEN vectors, so the host REPL prints them as `#(...)`
 - keywords, maps, and sets use custom record types so the host REPL can print them in Clojure-style form
 - the collection layer is mutable for now
-- the namespace layer is intentionally lightweight and registry-based; it is not full Clojure namespace resolution yet
+- the namespace layer is intentionally lightweight and uses separate public/import tables; it is not full Clojure namespace resolution yet
 - `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
 
 ## Performance Direction
@@ -134,7 +134,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 ## Namespaces
 
-`Cluck` now has a small namespace registry so you can start organizing code by namespace instead of one flat global soup.
+`Cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards
@@ -145,11 +145,13 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 - `ns-publics` returns a map of public vars in a namespace
 - `ns-resolve` looks up a var by namespace and symbol
 
-`ns` supports a small subset of `:require` directives:
+`ns` supports a focused subset of `:require` directives:
 
-- `[foo.bar :refer [x y]]` copies selected public vars into the current namespace registry
-- `[foo.bar :refer :all]` copies all public vars into the current namespace registry
+- `[foo.bar :refer [x y]]` imports selected public vars into the current namespace
+- `[foo.bar :refer :all]` imports all public vars into the current namespace
 - `[foo.bar :as fb]` registers an alias that `ns-resolve` can use
+- `[foo.bar :exclude [x y]]` skips selected vars when using `:refer :all`
+- `(:refer-clojure :exclude [...])` excludes selected core vars from the default core import set
 
 Namespace source files are located by namespace path, starting with:
 
@@ -157,7 +159,7 @@ Namespace source files are located by namespace path, starting with:
 - fallback lookups also check `foo/bar.scm`, `foo/bar.clj`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
 
-This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style symbol qualification is still future work.
+This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
 
 ## Module Demo
 

@@ -67,6 +67,32 @@
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))
 (assert-true "ns current" (equal? (current-ns) 'Cluck.smoke))
 (assert-num= "ns publics" 123 (get (ns-publics (current-ns)) 'smoke-ns-value))
+(ns Cluck.smoke.ns-options
+  (:require [Cluck.math :refer :all :exclude [square]]))
+
+(define (ns-smoke-pass label)
+  (println "ok" label)
+  #t)
+
+(define (ns-assert-true label value)
+  (if value
+      (ns-smoke-pass label)
+      (error (string-append "smoke test failed: "
+                            label
+                            " expected truthy value"))))
+
+(define (ns-assert-num= label expected actual)
+  (if (= expected actual)
+      (ns-smoke-pass label)
+      (error (string-append "smoke test failed: "
+                            label
+                            " expected "
+                            (number->string expected)
+                            " got "
+                            (number->string actual)))))
+
+(ns-assert-num= "require exclude sum-of-squares" 14 (sum-of-squares [1 2 3]))
+(ns-assert-true "require exclude missing" (not (ns-resolve (current-ns) 'square)))
 (in-ns 'user)
 
 (println "smoke tests passed")
