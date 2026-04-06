@@ -1,6 +1,8 @@
 # Cluck
 
-`Cluck` is an experimental Clojure-flavored language layer on top of CHICKEN Scheme.
+`Cluck` is a Clojure-flavored language layer for CHICKEN Scheme.
+
+It is experimental and focused on small native tools, a REPL-driven workflow, and a practical core library.
 
 The goal is not to reimplement Clojure on the JVM. The goal is to get the parts of the Clojure experience that matter most for small native tools:
 
