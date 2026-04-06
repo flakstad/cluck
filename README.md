@@ -92,6 +92,28 @@ For a standalone terminal REPL:
 
 That file intentionally drops into the `Cluck` REPL, so it will appear to keep running until you exit the nested prompt.
 
+For a more convenient command-line entrypoint, use the launcher source:
+
+```scheme
+(load "Cluck-cli.scm")
+```
+
+It starts a REPL by default, but also accepts a few simple flags:
+
+```bash
+csi -q -s Cluck-cli.scm
+csi -q -s Cluck-cli.scm -e '(+ 1 2)'
+csi -q -s Cluck-cli.scm -l demo.clj.scm
+```
+
+To build a native launcher binary:
+
+```bash
+csc -k -v -O2 -strip -o build/cluck Cluck-cli.scm
+```
+
+That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the Cluck source files at startup, so it is a convenient distribution front-end rather than a fully embedded image.
+
 ## Demo program
 
 There is a small demo program in:
@@ -309,4 +331,4 @@ The main takeaways are:
 
  - Load `Cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
-- The codebase is still early and intentionally narrow. The next likely steps are namespace polish, a cleaner launcher, and packaging.
+- The codebase is still early and intentionally narrow. The next likely steps are namespace polish and deeper packaging work.

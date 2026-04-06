@@ -1752,7 +1752,7 @@
 (define (Cluck-repl-evaluator expr)
   (call-with-values
    (lambda ()
-     (default-evaluator expr))
+     (eval expr (interaction-environment)))
    Cluck-repl-print-results))
 
 (define (Cluck-repl)
