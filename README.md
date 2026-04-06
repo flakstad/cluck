@@ -45,6 +45,7 @@ The current implementation supports:
 - `read-string`
 - `pr-str`, `str`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, and `reduce`
+- `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
 - Clojure-style special forms and threading macros
@@ -290,4 +291,4 @@ The main takeaways are:
 
  - Load `Cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
-- The codebase is still early and intentionally narrow. The next likely steps are namespace support, destructuring, and eventually immutable collections.
+- The codebase is still early and intentionally narrow. The next likely steps are namespace polish, broader eager collection coverage, and packaging.

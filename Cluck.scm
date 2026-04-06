@@ -968,37 +968,300 @@
     ((and (pair? x) (eq? (car x) 'vector)) (cdr x))
     (else #f)))
 
+(define (Cluck-seq-drop x n)
+  (let loop ((i 0) (xs (seq x)))
+    (if (or (Cluck-empty-seq? xs) (>= i n))
+        xs
+        (loop (+ i 1) (cdr xs)))))
+
+(define (Cluck-map-form->pairs x)
+  (cond
+    ((map? x)
+     (let ((pairs '()))
+       (hash-table-for-each
+        (map-hash x)
+        (lambda (k v)
+          (set! pairs (cons (cons k v) pairs))))
+       (reverse pairs)))
+    ((and (pair? x) (eq? (car x) 'hash-map))
+     (let loop ((xs (cdr x)) (acc '()))
+       (cond
+         ((null? xs) (reverse acc))
+         ((null? (cdr xs))
+          (error "map destructuring form must contain an even number of forms" x))
+         (else
+          (loop (cddr xs) (cons (cons (car xs) (cadr xs)) acc))))))
+    (else #f)))
+
+(define (Cluck-alist-ref-pair key alist)
+  (let loop ((xs alist))
+    (cond
+      ((null? xs) #f)
+      ((eq? (caar xs) key) (car xs))
+      (else (loop (cdr xs))))))
+
+(define (Cluck-destructure-key-expr key)
+  (let ((kw (Cluck-keyword-form-name key)))
+    (cond
+      (kw `(keyword ,kw))
+      ((and (pair? key)
+            (eq? (car key) 'quote)
+            (pair? (cdr key))
+            (null? (cddr key))
+            (symbol? (cadr key)))
+       key)
+      ((symbol? key) `(quote ,key))
+      ((string? key) key)
+      (else key))))
+
+(define (Cluck-destructure-defaults-alist defaults)
+  (let ((pairs (Cluck-map-form->pairs defaults)))
+    (if pairs
+        (let loop ((xs pairs) (acc '()))
+          (if (null? xs)
+              (reverse acc)
+              (let* ((pair (car xs))
+                     (key (car pair))
+                     (sym (cond
+                            ((symbol? key) key)
+                            ((Cluck-keyword-form-name key)
+                             => string->symbol)
+                            ((and (pair? key)
+                                  (eq? (car key) 'quote)
+                                  (pair? (cdr key))
+                                  (null? (cddr key))
+                                  (symbol? (cadr key)))
+                             (cadr key))
+                            (else
+                             (error ":or keys must be symbols" key)))))
+                (loop (cdr xs) (cons (cons sym (cdr pair)) acc)))))
+        (error ":or expects a map" defaults))))
+
+(define (Cluck-destructure-symbol-binding sym source defaults)
+  (let ((default (Cluck-alist-ref-pair sym defaults)))
+    (if default
+        (let ((tmp (gensym "destruct")))
+          (list (list sym
+                      `(let ((,tmp ,source))
+                         (if (nil? ,tmp) ,(cdr default) ,tmp)))))
+        (list (list sym source)))))
+
+(define (Cluck-bindings-from-symbol-list syms key-expr-fn defaults)
+  (let loop ((xs syms) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((sym (car xs)))
+          (loop (cdr xs)
+                (cons (Cluck-destructure-symbol-binding sym (key-expr-fn sym) defaults)
+                      acc))))))
+
+(define (Cluck-destructure-vector-pattern form source defaults)
+  (let ((items (Cluck-vector-form->list form)))
+    (if items
+        (let ((tmp (gensym "vec")))
+          (let loop ((rest items)
+                     (idx 0)
+                     (groups (list (list (list tmp source))))
+                     (rest-binding #f)
+                     (as-binding #f)
+                     (seen-rest? #f))
+            (cond
+              ((null? rest)
+               (let ((body-bindings (apply append (reverse groups))))
+                 (append body-bindings
+                         (if as-binding
+                             (list (list as-binding tmp))
+                             '())
+                         (if rest-binding
+                             (list (list rest-binding `(Cluck-seq-drop ,tmp ,idx)))
+                             '()))))
+              (seen-rest?
+               (let ((kw (Cluck-keyword-form-name (car rest))))
+                 (cond
+                   ((and kw (string=? kw "as"))
+                    (if as-binding
+                        (error "duplicate :as in vector destructuring" form)
+                        (if (null? (cdr rest))
+                            (error ":as expects a symbol" form)
+                            (let ((sym (Cluck-ns-form->symbol (cadr rest))))
+                              (loop (cddr rest) idx groups rest-binding sym seen-rest?)))))
+                   (else
+                    (error "only :as may follow & in vector destructuring" form)))))
+              (else
+               (let* ((item (car rest))
+                      (kw (Cluck-keyword-form-name item)))
+                 (cond
+                   ((and kw (string=? kw "as"))
+                    (if as-binding
+                        (error "duplicate :as in vector destructuring" form)
+                        (if (null? (cdr rest))
+                            (error ":as expects a symbol" form)
+                            (let ((sym (Cluck-ns-form->symbol (cadr rest))))
+                              (loop (cddr rest) idx groups rest-binding sym seen-rest?)))))
+                   ((eq? item '&)
+                    (if rest-binding
+                        (error "duplicate & in vector destructuring" form)
+                        (if (null? (cdr rest))
+                            (error "& expects a symbol" form)
+                            (let ((sym (Cluck-ns-form->symbol (cadr rest))))
+                              (loop (cddr rest) idx groups sym as-binding #t)))))
+                   (else
+                    (loop (cdr rest)
+                          (+ idx 1)
+                          (cons (Cluck-destructure-binding item `(nth ,tmp ,idx) defaults)
+                                groups)
+                          rest-binding as-binding seen-rest?))))))))
+        (error "vector destructuring pattern must be a vector" form))))
+
+(define (Cluck-destructure-map-pattern form source defaults)
+  (let ((pairs (Cluck-map-form->pairs form)))
+    (if pairs
+        (let ((tmp (gensym "map")))
+          (let loop ((rest pairs)
+                     (as-binding #f)
+                     (defaults defaults)
+                     (specs '()))
+            (if (null? rest)
+                (let ((spec-bindings
+                       (apply append
+                              (map (lambda (spec)
+                                     (Cluck-destructure-binding (car spec)
+                                                                (cdr spec)
+                                                                defaults))
+                                   specs))))
+                  (append (list (list tmp source))
+                          spec-bindings
+                          (if as-binding
+                              (list (list as-binding tmp))
+                              '())))
+                (let* ((pair (car rest))
+                       (key (car pair))
+                       (value (cdr pair))
+                       (kw (Cluck-keyword-form-name key)))
+                  (cond
+                    ((and kw (string=? kw "as"))
+                     (if as-binding
+                         (error "duplicate :as in map destructuring" form)
+                         (let ((sym (Cluck-ns-form->symbol value)))
+                           (loop (cdr rest) sym defaults specs))))
+                    ((and kw (string=? kw "or"))
+                     (let ((extra (Cluck-destructure-defaults-alist value)))
+                       (loop (cdr rest) as-binding (append extra defaults) specs)))
+                    ((and kw (string=? kw "keys"))
+                     (let ((syms (Cluck-symbol-list-form->list value)))
+                       (if syms
+                           (loop (cdr rest)
+                                 as-binding
+                                 defaults
+                                 (append specs
+                                         (map (lambda (sym)
+                                                (cons sym `(get ,tmp (keyword ,(name sym)) nil)))
+                                              syms)))
+                           (error ":keys expects a vector or list of symbols" value))))
+                    ((and kw (string=? kw "strs"))
+                     (let ((syms (Cluck-symbol-list-form->list value)))
+                       (if syms
+                           (loop (cdr rest)
+                                 as-binding
+                                 defaults
+                                 (append specs
+                                         (map (lambda (sym)
+                                                (cons sym `(get ,tmp ,(name sym) nil)))
+                                              syms)))
+                           (error ":strs expects a vector or list of symbols" value))))
+                    ((and kw (string=? kw "syms"))
+                     (let ((syms (Cluck-symbol-list-form->list value)))
+                       (if syms
+                           (loop (cdr rest)
+                                 as-binding
+                                 defaults
+                                 (append specs
+                                         (map (lambda (sym)
+                                                (cons sym `(get ,tmp (quote ,sym) nil)))
+                                              syms)))
+                           (error ":syms expects a vector or list of symbols" value))))
+                    (else
+                     (loop (cdr rest)
+                           as-binding
+                           defaults
+                           (append specs
+                                   (list (cons value
+                                               `(get ,tmp ,(Cluck-destructure-key-expr key) nil)))))))))))
+        (error "map destructuring pattern must be a map" form))))
+
+(define (Cluck-destructure-binding pattern source defaults)
+  (let ((vector-items (Cluck-vector-form->list pattern))
+        (map-pairs (Cluck-map-form->pairs pattern)))
+    (cond
+      ((symbol? pattern)
+       (Cluck-destructure-symbol-binding pattern source defaults))
+      (vector-items
+       (Cluck-destructure-vector-pattern pattern source defaults))
+      (map-pairs
+       (Cluck-destructure-map-pattern pattern source defaults))
+      (else
+       (error "unsupported destructuring pattern" pattern)))))
+
+(define (Cluck-parse-fn-arg pattern)
+  (if (symbol? pattern)
+      (cons pattern '())
+      (let ((tmp (gensym "arg")))
+        (cons tmp (Cluck-destructure-binding pattern tmp '())))))
+
+(define (Cluck-build-dotted-args fixed tail)
+  (let build ((rev fixed))
+    (if (null? rev)
+        tail
+        (cons (car rev) (build (cdr rev))))))
+
 (define (Cluck-parse-fn-args args)
   (let ((xs (Cluck-vector-form->list args)))
     (if xs
-        (let loop ((rest xs) (fixed '()))
+        (let loop ((rest xs) (params '()) (bindings '()) (tail #f))
           (cond
-            ((null? rest) (reverse fixed))
+            ((null? rest)
+             (cons (if tail
+                       (Cluck-build-dotted-args (reverse params) tail)
+                       (reverse params))
+                   bindings))
             ((eq? (car rest) '&)
-             (if (null? (cddr rest))
-                 (let ((tail (cadr rest)))
-                   (let build ((rev fixed) (tail tail))
-                     (if (null? rev)
-                         tail
-                         (build (cdr rev) (cons (car rev) tail)))))
-                 (error "variadic fn/vector must end with & rest")))
+             (if tail
+                 (error "fn vector can contain only one &" args)
+                 (if (null? (cdr rest))
+                     (error "variadic fn/vector must end with & rest")
+                     (let ((tail-name (cadr rest)))
+                       (if (symbol? tail-name)
+                           (loop (cddr rest) params bindings tail-name)
+                           (error "variadic fn/vector rest must be a symbol" tail-name))))))
             (else
-             (loop (cdr rest) (cons (car rest) fixed)))))
+             (let* ((parsed (Cluck-parse-fn-arg (car rest)))
+                    (param (car parsed))
+                    (more-bindings (cdr parsed)))
+               (loop (cdr rest)
+                     (cons param params)
+                     (append bindings more-bindings)
+                     tail)))))
         (error "fn expects an argument vector or arity clauses"))))
+
+(define (Cluck-wrap-body bindings body)
+  (if (null? bindings)
+      body
+      (list `(let* ,bindings ,@body))))
 
 (define (Cluck-parse-let-bindings bindings)
   (let ((xs (Cluck-vector-form->list bindings)))
     (if xs
         (let loop ((rest xs) (acc '()))
           (cond
-            ((null? rest) (reverse acc))
+            ((null? rest) acc)
             ((eq? (car rest) '&)
              (error "let bindings do not support &"))
             ((null? (cdr rest))
              (error "let bindings must contain an even number of forms"))
             (else
              (loop (cddr rest)
-                   (cons (list (car rest) (cadr rest)) acc)))))
+                   (append acc
+                           (Cluck-destructure-binding (car rest) (cadr rest) '()))))))
         (error "let bindings must be a vector"))))
 
 (define (Cluck-fn-clauses clauses)
@@ -1009,11 +1272,13 @@
           (let ((args (and (pair? clause)
                            (Cluck-vector-form->list (car clause)))))
             (if args
-              (loop (cdr xs)
-                    (cons (list (Cluck-parse-fn-args (car clause))
-                                (cdr clause))
-                          acc))
-              (error "fn arity clauses must start with an argument vector")))))))
+                (let* ((parsed (Cluck-parse-fn-args (car clause)))
+                       (params (car parsed))
+                       (bindings (cdr parsed)))
+                  (loop (cdr xs)
+                        (cons (cons params (Cluck-wrap-body bindings (cdr clause)))
+                              acc)))
+                (error "fn arity clauses must start with an argument vector")))))))
 
 (define-syntax def
   (er-macro-transformer
@@ -1032,14 +1297,19 @@
          ((null? parts)
           (error "fn expects an argument vector or arity clauses"))
          ((Cluck-vector-form->list (car parts))
-          `(lambda ,(Cluck-parse-fn-args (car parts))
-             ,@(cdr parts)))
+          (let* ((parsed (Cluck-parse-fn-args (car parts)))
+                 (params (car parsed))
+                 (bindings (cdr parsed)))
+            `(lambda ,params
+               ,@(Cluck-wrap-body bindings (cdr parts)))))
          ((and (pair? (car parts))
                (Cluck-vector-form->list (caar parts)))
           `(case-lambda
              ,@(map (lambda (clause)
-                      (list (Cluck-parse-fn-args (car clause))
-                            (cdr clause)))
+                      (let* ((parsed (Cluck-parse-fn-args (car clause)))
+                             (params (car parsed))
+                             (bindings (cdr parsed)))
+                        (cons params (Cluck-wrap-body bindings (cdr clause)))))
                     parts)))
          (else
           (error "fn expects an argument vector or arity clauses")))))))
