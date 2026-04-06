@@ -202,6 +202,38 @@ csi -q -s run-smoke-tests.scm
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
 
+## Weather CLI
+
+The first real dogfood app is a small weather/forecast CLI in:
+
+- [`cluck/weather.clk`](./cluck/weather.clk)
+
+It uses CHICKEN eggs for the parts Cluck should not own itself:
+
+- `http-client` for fetching weather data
+- `json` for parsing the response
+
+Install the eggs once in your CHICKEN environment:
+
+```bash
+chicken-install http-client json
+```
+
+Run the weather CLI from source with:
+
+```bash
+csi -q -s run-weather.scm Oslo
+csi -q -s run-weather.scm "San Francisco"
+```
+
+Or build a native binary:
+
+```bash
+csc -k -v -O2 -strip -o build/cluck-weather run-weather.scm
+```
+
+The weather app is intentionally small, but it is important because it proves the current Cluck shape works for a real networked tool.
+
 ## Namespaces
 
 `cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.

@@ -99,6 +99,14 @@
 (assert-true "set superset?" (superset? #{1 2 3} #{1 2}))
 (require [cluck.edn :refer [read-string]])
 (assert-str= "edn read-string" "{:a 1}" (pr-str (read-string "{:a 1}")))
+(require [cluck.weather :as weather :refer [main]])
+(assert-true "weather namespace exists" (find-ns 'cluck.weather))
+(assert-str= "doc weather main"
+             "weather/main\n\nFetch and print a weather forecast for LOCATION.\n"
+             (capture-output (lambda () (doc weather/main))))
+(assert-str= "weather usage"
+             "Usage: cluck-weather <location>\nExample: cluck-weather Oslo\n"
+             (capture-output (lambda () (main '()))))
 (assert-str= "doc core namespace map"
              "cluck.core/map\n\nApply F to each element of COLL and return a list of the results.\n"
              (capture-output (lambda () (doc cluck.core/map))))
