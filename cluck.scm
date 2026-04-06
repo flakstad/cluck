@@ -93,6 +93,15 @@
         (hash-table-ref/default table sym #f)
         #f)))
 
+(define *cluck-core-docstrings* (make-hash-table))
+
+(define (cluck-put-core-doc! sym doc)
+  (hash-table-set! *cluck-core-docstrings* sym doc)
+  (void))
+
+(define (cluck-core-doc-for sym)
+  (hash-table-ref/default *cluck-core-docstrings* sym #f))
+
 (define (cluck-copy-doc! source-ns source-sym target-ns target-sym)
   (let ((doc (cluck-doc-for source-ns source-sym)))
     (if doc
@@ -106,13 +115,15 @@
                        (else sym)))
          (target-ns (and (symbol? target-sym)
                          (namespace target-sym)))
-         (resolved-ns (and target-ns (string->symbol target-ns)))
+         (resolved-ns (and target-ns
+                           (cluck-resolved-ns-name (string->symbol target-ns))))
          (resolved-sym (if target-ns
                            (string->symbol (name target-sym))
                            target-sym)))
     (or (and resolved-ns
              (cluck-doc-for resolved-ns resolved-sym))
         (cluck-doc-for ns resolved-sym)
+        (cluck-core-doc-for resolved-sym)
         (let loop ((namespaces (all-ns)))
           (cond
             ((null? namespaces) #f)
@@ -1284,6 +1295,76 @@
    (cons 'dec dec)
    (cons 'not not)))
 
+(define (cluck-core-doc-specs)
+  (list
+   (cons 'current-ns "Return the active namespace symbol.")
+   (cons 'find-ns "Return the namespace registry table for NS, or #f.")
+   (cons 'all-ns "Return a list of known namespace symbols.")
+   (cons 'ns-publics "Return a map of public vars in NS.")
+   (cons 'ns-resolve "Resolve SYM in NS, checking public vars and imports.")
+   (cons 'read-string "Read one Cluck form from STRING.")
+   (cons 'pr-str "Render values as Cluck-readable text.")
+   (cons 'str "Concatenate values as plain text.")
+   (cons 'println "Print values with spaces and a trailing newline.")
+   (cons 'prn "Print values with Cluck-readable rendering and a trailing newline.")
+   (cons 'keyword "Create a keyword from a string or symbol.")
+   (cons 'nil? "Return true when x is nil.")
+   (cons 'false? "Return true when x is false.")
+   (cons 'vector? "Return true when x is a vector.")
+   (cons 'map? "Return true when x is a Cluck map.")
+   (cons 'set? "Return true when x is a Cluck set.")
+   (cons 'keyword? "Return true when x is a keyword.")
+   (cons 'assoc "Associate KEY with VALUE in MAP or VECTOR.")
+   (cons 'dissoc "Remove KEY from MAP.")
+   (cons 'conj "Add one item to a collection.")
+   (cons 'get "Look up KEY in MAP, SET, VECTOR, or sequence-backed collection.")
+   (cons 'contains? "Return true when MAP, SET, or VECTOR contains KEY.")
+   (cons 'count "Return the number of items in COLL.")
+   (cons 'seq "Return a simple sequence view of COLL.")
+   (cons 'first "Return the first item in COLL.")
+   (cons 'rest "Return the rest of COLL after the first item.")
+   (cons 'nth "Return the item at index N in COLL.")
+   (cons 'map "Apply F to each element of COLL and return a list of the results.")
+   (cons 'mapv "Apply F to each element of COLL and return a vector.")
+   (cons 'filter "Return the items of COLL for which PRED is truthy.")
+   (cons 'filterv "Return the matching items of COLL in a vector.")
+   (cons 'map-indexed "Apply F to each item in COLL with its index.")
+   (cons 'reduce "Reduce COLL with F, optionally starting from INIT.")
+   (cons 'some "Return the first truthy result of applying PRED to COLL.")
+   (cons 'every? "Return true when PRED is truthy for every item in COLL.")
+   (cons 'empty? "Return true when COLL has no items.")
+   (cons 'keep "Apply F to COLL and keep the non-nil results.")
+   (cons 'into "Add all items from FROM into TO.")
+   (cons 'identity "Return x unchanged.")
+   (cons 'inc "Add 1 to x.")
+   (cons 'dec "Subtract 1 from x.")
+   (cons 'not "Return the boolean negation of x.")
+   (cons 'def "Define a var and intern it into the current namespace.")
+   (cons 'defn "Define a named function and intern it into the current namespace.")
+   (cons 'fn "Create an anonymous function.")
+   (cons 'let "Bind names, vectors, or maps and evaluate the body.")
+   (cons 'if "Evaluate THEN or ELSE based on Cluck truthiness.")
+   (cons 'when "Evaluate BODY when TEST is truthy.")
+   (cons 'when-not "Evaluate BODY when TEST is falsey.")
+   (cons 'if-not "Evaluate ELSE when TEST is truthy, THEN otherwise.")
+   (cons 'cond "Evaluate the first clause whose test is truthy.")
+   (cons '-> "Thread x through forms as the second argument.")
+   (cons '->> "Thread x through forms as the last argument.")
+   (cons 'ns "Set the current namespace and optionally require dependencies.")
+   (cons 'require "Load namespace files and import public vars.")
+   (cons 'in-ns "Switch to a namespace without loading or importing.")
+   (cons 'doc "Print the docstring for a symbol.")))
+
+(define (cluck-install-core-docstrings!)
+  (let loop ((xs (cluck-core-doc-specs)))
+    (if (null? xs)
+        (void)
+        (begin
+          (cluck-put-core-doc! (caar xs) (cdar xs))
+          (loop (cdr xs))))))
+
+(cluck-install-core-docstrings!)
+
 (define (cluck-vector-form->list x)
   (cond
     ((vector? x) (vector->list x))
@@ -1577,6 +1658,18 @@
       (cons (car parts) (cdr parts))
       (cons #f parts)))
 
+(define (cluck-def-expansion name value doc)
+  (if doc
+      `(begin
+         (define ,name ,value)
+         (cluck-intern! (current-ns) ',name ,name)
+         (cluck-put-doc! (current-ns) ',name ,doc)
+         ,name)
+      `(begin
+         (define ,name ,value)
+         (cluck-intern! (current-ns) ',name ,name)
+         ,name)))
+
 (define (cluck-parse-let-bindings bindings)
   (let ((xs (cluck-vector-form->list bindings)))
     (if xs
@@ -1622,14 +1715,7 @@
                       (##core#if (null? value-rest)
                                  (error "def expects a value")
                                  (##core#let ((value (car value-rest)))
-                                   (if doc
-                                       `(begin
-                                          (define ,name ,value)
-                                          (cluck-intern! (current-ns) ',name ,name)
-                                          (cluck-put-doc! (current-ns) ',name ,doc))
-                                       `(begin
-                                          (define ,name ,value)
-                                          (cluck-intern! (current-ns) ',name ,name))))))))))))
+                                   (cluck-def-expansion name value doc))))))))))
 
 (define-syntax fn
   (er-macro-transformer

@@ -52,7 +52,8 @@ The current implementation supports:
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
 - Clojure-style special forms and threading macros
-- `def` and `defn` intern into the active namespace and support docstrings via `doc`
+- `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
+- core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
 
 Notes:
 

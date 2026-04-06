@@ -36,6 +36,12 @@
       (thunk))
     (get-output-string port)))
 
+(define (string-prefix? prefix s)
+  (let [plen (string-length prefix)
+        slen (string-length s)]
+    (and (<= plen slen)
+         (string=? prefix (substring s 0 plen)))))
+
 (def sample
   (read-string "{:a [1 2] :b #{3}}"))
 
@@ -55,11 +61,22 @@
 (assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
 (assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
 (assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
-(assert-str= "defn doc output quiet" ""
-             (capture-output (lambda () (defn doc-test "Quiet doc." [x] x))))
+(assert-true "defn doc output shows procedure"
+             (string-prefix? "#<procedure"
+                              (capture-output
+                               (lambda ()
+                                 (begin
+                                   (defn doc-test "Quiet doc." [x] x)
+                                   (cluck-repl-print-results doc-test))))))
 (assert-str= "doc local defn"
              "add2\n\nAdd 2 to X.\n"
              (capture-output (lambda () (doc add2))))
+(assert-str= "doc core map"
+             "map\n\nApply F to each element of COLL and return a list of the results.\n"
+             (capture-output (lambda () (doc map))))
+(assert-str= "doc core get"
+             "get\n\nLook up KEY in MAP, SET, VECTOR, or sequence-backed collection.\n"
+             (capture-output (lambda () (doc get))))
 (assert-true "empty? vector" (empty? []))
 (assert-true "empty? list" (empty? '()))
 (assert-num= "fn vector destructuring" 3 ((fn [[a b]] (+ a b)) [1 2]))
@@ -81,6 +98,9 @@
 (assert-str= "doc imported square"
              "square\n\nReturn x squared.\n"
              (capture-output (lambda () (doc square))))
+(assert-str= "doc alias square"
+             "math/square\n\nReturn x squared.\n"
+             (capture-output (lambda () (doc math/square))))
 (let [math-square (ns-resolve 'math 'square)]
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))
 (assert-true "ns current" (equal? (current-ns) 'cluck.smoke))
