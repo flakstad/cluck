@@ -1,7 +1,7 @@
 (import (chicken load)
         (chicken process-context))
 
-(load-relative "Cluck-init.scm")
-(load-relative "bench.clj")
+(load-relative "cluck-init.scm")
+(load-relative "bench.clk")
 
 (bench-main (command-line-arguments))

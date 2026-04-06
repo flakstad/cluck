@@ -1,4 +1,4 @@
 (import (chicken load))
 
 (load-relative "cluck-init.scm")
-(load-relative "demo.clk")
+(cluck-repl)

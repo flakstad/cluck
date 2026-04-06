@@ -1,6 +1,6 @@
-# Cluck
+# cluck
 
-`Cluck` is a Clojure-flavored language layer for CHICKEN Scheme.
+`cluck` is a Clojure-flavored language layer for CHICKEN Scheme.
 
 It is experimental and focused on small native tools, a REPL-driven workflow, and a practical core library.
 
@@ -24,7 +24,7 @@ CHICKEN is a good fit for this project because it sits in a useful middle ground
 
 That makes it a strong host for an exploratory Lisp layer that wants to feel lighter than Clojure JVM, but still behave like a proper Lisp at the terminal.
 
-## What `Cluck` is trying to do
+## What `cluck` is trying to do
 
 The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 
@@ -33,6 +33,7 @@ The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 - common sequence helpers like `seq`, `first`, `rest`, `count`, `map`, `filter`, and `reduce`
 - mutable maps and sets for now, with immutable collections deferred until later
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
+- `.clk` is the preferred source extension for cluck code; `.scm` stays for Scheme glue and bootstrap files
 
 This is intentionally a language layer, not just a normal library.
 
@@ -61,9 +62,26 @@ Notes:
 - the namespace layer is intentionally lightweight and uses separate public/import tables; it is not full Clojure namespace resolution yet
 - `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
 
+## Scheme Interop
+
+`.clk` files are still Scheme source files with cluck syntax layered on top. You can use ordinary Scheme forms, procedures, and host interop freely alongside cluck forms.
+
+The main caveat is that cluck repurposes a few core binding and threading forms, so the surface is not identical to raw Scheme:
+
+- `let`
+- `fn`
+- `defn`
+- `if`
+- `cond`
+- `when`
+- `->`
+- `->>`
+
+If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` helper or drop to the core forms such as `##core#let`.
+
 ## Performance Direction
 
-`Cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
+`cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
 
 - `map` and `filter` stay eager and return lists
 - `keep` and `map-indexed` are eager too, with vector-specialized fast paths
@@ -81,7 +99,7 @@ The practical goal is to keep the syntax familiar while making the runtime feel 
 From the repository root, in Geiser or any other REPL where you want to return to the host prompt:
 
 ```scheme
-(load "Cluck-init.scm")
+(load "cluck-init.scm")
 ```
 
 That loads the language layer and installs the reader syntax, but does not start a nested REPL.
@@ -89,38 +107,38 @@ That loads the language layer and installs the reader syntax, but does not start
 For a standalone terminal REPL:
 
 ```scheme
-(load "Cluck-repl.scm")
+(load "cluck-repl.scm")
 ```
 
-That file intentionally drops into the `Cluck` REPL, so it will appear to keep running until you exit the nested prompt.
+That file intentionally drops into the `cluck` REPL, so it will appear to keep running until you exit the nested prompt.
 
 For a more convenient command-line entrypoint, use the launcher source:
 
 ```scheme
-(load "Cluck-cli.scm")
+(load "cluck-cli.scm")
 ```
 
 It starts a REPL by default, but also accepts a few simple flags:
 
 ```bash
-csi -q -s Cluck-cli.scm
-csi -q -s Cluck-cli.scm -e '(+ 1 2)'
-csi -q -s Cluck-cli.scm -l demo.clj
+csi -q -s cluck-cli.scm
+csi -q -s cluck-cli.scm -e '(+ 1 2)'
+csi -q -s cluck-cli.scm -l demo.clk
 ```
 
 To build a native launcher binary:
 
 ```bash
-csc -k -v -O2 -strip -o build/cluck Cluck-cli.scm
+csc -k -v -O2 -strip -o build/cluck cluck-cli.scm
 ```
 
-That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the Cluck source files at startup, so it is a convenient distribution front-end rather than a fully embedded image.
+That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the cluck source files at startup, so it is a convenient distribution front-end rather than a fully embedded image.
 
 ## Demo program
 
 There is a small demo program in:
 
-- [`demo.clj`](./demo.clj)
+- [`demo.clk`](./demo.clk)
 
 It is loaded by:
 
@@ -144,7 +162,7 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 There is also a small smoke-test harness in:
 
-- [`smoke.clj`](./smoke.clj)
+- [`smoke.clk`](./smoke.clk)
 
 It is loaded by:
 
@@ -160,7 +178,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 ## Namespaces
 
-`Cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
+`cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards
@@ -181,7 +199,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 Namespace source files are located by namespace path, starting with:
 
-- `foo.bar` -> `foo/bar.clj`
+- `foo.bar` -> `foo/bar.clk`
 - fallback lookups also check `foo/bar.clj.scm`, `foo/bar.scm`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
 
@@ -191,8 +209,8 @@ This is enough to structure source files, inspect exports, and load small module
 
 There is a small require/ns demo in:
 
-- [`Cluck/math.clj`](./Cluck/math.clj)
-- [`Cluck/app.clj`](./Cluck/app.clj)
+- [`cluck/math.clk`](./cluck/math.clk)
+- [`cluck/app.clk`](./cluck/app.clk)
 
 It is loaded by:
 
@@ -204,46 +222,46 @@ Run it with:
 csi -q -s run-require-demo.scm
 ```
 
-The smoke tests also load `Cluck.math` through `require` to verify namespace restoration and alias lookup.
+The smoke tests also load `cluck.math` through `require` to verify namespace restoration and alias lookup.
 
 ## Native Build
 
 There is now a trivial CLI benchmark in:
 
-- [`bench.clj`](./bench.clj)
+- [`bench.clk`](./bench.clk)
 
 It is loaded by:
 
 - [`run-bench.scm`](./run-bench.scm)
 
-The benchmark builds a synthetic backlog, filters it, and prints a summary using the `Cluck` runtime and namespace support.
+The benchmark builds a synthetic backlog, filters it, and prints a summary using the `cluck` runtime and namespace support.
 
 Build the translated C and native binary with:
 
 ```bash
-csc -k -v -O2 -strip -o build/Cluck-bench run-bench.scm
+csc -k -v -O2 -strip -o build/cluck-bench run-bench.scm
 ```
 
 That leaves:
 
-- `build/Cluck-bench.c`
-- `build/Cluck-bench`
+- `build/cluck-bench.c`
+- `build/cluck-bench`
 
 On this machine, the kept artifacts are about:
 
-- `build/Cluck-bench.c`: `7.6K`
-- `build/Cluck-bench`: `50K`
+- `build/cluck-bench.c`: `7.6K`
+- `build/cluck-bench`: `50K`
 
 Important caveat:
 
 - the current native build compiles the `run-bench.scm` wrapper
-- that wrapper still `load-relative`s `Cluck-init.scm` and `bench.clj` at startup
+- that wrapper still `load-relative`s `cluck-init.scm` and `bench.clk` at startup
 - so these timings are a measure of the current hosted language layer and runtime loader path, not yet a fully self-contained AOT image
 
 A 100000-item run on this machine produced:
 
 - interpreted `csi -q -s run-bench.scm 100000`: `13.35s` real, `12.83s` user
-- native `./build/Cluck-bench 100000`: `13.53s` real, `12.82s` user
+- native `./build/cluck-bench 100000`: `13.53s` real, `12.82s` user
 
 The workload is allocation-heavy, so the native binary is not dramatically faster yet. The useful result here is that we have a small native artifact and a clear baseline for future runtime work.
 
@@ -251,7 +269,7 @@ The workload is allocation-heavy, so the native binary is not dramatically faste
 
 There is also a smaller benchmark focused on the collection primitives we care about most in the language layer:
 
-- [`collections-bench.clj`](./collections-bench.clj)
+- [`collections-bench.clk`](./collections-bench.clk)
 - [`run-collections-bench.scm`](./run-collections-bench.scm)
 
 This suite compares:
@@ -275,7 +293,7 @@ csi -q -s run-collections-bench.scm 5000 100
 Or build a native binary:
 
 ```bash
-csc -k -v -O2 -strip -o build/Cluck-collections-bench run-collections-bench.scm
+csc -k -v -O2 -strip -o build/cluck-collections-bench run-collections-bench.scm
 ```
 
 The benchmark prints per-case timings using CHICKEN's process timer, while external `time -l` is still the best way to inspect wall-clock, CPU, and memory behavior from the shell on macOS.
@@ -283,9 +301,9 @@ The benchmark prints per-case timings using CHICKEN's process timer, while exter
 On this machine with `5000` items and `100` rounds:
 
 - interpreted `csi -q -s run-collections-bench.scm 5000 100`: `3.53s` real, `3.49s` user, about `45MB` RSS
-- native `./build/Cluck-collections-bench 5000 100`: `3.58s` real, `3.54s` user, about `49MB` RSS
-- `build/Cluck-collections-bench.c`: `7.2K`
-- `build/Cluck-collections-bench`: `50K`
+- native `./build/cluck-collections-bench 5000 100`: `3.58s` real, `3.54s` user, about `49MB` RSS
+- `build/cluck-collections-bench.c`: `7.2K`
+- `build/cluck-collections-bench`: `50K`
 
 Per-case timings from the benchmark run:
 
@@ -331,6 +349,6 @@ The main takeaways are:
 
 ## Development notes
 
- - Load `Cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
+- Load `cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
 - The codebase is still early and intentionally narrow. The next likely steps are namespace polish and deeper packaging work.

@@ -1,9 +1,9 @@
-;; Collections benchmark for Cluck.
+;; Collections benchmark for cluck.
 ;; Measures eager collection helpers on list and vector inputs.
 
 (import (chicken time))
 
-(ns Cluck.collections-bench)
+(ns cluck.collections-bench)
 
 (def default-count 5000)
 (def default-rounds 100)
@@ -117,7 +117,7 @@
 
 (defn collections-bench-main-with [n rounds]
   (let [data (make-data n)]
-    (println "Cluck collections benchmark")
+    (println "cluck collections benchmark")
     (println "Namespace:" (current-ns))
     (println "Items:" n)
     (println "Rounds:" rounds)

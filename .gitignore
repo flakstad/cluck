@@ -1,2 +1,4 @@
 build/
 /.worktrees/
+.clj-kondo/
+.lsp/
