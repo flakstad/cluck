@@ -1,0 +1,54 @@
+;; Smoke tests for scm-clj.
+;; Load this after scm-clj-init.scm or via run-smoke-tests.scm.
+
+(ns scm-clj.smoke)
+
+(define (smoke-pass label)
+  (println "ok" label)
+  #t)
+
+(define (smoke-fail label expected actual)
+  (error (string-append "smoke test failed: "
+                        label
+                        " expected "
+                        expected
+                        " got "
+                        actual)))
+
+(define (assert-true label value)
+  (if value
+      (smoke-pass label)
+      (smoke-fail label "truthy value" (pr-str value))))
+
+(define (assert-str= label expected actual)
+  (if (string=? expected actual)
+      (smoke-pass label)
+      (smoke-fail label expected actual)))
+
+(define (assert-num= label expected actual)
+  (if (= expected actual)
+      (smoke-pass label)
+      (smoke-fail label (number->string expected) (number->string actual))))
+
+(def sample
+  (read-string "{:a [1 2] :b #{3}}"))
+
+(defn add2 [x]
+  (+ x 2))
+
+(assert-str= "keyword printer" ":foo" (pr-str :foo))
+(assert-str= "vector printer" "[1 2 3]" (pr-str [1 2 3]))
+(assert-str= "map printer" "{:a [1 2] :b #{3}}" (pr-str sample))
+(assert-num= "defn" 5 (add2 3))
+(assert-num= "let" 3 (let [x 1 y 2] (+ x y)))
+(assert-num= "assoc/get" 2 (-> {:a 1} (assoc :b 2) (get :b)))
+(assert-str= "thread-last map" "(2 3 4)" (pr-str (->> [1 2 3] (map inc))))
+(assert-num= "cond" 2 (cond false 1 :else 2))
+(assert-true "contains?" (contains? (get sample :b) 3))
+
+(def smoke-ns-value 123)
+(assert-true "ns current" (equal? (current-ns) 'scm-clj.smoke))
+(assert-num= "ns publics" 123 (get (ns-publics (current-ns)) 'smoke-ns-value))
+(in-ns 'user)
+
+(println "smoke tests passed")
