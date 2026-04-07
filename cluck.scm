@@ -355,14 +355,28 @@
                   (cdr *cluck-module-search-roots*))))
         (thunk))))
 
+(define (cluck-with-directory dir thunk)
+  (let ((saved (current-directory)))
+    (if dir
+        (dynamic-wind
+          (lambda ()
+            (change-directory dir))
+          thunk
+          (lambda ()
+            (change-directory saved)))
+        (thunk))))
+
 (define (cluck-load-source-file! path)
   (let* ((absolute (cluck-absolute-path path))
          (root (cluck-find-project-root absolute)))
     (cluck-with-module-search-root
      root
      (lambda ()
-       (load absolute)
-       (void)))))
+       (cluck-with-directory
+        root
+        (lambda ()
+          (load absolute)
+          (void)))))))
 
 (define (cluck-locate-module-file ns)
   (let ((candidates (cluck-module-candidates ns)))

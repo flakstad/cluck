@@ -1,0 +1,13 @@
+;; Minimal starter app for Cluck.
+;;
+;; Copy this template and rename the namespace and files as needed.
+
+(ns app.main
+  (:require [cluck.string :as str]))
+
+(defn main
+  "Print a tiny report for the supplied command-line arguments."
+  [args]
+  (println "Cluck template app")
+  (println "Args:" (if (empty? args) "(none)" (str/join ", " args)))
+  nil)

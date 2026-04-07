@@ -268,12 +268,30 @@ The reusable bootstrap pattern for Cluck projects lives in
 [`cluck-bootstrap.scm`](./cluck-bootstrap.scm). It is intentionally generic:
 
 - it discovers the project root from the executable location
-- it loads `cluck-init.scm`
+- it loads `cluck.scm`
 - it loads a project source file with `load-file`
 
 For a new project, copy that helper and point it at your own entrypoint file.
 That gives you a clean Scheme-side bootstrap without mixing app logic into the
 launcher.
+
+## Project Template
+
+A small copyable starter lives in [`template/`](./template/).
+
+- `template/bootstrap.scm` is the reusable bootstrap helper for a new project
+- `template/run.scm` loads the Cluck runtime and the starter app
+- `template/src/app/main.clk` is a minimal Cluck entrypoint
+
+For a new project, either:
+
+- set `CLUCK_HOME` to a local Cluck checkout, or
+- copy the Cluck repo into `vendor/cluck/` under the new project
+
+Then run or compile `template/run.scm` as the entrypoint. The bootstrap keeps
+the Cluck runtime root on the module search path while loading your app, so
+`cluck.*` namespaces resolve even when Cluck is vendored instead of installed
+as an egg.
 
 ## Namespaces
 

@@ -1,4 +1,6 @@
 build/
+!template/build/
+!template/build/.gitkeep
 /.worktrees/
 .clj-kondo/
 .lsp/
