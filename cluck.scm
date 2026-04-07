@@ -1709,6 +1709,7 @@
    (cons 'let "Bind names, vectors, or maps and evaluate the body.")
    (cons 'and "Evaluate forms left to right and return the last truthy value, or the first falsey value.")
    (cons 'or "Evaluate forms left to right and return the first truthy value, or false.")
+   (cons 'comment "Ignore body forms and return the unspecified value.")
    (cons 'if "Evaluate THEN or ELSE based on Cluck truthiness.")
    (cons 'when "Evaluate BODY when TEST is truthy.")
    (cons 'when-not "Evaluate BODY when TEST is falsey.")
@@ -2269,6 +2270,11 @@
   (er-macro-transformer
    (lambda (form rename compare)
      (cluck-expand-or (cdr form) rename))))
+
+(define-syntax comment
+  (er-macro-transformer
+   (lambda (form rename compare)
+     '(void))))
 
 (define (cluck-expand-cond clauses rename)
   (let loop ((rest clauses))

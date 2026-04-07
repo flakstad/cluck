@@ -14,6 +14,7 @@ The goal is not to reimplement Clojure on the JVM. The goal is to get the parts 
 
 - EDN-like reader syntax
 - Clojure-style data literals
+- `comment` and `#_` for scratchpad-friendly source editing
 - a REPL-driven workflow
 - a small, practical core library
 - native deployment through CHICKEN's C toolchain
@@ -358,6 +359,7 @@ The public namespace layout mirrors Clojure's shape:
 
 - `cluck.core`
 - `cluck.string`
+- `cluck.fs`
 - `cluck.set`
 - `cluck.edn`
 

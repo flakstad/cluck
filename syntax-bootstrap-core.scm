@@ -458,3 +458,7 @@
                   (hash-table-set! (set-hash s) (car xs) #t)
                   (loop (cdr xs))))))
         (cons 'set (map cluck-source-form items)))))
+
+(define (read-discard port)
+  (read port)
+  (values))

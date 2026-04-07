@@ -1,0 +1,180 @@
+;; Filesystem and path helpers for Cluck.
+
+(ns cluck.fs
+  "Filesystem and path helpers for Cluck."
+  (:require [cluck.string :as str]))
+
+(import (prefix (chicken file posix) posix:))
+
+(define (cluck-fs-trim-trailing-slash path)
+  (let* ((text (str path))
+         (len (string-length text)))
+    (cond
+      (= len 0) text
+      (and (> len 1)
+           (char=? (string-ref text (- len 1)) #\/))
+      (substring text 0 (- len 1))
+      :else text)))
+
+(define (cluck-fs-trim-leading-slash path)
+  (let* ((text (str path))
+         (len (string-length text)))
+    (if (and (> len 0)
+             (char=? (string-ref text 0) #\/))
+        (substring text 1 len)
+        text)))
+
+(define (cluck-fs-last-index s needle)
+  (##core#let loop ((i (- (string-length s) 1)))
+    (cond
+      (< i 0) #f
+      (char=? (string-ref s i) needle) i
+      :else (loop (- i 1)))))
+
+(define (cluck-fs-join-two left right)
+  (let* ((lhs (cluck-fs-trim-trailing-slash (str left)))
+         (rhs (cluck-fs-trim-leading-slash (str right))))
+    (cond
+      (string=? lhs "") rhs
+      (string=? rhs "") lhs
+      (string=? lhs "/") (string-append "/" rhs)
+      :else (string-append lhs "/" rhs))))
+
+(defn path
+  "Join path segments using filesystem separators."
+  [& parts]
+  (##core#let loop ((xs parts) (out #f))
+    (cond
+      (cluck-empty-seq? xs) (if out out "")
+      (not out) (loop (cdr xs) (cluck-fs-trim-trailing-slash (car xs)))
+      :else (loop (cdr xs)
+                  (cluck-fs-join-two out (car xs))))))
+
+(defn absolute?
+  "Return true when PATH is absolute."
+  [path]
+  (let [text (str path)]
+    (and (not (string=? text ""))
+         (char=? (string-ref text 0) #\/))))
+
+(defn absolute-path
+  "Return PATH as an absolute path relative to the current directory."
+  [path]
+  (let [text (str path)]
+    (if (absolute? text)
+        text
+        (path (current-directory) text))))
+
+(defn dirname
+  "Return the directory portion of PATH."
+  [path]
+  (let* ((text (str path))
+         (idx (cluck-fs-last-index text #\/)))
+    (cond
+      (not idx) ""
+      (= idx 0) "/"
+      :else (substring text 0 (+ idx 1)))))
+
+(defn basename
+  "Return the final path segment of PATH."
+  [path]
+  (let* ((text (str path))
+         (idx (cluck-fs-last-index text #\/)))
+    (if idx
+        (substring text (+ idx 1) (string-length text))
+        text)))
+
+(defn extension
+  "Return the file extension of PATH without the leading dot."
+  [path]
+  (let* ((base (basename path))
+         (idx (cluck-fs-last-index base #\.))
+         (len (string-length base)))
+    (if (and idx (> idx 0) (< idx (- len 1)))
+        (substring base (+ idx 1) len)
+        "")))
+
+(define (cluck-fs-ensure-string path)
+  (str path))
+
+(define (cluck-fs-port->string port)
+  (##core#let loop ((chars '()))
+    (let [ch (read-char port)]
+      (if (eof-object? ch)
+          (list->string (reverse chars))
+          (loop (cons ch chars))))))
+
+(defn cwd
+  "Return the current working directory."
+  []
+  (current-directory))
+
+(defn home
+  "Return the user's home directory, or an empty string when unavailable."
+  []
+  (or (get-environment-variable "HOME") ""))
+
+(defn temp-dir
+  "Return a temporary directory path."
+  []
+  (or (get-environment-variable "TMPDIR") "/tmp/"))
+
+(defn exists?
+  "Return true when PATH exists."
+  [path]
+  (file-exists? (cluck-fs-ensure-string path)))
+
+(define (cluck-fs-directory-exists? path)
+  (let [text (cluck-fs-ensure-string path)]
+    (and (file-exists? text)
+         (posix:directory? text))))
+
+(defn directory?
+  "Return true when PATH is an existing directory."
+  [path]
+  (cluck-fs-directory-exists? path))
+
+(defn file?
+  "Return true when PATH is an existing non-directory path."
+  [path]
+  (let [text (cluck-fs-ensure-string path)]
+    (and (file-exists? text)
+         (not (cluck-fs-directory-exists? text)))))
+
+(defn slurp
+  "Read PATH into a string."
+  [path]
+  (call-with-input-file (cluck-fs-ensure-string path)
+    cluck-fs-port->string))
+
+(defn spit
+  "Write TEXT to PATH and return PATH."
+  [path text]
+  (let [name (cluck-fs-ensure-string path)]
+    (call-with-output-file name
+      (lambda (port)
+        (display (str text) port)))
+    name))
+
+(defn read-lines
+  "Read PATH and return a list of lines."
+  [path]
+  (str/split-lines (slurp path)))
+
+(defn write-lines
+  "Write LINES to PATH, one per line, and return PATH."
+  [path lines]
+  (spit path
+        (if (cluck-empty-seq? lines)
+            ""
+            (string-append (str/join "\n" lines) "\n"))))
+
+(defn delete!
+  "Delete PATH when it exists and return true when something was removed."
+  [path]
+  (let [name (cluck-fs-ensure-string path)]
+    (if (file-exists? name)
+        (begin
+          (delete-file* name)
+          true)
+        false)))
