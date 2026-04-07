@@ -365,9 +365,11 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.process`
 - `cluck.set`
 - `cluck.edn`
-- basic type conversions like `string->number` and `number->string`
+- basic type conversions like `parse-long` and `parse-double`
 
 These namespaces are the intended public surface for user-facing code. The older `cluck.math` and `cluck.app` files remain as sample/demo namespaces.
+
+Numeric values use CHICKEN's Scheme numeric tower underneath, which means Cluck can lean on the host for exact integers, rationals, and inexact reals. The user-facing helpers should still stay Clojure-shaped, so text parsing goes through `parse-long` / `parse-double`, while rendering uses `str` or `pr-str`.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards

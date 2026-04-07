@@ -12,9 +12,9 @@
   (error (string-append "smoke test failed: "
                         label
                         " expected "
-                        expected
+                        (str expected)
                         " got "
-                        actual)))
+                        (str actual))))
 
 (define (assert-true label value)
   (if value
@@ -29,7 +29,7 @@
 (define (assert-num= label expected actual)
   (if (= expected actual)
       (smoke-pass label)
-      (smoke-fail label (number->string expected) (number->string actual))))
+      (smoke-fail label (str expected) (str actual))))
 
 (define (capture-output thunk)
   (let [port (open-output-string)]
@@ -56,8 +56,8 @@
              (capture-output (lambda () (println "hello" "world"))))
 (assert-str= "println nil" "nil\n"
              (capture-output (lambda () (println nil))))
-(assert-num= "string->number" 42 (string->number "42"))
-(assert-str= "number->string" "42" (number->string 42))
+(assert-num= "parse-long" 42 (parse-long "42"))
+(assert-num= "parse-double" 42.5 (parse-double "42.5"))
 (assert-true "unspecified?" (unspecified? (void)))
 (assert-num= "and" 3 (and true 3))
 (assert-str= "and false" "false" (pr-str (and true false 3)))
@@ -227,9 +227,9 @@
       (error (string-append "smoke test failed: "
                             label
                             " expected "
-                            (number->string expected)
+                            (str expected)
                             " got "
-                            (number->string actual)))))
+                            (str actual)))))
 
 (ns-assert-num= "require exclude sum-of-squares" 14 (sum-of-squares [1 2 3]))
 (ns-assert-true "require exclude missing" (not (ns-resolve (current-ns) 'square)))

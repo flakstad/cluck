@@ -7,9 +7,7 @@
 
 (defn parse-count-from [raw]
   (if raw
-      (if (string->number raw)
-          (string->number raw)
-          default-count)
+      (parse-long raw)
       default-count))
 
 (defn parse-count [args]

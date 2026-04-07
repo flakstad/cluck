@@ -976,6 +976,24 @@
 (define (cluck-core-read-string s)
   (cluck-read-one s))
 
+(define (cluck-parse-long s)
+  (let ((n (string->number (str s))))
+    (if (and n (integer? n) (exact? n))
+        n
+        (error "Invalid long" s))))
+
+(define (cluck-parse-double s)
+  (let ((n (string->number (str s))))
+    (if (and n (real? n))
+        (exact->inexact n)
+        (error "Invalid double" s))))
+
+(define (parse-long s)
+  (cluck-parse-long s))
+
+(define (parse-double s)
+  (cluck-parse-double s))
+
 (define (count x)
   (cond
     ((nil? x) 0)
@@ -1582,8 +1600,8 @@
    (cons 'ns-publics ns-publics)
    (cons 'ns-resolve ns-resolve)
    (cons 'read-string cluck-core-read-string)
-   (cons 'string->number string->number)
-   (cons 'number->string number->string)
+   (cons 'parse-long parse-long)
+   (cons 'parse-double parse-double)
    (cons 'load-file load-file)
    (cons 'pr-str pr-str)
    (cons 'str str)
@@ -1649,8 +1667,8 @@
    (cons 'ns-publics "Return a map of public vars in NS.")
    (cons 'ns-resolve "Resolve SYM in NS, checking public vars and imports.")
    (cons 'read-string "Read one Cluck form from STRING.")
-   (cons 'string->number "Parse STRING as a number.")
-   (cons 'number->string "Render NUMBER as text.")
+   (cons 'parse-long "Parse STRING as a long integer.")
+   (cons 'parse-double "Parse STRING as an inexact number.")
    (cons 'load-file "Load FILE and resolve nested Cluck namespaces relative to its project root.")
    (cons 'pr-str "Render values as Cluck-readable text.")
    (cons 'str "Concatenate values as plain text.")

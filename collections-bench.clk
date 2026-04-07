@@ -11,8 +11,7 @@
 
 (defn parse-int-or-default [raw default]
   (if raw
-      (let [n (string->number raw)]
-        (if n n default))
+      (parse-long raw)
       default))
 
 (defn parse-count [args]
