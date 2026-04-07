@@ -19,24 +19,24 @@
 (defn json-entry-value [entry]
   (rest entry))
 
-(defn json-vector->cluck [x]
-  (if (every? json-entry? (seq x))
-    (reduce
-      (fn [result entry]
-        (assoc result
-               (keyword (first entry))
-               (weather-json->cluck (json-entry-value entry))))
-      (hash-map)
-      (seq x))
-    (mapv weather-json->cluck x)))
-
 (defn weather-json->cluck [x]
-  (cond
-    (unspecified? x) nil
-    (string? x) x
-    (vector? x) (if (empty? x) [] (json-vector->cluck x))
-    (seq x) (mapv weather-json->cluck x)
-    :else x))
+  (letrec ((json-vector->cluck
+            (fn [x]
+              (if (every? json-entry? (seq x))
+                (reduce
+                  (fn [result entry]
+                    (assoc result
+                           (keyword (first entry))
+                           (weather-json->cluck (json-entry-value entry))))
+                  (hash-map)
+                  (seq x))
+                (mapv weather-json->cluck x)))))
+    (cond
+      (unspecified? x) nil
+      (string? x) x
+      (vector? x) (if (empty? x) [] (json-vector->cluck x))
+      (seq x) (mapv weather-json->cluck x)
+      :else x)))
 
 (defn map-text [x]
   (or
