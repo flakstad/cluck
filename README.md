@@ -53,6 +53,7 @@ The current implementation supports:
 - `{:a 1 :b 2}` maps
 - `#{1 2 3}` sets
 - keywords can be used as lookup functions, e.g. `(:a {:a 1})`
+- `type` for runtime type hints and `vec` for turning collections into vectors
 - `cluck.edn/read-string`
 - `cluck.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
@@ -178,8 +179,9 @@ It also includes interactive eval helpers:
 - popup result buffers preserve multiline output and wrap long lines instead of truncating them
 - `C-c C-d` shows the docstring for the symbol at point in a dedicated buffer
 - inline overlays clear on the next command, so they behave more like transient feedback than permanent annotations
-- `C-c C-r`, `C-c C-b`, `C-c C-k`, and `C-c C-l` report in the echo area for larger evaluations and file loads
-- `C-c C-l` uses the path-aware `load-file` helper so nested `ns :require` lookups resolve relative to the loaded file
+- `C-c C-r` reports in the echo area for a selected region
+- `C-c C-b` and `C-c C-k` evaluate the whole buffer through a temporary file so syntax errors are caught on repeated runs
+- `C-c C-l` reloads the current file from disk using the path-aware `load-file` helper so nested `ns :require` lookups resolve relative to the loaded file
 - `M-.` jumps to the definition of the symbol at point, and `M-,` returns to the previous location
 
 It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:
@@ -400,7 +402,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.process`
 - `cluck.set`
 - `cluck.edn`
-- basic type conversions like `parse-long` and `parse-double`
+- basic type helpers like `parse-long`, `parse-double`, `type`, and `vec`
 - `format` for `%s`, `%d`, `%%`, and `%.Nf` string interpolation
 
 These namespaces are the intended public surface for user-facing code. The older `cluck.math` and `cluck.app` files remain as sample/demo namespaces.

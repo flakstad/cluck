@@ -1730,6 +1730,7 @@
 
 (define (cluck-into-vector to from)
   (cond
+    ((cluck-empty-seq? from) to)
     ((vector? from)
      (cluck-vector-append-vector to from))
     ((or (null? from) (pair? from))
@@ -1751,6 +1752,40 @@
 
 (define (unspecified? x)
   (eq? x (void)))
+
+(define (cluck-type-name x)
+  (cond
+    ((nil? x) 'nil)
+    ((boolean? x) 'boolean)
+    ((keyword? x) 'keyword)
+    ((symbol? x) 'symbol)
+    ((string? x) 'string)
+    ((char? x) 'char)
+    ((number? x)
+     (cond
+       ((exact-integer? x) 'integer)
+       ((integer? x) 'integer)
+       ((rational? x) 'rational)
+       ((real? x) 'real)
+       (else 'number)))
+    ((vector? x) 'vector)
+    ((pair? x) 'list)
+    ((null? x) 'list)
+    ((map? x) 'cluck.map)
+    ((set? x) 'cluck.set)
+    ((procedure? x) 'procedure)
+    ((port? x) 'port)
+    ((eof-object? x) 'eof-object)
+    ((unspecified? x) 'void)
+    (else 'unknown)))
+
+(define (type x)
+  (cluck-type-name x))
+
+(define (vec coll)
+  (if (vector? coll)
+      coll
+      (into [] coll)))
 
 (define (load-file path)
   (cluck-load-source-file! path))
@@ -1812,6 +1847,8 @@
    (cons 'keep keep)
    (cons 'remove remove)
    (cons 'into into)
+   (cons 'type type)
+   (cons 'vec vec)
    (cons 'select-keys select-keys)
    (cons 'zipmap zipmap)
    (cons 'apply apply)
@@ -1890,6 +1927,8 @@
    (cons 'dec "Subtract 1 from x.")
    (cons 'not "Return the boolean negation of x.")
    (cons 'unspecified? "Return true when x is CHICKEN's unspecified value.")
+   (cons 'type "Return a symbol describing the runtime type of x.")
+   (cons 'vec "Return a vector containing the items of COLL.")
    (cons 'def "Define a var and intern it into the current namespace.")
    (cons 'defn "Define a named function and intern it into the current namespace.")
    (cons 'fn "Create an anonymous function.")
