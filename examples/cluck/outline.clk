@@ -12,8 +12,8 @@
   [chars n]
   (if (and (seq chars)
            (char=? (first chars) #\#))
-      (count-leading-hashes (rest chars) (+ n 1))
-      n))
+    (count-leading-hashes (rest chars) (+ n 1))
+    n))
 
 (defn heading-level
   "Return the Markdown heading level for TEXT."
@@ -27,8 +27,8 @@
         level (heading-level trimmed)
         len (count trimmed)]
     (if (>= level len)
-        ""
-        (str/triml (substring trimmed level len)))))
+      ""
+      (str/triml (substring trimmed level len)))))
 
 (defn outline-entry
   "Return a heading entry map for LINE-NO and LINE, or nil when LINE is not a heading."
@@ -36,10 +36,10 @@
   (let [trimmed (str/triml line)
         level (heading-level trimmed)]
     (if (> level 0)
-        {:line line-no
-         :level level
-         :title (heading-title trimmed)}
-        nil)))
+      {:line line-no
+       :level level
+       :title (heading-title trimmed)}
+      nil)))
 
 (defn outline-entries
   "Return a vector of heading entries for TEXT."
@@ -57,15 +57,15 @@
     (println "Source:" (fs/basename source-name))
     (println "Headings:" (count entries))
     (if (empty? entries)
-        (println "(none)")
-        (reduce (fn [n entry]
-                  (println (format "%d:%d %s"
-                                   (get entry :line)
-                                   (get entry :level)
-                                   (get entry :title)))
-                  (+ n 1))
-                0
-                entries))
+      (println "(none)")
+      (reduce (fn [n entry]
+                (println (format "%d:%d %s"
+                                 (get entry :line)
+                                 (get entry :level)
+                                 (get entry :title)))
+                (+ n 1))
+              0
+              entries))
     entries))
 
 (defn main

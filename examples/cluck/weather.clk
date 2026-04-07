@@ -12,21 +12,22 @@
 
 (defn json-entry? [x]
   (if (seq x)
-      (string? (first x))
-      false))
+    (string? (first x))
+    false))
 
 (defn json-entry-value [entry]
   (rest entry))
 
 (defn json-vector->cluck [x]
   (if (every? json-entry? (seq x))
-      (reduce (fn [result entry]
-                (assoc result
-                       (keyword (first entry))
-                       (weather-json->cluck (json-entry-value entry))))
-              (hash-map)
-              (seq x))
-      (mapv weather-json->cluck x)))
+    (reduce
+      (fn [result entry]
+        (assoc result
+               (keyword (first entry))
+               (weather-json->cluck (json-entry-value entry))))
+      (hash-map)
+      (seq x))
+    (mapv weather-json->cluck x)))
 
 (defn weather-json->cluck [x]
   (cond
@@ -36,33 +37,26 @@
     (seq x) (mapv weather-json->cluck x)
     :else x))
 
-(defn weather-first-present [& xs]
-  (reduce (fn [found value]
-            (if found
-                found
-                value))
-          nil
-          xs))
-
 (defn weather-map-text [x]
-  (weather-first-present (get x :value)
-                         (get x :name)
-                         (get x :region)
-                         (get x :country)
-                         ""))
+  (or
+    (get x :value)
+    (get x :name)
+    (get x :region)
+    (get x :country)
+    ""))
 
 (defn weather-fetch-json [url]
   (http:with-input-from-request
-   url
-   false
-   (fn []
-     (weather-json->cluck (json:json-read)))))
+    url
+    false
+    (fn []
+      (weather-json->cluck (json:json-read)))))
 
 (defn weather-url [location]
   (uri:uri-reference
-   (str "http://wttr.in/"
-        (uri:uri-encode-string location)
-        "?format=j1")))
+    (str "http://wttr.in/"
+         (uri:uri-encode-string location)
+         "?format=j1")))
 
 (defn text [x]
   (cond
@@ -72,26 +66,26 @@
     (nil? x) ""
     :else (pr-str x)))
 
-(defn weather-location-title [area]
+(defn location-title [area]
   (str/join ", "
             (filter (fn [part] (not (str/blank? part)))
                     [(text (get area :areaName))
                      (text (get area :region))
                      (text (get area :country))])))
 
-(defn weather-rain-chance [raw]
+(defn rain-chance [raw]
   (if (str/blank? raw)
-      0
-      (edn/read-string raw)))
+    0
+    (edn/read-string raw)))
 
-(defn weather-max-rain-chance [hourly]
+(defn max-rain-chance [hourly]
   (reduce (fn [best entry]
-            (let [chance (weather-rain-chance (get entry :chanceofrain))]
+            (let [chance (rain-chance (get entry :chanceofrain))]
               (if (> chance best) chance best)))
           0
           hourly))
 
-(defn weather-day-summary [day]
+(defn day-summary [day]
   (let [hourly (get day :hourly)
         first-hour (first hourly)
         description (if first-hour
@@ -99,7 +93,7 @@
                       "")
         rain-chance (if (empty? hourly)
                       0
-                      (weather-max-rain-chance hourly))]
+                      (max-rain-chance hourly))]
     (str (get day :date)
          "  "
          (get day :mintempC)
@@ -111,12 +105,13 @@
          (str rain-chance)
          "%")))
 
-(defn weather-print-days [days]
-  (reduce (fn [ignored day]
-            (println (weather-day-summary day))
-            ignored)
-          nil
-          (seq days)))
+(defn print-days [days]
+  (reduce 
+    (fn [ignored day]
+      (println (day-summary day))
+      ignored)
+    nil
+    (seq days)))
 
 (defn meter-per-sec [kmph]
   (format
@@ -125,24 +120,23 @@
       (parse-double kmph)
       3.6)))
 
+(defn current-weather-string [current]
+  (format
+    "Current: %s°C, feels like %s°C, %s, wind %s m/s, humidity %s"
+    (get current :temp_C)
+    (get current :FeelsLikeC)
+    (text (get current :weatherDesc))
+    (meter-per-sec (get current :windspeedKmph))
+    (get current :humidity)))
+
 (defn print-report [payload]
   (let [area (first (get payload :nearest_area))
         current (first (get payload :current_condition))
         days (get payload :weather)]
-    (println (weather-location-title area))
-    (println (str "Current: "
-                  (get current :temp_C)
-                  "°C, feels like "
-                  (get current :FeelsLikeC)
-                  "°C, "
-                  (text (get current :weatherDesc))
-                  ", wind "
-                  (meter-per-sec (get current :windspeedKmph))
-                  " m/s, humidity "
-                  (get current :humidity)
-                  "%"))
+    (println (location-title area))
+    (println (current-weather-string current))
     (println "Forecast:")
-    (weather-print-days days)
+    (print-days days)
     nil))
 
 (defn fetch-report [location]
@@ -172,5 +166,19 @@
   (format "test %.1f this" 123.6666666)
 
   (meter-per-sec 31)
+
+  (:a {:a 1})
+
+  (:b {:a 1} :default)
+
+  (def x (rest [1 2 3]))
+
+  (type x)
+
+  (vec '( 1 2 3))
+
+  (into [] '(1 2 3))
+
+  
 
   )
