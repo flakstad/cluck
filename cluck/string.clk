@@ -17,6 +17,10 @@
       (char-whitespace? (string-ref s i)) (loop (- i 1))
       :else i)))
 
+(define (cluck-string-map-chars text char-fn)
+  (list->string
+   (map char-fn (string->list (str text)))))
+
 (defn blank?
   "Return true when S is nil, empty, or whitespace only."
   [s]
@@ -79,6 +83,32 @@
          (start (- hay-len needle-len)))
     (and (>= start 0)
          (string=? needle (substring hay start hay-len)))))
+
+(defn lower-case
+  "Return TEXT converted to lower case."
+  [text]
+  (if (nil? text)
+      nil
+      (cluck-string-map-chars text char-downcase)))
+
+(defn upper-case
+  "Return TEXT converted to upper case."
+  [text]
+  (if (nil? text)
+      nil
+      (cluck-string-map-chars text char-upcase)))
+
+(defn capitalize
+  "Return TEXT with the first character upper-cased and the rest lower-cased."
+  [text]
+  (if (nil? text)
+      nil
+      (let* ((chars (string->list (str text))))
+        (if (null? chars)
+            ""
+            (list->string
+             (cons (char-upcase (car chars))
+                   (map char-downcase (cdr chars))))))))
 
 (defn join
   "Join COLL with SEP and return a string."
