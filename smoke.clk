@@ -51,6 +51,10 @@
 (assert-str= "keyword printer" ":foo" (pr-str :foo))
 (assert-str= "vector printer" "[1 2 3]" (pr-str [1 2 3]))
 (assert-str= "map printer" "{:a [1 2] :b #{3}}" (pr-str sample))
+(assert-str= "println" "hello world\n"
+             (capture-output (lambda () (println "hello" "world"))))
+(assert-str= "println nil" "nil\n"
+             (capture-output (lambda () (println nil))))
 (assert-num= "defn" 5 (add2 3))
 (assert-num= "let" 3 (let [x 1 y 2] (+ x y)))
 (assert-num= "let vector destructuring" 3 (let [[a b] [1 2]] (+ a b)))

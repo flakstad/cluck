@@ -788,12 +788,37 @@
             (display (cluck-str-piece (car items)) p)
             (loop (cdr items)))))))
 
+(define (cluck-println-piece x)
+  (cond
+    ((string? x) x)
+    ((char? x)
+     (let ((p (open-output-string)))
+       (write-char x p)
+       (get-output-string p)))
+    ((nil? x) "nil")
+    ((eq? x true) "true")
+    ((eq? x false) "false")
+    ((keyword? x) (pr-str x))
+    ((symbol? x) (symbol->string x))
+    (else (pr-str x))))
+
 (define (println . xs)
+  (let ((p (open-output-string)))
+    (let loop ((items xs) (first? #t))
+      (if (null? items)
+          (begin
+            (display (get-output-string p))
+            (newline)
+            nil)
+          (begin
+            (if (not first?) (write-char #\space p))
+            (display (cluck-println-piece (car items)) p)
+            (loop (cdr items) #f))))))
+
+(define (prn . xs)
   (display (apply pr-str xs))
   (newline)
   nil)
-
-(define prn println)
 
 (define (read-string s)
   (cluck-read-one s))
@@ -1463,7 +1488,7 @@
    (cons 'read-string "Read one Cluck form from STRING.")
    (cons 'pr-str "Render values as Cluck-readable text.")
    (cons 'str "Concatenate values as plain text.")
-   (cons 'println "Print values with spaces and a trailing newline.")
+   (cons 'println "Print values as plain text with spaces and a trailing newline.")
    (cons 'prn "Print values with Cluck-readable rendering and a trailing newline.")
    (cons 'keyword "Create a keyword from a string or symbol.")
    (cons 'hash-map "Create a mutable map from key/value pairs.")

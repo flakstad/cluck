@@ -81,7 +81,7 @@ The main caveat is that cluck repurposes a few core binding and threading forms,
 
 If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` helper or drop to the core forms such as `##core#let`.
 
-When a `.clk` file reaches out to CHICKEN eggs, prefer prefixed imports so the host interop stays explicit and does not leak names into the Cluck surface. The weather example follows that pattern.
+When a `.clk` file reaches out to CHICKEN eggs, keep that work in a small bootstrap layer or use prefixed imports so the host interop stays explicit and does not leak names into the Cluck surface. The weather example now uses a bootstrap file for the egg-facing code.
 
 ## Performance Direction
 
@@ -210,15 +210,18 @@ The canonical weather/forecast example is fully written in Cluck in:
 
 - [`cluck/weather.clk`](./cluck/weather.clk)
 
-That example uses CHICKEN eggs for the parts Cluck should not own itself, and it keeps those egg imports prefixed:
+The tiny bootstrap that handles the egg-facing bits lives in:
 
-- `http-client` for fetching weather data
-- `json` for parsing the response
+- [`weather-bootstrap.scm`](./weather-bootstrap.scm)
+
+The bootstrap imports `http-client`, `json`, and `uri-common` with prefixes,
+loads the Cluck runtime, and exposes the small bridge functions the weather
+app needs.
 
 Install the eggs once in your CHICKEN environment:
 
 ```bash
-chicken-install http-client json
+chicken-install http-client json uri-common
 ```
 
 Run the weather CLI from source with:
@@ -228,35 +231,9 @@ csi -q -s run-weather.scm Oslo
 csi -q -s run-weather.scm "San Francisco"
 ```
 
-Or build a native binary from the Cluck source tree:
-
-```bash
-csc -k -v -O2 -strip -o build/cluck-weather run-weather.scm
-```
-
-That binary is convenient for local use, but it still expects the source tree
-at runtime.
-
-For a fully standalone build that can be copied outside the repository and run
-without CHICKEN installed on the target machine, the repo also includes a
-separate packaging harness:
-
-```bash
-csc -static -deployed -k -v -O2 -strip \
-  -o build/cluck-weather-standalone cluck/weather-standalone.clk
-```
-
-[`cluck/weather-standalone.clk`](./cluck/weather-standalone.clk) is not the
-canonical example app. It is a separate Scheme-only packaging harness used to
-produce a static binary without loading the Cluck runtime source files at
-startup. The Cluck-written example remains [`cluck/weather.clk`](./cluck/weather.clk),
-which is the version that demonstrates Cluck syntax together with the `json`
-and `http-client` eggs.
-
-The weather app is intentionally small, but it is important because the Cluck
-example and the separate packaging harness together prove that the current
-shape works for a real networked tool and can be packaged as a single native
-artifact.
+The weather app is intentionally small, but it is important because it proves
+the current Cluck shape works for a real networked tool with a clean Scheme
+bootstrap boundary.
 
 ## Namespaces
 

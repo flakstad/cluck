@@ -1,44 +1,10 @@
 ;; Weather CLI for Cluck.
 ;;
-;; This app uses eggs for HTTP and JSON, while Cluck handles the data
-;; transformation, formatting, and CLI flow.
-
-(import (chicken base)
-        (prefix http-client http:)
-        (prefix json json:)
-        (prefix uri-common uri:))
+;; The bootstrap file handles HTTP, JSON, and URL encoding. This file stays in
+;; Cluck and focuses on data transformation, formatting, and CLI flow.
 
 (ns cluck.weather
   (:require [cluck.string :refer [blank? join trim]]))
-
-(defn weather-json-null? [x]
-  (eq? x (void)))
-
-(defn weather-json->cluck [x]
-  (if (weather-json-null? x)
-      nil
-      (if (vector? x)
-          (reduce (fn [result entry]
-                    (assoc result
-                           (keyword (car entry))
-                           (weather-json->cluck (cdr entry))))
-                  (hash-map)
-                  (seq x))
-          (if (or (pair? x) (null? x))
-              (mapv weather-json->cluck x)
-              x))))
-
-(defn weather-fetch-json [url]
-  (http:with-input-from-request
-   url
-   #f
-   (fn []
-     (weather-json->cluck (json:json-read)))))
-
-(defn weather-url [location]
-  (string-append "http://wttr.in/"
-                 (uri:uri-encode-string location)
-                 "?format=j1"))
 
 (defn weather-text [x]
   (if (string? x)
@@ -82,46 +48,41 @@
         rain-chance (if (empty? hourly)
                         0
                         (weather-max-rain-chance hourly))]
-    (string-append (get day :date)
-                   "  "
-                   (get day :mintempC)
-                   "°/"
-                   (get day :maxtempC)
-                   "°C  "
-                   description
-                   "  rain "
-                   (number->string rain-chance)
-                   "%")))
+    (str (get day :date)
+         "  "
+         (get day :mintempC)
+         "°/"
+         (get day :maxtempC)
+         "°C  "
+         description
+         "  rain "
+         (number->string rain-chance)
+         "%")))
 
 (defn weather-print-days [days]
   (reduce (fn [ignored day]
-            (display (weather-day-summary day))
-            (newline)
+            (println (weather-day-summary day))
             ignored)
-          (void)
+          nil
           (seq days)))
 
 (defn weather-print-report [payload]
   (let [area (first (get payload :nearest_area))
         current (first (get payload :current_condition))
         days (get payload :weather)]
-    (display (weather-location-title area))
-    (newline)
-    (display
-     (string-append "Current: "
-                    (get current :temp_C)
-                    "°C, feels like "
-                    (get current :FeelsLikeC)
-                    "°C, "
-                    (weather-text (get current :weatherDesc))
-                    ", wind "
-                    (get current :windspeedKmph)
-                    " km/h, humidity "
-                    (get current :humidity)
-                    "%"))
-    (newline)
-    (display "Forecast:")
-    (newline)
+    (println (weather-location-title area))
+    (println (str "Current: "
+                  (get current :temp_C)
+                  "°C, feels like "
+                  (get current :FeelsLikeC)
+                  "°C, "
+                  (weather-text (get current :weatherDesc))
+                  ", wind "
+                  (get current :windspeedKmph)
+                  " km/h, humidity "
+                  (get current :humidity)
+                  "%"))
+    (println "Forecast:")
     (weather-print-days days)
     payload))
 
@@ -129,11 +90,9 @@
   (weather-fetch-json (weather-url location)))
 
 (defn weather-usage []
-  (display "Usage: cluck-weather <location>")
-  (newline)
-  (display "Example: cluck-weather Oslo")
-  (newline)
-  (void))
+  (println "Usage: cluck-weather <location>")
+  (println "Example: cluck-weather Oslo")
+  nil)
 
 (defn main "Fetch and print a weather forecast for LOCATION." [args]
   (let [location (trim (join " " args))]

@@ -1,4 +1,5 @@
 (import (chicken load))
 
-(load-relative "cluck-init.scm")
+;; The weather bootstrap loads the Cluck runtime, which the smoke tests use.
+(load-relative "weather-bootstrap.scm")
 (load-relative "smoke.clk")
