@@ -118,6 +118,13 @@
           nil
           (seq days)))
 
+(defn meter-per-sec [kmph]
+  (format
+    "%.1f"
+    (/ 
+      (parse-double kmph)
+      3.6)))
+
 (defn print-report [payload]
   (let [area (first (get payload :nearest_area))
         current (first (get payload :current_condition))
@@ -130,7 +137,7 @@
                   "°C, "
                   (text (get current :weatherDesc))
                   ", wind "
-                  (/ (parse-double (get current :windspeedKmph)) 3.6)
+                  (meter-per-sec (get current :windspeedKmph))
                   " m/s, humidity "
                   (get current :humidity)
                   "%"))
@@ -161,5 +168,9 @@
   (/ (parse-double "31") 3.6)
 
   (str 1 " " 2)
+  
+  (format "test %.1f this" 123.6666666)
+
+  (meter-per-sec 31)
 
   )
