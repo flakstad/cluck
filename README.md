@@ -4,6 +4,12 @@
 
 It is experimental and focused on small native tools, a REPL-driven workflow, and a practical core library.
 
+Binary policy: when this README says "native binary", it means a
+self-contained artifact that can be handed to someone else and run without the
+source tree or a separately managed runtime install. Source-backed launchers
+are useful development helpers, but they are not counted as distributable
+binary deliverables.
+
 The goal is not to reimplement Clojure on the JVM. The goal is to get the parts of the Clojure experience that matter most for small native tools:
 
 - EDN-like reader syntax
@@ -140,13 +146,13 @@ csi -q -s cluck-cli.scm -e '(+ 1 2)'
 csi -q -s cluck-cli.scm -l demo.clk
 ```
 
-To build a native launcher binary:
+To build a source-backed development launcher:
 
 ```bash
 csc -k -v -O2 -strip -o build/cluck cluck-cli.scm
 ```
 
-That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the cluck source files at startup, so it is a convenient distribution front-end rather than a fully embedded image.
+That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the cluck source files at startup, so it is a convenient development front-end rather than a self-contained binary.
 
 ## Editor Support
 

@@ -28,6 +28,9 @@ This template is source/bootstrap first. If you want a self-contained native
 binary, use the standalone packaging pattern from the weather example as a
 later step.
 
+Binary policy: in Cluck docs, "native binary" means self-contained. A launcher
+that source-loads the app is only a development artifact.
+
 ## How bootstrapping works
 
 - `bootstrap.scm` walks upward from the executable location until it finds `src/app/main.clk`.
@@ -63,7 +66,7 @@ README.
 
 ## Building binaries
 
-The template supports two useful native launchers:
+The template supports two useful source-backed development launchers:
 
 ```bash
 csc -k -v -O2 -strip -o build/app run.scm
@@ -71,7 +74,7 @@ csc -k -v -O2 -strip -o build/repl repl.scm
 ```
 
 These are native CHICKEN launchers, but they still load the Cluck source files
-at startup. They are convenient distribution front-ends, not fully embedded
+at startup. They are convenient development front-ends, not fully embedded
 single-binary images. They still expect the Cluck runtime to be discoverable at
 runtime, and because the bootstrap walks upward to find the project root, you
 can keep the compiled launcher under `build/` and still run it from inside the
