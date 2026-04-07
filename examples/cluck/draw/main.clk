@@ -1,9 +1,31 @@
-;; SDL3 drawing app scaffold for Cluck.
+;; SDL3 drawing app spike for Cluck.
 ;;
-;; This starts as a minimal Cluck example. The SDL3 window, event loop, and
-;; rendering code will be added incrementally.
+;; The app stays in Cluck syntax. The SDL3 bindings live in cluck.sdl3, which
+;; is the direct C-interop boundary.
 
-(ns cluck.examples.draw)
+(ns cluck.examples.draw
+  (:require [cluck.sdl3 :as sdl]
+            [cluck.string :as str]))
+
+(defn init-video!
+  []
+  (sdl/init-video!))
+
+(defn shutdown!
+  []
+  (sdl/shutdown! #f))
+
+(defn last-error
+  []
+  (sdl/last-error #f))
+
+(defn quit-requested?
+  []
+  (sdl/quit-requested? #f))
+
+(defn delay-ms
+  [ms]
+  (sdl/delay-ms ms))
 
 (defn default-state
   "Return the starter app state."
@@ -12,26 +34,66 @@
    :width 1280
    :height 720
    :background [24 24 28]
-   :running? false
+   :running? true
    :frame 0})
 
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
   (format "%s %dx%d frame %d"
-          (:title state)
-          (:width state)
-          (:height state)
-          (:frame state)))
+          (get state :title)
+          (get state :width)
+          (get state :height)
+          (get state :frame)))
+
+(defn render-frame
+  "Clear and present one frame."
+  [ctx state]
+  (let [renderer (get ctx :renderer)
+        background (get state :background)]
+    (sdl/set-draw-color!
+      renderer
+      (nth background 0)
+      (nth background 1)
+      (nth background 2)
+      255)
+    (sdl/render-clear! renderer)
+    (sdl/render-present! renderer)
+    nil))
+
+(defn run-loop
+  "Run until SDL asks us to quit."
+  [ctx state]
+  (if (quit-requested?)
+    nil
+    (begin
+      (render-frame ctx state)
+      (delay-ms 16)
+      (run-loop ctx state))))
 
 (defn main
-  "Print the current drawing scaffold and exit."
+  "Open a window and run the minimal SDL3 loop."
   [args]
-  (println "Cluck SDL3 drawing scaffold")
-  (println (format "Args: %s" (pr-str args)))
-  (println (format "State: %s" (describe-state (default-state))))
-  (println "Next step: wire an SDL3 window and event loop here.")
-  nil)
+  (let [state (default-state)]
+    (if (not (init-video!))
+      (begin
+        (println (format "SDL init failed: %s" (last-error)))
+        nil)
+    (let [ctx (sdl/open-context (get state :title)
+                                (get state :width)
+                                (get state :height))]
+        (if (nil? ctx)
+          (begin
+            (println (format "SDL window failed: %s" (last-error)))
+            (shutdown!)
+            nil)
+          (begin
+            (println (format "Opened %s" (describe-state state)))
+            (println (format "Hint: %s" (str/upper-case "close the window to quit")))
+            (run-loop ctx state)
+            (sdl/close-context! ctx)
+            (shutdown!)
+            nil))))))
 
 (comment
   (default-state)

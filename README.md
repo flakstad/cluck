@@ -223,13 +223,24 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 ## SDL3 drawing scaffold
 
-The next larger example is a minimal drawing app scaffold intended for SDL3 work later:
+The SDL3 example is a minimal drawing app scaffold that now opens a window and
+enters a simple clear-and-quit loop:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
+- [`cluck/sdl3.clk`](./cluck/sdl3.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
-It does not talk to SDL3 yet. The current goal is just to establish the Cluck app
-shape so the interactive drawing work can happen one step at a time.
+It uses direct C interop through `cluck.sdl3`, but the application logic stays
+in Cluck. Because CHICKEN does not support the SDL foreign declarations in
+interpreted mode, build it with `csc` before running:
+
+```bash
+csc -v -O2 -strip -I/opt/homebrew/include -L/opt/homebrew/lib -rpath /opt/homebrew/lib -L -lSDL3 -o build/draw examples/cluck/draw/run.scm
+./build/draw
+```
+
+The current goal is to keep the SDL3 boundary isolated while extending the
+interactive drawing loop one step at a time.
 
 ## Smoke tests
 

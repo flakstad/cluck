@@ -535,8 +535,13 @@
                     (cluck-import! current target value)
                     (cluck-copy-doc! target-ns source current target)
                     (eval `(define ,target
-                             (lambda args
-                               (apply (ns-resolve ',target-ns ',source) args)))
+                             (##core#let ((value (ns-resolve ',target-ns ',source)))
+                               (if (procedure? value)
+                                   (lambda args
+                                     (if (null? args)
+                                         (value)
+                                         (apply value args)))
+                                   value)))
                           (interaction-environment))
                     (loop (cdr xs)))
                   (error "cannot refer missing var" target-ns source))))))))

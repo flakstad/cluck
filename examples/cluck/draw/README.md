@@ -4,23 +4,24 @@ This is the starting point for the SDL3 drawing app.
 
 What is in place:
 - a Cluck-only `main.clk`
-- a source runner in `run.scm`
+- a thin `cluck.sdl3` direct-interop layer
+- a compiled runner entrypoint in `run.scm`
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
+- a first SDL3 window-open loop that clears the screen until quit
 
 What is not here yet:
-- SDL3 bindings
-- a window
-- the event loop
-- rendering
+- advanced drawing tools
+- input handling beyond quit events
+- textures, byte buffers, or asset loading
 
 Run it from the repo root with:
 
 ```bash
-csi -q -s examples/cluck/draw/run.scm
+csc -v -O2 -strip -I/opt/homebrew/include -L/opt/homebrew/lib -rpath /opt/homebrew/lib -L -lSDL3 -o build/draw examples/cluck/draw/run.scm
+./build/draw
 ```
 
 The intent is to build this interactively in small steps:
-1. add the SDL3 bootstrap boundary
-2. open a window and clear it
-3. handle input and draw
-4. add byte-buffer and texture work as needed
+1. keep the SDL3 boundary isolated in `cluck.sdl3`
+2. extend the window loop with input and drawing commands
+3. add byte-buffer and texture work as needed

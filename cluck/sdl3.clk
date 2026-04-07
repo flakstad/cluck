@@ -1,0 +1,137 @@
+;; Thin SDL3 interop layer for Cluck.
+;;
+;; This is the direct C-interop boundary for the drawing example. The app
+;; itself stays in Cluck; this namespace keeps the SDL-specific calls in one
+;; place.
+
+(ns cluck.sdl3)
+
+(import (chicken foreign))
+
+(foreign-declare "#include <SDL3/SDL.h>")
+
+(def init-video-flags
+  (foreign-value "SDL_INIT_VIDEO" unsigned-int))
+
+(define sdl-init!
+  (foreign-lambda bool "SDL_Init" unsigned-int))
+
+(define sdl-shutdown!
+  (foreign-lambda void "SDL_Quit"))
+
+(define sdl-last-error
+  (foreign-lambda c-string "SDL_GetError"))
+
+(define sdl-delay-ms
+  (foreign-lambda void "SDL_Delay" unsigned-int))
+
+(define sdl-destroy-window!
+  (foreign-lambda void "SDL_DestroyWindow" c-pointer))
+
+(define sdl-destroy-renderer!
+  (foreign-lambda void "SDL_DestroyRenderer" c-pointer))
+
+(define sdl-create-window
+  (foreign-lambda* c-pointer ((c-string title) (int width) (int height) (unsigned-int flags))
+    "SDL_Window *window = SDL_CreateWindow(title, width, height, flags);"
+    "C_return(window);"))
+
+(define sdl-create-renderer
+  (foreign-lambda* c-pointer ((c-pointer window))
+    "SDL_Renderer *renderer = SDL_CreateRenderer((SDL_Window *)window, NULL);"
+    "C_return(renderer);"))
+
+(define sdl-set-draw-color!
+  (foreign-lambda bool "SDL_SetRenderDrawColor"
+                  c-pointer
+                  unsigned-int
+                  unsigned-int
+                  unsigned-int
+                  unsigned-int))
+
+(define sdl-render-clear!
+  (foreign-lambda bool "SDL_RenderClear" c-pointer))
+
+(define sdl-render-present!
+  (foreign-lambda bool "SDL_RenderPresent" c-pointer))
+
+(define sdl-quit-requested?
+  (foreign-lambda* bool ()
+    "SDL_Event event;"
+    "while (SDL_PollEvent(&event)) {"
+    "  if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {"
+    "    C_return(1);"
+    "  }"
+    "}"
+    "C_return(0);"))
+
+(defn init-video!
+  []
+  (sdl-init! init-video-flags))
+
+(defn shutdown!
+  [ignored]
+  (sdl-shutdown!))
+
+(defn last-error
+  [ignored]
+  (sdl-last-error))
+
+(defn delay-ms
+  [ms]
+  (sdl-delay-ms ms))
+
+(defn destroy-window
+  [window]
+  (sdl-destroy-window! window))
+
+(defn destroy-renderer
+  [renderer]
+  (sdl-destroy-renderer! renderer))
+
+(defn create-window
+  [title width height flags]
+  (sdl-create-window title width height flags))
+
+(defn create-renderer
+  [window]
+  (sdl-create-renderer window))
+
+(defn set-draw-color!
+  [renderer r g b a]
+  (sdl-set-draw-color! renderer r g b a))
+
+(defn render-clear!
+  [renderer]
+  (sdl-render-clear! renderer))
+
+(defn render-present!
+  [renderer]
+  (sdl-render-present! renderer))
+
+(defn quit-requested?
+  [ignored]
+  (sdl-quit-requested?))
+
+(defn open-context
+  [title width height]
+  (let [window (create-window title width height 0)]
+    (if window
+      (let [renderer (create-renderer window)]
+        (if renderer
+          {:window window
+           :renderer renderer}
+          (begin
+            (destroy-window window)
+            nil)))
+      nil)))
+
+(defn close-context!
+  [ctx]
+  (let [renderer (get ctx :renderer)
+        window (get ctx :window)]
+    (if renderer
+      (destroy-renderer renderer))
+    (if window
+      (destroy-window window))
+    nil))
