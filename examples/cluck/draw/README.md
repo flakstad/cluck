@@ -18,7 +18,7 @@ What is not here yet:
 Run it from the repo root with:
 
 ```bash
-csc -v -O2 -strip -I/opt/homebrew/include -L/opt/homebrew/lib -rpath /opt/homebrew/lib -L -lSDL3 -o build/draw examples/cluck/draw/run.scm
+csi -q -s examples/cluck/draw/run.scm
 ./build/draw
 ```
 
@@ -27,3 +27,9 @@ The intent is to build this interactively in small steps:
 2. use `./build/draw --repl` to open the window and experiment live from the Cluck REPL
 3. extend the window loop with input and drawing commands
 4. add byte-buffer and texture work as needed
+
+The launcher vendors a static SDL3 build under `build/vendor/`, so the
+resulting binary is self-contained rather than linked to a Homebrew SDL3
+dylib. On macOS it still links against the system frameworks that SDL uses,
+which is the normal platform baseline rather than a separately managed runtime
+dependency.

@@ -6,9 +6,10 @@ It is experimental and focused on small native tools, a REPL-driven workflow, an
 
 Binary policy: when this README says "native binary", it means a
 self-contained artifact that can be handed to someone else and run without the
-source tree or a separately managed runtime install. Source-backed launchers
-are useful development helpers, but they are not counted as distributable
-binary deliverables.
+source tree or a separately managed runtime install. That also means no
+third-party dynamic library dependency in the deliverable. Source-backed
+launchers are useful development helpers, but they are not counted as
+distributable binary deliverables.
 
 The goal is not to reimplement Clojure on the JVM. The goal is to get the parts of the Clojure experience that matter most for small native tools:
 
@@ -231,18 +232,19 @@ enters a simple clear-and-quit loop:
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
 It uses direct C interop through `cluck.sdl3`, but the application logic stays
-in Cluck. Because CHICKEN does not support the SDL foreign declarations in
-interpreted mode, build it with `csc` before running:
+in Cluck. The launcher vendors a static SDL3 build into `build/vendor/` and
+compiles a self-contained native binary:
 
 ```bash
-csc -v -O2 -strip -I/opt/homebrew/include -L/opt/homebrew/lib -rpath /opt/homebrew/lib -L -lSDL3 -o build/draw examples/cluck/draw/run.scm
+csi -q -s examples/cluck/draw/run.scm
 ./build/draw
 ```
 
 For REPL-driven work, run `./build/draw --repl`. That opens the window,
 starts a background render loop, and then drops you into the Cluck REPL so
 you can call functions like `set-background!`, `set-render-fn!`, `render-now!`,
-and `stop!` while the window stays open.
+and `stop!` while the window stays open. The resulting binary is self-contained
+and does not depend on a separately installed SDL3 dylib.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.
