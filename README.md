@@ -182,7 +182,7 @@ It also includes interactive eval helpers:
 - `C-c C-r` reports in the echo area for a selected region
 - `C-c C-b` and `C-c C-k` evaluate the whole buffer through a temporary file so syntax errors are caught on repeated runs
 - `C-c C-l` reloads the current file from disk using the path-aware `load-file` helper so nested `ns :require` lookups resolve relative to the loaded file
-- completion-at-point is namespace-aware, so aliases like `str/` complete from the imported Cluck namespace instead of only from bindings already used in the current buffer
+- completion-at-point is namespace-aware, so aliases like `str/` complete from the imported Cluck namespace; ordinary symbols do not trigger the namespace completion backend
 - `M-.` jumps to the definition of the symbol at point, and `M-,` returns to the previous location
 
 It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:

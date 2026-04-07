@@ -5,12 +5,12 @@
   "Editing and REPL support for Cluck."
   :group 'languages)
 
-(defcustom cluck-repl-buffer-name "*cluck*"
+(defcustom cluck-repl-buffer-name "*Cluck*"
   "Buffer name used for the Cluck REPL."
   :type 'string
   :group 'cluck)
 
-(defcustom cluck-doc-buffer-name "*cluck-doc*"
+(defcustom cluck-doc-buffer-name "*Cluck Doc*"
   "Buffer name used for Cluck doc output."
   :type 'string
   :group 'cluck)
@@ -80,7 +80,7 @@
     (unless (cluck--prompt-present-p buffer)
       (error "Timed out waiting for Cluck REPL prompt"))))
 
-(define-derived-mode cluck-repl-mode comint-mode "cluck"
+(define-derived-mode cluck-repl-mode comint-mode "Cluck"
   "Major mode for the Cluck REPL."
   (setq-local comint-prompt-regexp "^cluck> ")
   (setq-local comint-use-prompt-regexp t)
@@ -318,8 +318,94 @@
       (error "No definition found for %s" name))
     (cluck--jump-to-match (car location) (cdr location))))
 
+(defconst cluck--completion-symbol-chars
+  "A-Za-z0-9_?!*+<>=-./"
+  "Characters treated as part of Cluck completion symbols.")
+
+(defun cluck--buffer-require-alias-target (alias)
+  "Return the namespace symbol imported as ALIAS in the current buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((pattern (format "\\[\\s-*\\([[:alnum:]._-]+\\)\\(?:\\s-\\|\n\\)+:as\\(?:\\s-\\|\n\\)+%s\\_>"
+                           (regexp-quote alias))))
+      (catch 'found
+        (while (re-search-forward pattern nil t)
+          (throw 'found (intern (match-string-no-properties 1))))
+        nil))))
+
+(defun cluck--namespace-source-file (ns)
+  "Return a readable source file for namespace NS, if one can be found."
+  (let* ((root (file-name-as-directory (cluck--project-root)))
+         (direct (expand-file-name
+                  (concat (replace-regexp-in-string "\\." "/" (symbol-name ns))
+                          ".clk")
+                  root)))
+    (cond
+      ((file-readable-p direct) direct)
+      (t
+       (let ((pattern (format "^(ns\\s-+%s\\_>" (regexp-quote (symbol-name ns))))
+             (files (directory-files-recursively root "\\.clk\\'")))
+         (catch 'found
+           (dolist (file files)
+             (when (cluck--project-source-file-p file)
+               (with-temp-buffer
+                 (insert-file-contents file nil 0 2048)
+                 (goto-char (point-min))
+                 (when (re-search-forward pattern nil t)
+                   (throw 'found file)))))
+           nil))))))
+
+(defun cluck--source-public-symbols (file)
+  "Return public symbol names declared in FILE."
+  (let ((patterns
+         '("^[[:space:]]*(defn[[:space:]]+\\([[:alnum:]_?!*+<>=-]+\\)\\_>"
+           "^[[:space:]]*(def[[:space:]]+\\([[:alnum:]_?!*+<>=-]+\\)\\_>"
+           "^[[:space:]]*(define-syntax[[:space:]]+\\([[:alnum:]_?!*+<>=-]+\\)\\_>"
+           "^[[:space:]]*(define[[:space:]]+(\\([[:alnum:]_?!*+<>=-]+\\)\\_>"
+           "^[[:space:]]*(define[[:space:]]+\\([[:alnum:]_?!*+<>=-]+\\)\\_>"))
+        (names '()))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (dolist (pattern patterns)
+        (goto-char (point-min))
+        (while (re-search-forward pattern nil t)
+          (let ((name (match-string-no-properties 1)))
+            (unless (string-prefix-p "cluck-" name)
+              (push name names))))))
+    (delete-dups (nreverse names))))
+
+(defun cluck-completion-at-point ()
+  "Complete namespace-qualified Cluck symbols like `str/trim`."
+  (unless (or (nth 3 (syntax-ppss))
+              (nth 4 (syntax-ppss)))
+    (let* ((end (point))
+           (beg (progn
+                  (skip-chars-backward cluck--completion-symbol-chars)
+                  (point)))
+           (token (buffer-substring-no-properties beg end))
+           (slash (string-match "/" token)))
+      (when slash
+        (let* ((alias (substring token 0 slash))
+               (target (cluck--buffer-require-alias-target alias))
+               (file (and target (cluck--namespace-source-file target))))
+          (when file
+            (let ((candidates
+                   (mapcar (lambda (name) (concat alias "/" name))
+                           (cluck--source-public-symbols file))))
+              (when candidates
+                (list beg end candidates)))))))))
+
+(defun cluck--enable-completion ()
+  "Enable namespace-aware completion in Cluck buffers."
+  (setq-local completion-at-point-functions '(cluck-completion-at-point))
+  (when (boundp 'company-backends)
+    (setq-local company-backends '((company-capf))))
+  (when (boundp 'company-minimum-prefix-length)
+    (setq-local company-minimum-prefix-length 0)))
+
 (with-eval-after-load 'setup-cluck-mode
   (add-hook 'cluck-mode-hook #'cluck--enable-inline-result-clearing)
+  (add-hook 'cluck-mode-hook #'cluck--enable-completion)
   (define-key cluck-mode-map (kbd "C-c C-z") #'cluck-repl)
   (define-key cluck-mode-map (kbd "C-c C-e") #'cluck-send-last-sexp)
   (define-key cluck-mode-map (kbd "C-c C-c") #'cluck-send-defun)

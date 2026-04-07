@@ -23,6 +23,7 @@ files into a directory already on your `load-path`.
 - inline eval overlays
 - doc lookup with `C-c C-d`
 - definition jumping with `M-.`
+- namespace-aware completion for aliases like `str/`
 
 The setup intentionally stays light and does not depend on CIDER or LSP for
 Cluck buffers.
