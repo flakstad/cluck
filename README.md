@@ -56,6 +56,7 @@ The current implementation supports:
 - `type` for runtime type hints and `vec` for turning collections into vectors
 - `cluck.edn/read-string`
 - `cluck.outline`
+- `cluck.io` for ports and string/stream helpers
 - `pr-str`, `str`, `format`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
@@ -64,7 +65,7 @@ The current implementation supports:
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
-- the public namespace layout is now mirrored through `cluck.core`, `cluck.string`, `cluck.set`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
+- the public namespace layout is now mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
 
 Notes:
 
@@ -407,6 +408,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.core`
 - `cluck.string`
 - `cluck.fs`
+- `cluck.io` for ports and string/stream helpers
 - `cluck.process`
 - `cluck.set`
 - `cluck.edn`
@@ -464,7 +466,7 @@ This is enough to structure source files, inspect exports, and load small module
 The next phase is about making Cluck prove itself on a real small program, not just adding syntax.
 
 - keep the runtime eager, direct, and mutable-first
-- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.set`, and related modules
+- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and related modules
 - expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
 - use one real dogfood app to drive the next round of API and namespace decisions
 - prefer a small native CLI or local data tool first; weather/forecast is a good candidate once HTTP support is in place

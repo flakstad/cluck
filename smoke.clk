@@ -129,6 +129,23 @@
 (assert-true "string ends-with?" (str/ends-with? "cluck" "uck"))
 (assert-true "comment" (unspecified? (comment (error "boom"))))
 (assert-num= "reader discard" 4 (+ 1 #_2 3))
+(require [cluck.io :as io])
+(assert-str= "io port->string" "abc"
+             (io/port->string (open-input-string "abc")))
+(assert-str= "io with-input-string" "abc"
+             (io/with-input-string "abc"
+               (fn [in] (io/port->string in))))
+(assert-str= "io copy" "abc"
+             (io/with-output-string
+               (fn [out] (io/copy (open-input-string "abc") out))))
+(let [io-file "build/cluck-io-smoke.txt"]
+  (io/spit io-file "a\nb\n")
+  (assert-str= "io slurp path" "a\nb\n" (io/slurp io-file))
+  (assert-str= "io read-lines path" "(\"a\" \"b\")" (pr-str (io/read-lines io-file)))
+  (assert-str= "io write-lines port" "a\nb\n"
+               (io/with-output-string
+                 (fn [out] (io/write-lines out '("a" "b")))))
+  (fs/delete! io-file))
 (require [cluck.fs :as fs])
 (assert-str= "fs path" "build/cluck-fs-smoke.txt" (fs/path "build" "cluck-fs-smoke.txt"))
 (assert-str= "fs basename" "cluck-fs-smoke.txt" (fs/basename "build/cluck-fs-smoke.txt"))

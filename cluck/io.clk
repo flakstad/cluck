@@ -1,0 +1,87 @@
+;; I/O helpers for Cluck.
+
+(ns cluck.io
+  "I/O helpers for Cluck."
+  (:require [cluck.fs :as fs]
+            [cluck.string :as str]))
+
+(define (cluck-io-port->string port)
+  (##core#let loop ((chars '()))
+    (let [ch (read-char port)]
+      (if (eof-object? ch)
+          (list->string (reverse chars))
+          (loop (cons ch chars))))))
+
+(define (cluck-io-copy-port in out)
+  (##core#let loop ((count 0))
+    (let [ch (read-char in)]
+      (if (eof-object? ch)
+          count
+          (begin
+            (write-char ch out)
+            (loop (+ count 1)))))))
+
+(defn port->string
+  "Read PORT into a string."
+  [port]
+  (cluck-io-port->string port))
+
+(defn copy
+  "Copy characters from IN to OUT and return the number of characters copied."
+  [in out]
+  (cluck-io-copy-port in out))
+
+(defn with-input-string
+  "Call THUNK with an input port over TEXT and return THUNK's result."
+  [text thunk]
+  (let [port (open-input-string (str text))]
+    (thunk port)))
+
+(defn with-output-string
+  "Call THUNK with an output port and return the accumulated string."
+  [thunk]
+  (let [port (open-output-string)]
+    (thunk port)
+    (get-output-string port)))
+
+(defn slurp
+  "Read SOURCE into a string.
+
+SOURCE may be a file path or an input port."
+  [source]
+  (cond
+    (string? source) (fs/slurp source)
+    (input-port? source) (cluck-io-port->string source)
+    :else (error "slurp expects a file path or input port" source)))
+
+(defn spit
+  "Write TEXT to TARGET and return TARGET.
+
+TARGET may be a file path or an output port."
+  [target text]
+  (if (output-port? target)
+      (begin
+        (display (str text) target)
+        target)
+      (fs/spit target text)))
+
+(defn read-lines
+  "Read SOURCE and return a list of lines.
+
+SOURCE may be a file path or an input port."
+  [source]
+  (str/split-lines (slurp source)))
+
+(defn write-lines
+  "Write LINES to TARGET, one per line, and return TARGET.
+
+TARGET may be a file path or an output port."
+  [target lines]
+  (if (output-port? target)
+      (begin
+        (for-each (lambda (line)
+                    (display (str line) target)
+                    (newline target))
+                  lines)
+        target)
+      (fs/write-lines target lines)))
