@@ -1,6 +1,9 @@
+(defvar cluck-mode-map (make-sparse-keymap)
+  "Keymap for `cluck-mode'.")
+
 (with-eval-after-load 'clojure-mode
-  (define-derived-mode cluck-mode clojure-mode "cluck"
-    "Major mode for editing cluck source files."
+  (define-derived-mode cluck-mode clojure-mode "Cluck"
+    "Major mode for editing Cluck source files."
     (setq-local clojure-align-forms-automatically nil)
     (setq-local clojure-indent-style 'align-arguments))
 

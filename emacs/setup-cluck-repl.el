@@ -395,17 +395,25 @@
               (when candidates
                 (list beg end candidates)))))))))
 
-(defun cluck--enable-completion ()
-  "Enable namespace-aware completion in Cluck buffers."
-  (setq-local completion-at-point-functions '(cluck-completion-at-point))
-  (when (boundp 'company-backends)
-    (setq-local company-backends '((company-capf))))
-  (when (boundp 'company-minimum-prefix-length)
-    (setq-local company-minimum-prefix-length 0)))
+(defun cluck-complete ()
+  "Complete namespace-qualified Cluck symbols on demand."
+  (interactive)
+  (let ((capf (cluck-completion-at-point)))
+    (if capf
+        (completion-in-region (nth 0 capf) (nth 1 capf) (nth 2 capf))
+      (call-interactively #'indent-for-tab-command))))
+
+(defun cluck--disable-auto-completion ()
+  "Disable automatic completion in Cluck buffers."
+  (setq-local completion-at-point-functions nil)
+  (setq-local company-backends nil)
+  (setq-local company-idle-delay nil)
+  (when (fboundp 'company-mode)
+    (company-mode -1)))
 
 (with-eval-after-load 'setup-cluck-mode
   (add-hook 'cluck-mode-hook #'cluck--enable-inline-result-clearing)
-  (add-hook 'cluck-mode-hook #'cluck--enable-completion)
+  (add-hook 'cluck-mode-hook #'cluck--disable-auto-completion)
   (define-key cluck-mode-map (kbd "C-c C-z") #'cluck-repl)
   (define-key cluck-mode-map (kbd "C-c C-e") #'cluck-send-last-sexp)
   (define-key cluck-mode-map (kbd "C-c C-c") #'cluck-send-defun)
@@ -417,6 +425,8 @@
   (define-key cluck-mode-map (kbd "C-c C-d") #'cluck-describe-symbol)
   (define-key cluck-mode-map (kbd "M-.") #'cluck-jump-to-definition)
   (define-key cluck-mode-map (kbd "M-,") #'xref-pop-marker-stack)
+  (define-key cluck-mode-map (kbd "TAB") #'cluck-complete)
+  (define-key cluck-mode-map (kbd "<tab>") #'cluck-complete)
   (define-key cluck-mode-map (kbd "C-x C-e") #'cluck-send-last-sexp)
   (define-key cluck-mode-map (kbd "C-M-x") #'cluck-send-defun))
 
