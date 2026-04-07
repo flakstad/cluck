@@ -1,4 +1,5 @@
-(import (chicken load)
+(import (chicken file)
+        (chicken load)
         (chicken process-context))
 
 (define (script-root)
@@ -10,5 +11,9 @@
             (loop (- i 1))))))
 
 (let ((root (script-root)))
+  (let ((build-dir (string-append root "build")))
+    (if (not (file-exists? build-dir))
+        (create-directory build-dir)
+        #t))
   (load (string-append root "cluck-init.scm"))
   (load-file (string-append root "smoke.clk")))

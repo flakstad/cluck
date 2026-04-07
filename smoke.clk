@@ -238,6 +238,32 @@
   (assert-num= "text-report blank lines" 1 (get stats :blank-lines))
   (assert-num= "text-report characters" 4 (get stats :characters))
   (assert-num= "text-report longest line" 1 (get stats :longest-line)))
+(load-file "examples/cluck/csv.clk")
+(in-ns 'cluck.smoke)
+(require [cluck.csv :as csv])
+(assert-true "csv namespace exists" (find-ns 'cluck.csv))
+(let [csv-sample (str "name,city,notes\n"
+                      "Alice,Oslo,\"hello, world\"\n"
+                      "Bob,Oslo,\"line1\nline2\"\n"
+                      "Cara,London,\n")
+      rows (csv/parse csv-sample ",")]
+  (assert-num= "csv rows" 4 (count rows))
+  (assert-str= "csv quoted comma" "hello, world" (get (nth rows 1) 2))
+  (assert-str= "csv multiline field" "line1\nline2" (get (nth rows 2) 2))
+  (let [summary (csv/main "sample.csv" csv-sample "," true)
+        columns (get summary :columns)]
+    (assert-num= "csv summary row-count" 4 (get summary :row-count))
+    (assert-num= "csv summary data-row-count" 3 (get summary :data-row-count))
+    (assert-num= "csv summary column-count" 3 (get summary :column-count))
+    (assert-str= "csv summary first name" "name" (get (nth columns 0) :name))
+    (assert-str= "csv summary city top" "\"Oslo\"" (pr-str (get (nth columns 1) :top-value)))
+    (assert-num= "csv summary notes blank" 1 (get (nth columns 2) :blank))))
+(let [tsv-sample (str "name\tcity\tcount\n"
+                      "Alice\tOslo\t3\n"
+                      "Bob\t\"San\tFrancisco\"\t4\n")
+      rows (csv/parse tsv-sample "\t")]
+  (assert-num= "csv tsv rows" 3 (count rows))
+  (assert-str= "csv tsv quoted tab" "San\tFrancisco" (get (nth rows 2) 1)))
 (assert-str= "doc core namespace map"
              "cluck.core/map\n\nApply F to each element of COLL and return a list of the results.\n"
              (capture-output (lambda () (doc cluck.core/map))))

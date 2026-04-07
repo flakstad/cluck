@@ -1,0 +1,317 @@
+;; Cluck CSV/TSV summarizer example.
+;;
+;; The app stays in Cluck syntax and focuses on parsing, summarizing, and
+;; reporting text data. Bootstrap code handles file/stdin I/O.
+
+(ns cluck.csv
+  "CSV/TSV summarizer helpers for Cluck."
+  (:require [cluck.string :as str]))
+
+(defn csv-separator-char
+  "Return a separator character for SEP."
+  [separator]
+  (cond
+    (char? separator) separator
+    (and (string? separator)
+         (> (count separator) 0)) (string-ref separator 0)
+    :else #\,))
+
+(defn csv-normalize-eol-loop
+  "Normalize CRLF/CR line endings in TEXT."
+  [text len idx acc]
+  (if (>= idx len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text idx)]
+        (if (char=? ch #\return)
+            (if (and (< (+ idx 1) len)
+                     (char=? (string-ref text (+ idx 1)) #\newline))
+                (csv-normalize-eol-loop text len (+ idx 2) (cons #\newline acc))
+                (csv-normalize-eol-loop text len (+ idx 1) (cons #\newline acc)))
+            (csv-normalize-eol-loop text len (+ idx 1) (cons ch acc))))))
+
+(defn csv-normalize-eol
+  "Return TEXT with CRLF/CR normalized to LF."
+  [text]
+  (if (nil? text)
+      ""
+      (let [text (str text)
+            len (count text)]
+        (if (= len 0)
+            ""
+            (csv-normalize-eol-loop text len 0 '())))))
+
+(defn csv-field-text
+  "Return the field string for FIELD-CHARS."
+  [field-chars]
+  (list->string (reverse field-chars)))
+
+(defn csv-row->vector
+  "Return a vector row from ROW and FIELD-CHARS."
+  [row field-chars]
+  (vec (reverse (cons (csv-field-text field-chars) row))))
+
+(defn csv-append-field
+  "Append FIELD-CHARS as a string to ROW."
+  [row field-chars]
+  (cons (csv-field-text field-chars) row))
+
+(defn csv-parse-field-state
+  "Handle a single character while parsing an unquoted field."
+  [text len sep idx ch field row rows row-open?]
+  (cond
+    (char=? ch sep)
+    (csv-parse-loop text len sep (+ idx 1) :field '()
+                    (csv-append-field row field)
+                    rows
+                    true)
+    (char=? ch #\newline)
+    (csv-parse-loop text len sep (+ idx 1) :field '() '()
+                    (cons (csv-row->vector row field) rows)
+                    false)
+    (and (char=? ch #\")
+         (empty? field))
+    (csv-parse-loop text len sep (+ idx 1) :quoted field row rows true)
+    :else
+    (csv-parse-loop text len sep (+ idx 1) :field (cons ch field) row rows true)))
+
+(defn csv-parse-quoted-state
+  "Handle a single character while parsing a quoted field."
+  [text len sep idx ch field row rows row-open?]
+  (cond
+    (and (char=? ch #\")
+         (< (+ idx 1) len)
+         (char=? (string-ref text (+ idx 1)) #\"))
+    (csv-parse-loop text len sep (+ idx 2) :quoted (cons #\" field) row rows true)
+    (char=? ch #\")
+    (csv-parse-loop text len sep (+ idx 1) :after-quote field row rows true)
+    :else
+    (csv-parse-loop text len sep (+ idx 1) :quoted (cons ch field) row rows true)))
+
+(defn csv-parse-after-quote-state
+  "Handle a single character after a quoted field has closed."
+  [text len sep idx ch field row rows row-open?]
+  (cond
+    (char=? ch sep)
+    (csv-parse-loop text len sep (+ idx 1) :field '()
+                    (csv-append-field row field)
+                    rows
+                    false)
+    (char=? ch #\newline)
+    (csv-parse-loop text len sep (+ idx 1) :field '() '()
+                    (cons (csv-row->vector row field) rows)
+                    false)
+    (char-whitespace? ch)
+    (csv-parse-loop text len sep (+ idx 1) :after-quote field row rows true)
+    :else
+    (csv-parse-loop text len sep (+ idx 1) :field
+                    (cons ch (cons #\" field))
+                    row
+                    rows
+                    true)))
+
+(defn csv-parse-loop
+  "Parse TEXT into a list of row vectors."
+  [text len sep idx state field row rows row-open?]
+  (if (>= idx len)
+      (if row-open?
+          (reverse (cons (csv-row->vector row field) rows))
+          (reverse rows))
+      (let [ch (string-ref text idx)]
+        (if (equal? state :field)
+            (csv-parse-field-state text len sep idx ch field row rows row-open?)
+            (if (equal? state :quoted)
+                (csv-parse-quoted-state text len sep idx ch field row rows row-open?)
+                (csv-parse-after-quote-state text len sep idx ch field row rows row-open?))))))
+
+(defn csv-parse
+  "Parse TEXT with SEP and return a vector of row vectors."
+  [text separator]
+  (let [normalized (csv-normalize-eol text)
+        len (count normalized)
+        sep (csv-separator-char separator)]
+    (if (= len 0)
+        []
+        (vec (csv-parse-loop normalized len sep 0 :field '() '() '() false)))))
+
+(defn csv-row-ref
+  "Return the cell at IDX in ROW or an empty string when missing."
+  [row idx]
+  (if (< idx (count row))
+      (nth row idx)
+      ""))
+
+(defn csv-column-values-loop
+  "Collect the values in column IDX from ROWS into ACC."
+  [rows idx acc]
+  (if (empty? rows)
+      (reverse acc)
+      (csv-column-values-loop (rest rows)
+                              idx
+                              (cons (csv-row-ref (first rows) idx) acc))))
+
+(defn csv-column-values
+  "Return a list of the values in column IDX from ROWS."
+  [rows idx]
+  (csv-column-values-loop rows idx '()))
+
+(defn csv-generated-column-name
+  "Return a default column name for IDX."
+  [idx]
+  (format "col%d" (+ idx 1)))
+
+(defn csv-header-name
+  "Return a column name for IDX from HEADER-ROW or a generated fallback."
+  [header-row idx]
+  (let [candidate (if (and header-row
+                           (< idx (count header-row)))
+                      (nth header-row idx)
+                      false)]
+    (if (or (false? candidate)
+            (str/blank? candidate))
+        (csv-generated-column-name idx)
+        (str/trim candidate))))
+
+(defn csv-top-frequency-loop
+  "Return the most common entry from REMAINING with BEST and BEST-COUNT."
+  [remaining best best-count]
+  (if (empty? remaining)
+      {:value (nth best 0)
+       :count best-count}
+      (let [entry (first remaining)
+            entry-count (nth entry 1)]
+        (if (> entry-count best-count)
+            (csv-top-frequency-loop (rest remaining) entry entry-count)
+            (csv-top-frequency-loop (rest remaining) best best-count)))))
+
+(defn csv-top-frequency
+  "Return the most common value in FREQS as {:value ... :count ...}."
+  [freqs]
+  (let [entries (seq freqs)]
+    (if (empty? entries)
+        {:value nil
+         :count 0}
+        (let [first-entry (first entries)]
+          (csv-top-frequency-loop (rest entries)
+                                  first-entry
+                                  (nth first-entry 1))))))
+
+(defn csv-max-column-count
+  "Return the widest row length in ROWS."
+  [rows]
+  (reduce (fn [best row]
+            (let [len (count row)]
+              (if (> len best)
+                  len
+                  best)))
+          0
+          rows))
+
+(defn csv-column-stats-loop
+  "Build a vector of column summary maps."
+  [data-rows header-row column-count idx acc]
+  (if (= idx column-count)
+      (vec (reverse acc))
+      (let [values (csv-column-values data-rows idx)
+            non-empty-values (remove str/blank? values)
+            blank-count (- (count data-rows) (count non-empty-values))
+            freqs (frequencies non-empty-values)
+            top (csv-top-frequency freqs)]
+        (csv-column-stats-loop data-rows
+                               header-row
+                               column-count
+                               (+ idx 1)
+                               (cons {:index (+ idx 1)
+                                      :name (csv-header-name header-row idx)
+                                      :non-empty (count non-empty-values)
+                                      :blank blank-count
+                                      :unique (count (keys freqs))
+                                      :top-value (get top :value)
+                                      :top-count (get top :count)}
+                                     acc)))))
+
+(defn csv-summary
+  "Return a CSV/TSV summary map for SOURCE-NAME and TEXT."
+  [source-name text separator header?]
+  (let [rows (csv-parse text separator)
+        row-count (count rows)
+        header-row (if (and header? (> row-count 0))
+                     (first rows)
+                     false)
+        data-rows (if header?
+                    (rest rows)
+                    rows)
+        data-row-count (count data-rows)
+        column-count (csv-max-column-count rows)
+        columns (csv-column-stats-loop data-rows
+                                       header-row
+                                       column-count
+                                       0
+                                       '())]
+    {:source source-name
+     :format (if (char=? (csv-separator-char separator) #\tab)
+               "TSV"
+               "CSV")
+     :separator (csv-separator-char separator)
+     :header? header?
+     :header-row header-row
+     :row-count row-count
+     :data-row-count data-row-count
+     :column-count column-count
+     :columns columns}))
+
+(defn csv-print-column
+  "Print one column summary map."
+  [column]
+  (let [top-count (get column :top-count)
+        top-value (get column :top-value)]
+    (if (> top-count 0)
+        (println (format "%d. %s: non-empty=%d blank=%d unique=%d top=%s (%d)"
+                         (get column :index)
+                         (get column :name)
+                         (get column :non-empty)
+                         (get column :blank)
+                         (get column :unique)
+                         (pr-str top-value)
+                         top-count))
+        (println (format "%d. %s: non-empty=%d blank=%d unique=%d"
+                         (get column :index)
+                         (get column :name)
+                         (get column :non-empty)
+                         (get column :blank)
+                         (get column :unique))))))
+
+(defn csv-print-columns
+  "Print every column in COLUMNS."
+  [columns]
+  (if (empty? columns)
+      nil
+      (begin
+        (csv-print-column (first columns))
+        (csv-print-columns (rest columns)))))
+
+(defn csv-print-report
+  "Print SUMMARY and return it."
+  [summary]
+  (println "Cluck CSV summary")
+  (println "Source:" (get summary :source))
+  (println "Format:" (get summary :format))
+  (println "Header:" (if (get summary :header?) "yes" "no"))
+  (if (get summary :header-row)
+      (println "Header row:" (str/join " | " (get summary :header-row)))
+      nil)
+  (println "Rows:" (get summary :row-count))
+  (println "Data rows:" (get summary :data-row-count))
+  (println "Columns:" (get summary :column-count))
+  (if (empty? (get summary :columns))
+      (println "(none)")
+      (csv-print-columns (get summary :columns)))
+  summary)
+
+(defn main
+  "Summarize CSV/TSV TEXT for SOURCE-NAME."
+  [source-name text separator header?]
+  (csv-print-report (csv-summary source-name text separator header?)))
+
+(def parse csv-parse)
+(def summary csv-summary)
+(def print-report csv-print-report)

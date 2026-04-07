@@ -370,7 +370,8 @@ csc -static -deployed -k -v -O2 -strip -o build/changelog-standalone run-changel
 ```
 
 On this machine, the resulting binary should stay in the same self-contained
-size neighborhood as the other no-eggs utilities.
+size neighborhood as the other no-eggs utilities. The verified standalone
+binary is about `3.9 MB` and links only against `libSystem` on macOS.
 
 ## Markdown Link Checker
 
@@ -513,6 +514,45 @@ csc -static -deployed -k -v -O2 -strip -o build/text-report-standalone run-text-
 
 On this machine, the resulting binary is about `3.7 MB` and runs without the
 source tree present. It links only against `libSystem` on macOS.
+
+## CSV/TSV Summarizer
+
+Another no-eggs example lives in:
+
+- [`examples/cluck/csv.clk`](./examples/cluck/csv.clk)
+
+It parses CSV or TSV text, summarizes rows and columns, and reports basic
+per-column counts plus the most common value. The app stays Cluck-only; the
+source and standalone runners handle file/stdin input and separator flags.
+
+Run it from source with:
+
+```bash
+csi -q -s run-csv.scm README.md
+csi -q -s run-csv.scm --tsv data.tsv
+```
+
+Or pipe data on stdin:
+
+```bash
+cat data.csv | csi -q -s run-csv.scm
+```
+
+The self-contained binary is built from the same app:
+
+```bash
+./build/csv-standalone README.md
+./build/csv-standalone --tsv data.tsv
+```
+
+To build a self-contained native binary:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/csv-standalone run-csv-standalone.scm
+```
+
+On this machine, the resulting binary should stay in the same self-contained
+size neighborhood as the other no-eggs utilities.
 
 ## Namespaces
 
