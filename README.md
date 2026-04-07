@@ -239,6 +239,11 @@ csc -v -O2 -strip -I/opt/homebrew/include -L/opt/homebrew/lib -rpath /opt/homebr
 ./build/draw
 ```
 
+For REPL-driven work, run `./build/draw --repl`. That opens the window,
+starts a background render loop, and then drops you into the Cluck REPL so
+you can call functions like `set-background!`, `set-render-fn!`, `render-now!`,
+and `stop!` while the window stays open.
+
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.
 

@@ -46,10 +46,24 @@
    "-o build/draw examples/cluck/draw/run-standalone.scm "
    "-L/opt/homebrew/lib -rpath /opt/homebrew/lib -L -lSDL3"))
 
+(define (launcher-args)
+  (command-line-arguments))
+
+(define (run-command root)
+  (let ((args (launcher-args)))
+    (if (null? args)
+        (string-append "cd " root " && ./build/draw")
+        (string-append
+         "cd " root " && ./build/draw "
+         (apply string-append
+                (map (lambda (arg)
+                       (string-append arg " "))
+                     args))))))
+
 (let ((root (project-root)))
   (handle-exceptions exn #t
     (create-directory (string-append root "build")))
   (unless (zero? (system (shell-command root)))
     (error "SDL3 draw build failed"))
-  (unless (zero? (system (string-append "cd " root " && ./build/draw")))
+  (unless (zero? (system (run-command root)))
     (error "SDL3 draw binary exited with error")))

@@ -7,6 +7,14 @@
   (:require [cluck.sdl3 :as sdl]
             [cluck.string :as str]))
 
+(import srfi-18)
+
+(def *draw-state* nil)
+(def *draw-context* nil)
+(def *draw-running?* false)
+(def *draw-thread* nil)
+(def *draw-render-fn* nil)
+
 (defn init-video!
   []
   (sdl/init-video!))
@@ -37,6 +45,47 @@
    :running? true
    :frame 0})
 
+(defn current-state
+  "Return the current draw state."
+  []
+  *draw-state*)
+
+(defn reset-state!
+  "Reset the current draw state to the default."
+  []
+  (set! *draw-state* (default-state))
+  *draw-state*)
+
+(defn set-state!
+  "Replace the current draw state with STATE."
+  [state]
+  (set! *draw-state* state)
+  *draw-state*)
+
+(defn set-title!
+  "Update the current window title."
+  [title]
+  (set! *draw-state* (assoc *draw-state* :title title))
+  *draw-state*)
+
+(defn set-background!
+  "Update the current background color to a [R G B] vector."
+  [color]
+  (set! *draw-state* (assoc *draw-state* :background color))
+  *draw-state*)
+
+(defn set-render-fn!
+  "Install a custom render function of (lambda [ctx state] ...)."
+  [render-fn]
+  (set! *draw-render-fn* render-fn)
+  *draw-render-fn*)
+
+(defn clear-render-fn!
+  "Restore the built-in clear-screen renderer."
+  []
+  (set! *draw-render-fn* nil)
+  nil)
+
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
@@ -46,8 +95,8 @@
           (get state :height)
           (get state :frame)))
 
-(defn render-frame
-  "Clear and present one frame."
+(defn default-render-frame
+  "Clear and present one frame using STATE."
   [ctx state]
   (let [renderer (get ctx :renderer)
         background (get state :background)]
@@ -60,6 +109,80 @@
     (sdl/render-clear! renderer)
     (sdl/render-present! renderer)
     nil))
+
+(defn render-frame
+  "Clear and present one frame."
+  [ctx state]
+  (if *draw-render-fn*
+    (*draw-render-fn* ctx state)
+    (default-render-frame ctx state)))
+
+(defn render-now!
+  "Render one frame from the current state."
+  []
+  (if (and *draw-context* *draw-state*)
+    (render-frame *draw-context* *draw-state*)
+    nil))
+
+(defn draw-loop
+  "Render until the window is closed or the loop is stopped."
+  []
+  (if *draw-running?*
+    (if (quit-requested?)
+      (set! *draw-running?* false)
+      (begin
+        (render-now!)
+        (thread-sleep! 0.016)
+        (draw-loop)))
+    nil))
+
+(defn start!
+  "Open the SDL window and prepare the draw state."
+  []
+  (if (not (init-video!))
+    (begin
+      (println (format "SDL init failed: %s" (last-error)))
+      nil)
+    (let [state (or *draw-state* (default-state))
+          ctx (sdl/open-context (get state :title)
+                                (get state :width)
+                                (get state :height))]
+      (if (nil? ctx)
+        (begin
+          (println (format "SDL window failed: %s" (last-error)))
+          (shutdown!)
+          nil)
+        (begin
+          (set! *draw-state* state)
+          (set! *draw-context* ctx)
+          (set! *draw-running?* true)
+          ctx)))))
+
+(defn stop!
+  "Stop the draw loop and close the SDL context."
+  []
+  (set! *draw-running?* false)
+  (if *draw-context*
+    (begin
+      (sdl/close-context! *draw-context*)
+      (set! *draw-context* nil)))
+  (shutdown!)
+  nil)
+
+(defn start-dev!
+  "Start the SDL window and background loop for REPL-driven development."
+  []
+  (let [ctx (start!)]
+    (if ctx
+      (begin
+        (set! *draw-thread*
+              (make-thread
+                (lambda ()
+                  (draw-loop))
+                "cluck-draw"))
+        (thread-start! *draw-thread*)
+        ctx)
+      nil)))
 
 (defn run-loop
   "Run until SDL asks us to quit."
@@ -74,26 +197,37 @@
 (defn main
   "Open a window and run the minimal SDL3 loop."
   [args]
-  (let [state (default-state)]
-    (if (not (init-video!))
-      (begin
-        (println (format "SDL init failed: %s" (last-error)))
-        nil)
-    (let [ctx (sdl/open-context (get state :title)
-                                (get state :width)
-                                (get state :height))]
-        (if (nil? ctx)
-          (begin
-            (println (format "SDL window failed: %s" (last-error)))
-            (shutdown!)
-            nil)
-          (begin
-            (println (format "Opened %s" (describe-state state)))
-            (println (format "Hint: %s" (str/upper-case "close the window to quit")))
-            (run-loop ctx state)
-            (sdl/close-context! ctx)
-            (shutdown!)
-            nil))))))
+  (set! *draw-state* (default-state))
+  (if (member "--repl" args)
+    (begin
+      (if (start-dev!)
+        (begin
+          (println (format "Opened %s" (describe-state *draw-state*)))
+          (println (format "Hint: %s" (str/upper-case "use the repl to change state")))
+          (println (format "Hint: %s" (str/upper-case "call (stop!) or close the window to quit")))
+          (cluck-repl)
+          (stop!))
+        nil))
+    (let [state (current-state)]
+      (if (not (init-video!))
+        (begin
+          (println (format "SDL init failed: %s" (last-error)))
+          nil)
+        (let [ctx (sdl/open-context (get state :title)
+                                    (get state :width)
+                                    (get state :height))]
+          (if (nil? ctx)
+            (begin
+              (println (format "SDL window failed: %s" (last-error)))
+              (shutdown!)
+              nil)
+            (begin
+              (println (format "Opened %s" (describe-state state)))
+              (println (format "Hint: %s" (str/upper-case "close the window to quit")))
+              (run-loop ctx state)
+              (sdl/close-context! ctx)
+              (shutdown!)
+              nil)))))))
 
 (comment
   (default-state)
