@@ -1,0 +1,39 @@
+;; SDL3 drawing app scaffold for Cluck.
+;;
+;; This starts as a minimal Cluck example. The SDL3 window, event loop, and
+;; rendering code will be added incrementally.
+
+(ns cluck.examples.draw)
+
+(defn default-state
+  "Return the starter app state."
+  []
+  {:title "Cluck Draw"
+   :width 1280
+   :height 720
+   :background [24 24 28]
+   :running? false
+   :frame 0})
+
+(defn describe-state
+  "Return a short human-readable summary of STATE."
+  [state]
+  (format "%s %dx%d frame %d"
+          (:title state)
+          (:width state)
+          (:height state)
+          (:frame state)))
+
+(defn main
+  "Print the current drawing scaffold and exit."
+  [args]
+  (println "Cluck SDL3 drawing scaffold")
+  (println (format "Args: %s" (pr-str args)))
+  (println (format "State: %s" (describe-state (default-state))))
+  (println "Next step: wire an SDL3 window and event loop here.")
+  nil)
+
+(comment
+  (default-state)
+  (describe-state (default-state))
+  (main ["--help"]))

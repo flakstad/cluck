@@ -221,6 +221,16 @@ csi -q -s examples/cluck/demo/run.scm
 
 The demo prints a small report over a vector of maps and shows the syntax in action.
 
+## SDL3 drawing scaffold
+
+The next larger example is a minimal drawing app scaffold intended for SDL3 work later:
+
+- [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
+- [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
+
+It does not talk to SDL3 yet. The current goal is just to establish the Cluck app
+shape so the interactive drawing work can happen one step at a time.
+
 ## Smoke tests
 
 There is also a small smoke-test harness in:
