@@ -120,6 +120,8 @@
 (assert-str= "string lower-case" "cluck" (str/lower-case "Cluck"))
 (assert-str= "string upper-case" "CLUCK" (str/upper-case "Cluck"))
 (assert-str= "string capitalize" "Cluck" (str/capitalize "cLUCK"))
+(assert-true "string includes?" (str/includes? "cluck" "lu"))
+(assert-true "string includes? missing" (not (str/includes? "cluck" "zz")))
 (assert-str= "string join" "a,b,c" (str/join "," '("a" "b" "c")))
 (assert-str= "string split-lines" "(\"a\" \"b\")" (pr-str (str/split-lines "a\nb")))
 (assert-true "string starts-with?" (str/starts-with? "cluck" "cl"))
