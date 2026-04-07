@@ -1,0 +1,124 @@
+;; Cluck TODO/FIXME scanner example.
+;;
+;; The app stays in Cluck syntax and scans file lists supplied by the
+;; bootstrap layer.
+
+(ns cluck.todo
+  (:require [cluck.fs :as fs]
+            [cluck.string :as str]))
+
+(def cluck-todo-markers
+  ["TODO" "FIXME" "XXX"])
+
+(def cluck-todo-text-extensions
+  ["clk" "clj" "cljc" "scm" "md" "txt" "org" "el" "edn" "csv" "tsv"])
+
+(defn marker-match
+  "Return the first TODO marker found in LINE, or nil."
+  [line]
+  (let [lower (str/lower-case line)]
+    (##core#let loop ((markers cluck-todo-markers))
+      (if (empty? markers)
+          nil
+          (let [marker (first markers)]
+            (if (str/includes? lower (str/lower-case marker))
+                marker
+                (loop (rest markers))))))))
+
+(defn ignored-path?
+  "Return true when PATH should be skipped by the directory walk."
+  [path]
+  (or (str/starts-with? path "build/")
+      (str/includes? path "/build/")
+      (str/starts-with? path ".git/")
+      (str/includes? path "/.git/")
+      (str/includes? path "/.worktrees/")))
+
+(defn scanable-file?
+  "Return true when PATH looks like a text file worth scanning."
+  [path]
+  (let [ext (str/lower-case (fs/extension path))]
+    (and (not (ignored-path? path))
+         (##core#let loop ((extensions cluck-todo-text-extensions))
+           (if (empty? extensions)
+               false
+               (let [candidate (first extensions)]
+                 (if (string=? ext candidate)
+                     true
+                     (loop (rest extensions)))))))))
+
+(defn scan-line
+  "Return a TODO match map for PATH, LINE-NUMBER, and LINE, or nil."
+  [path line-number line]
+  (let [marker (marker-match line)]
+    (if marker
+      {:path path
+       :line line-number
+       :marker marker
+       :text line}
+      nil)))
+
+(defn scan-file
+  "Scan PATH and return a list of TODO matches."
+  [path]
+  (let [lines (fs/read-lines path)]
+    (##core#let loop ((remaining lines)
+                      (line-number 1)
+                      (acc '()))
+      (if (empty? remaining)
+          (reverse acc)
+          (let [line (first remaining)
+                match (scan-line path line-number line)]
+            (loop (rest remaining)
+                  (+ line-number 1)
+                  (if match
+                      (cons match acc)
+                      acc)))))))
+
+(defn scan-targets
+  "Return TODO matches for a list of files."
+  [files]
+  (##core#let loop ((remaining files)
+                    (acc '()))
+    (if (empty? remaining)
+        acc
+        (let [path (first remaining)
+              next-acc (if (scanable-file? path)
+                         (append acc (scan-file path))
+                         acc)]
+          (loop (rest remaining) next-acc)))))
+
+(defn print-match
+  "Print one TODO match."
+  [match]
+  (println
+    (format "%s:%d [%s] %s"
+            (get match :path)
+            (get match :line)
+            (get match :marker)
+            (get match :text))))
+
+(defn print-matches
+  "Print all TODO matches."
+  [matches]
+  (##core#let loop ((remaining matches))
+    (if (empty? remaining)
+        nil
+        (begin
+          (print-match (first remaining))
+          (loop (rest remaining))))))
+
+(defn print-report
+  "Print a TODO report for MATCHES."
+  [matches]
+  (if (empty? matches)
+    (println "No TODO markers found.")
+    (let [count-text (format "%d" (count matches))]
+      (println (format "TODO markers: %s" count-text))
+      (print-matches matches)))
+  nil)
+
+(defn main
+  "Scan FILES for TODO/FIXME/XXX markers."
+  [files]
+  (print-report (scan-targets files)))

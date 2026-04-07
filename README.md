@@ -295,9 +295,48 @@ The weather app is intentionally small, but it is important because it proves
 the current Cluck shape works for a real networked tool while keeping the egg
 boundary explicit in the namespace form.
 
-## Markdown Outline Utility
+## TODO Scanner Utility
 
 A second no-eggs example lives in:
+
+- [`examples/cluck/todo.clk`](./examples/cluck/todo.clk)
+
+It scans files for TODO/FIXME/XXX markers and stays Cluck-only by using
+`cluck.fs` for file handling and `cluck.string` for text processing. The
+source runner expands directories before calling the app, while the
+self-contained binary accepts file paths directly.
+
+Run it from source with:
+
+```bash
+csi -q -s run-todo.scm README.md
+```
+
+Or point it at a directory:
+
+```bash
+csi -q -s run-todo.scm .
+```
+
+The self-contained binary is built from the same app and is intended to take
+file paths directly:
+
+```bash
+./build/todo-standalone README.md examples/cluck/todo.clk
+```
+
+To build a self-contained native binary:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/todo-standalone run-todo-standalone.scm
+```
+
+On this machine, the resulting binary is in the same small self-contained
+range as the other no-eggs utilities.
+
+## Markdown Outline Utility
+
+Another no-eggs example lives in:
 
 - [`examples/cluck/outline.clk`](./examples/cluck/outline.clk)
 
@@ -451,6 +490,7 @@ The mirrored namespace files currently live at:
 - [`cluck/string.clk`](./cluck/string.clk)
 - [`cluck/set.clk`](./cluck/set.clk)
 - [`cluck/edn.clk`](./cluck/edn.clk)
+- [`examples/cluck/todo.clk`](./examples/cluck/todo.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
 
@@ -469,7 +509,7 @@ The next phase is about making Cluck prove itself on a real small program, not j
 - continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and related modules
 - expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
 - use one real dogfood app to drive the next round of API and namespace decisions
-- prefer a small native CLI or local data tool first; weather/forecast is a good candidate once HTTP support is in place
+- prefer small native CLI or local data tools first; TODO scanning, link checking, and CSV/TSV summarization are all good candidates before larger app work
 - leave more ambitious graphics work, such as SDL3 drawing, for a later phase
 
 ## Module Demo

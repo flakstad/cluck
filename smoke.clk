@@ -177,6 +177,15 @@
 (assert-num= "process sh exit" 0 (get (proc/sh "true") :exit))
 (assert-str= "process exec" "hello" (get (proc/exec "printf" ["hello"]) :out))
 (assert-num= "process system" 0 (proc/system "true"))
+(require [cluck.todo :as todo])
+(assert-true "todo namespace exists" (find-ns 'cluck.todo))
+(let [todo-file "build/cluck-todo-smoke.txt"]
+  (fs/spit todo-file "alpha\nTODO fix this\nbeta FIXME later\n")
+  (let [matches (todo/scan-file todo-file)]
+    (assert-num= "todo matches count" 2 (count matches))
+    (assert-str= "todo first marker" "TODO" (get (first matches) :marker))
+    (assert-str= "todo second marker" "FIXME" (get (nth matches 1) :marker)))
+  (assert-true "todo delete!" (fs/delete! todo-file)))
 (require [cluck.set :as sets])
 (assert-str= "set union" "#{1 2 3}" (pr-str (sets/union #{1 2} #{2 3})))
 (assert-str= "set intersection" "#{2}" (pr-str (sets/intersection #{1 2} #{2 3})))

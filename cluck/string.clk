@@ -18,8 +18,12 @@
       :else i)))
 
 (define (cluck-string-map-chars text char-fn)
-  (list->string
-   (map char-fn (string->list (str text)))))
+  (let* ((chars (string->list (str text))))
+    (##core#let loop ((xs chars) (acc '()))
+      (if (null? xs)
+          (list->string (reverse acc))
+          (loop (cdr xs)
+                (cons (char-fn (car xs)) acc))))))
 
 (define (cluck-string-contains? text needle)
   (if (or (nil? text) (nil? needle))
@@ -141,7 +145,11 @@
             ""
             (list->string
              (cons (char-upcase (car chars))
-                   (map char-downcase (cdr chars))))))))
+                   (##core#let loop ((xs (cdr chars)) (acc '()))
+                     (if (null? xs)
+                         (reverse acc)
+                         (loop (cdr xs)
+                               (cons (char-downcase (car xs)) acc))))))))))
 
 (defn includes?
   "Return true when TEXT contains NEEDLE as a substring."
@@ -158,7 +166,11 @@
              (hay-len (string-length hay))
              (needle-len (string-length needle)))
         (if (= needle-len 0)
-            (map (lambda (ch) (string ch)) (string->list hay))
+            (##core#let loop ((chars (string->list hay)) (acc '()))
+              (if (null? chars)
+                  (reverse acc)
+                  (loop (cdr chars)
+                        (cons (string (car chars)) acc))))
             (##core#let loop ((start 0) (acc '()))
               (##core#let ((idx (cluck-string-index-of hay needle start)))
                 (if idx

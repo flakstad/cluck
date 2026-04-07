@@ -8,7 +8,7 @@
 
 (define (cluck-process-port->string port)
   (##core#let loop ((chars '()))
-    (let [ch (read-char port)]
+    (##core#let ((ch (read-char port)))
       (if (eof-object? ch)
           (list->string (reverse chars))
           (loop (cons ch chars))))))
@@ -22,7 +22,7 @@
 
 (define (cluck-process-args->list args)
   (if (and (= (count args) 1)
-           (let [single (first args)]
+           (##core#let ((single (first args)))
              (or (vector? single)
                  (list? single))))
       (first args)

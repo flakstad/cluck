@@ -1,4 +1,5 @@
 (import (chicken file)
+        (prefix (chicken file posix) posix:)
         (chicken load)
         (chicken port)
         (chicken process-context))
@@ -97,3 +98,35 @@
 
 (define (cluck-bootstrap-file->string path)
   (call-with-input-file path cluck-bootstrap-port->string))
+
+(define (cluck-bootstrap-directory-files path)
+  (let loop ((entries (directory path))
+             (out '()))
+    (if (null? entries)
+        out
+        (let* ((entry (car entries))
+               (child (string-append (cluck-bootstrap-trim-trailing-slash path)
+                                     "/"
+                                     entry))
+               (next (cond
+                       ((posix:directory? child)
+                        (cluck-bootstrap-directory-files child))
+                       ((file-exists? child)
+                        (list child))
+                       (else '()))))
+          (loop (cdr entries) (append out next))))))
+
+(define (cluck-bootstrap-expand-target root target)
+  (let ((path (cluck-bootstrap-absolute-path root target)))
+    (cond
+      ((file-exists? path) (list path))
+      ((posix:directory? path) (cluck-bootstrap-directory-files path))
+      (else (error "Path does not exist" path)))))
+
+(define (cluck-bootstrap-expand-targets root targets)
+  (let loop ((items targets)
+             (out '()))
+    (if (null? items)
+        out
+        (loop (cdr items)
+              (append out (cluck-bootstrap-expand-target root (car items)))))))
