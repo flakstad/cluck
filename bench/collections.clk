@@ -3,7 +3,7 @@
 
 (import (chicken time))
 
-(ns cluck.collections-bench)
+(ns cluck.examples.collections-bench)
 
 (def default-count 5000)
 (def default-rounds 100)

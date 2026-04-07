@@ -1,5 +1,5 @@
 ;; Smoke tests for cluck.
-;; Load this after cluck-init.scm or via run-smoke-tests.scm.
+;; Load this after src/cluck-init.scm or via test/run.scm.
 
 (ns cluck.smoke
   (:require [cluck.edn :as edn]))

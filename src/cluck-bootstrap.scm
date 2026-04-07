@@ -43,8 +43,8 @@
   (let loop ((dir (cluck-bootstrap-normalize-directory start)))
     (cond
       ((not dir) #f)
-      ((or (file-exists? (string-append dir "cluck.scm"))
-           (file-exists? (string-append dir "cluck-cli.scm")))
+      ((or (file-exists? (string-append dir "src/cluck.scm"))
+           (file-exists? (string-append dir "src/cluck-cli.scm")))
        dir)
       ((string=? dir "/") #f)
       (else
@@ -60,11 +60,11 @@
         (cluck-bootstrap-normalize-directory home))
       (let ((vendor (string-append (cluck-bootstrap-trim-trailing-slash root)
                                    "/vendor/cluck/")))
-        (and (file-exists? (string-append vendor "cluck-init.scm"))
+        (and (file-exists? (string-append vendor "src/cluck-init.scm"))
              vendor))
       (let ((local (string-append (cluck-bootstrap-trim-trailing-slash root)
                                   "/cluck/")))
-        (and (file-exists? (string-append local "cluck-init.scm"))
+        (and (file-exists? (string-append local "src/cluck-init.scm"))
              local))
       (cluck-bootstrap-normalize-directory root)))
 
@@ -74,7 +74,7 @@
       (lambda ()
         (change-directory cluck-root))
       (lambda ()
-        (load "cluck.scm"))
+        (load "src/cluck.scm"))
       (lambda ()
         (change-directory root)))
     cluck-root))

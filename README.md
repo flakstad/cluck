@@ -94,7 +94,7 @@ If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` 
 
 When a `.clk` file reaches out to CHICKEN eggs, keep that work explicit by using `ns` `:require` with prefixed imports so the host interop stays visible and does not leak names into the Cluck surface.
 
-For EDN parsing, prefer `cluck.edn/read-string` in app code. The interactive `cluck-init.scm` and `cluck-cli.scm` loaders also install a convenience top-level `read-string` alias for the REPL and command-line workflow, but the namespaced form is the stable one for libraries and standalone binaries.
+For EDN parsing, prefer `cluck.edn/read-string` in app code. The interactive `src/cluck-init.scm` and `src/cluck-cli.scm` loaders also install a convenience top-level `read-string` alias for the REPL and command-line workflow, but the namespaced form is the stable one for libraries and standalone binaries.
 
 ## Performance Direction
 
@@ -116,7 +116,7 @@ The practical goal is to keep the syntax familiar while making the runtime feel 
 From the repository root, in Geiser or any other REPL where you want to return to the host prompt:
 
 ```scheme
-(load "cluck-init.scm")
+(load "src/cluck-init.scm")
 ```
 
 That loads the language layer and installs the reader syntax, but does not start a nested REPL.
@@ -132,7 +132,7 @@ That is the path-aware loader used by the command-line helper scripts and by `C-
 For a standalone terminal REPL:
 
 ```scheme
-(load "cluck-repl.scm")
+(load "src/cluck-repl.scm")
 ```
 
 That file intentionally drops into the `cluck` REPL, so it will appear to keep running until you exit the nested prompt.
@@ -140,21 +140,21 @@ That file intentionally drops into the `cluck` REPL, so it will appear to keep r
 For a more convenient command-line entrypoint, use the launcher source:
 
 ```scheme
-(load "cluck-cli.scm")
+(load "src/cluck-cli.scm")
 ```
 
 It starts a REPL by default, but also accepts a few simple flags:
 
 ```bash
-csi -q -s cluck-cli.scm
-csi -q -s cluck-cli.scm -e '(+ 1 2)'
-csi -q -s cluck-cli.scm -l demo.clk
+csi -q -s src/cluck-cli.scm
+csi -q -s src/cluck-cli.scm -e '(+ 1 2)'
+csi -q -s src/cluck-cli.scm -l examples/cluck/demo/main.clk
 ```
 
 To build a source-backed development launcher:
 
 ```bash
-csc -k -v -O2 -strip -o build/cluck cluck-cli.scm
+csc -k -v -O2 -strip -o build/cluck src/cluck-cli.scm
 ```
 
 That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The launcher still loads the cluck source files at startup, so it is a convenient development front-end rather than a self-contained binary.
@@ -189,7 +189,7 @@ It also includes interactive eval helpers:
 It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:
 
 - edit `.clk` files in `cluck-mode`
-- start a Cluck REPL with `./build/cluck` or `cluck-repl.scm`
+- start a Cluck REPL with `./build/cluck` or `src/cluck-repl.scm`
 - send the current form, region, buffer, or file from `cluck-mode`
 - use `C-x C-e` or `C-c C-e` for the previous sexp, `C-c C-c` for the current top-level form, `C-c C-p` for a popup result buffer, `C-c C-r` for a selected region, `C-c C-b` or `C-c C-k` for the buffer, `C-c C-d` for docstrings, and `C-c C-l` to reload the file
 - use `M-.` to jump to definitions and `M-,` to jump back
@@ -201,22 +201,22 @@ That keeps the editing experience light and avoids Clojure-specific REPL assumpt
 
 There is a small demo program in:
 
-- [`demo.clk`](./demo.clk)
+- [`examples/cluck/demo/main.clk`](./examples/cluck/demo/main.clk)
 
 It is loaded by:
 
-- [`run-demo.scm`](./run-demo.scm)
+- [`examples/cluck/demo/run.scm`](./examples/cluck/demo/run.scm)
 
 Run it with CHICKEN's interpreter after checking out the repo:
 
 ```scheme
-(load "run-demo.scm")
+(load "examples/cluck/demo/run.scm")
 ```
 
 Or from the command line:
 
 ```bash
-csi -q -s run-demo.scm
+csi -q -s examples/cluck/demo/run.scm
 ```
 
 The demo prints a small report over a vector of maps and shows the syntax in action.
@@ -225,16 +225,16 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 There is also a small smoke-test harness in:
 
-- [`smoke.clk`](./smoke.clk)
+- [`test/smoke.clk`](./test/smoke.clk)
 
 It is loaded by:
 
-- [`run-smoke-tests.scm`](./run-smoke-tests.scm)
+- [`test/run.scm`](./test/run.scm)
 
 Run it with:
 
 ```bash
-csi -q -s run-smoke-tests.scm
+csi -q -s test/run.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
@@ -447,12 +447,12 @@ The reusable bootstrap pattern for the bundled example apps lives in
 [`examples/cluck/bootstrap.scm`](./examples/cluck/bootstrap.scm). It is intentionally generic:
 
 - it discovers the project root from the executable location
-- it walks upward from the executable location until it finds `cluck.scm` or `cluck-cli.scm`
-- it loads `cluck.scm`
+- it walks upward from the executable location until it finds `src/cluck.scm` or `src/cluck-cli.scm`
+- it loads `src/cluck.scm`
 - it loads a project source file with `load-file`
 
-The root [`cluck-bootstrap.scm`](./cluck-bootstrap.scm) remains as a
-compatibility copy for the template and for new-project bootstrapping.
+The shared [`src/cluck-bootstrap.scm`](./src/cluck-bootstrap.scm) remains as a
+compatibility helper for the template and for new-project bootstrapping.
 
 For a new project, copy the helper that best matches your layout and point it
 at your own entrypoint file. That gives you a clean Scheme-side bootstrap
@@ -535,7 +535,7 @@ The public namespace layout mirrors Clojure's shape:
 - basic type helpers like `parse-long`, `parse-double`, `type`, and `vec`
 - `format` for `%s`, `%d`, `%%`, and `%.Nf` string interpolation
 
-These namespaces are the intended public surface for user-facing code. `cluck.math` and `cluck.walk` are convenience namespaces; `cluck.app` remains a sample/demo namespace.
+These namespaces are the intended public surface for user-facing code. `cluck.math` and `cluck.walk` are convenience namespaces; `cluck.examples.app` remains a sample/demo namespace.
 
 Numeric values use CHICKEN's Scheme numeric tower underneath, which means Cluck can lean on the host for exact integers, rationals, and inexact reals. The user-facing helpers should still stay Clojure-shaped, so text parsing goes through `parse-long` / `parse-double`, while rendering uses `str`, `pr-str`, or `format`.
 
@@ -614,16 +614,16 @@ There is a small require/ns demo in:
 
 - [`cluck/walk.clk`](./cluck/walk.clk)
 - [`cluck/math.clk`](./cluck/math.clk)
-- [`cluck/app.clk`](./cluck/app.clk)
+- [`examples/cluck/app/main.clk`](./examples/cluck/app/main.clk)
 
 It is loaded by:
 
-- [`run-require-demo.scm`](./run-require-demo.scm)
+- [`examples/cluck/app/run.scm`](./examples/cluck/app/run.scm)
 
 Run it with:
 
 ```bash
-csi -q -s run-require-demo.scm
+csi -q -s examples/cluck/app/run.scm
 ```
 
 The smoke tests also load `cluck.walk` and `cluck.math` through `require` to verify namespace restoration and alias lookup.
@@ -632,18 +632,18 @@ The smoke tests also load `cluck.walk` and `cluck.math` through `require` to ver
 
 There is now a trivial CLI benchmark in:
 
-- [`bench.clk`](./bench.clk)
+- [`bench/main.clk`](./bench/main.clk)
 
 It is loaded by:
 
-- [`run-bench.scm`](./run-bench.scm)
+- [`bench/run.scm`](./bench/run.scm)
 
 The benchmark builds a synthetic backlog, filters it, and prints a summary using the `cluck` runtime and namespace support.
 
 Build the translated C and native binary with:
 
 ```bash
-csc -k -v -O2 -strip -o build/cluck-bench run-bench.scm
+csc -k -v -O2 -strip -o build/cluck-bench bench/run.scm
 ```
 
 That leaves:
@@ -658,13 +658,13 @@ On this machine, the kept artifacts are about:
 
 Important caveat:
 
-- the current native build compiles the `run-bench.scm` wrapper
-- that wrapper still `load-relative`s `cluck-init.scm` and `bench.clk` at startup
+- the current native build compiles the `bench/run.scm` wrapper
+- that wrapper still loads `src/cluck-init.scm` and `bench/main.clk` at startup
 - so these timings are a measure of the current hosted language layer and runtime loader path, not yet a fully self-contained AOT image
 
 A 100000-item run on this machine produced:
 
-- interpreted `csi -q -s run-bench.scm 100000`: `13.35s` real, `12.83s` user
+- interpreted `csi -q -s bench/run.scm 100000`: `13.35s` real, `12.83s` user
 - native `./build/cluck-bench 100000`: `13.53s` real, `12.82s` user
 
 The workload is allocation-heavy, so the native binary is not dramatically faster yet. The useful result here is that we have a small native artifact and a clear baseline for future runtime work.
@@ -673,8 +673,8 @@ The workload is allocation-heavy, so the native binary is not dramatically faste
 
 There is also a smaller benchmark focused on the collection primitives we care about most in the language layer:
 
-- [`collections-bench.clk`](./collections-bench.clk)
-- [`run-collections-bench.scm`](./run-collections-bench.scm)
+- [`bench/collections.clk`](./bench/collections.clk)
+- [`bench/collections-run.scm`](./bench/collections-run.scm)
 
 This suite compares:
 
@@ -691,20 +691,20 @@ This suite compares:
 Run it with:
 
 ```bash
-csi -q -s run-collections-bench.scm 5000 100
+csi -q -s bench/collections-run.scm 5000 100
 ```
 
 Or build a native binary:
 
 ```bash
-csc -k -v -O2 -strip -o build/cluck-collections-bench run-collections-bench.scm
+csc -k -v -O2 -strip -o build/cluck-collections-bench bench/collections-run.scm
 ```
 
 The benchmark prints per-case timings using CHICKEN's process timer, while external `time -l` is still the best way to inspect wall-clock, CPU, and memory behavior from the shell on macOS.
 
 On this machine with `5000` items and `100` rounds:
 
-- interpreted `csi -q -s run-collections-bench.scm 5000 100`: `3.53s` real, `3.49s` user, about `45MB` RSS
+- interpreted `csi -q -s bench/collections-run.scm 5000 100`: `3.53s` real, `3.49s` user, about `45MB` RSS
 - native `./build/cluck-collections-bench 5000 100`: `3.58s` real, `3.54s` user, about `49MB` RSS
 - `build/cluck-collections-bench.c`: `7.2K`
 - `build/cluck-collections-bench`: `50K`
@@ -754,8 +754,8 @@ The main takeaways are:
 
 ## Development notes
 
-- Load `cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
+- Load `src/cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
 - The codebase is still early and intentionally narrow. The next likely steps are namespace polish and deeper packaging work.
-- For a reusable native entrypoint in a new Cluck project, copy `cluck-bootstrap.scm` or start from `examples/cluck/bootstrap.scm` and point it at your project `.clk` file.
+- For a reusable native entrypoint in a new Cluck project, copy `src/cluck-bootstrap.scm` or start from `examples/cluck/bootstrap.scm` and point it at your project `.clk` file.
 - The weather example now demonstrates a self-contained single-binary path; the example-local bootstrap is the stable bit to copy into an example tree today.

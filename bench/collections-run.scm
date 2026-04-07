@@ -10,5 +10,7 @@
             (loop (- i 1))))))
 
 (let ((root (script-root)))
-  (load (string-append root "cluck-init.scm"))
-  (load-file (string-append root "demo.clk")))
+  (load (string-append root "../src/cluck-init.scm"))
+  (load-file (string-append root "collections.clk")))
+
+(collections-bench-main (command-line-arguments))

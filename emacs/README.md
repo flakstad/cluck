@@ -24,6 +24,7 @@ files into a directory already on your `load-path`.
 - doc lookup with `C-c C-d`
 - definition jumping with `M-.`
 - namespace-aware completion for prefixes like `str/`, `uri/`, `cluck.string/`, or `cluck.core/`, invoked explicitly with `TAB`
+- source launcher discovery looks for `src/cluck-cli.scm` and `src/cluck.scm`
 
 The setup intentionally stays light and does not depend on CIDER or LSP for
 Cluck buffers.

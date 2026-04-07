@@ -1,6 +1,6 @@
 ;; Small application namespace that depends on cluck.math.
 
-(ns cluck.app
+(ns cluck.examples.app
   (:require [cluck.math :as math]))
 
 (defn report [xs]

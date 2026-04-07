@@ -6,11 +6,11 @@
 (begin-for-syntax
   (import (chicken file)
           (chicken process-context))
-  (include "syntax-bootstrap.scm")
-  (include "cluck-standalone-prelude.scm"))
+  (include "src/syntax-bootstrap.scm")
+  (include "src/cluck-standalone-prelude.scm"))
 
 ;; Bundle the runtime and the Cluck app source into one compilation unit.
-(include "cluck.scm")
+(include "src/cluck.scm")
 (include "cluck/string.clk")
 
 ;; Mark the bundled namespaces as already available so `ns :require` does not

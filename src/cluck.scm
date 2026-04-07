@@ -9,7 +9,7 @@
         (chicken syntax)
         srfi-69)
 
-(include "syntax-bootstrap.scm")
+(include "src/syntax-bootstrap.scm")
 
 (define (cluck-empty-seq? x)
   (or (nil? x) (null? x)))
@@ -362,8 +362,8 @@
                       (cluck-normalize-directory (current-directory)))))
     (cond
       ((not dir) (current-directory))
-      ((or (file-exists? (string-append dir "cluck-cli.scm"))
-           (file-exists? (string-append dir "cluck.scm")))
+      ((or (file-exists? (string-append dir "src/cluck-cli.scm"))
+           (file-exists? (string-append dir "src/cluck.scm")))
        dir)
       (else
        (let ((parent (cluck-parent-directory dir)))

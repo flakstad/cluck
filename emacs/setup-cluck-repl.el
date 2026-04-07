@@ -41,8 +41,8 @@
          (dir (if (and path (file-directory-p path))
                   path
                 (file-name-directory (expand-file-name path)))))
-    (or (locate-dominating-file dir "cluck-cli.scm")
-        (locate-dominating-file dir "cluck.scm")
+    (or (locate-dominating-file dir "src/cluck-cli.scm")
+        (locate-dominating-file dir "src/cluck.scm")
         (locate-dominating-file dir ".git")
         dir)))
 
@@ -50,7 +50,7 @@
   "Return the command list used to launch a Cluck REPL."
   (let* ((root (file-name-as-directory (cluck--project-root start)))
          (native (expand-file-name "build/cluck" root))
-         (launcher (expand-file-name "cluck-cli.scm" root))
+         (launcher (expand-file-name "src/cluck-cli.scm" root))
          (fallback (executable-find cluck-fallback-executable)))
     (cond
       ((file-executable-p native)

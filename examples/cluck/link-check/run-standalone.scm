@@ -6,10 +6,10 @@
 (begin-for-syntax
   (import (chicken file)
           (chicken process-context))
-  (include "syntax-bootstrap.scm")
-  (include "cluck-standalone-prelude.scm"))
+  (include "src/syntax-bootstrap.scm")
+  (include "src/cluck-standalone-prelude.scm"))
 
-(include "cluck.scm")
+(include "src/cluck.scm")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.link-check #t)

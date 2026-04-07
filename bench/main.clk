@@ -1,7 +1,7 @@
 ;; Benchmark / CLI demo for cluck.
-;; Load this after cluck-init.scm or via run-bench.scm.
+;; Load this after src/cluck-init.scm or via bench/run.scm.
 
-(ns cluck.cli)
+(ns cluck.examples.bench)
 
 (def default-count 50000)
 

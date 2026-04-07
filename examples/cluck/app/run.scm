@@ -10,7 +10,10 @@
             (loop (- i 1))))))
 
 (let ((root (script-root)))
-  (load (string-append root "cluck-init.scm"))
-  (load-file (string-append root "cluck/app.clk")))
-
-(println (report (read-string "[1 2 3 4]")))
+  (load (string-append root "../bootstrap.scm"))
+  (let* ((project-root (cluck-bootstrap-root))
+         (cluck-root (cluck-bootstrap-load-runtime! project-root)))
+    (cluck-with-module-search-root
+     cluck-root
+     (lambda ()
+       (cluck-bootstrap-load-app! project-root "examples/cluck/app/main.clk")))))

@@ -35,7 +35,7 @@ that source-loads the app is only a development artifact.
 
 - `bootstrap.scm` walks upward from the executable location until it finds `src/app/main.clk`.
 - It finds the Cluck runtime from `CLUCK_HOME`, `vendor/cluck/`, `cluck/`, or the project root.
-- It loads `cluck.scm`.
+- It loads `src/cluck.scm`.
 - It keeps the runtime root on Cluck's module search path while loading the app, so `cluck.*` namespaces resolve correctly even when Cluck is vendored.
 
 ## REPL setup

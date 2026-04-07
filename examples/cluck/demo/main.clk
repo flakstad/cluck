@@ -1,7 +1,7 @@
 ;; Small demo program for cluck.
-;; Load this after cluck-init.scm or via run-demo.scm.
+;; Load this after src/cluck-init.scm or via examples/cluck/demo/run.scm.
 
-(ns cluck.demo
+(ns cluck.examples.demo
   (:require [cluck.edn :as edn]))
 
 (def backlog

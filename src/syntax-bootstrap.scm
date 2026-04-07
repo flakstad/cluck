@@ -1,4 +1,4 @@
-(include "syntax-bootstrap-core.scm")
+(include "src/syntax-bootstrap-core.scm")
 
 (set-read-syntax! #\: read-keyword)
 (set-read-syntax! #\[ read-vector-literal)
