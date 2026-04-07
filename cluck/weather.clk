@@ -73,12 +73,12 @@
 
 (defn weather-max-rain-chance [hourly]
   (reduce (fn [best entry]
-            (let [raw (get entry :chanceofrain)
-                  chance (cond
-                           (blank? raw) 0
-                           else (read-string raw))]
-              (cond
-                (> chance best) chance
+              (let [raw (get entry :chanceofrain)
+                    chance (cond
+                             (blank? raw) 0
+                             else (read-string raw))]
+                (cond
+                  (> chance best) chance
                 else best)))
           0
           hourly))

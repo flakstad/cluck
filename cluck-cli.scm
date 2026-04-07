@@ -56,11 +56,11 @@
       ((string=? (car xs) "-l")
        (if (pair? (cdr xs))
            (begin
-             (load (cadr xs))
+             (load-file (cadr xs))
              (loop (cddr xs) interactive? #t))
            (error "cluck: -l expects a file path")))
       (else
-       (load (car xs))
+       (load-file (car xs))
        (loop (cdr xs) interactive? #t)))))
 
 (load-relative "cluck.scm")

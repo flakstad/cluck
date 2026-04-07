@@ -108,6 +108,14 @@ From the repository root, in Geiser or any other REPL where you want to return t
 
 That loads the language layer and installs the reader syntax, but does not start a nested REPL.
 
+To load a `.clk` file with Cluck namespace resolution rooted at that file's project directory, use:
+
+```scheme
+(load-file "cluck/weather.clk")
+```
+
+That is the path-aware loader used by the command-line helper scripts and by `C-c C-l` in `cluck-mode`.
+
 For a standalone terminal REPL:
 
 ```scheme
@@ -149,6 +157,7 @@ It also includes interactive eval helpers:
 - `C-c C-d` shows the docstring for the symbol at point in a dedicated buffer
 - inline overlays clear on the next command, so they behave more like transient feedback than permanent annotations
 - `C-c C-r`, `C-c C-b`, `C-c C-k`, and `C-c C-l` report in the echo area for larger evaluations and file loads
+- `C-c C-l` uses the path-aware `load-file` helper so nested `ns :require` lookups resolve relative to the loaded file
 - `M-.` jumps to the definition of the symbol at point, and `M-,` returns to the previous location
 
 It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:

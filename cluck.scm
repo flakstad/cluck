@@ -27,6 +27,21 @@
         (loop (cdr rest)
               (cluck-insert-sorted (car rest) acc less?)))))
 
+(define (cluck-trim-trailing-slash path)
+  (let ((len (string-length path)))
+    (if (and (> len 0)
+             (char=? (string-ref path (- len 1)) #\/))
+        (substring path 0 (- len 1))
+        path)))
+
+(define (cluck-normalize-directory dir)
+  (if (and dir (> (string-length dir) 0))
+      (let ((len (string-length dir)))
+        (if (char=? (string-ref dir (- len 1)) #\/)
+            dir
+            (string-append dir "/")))
+      #f))
+
 (define *ns* 'user)
 (define *cluck-ns-registry* (make-hash-table))
 (define *cluck-ns-imports* (make-hash-table))
@@ -34,6 +49,8 @@
 (define *cluck-loaded-namespaces* (make-hash-table))
 (define *cluck-loading-namespaces* (make-hash-table))
 (define *cluck-ns-aliases* (make-hash-table))
+(define *cluck-module-search-roots*
+  (list (cluck-normalize-directory (current-directory))))
 
 (define (cluck-ensure-ns! ns)
   (let ((existing (hash-table-ref/default *cluck-ns-registry* ns #f)))
@@ -290,12 +307,78 @@
           (root-loop (cdr rs)
                      (append (cluck-root-candidates (car rs)) acc))))))
 
-(define (cluck-locate-module-file ns)
-  (let loop ((xs (cluck-module-candidates ns)))
+(define (cluck-path-directory path)
+  (let loop ((i (- (string-length path) 1)))
     (cond
-      ((null? xs) #f)
-      ((file-exists? (car xs)) (car xs))
-      (else (loop (cdr xs))))))
+      ((< i 0) #f)
+      ((char=? (string-ref path i) #\/)
+       (substring path 0 (+ i 1)))
+      (else
+       (loop (- i 1))))))
+
+(define (cluck-parent-directory path)
+  (cluck-path-directory (cluck-trim-trailing-slash path)))
+
+(define (cluck-absolute-path path)
+  (if (and (> (string-length path) 0)
+           (char=? (string-ref path 0) #\/))
+      path
+      (let ((cwd (cluck-normalize-directory (current-directory))))
+        (if cwd
+            (string-append cwd path)
+            path))))
+
+(define (cluck-find-project-root path)
+  (let loop ((dir (or (cluck-path-directory (cluck-absolute-path path))
+                      (cluck-normalize-directory (current-directory)))))
+    (cond
+      ((not dir) (current-directory))
+      ((or (file-exists? (string-append dir "cluck-cli.scm"))
+           (file-exists? (string-append dir "cluck.scm")))
+       dir)
+      (else
+       (let ((parent (cluck-parent-directory dir)))
+         (if (and parent (not (string=? parent dir)))
+             (loop parent)
+             dir))))))
+
+(define (cluck-with-module-search-root root thunk)
+  (let ((dir (cluck-normalize-directory root)))
+    (if dir
+        (dynamic-wind
+          (lambda ()
+            (set! *cluck-module-search-roots*
+                  (cons dir *cluck-module-search-roots*)))
+          thunk
+          (lambda ()
+            (set! *cluck-module-search-roots*
+                  (cdr *cluck-module-search-roots*))))
+        (thunk))))
+
+(define (cluck-load-source-file! path)
+  (let* ((absolute (cluck-absolute-path path))
+         (root (cluck-find-project-root absolute)))
+    (cluck-with-module-search-root
+     root
+     (lambda ()
+       (load absolute)
+       (void)))))
+
+(define (cluck-locate-module-file ns)
+  (let ((candidates (cluck-module-candidates ns)))
+    (let root-loop ((roots *cluck-module-search-roots*))
+      (cond
+        ((null? roots) #f)
+        (else
+         (let ((root (cluck-normalize-directory (car roots))))
+           (let candidate-loop ((xs candidates))
+             (cond
+               ((null? xs) (root-loop (cdr roots)))
+               (else
+                (let ((path (string-append root (car xs))))
+                  (if (file-exists? path)
+                      path
+                      (candidate-loop (cdr xs)))))))))))))
 
 (define (cluck-namespace-loaded? ns)
   (hash-table-exists? *cluck-loaded-namespaces* ns))
@@ -309,7 +392,7 @@
 (define (cluck-load-namespace-file! ns path)
   (let ((saved-ns (current-ns)))
     (hash-table-set! *cluck-loading-namespaces* ns #t)
-    (load path)
+    (cluck-load-source-file! path)
     (hash-table-delete! *cluck-loading-namespaces* ns)
     (cluck-set-current-ns! saved-ns)
     (hash-table-set! *cluck-loaded-namespaces* ns path)
@@ -1450,6 +1533,9 @@
 (define (unspecified? x)
   (eq? x (void)))
 
+(define (load-file path)
+  (cluck-load-source-file! path))
+
 (define (cluck-core-public-bindings)
   (list
    (cons 'current-ns current-ns)
@@ -1458,6 +1544,7 @@
    (cons 'ns-publics ns-publics)
    (cons 'ns-resolve ns-resolve)
    (cons 'read-string read-string)
+   (cons 'load-file load-file)
    (cons 'pr-str pr-str)
    (cons 'str str)
    (cons 'println println)
@@ -1522,6 +1609,7 @@
    (cons 'ns-publics "Return a map of public vars in NS.")
    (cons 'ns-resolve "Resolve SYM in NS, checking public vars and imports.")
    (cons 'read-string "Read one Cluck form from STRING.")
+   (cons 'load-file "Load FILE and resolve nested Cluck namespaces relative to its project root.")
    (cons 'pr-str "Render values as Cluck-readable text.")
    (cons 'str "Concatenate values as plain text.")
    (cons 'println "Print values as plain text with spaces and a trailing newline.")
