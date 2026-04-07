@@ -281,6 +281,7 @@ A small copyable starter lives in [`template/`](./template/).
 
 - `template/bootstrap.scm` is the reusable bootstrap helper for a new project
 - `template/run.scm` loads the Cluck runtime and the starter app
+- `template/repl.scm` loads the Cluck runtime, starter app, and then starts a REPL
 - `template/src/app/main.clk` is a minimal Cluck entrypoint
 
 For a new project, either:
@@ -292,6 +293,16 @@ Then run or compile `template/run.scm` as the entrypoint. The bootstrap keeps
 the Cluck runtime root on the module search path while loading your app, so
 `cluck.*` namespaces resolve even when Cluck is vendored instead of installed
 as an egg.
+
+For interactive work, `template/repl.scm` is the starter REPL entrypoint. It
+loads the same app namespace and drops into a Cluck REPL after startup.
+
+To build native launchers, compile `run.scm` or `repl.scm` with `csc -k -v
+-O2 -strip ...`. These are native front-ends, but they still source-load the
+app at startup. The template bootstrap walks upward from the launcher
+location, so keeping the binary under `build/` still works as long as it stays
+inside the project tree. For a fully self-contained binary, use the standalone
+weather packaging pattern described above.
 
 ## Namespaces
 

@@ -17,13 +17,51 @@
             (string-append dir "/")))
       #f))
 
+(define (cluck-template-absolute-directory dir)
+  (cond
+    ((not dir) #f)
+    ((and (> (string-length dir) 0)
+          (char=? (string-ref dir 0) #\/))
+     (cluck-template-normalize-directory dir))
+    (else
+     (let ((cwd (cluck-template-normalize-directory (current-directory))))
+       (and cwd
+            (string-append cwd (cluck-template-trim-trailing-slash dir) "/"))))))
+
+(define (cluck-template-executable-root)
+  (cluck-template-absolute-directory
+   (let loop ((i (- (string-length (program-name)) 1)))
+     (if (< i 0)
+         (current-directory)
+         (if (char=? (string-ref (program-name) i) #\/)
+             (substring (program-name) 0 (+ i 1))
+             (loop (- i 1)))))))
+
+(define (cluck-template-parent-directory dir)
+  (let* ((trimmed (cluck-template-trim-trailing-slash dir))
+         (len (string-length trimmed)))
+    (let loop ((i (- len 1)))
+      (cond
+        ((< i 0) #f)
+        ((char=? (string-ref trimmed i) #\/)
+         (if (= i 0)
+             "/"
+             (substring trimmed 0 (+ i 1))))
+        (else (loop (- i 1)))))))
+
+(define (cluck-template-project-root start)
+  (let loop ((dir (cluck-template-normalize-directory start)))
+    (cond
+      ((not dir) #f)
+      ((file-exists? (string-append dir "src/app/main.clk")) dir)
+      ((string=? dir "/") #f)
+      (else
+       (let ((parent (cluck-template-parent-directory dir)))
+         (and parent (loop parent)))))))
+
 (define (cluck-template-root)
-  (let loop ((i (- (string-length (program-name)) 1)))
-    (if (< i 0)
-        (string-append (current-directory) "/")
-        (if (char=? (string-ref (program-name) i) #\/)
-            (substring (program-name) 0 (+ i 1))
-            (loop (- i 1))))))
+  (or (cluck-template-project-root (cluck-template-executable-root))
+      (cluck-template-normalize-directory (current-directory))))
 
 (define (cluck-template-cluck-root root)
   (or (let ((home (get-environment-variable "CLUCK_HOME")))
@@ -50,4 +88,11 @@
     cluck-root))
 
 (define (cluck-template-load-app! root path)
-  (load-file (string-append root path)))
+  (cluck-with-module-search-root
+   root
+   (lambda ()
+     (cluck-with-directory
+      root
+      (lambda ()
+        (load (string-append root path))
+        (void))))))
