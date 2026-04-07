@@ -973,6 +973,129 @@
   (newline)
   nil)
 
+(define (cluck-format-piece x)
+  (cond
+    ((nil? x) "nil")
+    ((string? x) x)
+    ((char? x)
+     (let ((p (open-output-string)))
+       (write-char x p)
+       (get-output-string p)))
+    (else (str x))))
+
+(define (cluck-format-pad-left s width)
+  (let ((pad (- width (string-length s))))
+    (if (<= pad 0)
+        s
+        (string-append (make-string pad #\0) s))))
+
+(define (cluck-format-fixed number precision)
+  (let* ((prec (if (and (integer? precision) (>= precision 0))
+                   precision
+                   (error "Invalid format precision" precision)))
+         (scale (let loop ((i prec) (acc 1))
+                  (if (= i 0)
+                      acc
+                      (loop (- i 1) (* acc 10)))))
+         (rounded (round (* number scale)))
+         (rounded-int (if (exact? rounded) rounded (inexact->exact rounded))))
+    (if (not (integer? rounded-int))
+        (error "Invalid %f argument" number)
+        (let* ((negative? (negative? rounded-int))
+               (abs-rounded (abs rounded-int))
+               (whole (quotient abs-rounded scale))
+               (fraction (remainder abs-rounded scale))
+               (whole-str (number->string whole))
+               (fraction-str (if (= prec 0)
+                                 ""
+                                 (cluck-format-pad-left
+                                  (number->string fraction)
+                                  prec))))
+          (if (= prec 0)
+              (str (if negative? "-" "") whole-str)
+              (str (if negative? "-" "")
+                   whole-str
+                   "."
+                   fraction-str))))))
+
+(define (cluck-format-handle-directive fmt i items port)
+  (let ((next (string-ref fmt i)))
+    (cond
+      ((char=? next #\%)
+       (write-char #\% port)
+       (values (+ i 1) items))
+      ((char=? next #\s)
+       (cond
+         ((null? items) (error "Missing format argument" fmt))
+         (else
+          (display (cluck-format-piece (car items)) port)
+          (values (+ i 1) (cdr items)))))
+      ((char=? next #\d)
+       (cond
+         ((null? items) (error "Missing format argument" fmt))
+         ((not (integer? (car items)))
+          (error "%d expects an integer" (car items)))
+         (else
+          (display (number->string (car items)) port)
+          (values (+ i 1) (cdr items)))))
+      ((char=? next #\f)
+       (cond
+         ((null? items) (error "Missing format argument" fmt))
+         ((not (number? (car items)))
+          (error "%f expects a number" (car items)))
+         (else
+          (display (cluck-format-fixed (car items) 6) port)
+          (values (+ i 1) (cdr items)))))
+      ((char=? next #\.)
+       (let parse ((j (+ i 1)) (precision 0) (seen-digit? #f))
+         (if (>= j (string-length fmt))
+             (error "Incomplete %.Nf format directive" fmt)
+             (let ((c (string-ref fmt j)))
+               (cond
+                 ((char-numeric? c)
+                  (parse (+ j 1)
+                         (+ (* precision 10)
+                            (- (char->integer c)
+                               (char->integer #\0)))
+                         #t))
+                 ((char=? c #\f)
+                  (cond
+                    ((not seen-digit?)
+                     (error "Precision required for %.Nf" fmt))
+                    ((null? items)
+                     (error "Missing format argument" fmt))
+                    ((not (number? (car items)))
+                     (error "%f expects a number" (car items)))
+                    (else
+                     (display (cluck-format-fixed (car items) precision) port)
+                     (values (+ j 1) (cdr items)))))
+                 (else
+                  (error "Unsupported format directive" fmt)))))))
+      (else
+       (error "Unsupported format directive" fmt)))))
+
+(define (format template . args)
+  "Format TEMPLATE with Clojure-style %s, %d, %% and %.Nf directives."
+  (let* ((fmt (str template))
+         (len (string-length fmt))
+         (port (open-output-string)))
+    (let loop ((i 0) (items args))
+      (cond
+        ((= i len)
+         (cond
+           ((null? items) (get-output-string port))
+           (else (error "Too many arguments for format" fmt))))
+        ((not (char=? (string-ref fmt i) #\%))
+         (write-char (string-ref fmt i) port)
+         (loop (+ i 1) items))
+        ((= (+ i 1) len)
+         (error "Incomplete format directive" fmt))
+        (else
+         (call-with-values
+             (lambda () (cluck-format-handle-directive fmt (+ i 1) items port))
+           (lambda (next-i next-items)
+             (loop next-i next-items))))))))
+
 (define (cluck-core-read-string s)
   (cluck-read-one s))
 
@@ -1600,6 +1723,7 @@
    (cons 'ns-publics ns-publics)
    (cons 'ns-resolve ns-resolve)
    (cons 'read-string cluck-core-read-string)
+   (cons 'format format)
    (cons 'parse-long parse-long)
    (cons 'parse-double parse-double)
    (cons 'load-file load-file)
@@ -1667,6 +1791,7 @@
    (cons 'ns-publics "Return a map of public vars in NS.")
    (cons 'ns-resolve "Resolve SYM in NS, checking public vars and imports.")
    (cons 'read-string "Read one Cluck form from STRING.")
+   (cons 'format "Format TEMPLATE with %s, %d, %% and %.Nf directives.")
    (cons 'parse-long "Parse STRING as a long integer.")
    (cons 'parse-double "Parse STRING as an inexact number.")
    (cons 'load-file "Load FILE and resolve nested Cluck namespaces relative to its project root.")

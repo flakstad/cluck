@@ -53,7 +53,7 @@ The current implementation supports:
 - `{:a 1 :b 2}` maps
 - `#{1 2 3}` sets
 - `cluck.edn/read-string`
-- `pr-str`, `str`, `println`, and `prn`
+- `pr-str`, `str`, `format`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
@@ -366,10 +366,11 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.set`
 - `cluck.edn`
 - basic type conversions like `parse-long` and `parse-double`
+- `format` for `%s`, `%d`, `%%`, and `%.Nf` string interpolation
 
 These namespaces are the intended public surface for user-facing code. The older `cluck.math` and `cluck.app` files remain as sample/demo namespaces.
 
-Numeric values use CHICKEN's Scheme numeric tower underneath, which means Cluck can lean on the host for exact integers, rationals, and inexact reals. The user-facing helpers should still stay Clojure-shaped, so text parsing goes through `parse-long` / `parse-double`, while rendering uses `str` or `pr-str`.
+Numeric values use CHICKEN's Scheme numeric tower underneath, which means Cluck can lean on the host for exact integers, rationals, and inexact reals. The user-facing helpers should still stay Clojure-shaped, so text parsing goes through `parse-long` / `parse-double`, while rendering uses `str`, `pr-str`, or `format`.
 
 - `ns` sets the active namespace
 - `require` loads namespace files and returns to the caller's namespace afterwards

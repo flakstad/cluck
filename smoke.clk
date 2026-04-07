@@ -56,6 +56,12 @@
              (capture-output (lambda () (println "hello" "world"))))
 (assert-str= "println nil" "nil\n"
              (capture-output (lambda () (println nil))))
+(assert-str= "format basic" "hello world 3"
+             (format "hello %s %d" "world" 3))
+(assert-str= "format decimals" "3.14"
+             (format "%.2f" 3.14159))
+(assert-str= "format nil" "nil"
+             (format "%s" nil))
 (assert-num= "parse-long" 42 (parse-long "42"))
 (assert-num= "parse-double" 42.5 (parse-double "42.5"))
 (assert-true "unspecified?" (unspecified? (void)))
