@@ -527,10 +527,12 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.process`
 - `cluck.set`
 - `cluck.edn`
+- `cluck.walk`
+- `cluck.math`
 - basic type helpers like `parse-long`, `parse-double`, `type`, and `vec`
 - `format` for `%s`, `%d`, `%%`, and `%.Nf` string interpolation
 
-These namespaces are the intended public surface for user-facing code. The older `cluck.math` and `cluck.app` files remain as sample/demo namespaces.
+These namespaces are the intended public surface for user-facing code. `cluck.math` and `cluck.walk` are convenience namespaces; `cluck.app` remains a sample/demo namespace.
 
 Numeric values use CHICKEN's Scheme numeric tower underneath, which means Cluck can lean on the host for exact integers, rationals, and inexact reals. The user-facing helpers should still stay Clojure-shaped, so text parsing goes through `parse-long` / `parse-double`, while rendering uses `str`, `pr-str`, or `format`.
 
@@ -566,6 +568,8 @@ The mirrored namespace files currently live at:
 - [`cluck/string.clk`](./cluck/string.clk)
 - [`cluck/set.clk`](./cluck/set.clk)
 - [`cluck/edn.clk`](./cluck/edn.clk)
+- [`cluck/walk.clk`](./cluck/walk.clk)
+- [`cluck/math.clk`](./cluck/math.clk)
 - [`examples/cluck/todo.clk`](./examples/cluck/todo.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
@@ -576,6 +580,19 @@ This is enough to structure source files, inspect exports, and load small module
 - `lower-case`, `upper-case`, `capitalize`
 - `includes?`, `split`, `join`, `split-lines`
 - `starts-with?`, `ends-with?`
+
+`cluck.walk` provides a small tree-walking toolkit:
+
+- `walk`, `prewalk`, `postwalk`
+- `keywordize-keys`, `stringify-keys`
+
+`cluck.math` gathers common numeric helpers:
+
+- `abs`, `pow`, `sqrt`, `floor`, `ceil`, `ceiling`, `round`, `truncate`
+- `mod`, `rem`, `quotient`, `remainder`
+- `sin`, `cos`, `tan`, `asin`, `acos`, `atan`
+- `exp`, `log`, `log10`
+- `exact?`, `inexact?`, `exact-integer?`
 
 ## Direction
 
@@ -592,6 +609,7 @@ The next phase is about making Cluck prove itself on a real small program, not j
 
 There is a small require/ns demo in:
 
+- [`cluck/walk.clk`](./cluck/walk.clk)
 - [`cluck/math.clk`](./cluck/math.clk)
 - [`cluck/app.clk`](./cluck/app.clk)
 
@@ -605,7 +623,7 @@ Run it with:
 csi -q -s run-require-demo.scm
 ```
 
-The smoke tests also load `cluck.math` through `require` to verify namespace restoration and alias lookup.
+The smoke tests also load `cluck.walk` and `cluck.math` through `require` to verify namespace restoration and alias lookup.
 
 ## Native Build
 

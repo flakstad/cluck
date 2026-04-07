@@ -323,11 +323,37 @@
 (assert-true "seq map entry vector" (vector? (first (seq sample))))
 
 (def smoke-ns-value 123)
+(require [cluck.walk :as walk])
+(assert-true "walk namespace exists" (find-ns 'cluck.walk))
+(assert-str= "walk postwalk"
+             "{:a 2 :b [3 4]}"
+             (pr-str (walk/postwalk (fn [x] (if (number? x) (inc x) x))
+                                    {:a 1 :b [2 3]})))
+(assert-str= "walk prewalk"
+             "[2 [4]]"
+             (pr-str (walk/prewalk (fn [x] (if (number? x) (* x 2) x))
+                                   [1 [2]])))
+(assert-str= "walk keywordize-keys"
+             "{:a 1 :b {:c 2}}"
+             (pr-str (walk/keywordize-keys {"a" 1 :b {"c" 2}})))
+(assert-str= "walk stringify-keys"
+             "{\"a\" 1 \"b\" {\"c\" 2}}"
+             (pr-str (walk/stringify-keys {:a 1 :b {:c 2}})))
 (require [cluck.math :as math])
+(assert-true "math namespace exists" (find-ns 'cluck.math))
+(assert-num= "math abs" 7 (math/abs -7))
+(assert-num= "math sqrt" 3 (math/sqrt 9))
+(assert-num= "math pow" 8 (math/pow 2 3))
+(assert-num= "math floor" 3 (math/floor 3.9))
+(assert-num= "math ceil" 4 (math/ceil 3.1))
+(assert-num= "math mod" 1 (math/mod 7 3))
+(assert-num= "math rem" 1 (math/rem 7 3))
+(assert-num= "math log10" 2 (math/log10 100))
+(assert-num= "math signum" -1 (math/signum -8))
 (assert-num= "require square" 25 (math/square 5))
 (assert-num= "require sum-of-squares" 14 (math/sum-of-squares [1 2 3]))
 (assert-str= "doc alias square"
-             "math/square\n\nReturn x squared.\n"
+             "math/square\n\nReturn X squared.\n"
              (capture-output (lambda () (doc math/square))))
 (let [math-square (ns-resolve 'math 'square)]
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))

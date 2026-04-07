@@ -1,0 +1,101 @@
+;; Tree walking helpers for Cluck.
+
+(ns cluck.walk
+  "Tree walking helpers for Cluck.")
+
+(defn cluck-walk-map
+  [f m]
+  (reduce (fn [acc entry]
+            (let [k (first entry)
+                  v (nth entry 1)]
+              (assoc acc (f k) (f v))))
+          (hash-map)
+          (seq m)))
+
+(defn cluck-walk-set
+  [f s]
+  (reduce (fn [acc item]
+            (conj acc (f item)))
+          (hash-set)
+          (seq s)))
+
+(defn walk
+  "Apply INNER to the children of FORM, then OUTER to the rebuilt form."
+  [inner outer form]
+  (cond
+    (map? form)
+    (outer (cluck-walk-map inner form))
+
+    (set? form)
+    (outer (cluck-walk-set inner form))
+
+    (vector? form)
+    (outer (mapv inner form))
+
+    (or (pair? form) (null? form))
+    (outer (map inner form))
+
+    :else
+    (outer form)))
+
+(defn prewalk
+  "Apply F to FORM before walking children."
+  [f form]
+  (walk (fn [x] (prewalk f x))
+        identity
+        (f form)))
+
+(defn postwalk
+  "Apply F to FORM after walking children."
+  [f form]
+  (walk (fn [x] (postwalk f x))
+        f
+        form))
+
+(defn cluck-walk-key->string
+  [k]
+  (cond
+    (string? k) k
+    (keyword? k) (name k)
+    (symbol? k) (name k)
+    :else (str k)))
+
+(defn cluck-walk-keywordize-map
+  [m]
+  (reduce (fn [acc entry]
+            (let [k (first entry)
+                  v (nth entry 1)]
+              (assoc acc
+                     (if (string? k) (keyword k) k)
+                     v)))
+          (hash-map)
+          (seq m)))
+
+(defn cluck-walk-stringify-map
+  [m]
+  (reduce (fn [acc entry]
+            (let [k (first entry)
+                  v (nth entry 1)]
+              (assoc acc
+                     (cluck-walk-key->string k)
+                     v)))
+          (hash-map)
+          (seq m)))
+
+(defn keywordize-keys
+  "Recursively convert string map keys to keywords."
+  [form]
+  (postwalk (fn [x]
+              (if (map? x)
+                  (cluck-walk-keywordize-map x)
+                  x))
+            form))
+
+(defn stringify-keys
+  "Recursively convert map keys to strings."
+  [form]
+  (postwalk (fn [x]
+              (if (map? x)
+                  (cluck-walk-stringify-map x)
+                  x))
+            form))

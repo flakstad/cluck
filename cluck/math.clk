@@ -1,14 +1,177 @@
-;; Small math namespace for require/ns smoke coverage.
+;; Math helpers for Cluck.
+;;
+;; This namespace gathers the numeric helpers that feel most natural in a
+;; Clojure-shaped surface while still using the CHICKEN runtime underneath.
 
-(ns cluck.math)
+(ns cluck.math
+  "Math helpers for Cluck.")
 
-(defn square "Return x squared." [x]
+(def cluck-math-abs abs)
+(def cluck-math-sqrt sqrt)
+(def cluck-math-expt expt)
+(def cluck-math-floor floor)
+(def cluck-math-ceiling ceiling)
+(def cluck-math-round round)
+(def cluck-math-truncate truncate)
+(def cluck-math-modulo modulo)
+(def cluck-math-remainder remainder)
+(def cluck-math-quotient quotient)
+(def cluck-math-sin sin)
+(def cluck-math-cos cos)
+(def cluck-math-tan tan)
+(def cluck-math-asin asin)
+(def cluck-math-acos acos)
+(def cluck-math-atan atan)
+(def cluck-math-exp exp)
+(def cluck-math-log log)
+(def cluck-math-exact? exact?)
+(def cluck-math-inexact? inexact?)
+(def cluck-math-exact-integer? exact-integer?)
+
+(defn abs
+  "Return the absolute value of X."
+  [x]
+  (cluck-math-abs x))
+
+(defn pow
+  "Return X raised to the power Y."
+  [x y]
+  (cluck-math-expt x y))
+
+(defn sqrt
+  "Return the square root of X."
+  [x]
+  (cluck-math-sqrt x))
+
+(defn floor
+  "Return the largest integer less than or equal to X."
+  [x]
+  (cluck-math-floor x))
+
+(defn ceil
+  "Return the smallest integer greater than or equal to X."
+  [x]
+  (cluck-math-ceiling x))
+
+(defn ceiling
+  "Return the smallest integer greater than or equal to X."
+  [x]
+  (cluck-math-ceiling x))
+
+(defn round
+  "Round X to the nearest integer."
+  [x]
+  (cluck-math-round x))
+
+(defn truncate
+  "Truncate X toward zero."
+  [x]
+  (cluck-math-truncate x))
+
+(defn mod
+  "Return X modulo Y."
+  [x y]
+  (cluck-math-modulo x y))
+
+(defn rem
+  "Return the remainder of X divided by Y."
+  [x y]
+  (cluck-math-remainder x y))
+
+(defn quotient
+  "Return the integer quotient of X divided by Y."
+  [x y]
+  (cluck-math-quotient x y))
+
+(defn remainder
+  "Return the remainder of X divided by Y."
+  [x y]
+  (cluck-math-remainder x y))
+
+(defn sin
+  "Return the sine of X."
+  [x]
+  (cluck-math-sin x))
+
+(defn cos
+  "Return the cosine of X."
+  [x]
+  (cluck-math-cos x))
+
+(defn tan
+  "Return the tangent of X."
+  [x]
+  (cluck-math-tan x))
+
+(defn asin
+  "Return the arc-sine of X."
+  [x]
+  (cluck-math-asin x))
+
+(defn acos
+  "Return the arc-cosine of X."
+  [x]
+  (cluck-math-acos x))
+
+(defn atan
+  "Return the arc-tangent of X, or Y over X when Y is supplied."
+  [x & maybe-y]
+  (if (empty? maybe-y)
+      (cluck-math-atan x)
+      (cluck-math-atan (first maybe-y) x)))
+
+(defn exp
+  "Return e raised to X."
+  [x]
+  (cluck-math-exp x))
+
+(defn log
+  "Return the natural logarithm of X."
+  [x]
+  (cluck-math-log x))
+
+(defn log10
+  "Return the base-10 logarithm of X."
+  [x]
+  (/ (cluck-math-log x)
+     (cluck-math-log 10)))
+
+(defn exact?
+  "Return true when X is exact."
+  [x]
+  (cluck-math-exact? x))
+
+(defn inexact?
+  "Return true when X is inexact."
+  [x]
+  (cluck-math-inexact? x))
+
+(defn exact-integer?
+  "Return true when X is an exact integer."
+  [x]
+  (cluck-math-exact-integer? x))
+
+(defn signum
+  "Return -1, 0, or 1 depending on the sign of X."
+  [x]
+  (cond
+    (negative? x) -1
+    (positive? x) 1
+    :else 0))
+
+(defn square
+  "Return X squared."
+  [x]
   (* x x))
 
-(defn sum-of-squares "Return the sum of the squares in XS." [xs]
+(defn sum-of-squares
+  "Return the sum of the squares in XS."
+  [xs]
   (reduce + 0 (mapv square xs)))
 
-(defn report "Return a summary map for XS." [xs]
+(defn report
+  "Return a summary map for XS."
+  [xs]
   {:count (count xs)
    :sum (reduce + 0 xs)
    :sum-of-squares (sum-of-squares xs)})
