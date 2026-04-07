@@ -10,20 +10,20 @@
             [json :as json]
             [uri-common :as uri]))
 
-(defn weather-json-entry? [x]
+(defn json-entry? [x]
   (if (seq x)
       (string? (first x))
       false))
 
-(defn weather-json-entry-value [entry]
+(defn json-entry-value [entry]
   (rest entry))
 
-(defn weather-json-vector->cluck [x]
-  (if (every? weather-json-entry? (seq x))
+(defn json-vector->cluck [x]
+  (if (every? json-entry? (seq x))
       (reduce (fn [result entry]
                 (assoc result
                        (keyword (first entry))
-                       (weather-json->cluck (weather-json-entry-value entry))))
+                       (weather-json->cluck (json-entry-value entry))))
               (hash-map)
               (seq x))
       (mapv weather-json->cluck x)))
@@ -32,7 +32,7 @@
   (cond
     (unspecified? x) nil
     (string? x) x
-    (vector? x) (if (empty? x) [] (weather-json-vector->cluck x))
+    (vector? x) (if (empty? x) [] (json-vector->cluck x))
     (seq x) (mapv weather-json->cluck x)
     :else x))
 
@@ -64,10 +64,10 @@
         (uri:uri-encode-string location)
         "?format=j1")))
 
-(defn weather-text [x]
+(defn text [x]
   (cond
     (string? x) x
-    (vector? x) (if (empty? x) "" (weather-text (first x)))
+    (vector? x) (if (empty? x) "" (text (first x)))
     (map? x) (weather-map-text x)
     (nil? x) ""
     :else (pr-str x)))
@@ -75,9 +75,9 @@
 (defn weather-location-title [area]
   (str/join ", "
             (filter (fn [part] (not (str/blank? part)))
-                    [(weather-text (get area :areaName))
-                     (weather-text (get area :region))
-                     (weather-text (get area :country))])))
+                    [(text (get area :areaName))
+                     (text (get area :region))
+                     (text (get area :country))])))
 
 (defn weather-rain-chance [raw]
   (if (str/blank? raw)
@@ -95,7 +95,7 @@
   (let [hourly (get day :hourly)
         first-hour (first hourly)
         description (if first-hour
-                      (weather-text (get first-hour :weatherDesc))
+                      (text (get first-hour :weatherDesc))
                       "")
         rain-chance (if (empty? hourly)
                       0
@@ -118,7 +118,7 @@
           nil
           (seq days)))
 
-(defn weather-print-report [payload]
+(defn print-report [payload]
   (let [area (first (get payload :nearest_area))
         current (first (get payload :current_condition))
         days (get payload :weather)]
@@ -128,17 +128,17 @@
                   "°C, feels like "
                   (get current :FeelsLikeC)
                   "°C, "
-                  (weather-text (get current :weatherDesc))
+                  (text (get current :weatherDesc))
                   ", wind "
-                  (get current :windspeedKmph)
-                  " km/h, humidity "
+                  (/ (parse-double (get current :windspeedKmph)) 3.6)
+                  " m/s, humidity "
                   (get current :humidity)
                   "%"))
     (println "Forecast:")
     (weather-print-days days)
     nil))
 
-(defn weather-fetch-report [location]
+(defn fetch-report [location]
   (weather-fetch-json (weather-url location)))
 
 (defn weather-usage []
@@ -150,12 +150,16 @@
   (let [location (str/trim (str/join " " args))]
     (if (str/blank? location)
       (weather-usage)
-      (weather-print-report (weather-fetch-report location)))))
+      (print-report (fetch-report location)))))
 
 
 (comment
 
-  (weather-print-report 
-    (weather-fetch-report "Stjørdal"))
+  (print-report 
+    (fetch-report "Skatval"))
+
+  (/ (parse-double "31") 3.6)
+
+  (str 1 " " 2)
 
   )
