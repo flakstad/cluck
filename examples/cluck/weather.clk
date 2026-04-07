@@ -103,7 +103,7 @@
       (:date day)
       (:mintempC day)
       (:maxtempC day)
-      description
+      (str/lower-case description)
       (str rain-chance))))
 
 (defn print-days [days]
@@ -126,7 +126,7 @@
     "Current: %s°C, feels like %s°C, %s, wind %s m/s, humidity %s"
     (:temp_C current)
     (:FeelsLikeC current)
-    (text (:weatherDesc current))
+    (str/lower-case (text (:weatherDesc current)))
     (meter-per-sec (:windspeedKmph current))
     (:humidity current)))
 
