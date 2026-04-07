@@ -20,17 +20,17 @@
   (rest entry))
 
 (defn weather-json->cluck [x]
-  (letrec ((json-vector->cluck
-            (fn [x]
-              (if (every? json-entry? (seq x))
-                (reduce
-                  (fn [result entry]
-                    (assoc result
-                           (keyword (first entry))
-                           (weather-json->cluck (json-entry-value entry))))
-                  (hash-map)
-                  (seq x))
-                (mapv weather-json->cluck x)))))
+  (let [json-vector->cluck
+        (fn [x]
+          (if (every? json-entry? (seq x))
+            (reduce
+              (fn [result entry]
+                (assoc result
+                       (keyword (first entry))
+                       (weather-json->cluck (json-entry-value entry))))
+              (hash-map)
+              (seq x))
+            (mapv weather-json->cluck x)))]
     (cond
       (unspecified? x) nil
       (string? x) x
