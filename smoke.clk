@@ -55,6 +55,9 @@
              (capture-output (lambda () (println "hello" "world"))))
 (assert-str= "println nil" "nil\n"
              (capture-output (lambda () (println nil))))
+(assert-true "unspecified?" (unspecified? (void)))
+(assert-str= "if nil result" "nil" (pr-str (if false 1 nil)))
+(assert-str= "cond nil result" "nil" (pr-str (cond false 1 else nil)))
 (assert-num= "defn" 5 (add2 3))
 (assert-num= "let" 3 (let [x 1 y 2] (+ x y)))
 (assert-num= "let vector destructuring" 3 (let [[a b] [1 2]] (+ a b)))

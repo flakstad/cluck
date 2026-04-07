@@ -81,7 +81,7 @@ The main caveat is that cluck repurposes a few core binding and threading forms,
 
 If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` helper or drop to the core forms such as `##core#let`.
 
-When a `.clk` file reaches out to CHICKEN eggs, keep that work in a small bootstrap layer or use prefixed imports so the host interop stays explicit and does not leak names into the Cluck surface. The weather example now uses a bootstrap file for the egg-facing code.
+When a `.clk` file reaches out to CHICKEN eggs, keep that work explicit by using `ns` `:require` with prefixed imports so the host interop stays visible and does not leak names into the Cluck surface.
 
 ## Performance Direction
 
@@ -210,13 +210,11 @@ The canonical weather/forecast example is fully written in Cluck in:
 
 - [`cluck/weather.clk`](./cluck/weather.clk)
 
-The tiny bootstrap that handles the egg-facing bits lives in:
+It uses `ns :require` to pull in the CHICKEN eggs with prefixed imports:
 
-- [`weather-bootstrap.scm`](./weather-bootstrap.scm)
-
-The bootstrap imports `http-client`, `json`, and `uri-common` with prefixes,
-loads the Cluck runtime, and exposes the small bridge functions the weather
-app needs.
+- `http-client` as `http:`
+- `json` as `json:`
+- `uri-common` as `uri:`
 
 Install the eggs once in your CHICKEN environment:
 
@@ -232,8 +230,8 @@ csi -q -s run-weather.scm "San Francisco"
 ```
 
 The weather app is intentionally small, but it is important because it proves
-the current Cluck shape works for a real networked tool with a clean Scheme
-bootstrap boundary.
+the current Cluck shape works for a real networked tool while keeping the egg
+boundary explicit in the namespace form.
 
 ## Namespaces
 
@@ -263,6 +261,7 @@ These namespaces are the intended public surface for user-facing code. The older
 - `[foo.bar :refer :all]` imports all public vars into the current namespace
 - `[foo.bar :as fb]` registers an alias that `ns-resolve` can use
 - `[foo.bar :exclude [x y]]` skips selected vars when using `:refer :all`
+- `[http-client :as http]` imports a CHICKEN egg into a prefixed namespace when no Cluck source file exists for the target symbol
 - `(:refer-clojure :exclude [...])` excludes selected core vars from the default core import set
 
 Namespace source files are located by namespace path, starting with:

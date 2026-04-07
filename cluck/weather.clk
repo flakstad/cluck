@@ -1,53 +1,97 @@
 ;; Weather CLI for Cluck.
 ;;
-;; The bootstrap file handles HTTP, JSON, and URL encoding. This file stays in
-;; Cluck and focuses on data transformation, formatting, and CLI flow.
+;; The app logic stays here in Cluck syntax. `ns :require` pulls in the
+;; CHICKEN eggs with explicit prefixes at the namespace boundary.
 
 (ns cluck.weather
-  (:require [cluck.string :refer [blank? join trim]]))
+  (:require [cluck.string :refer [blank? join trim]]
+            [http-client :as http]
+            [json :as json]
+            [uri-common :as uri]))
+
+(defn weather-json-entry? [x]
+  (and (seq x)
+       (string? (first x))))
+
+(defn weather-json-entry-value [entry]
+  (rest entry))
+
+(defn weather-json->cluck [x]
+  (cond
+    (unspecified? x) nil
+    (string? x) x
+    (vector? x)
+    (cond
+      (empty? x) []
+      (every? weather-json-entry? (seq x))
+      (reduce (fn [result entry]
+                (assoc result
+                       (keyword (first entry))
+                       (weather-json->cluck (weather-json-entry-value entry))))
+              (hash-map)
+              (seq x))
+      else (mapv weather-json->cluck x))
+    (seq x)
+    (mapv weather-json->cluck x)
+    else x))
+
+(defn weather-fetch-json [url]
+  (http:with-input-from-request
+   url
+   false
+   (fn []
+     (weather-json->cluck (json:json-read)))))
+
+(defn weather-url [location]
+  (uri:uri-reference
+   (str "http://wttr.in/"
+        (uri:uri-encode-string location)
+        "?format=j1")))
 
 (defn weather-text [x]
-  (if (string? x)
-      x
-      (if (vector? x)
-          (if (empty? x)
-              ""
-              (weather-text (first x)))
-          (if (map? x)
-              (or (get x :value)
-                  (get x :name)
-                  (get x :region)
-                  (get x :country)
-                  "")
-              (if (nil? x)
-                  ""
-                  (pr-str x))))))
+  (cond
+    (string? x) x
+    (vector? x)
+    (cond
+      (empty? x) ""
+      else (weather-text (first x)))
+    (map? x)
+    (or (get x :value)
+        (get x :name)
+        (get x :region)
+        (get x :country)
+        "")
+    (nil? x) ""
+    else (pr-str x)))
 
 (defn weather-location-title [area]
   (join ", "
         (filter (fn [part] (not (blank? part)))
-                (list (weather-text (get area :areaName))
-                      (weather-text (get area :region))
-                      (weather-text (get area :country))))))
+                [(weather-text (get area :areaName))
+                 (weather-text (get area :region))
+                 (weather-text (get area :country))])))
 
 (defn weather-max-rain-chance [hourly]
   (reduce (fn [best entry]
-            (let [chance (or (string->number (get entry :chanceofrain)) 0)]
-              (if (> chance best)
-                  chance
-                  best)))
+            (let [raw (get entry :chanceofrain)
+                  chance (cond
+                           (blank? raw) 0
+                           else (read-string raw))]
+              (cond
+                (> chance best) chance
+                else best)))
           0
           hourly))
 
 (defn weather-day-summary [day]
   (let [hourly (get day :hourly)
-        first-hour (if (empty? hourly) nil (first hourly))
-        description (if first-hour
-                        (weather-text (get first-hour :weatherDesc))
-                        "")
-        rain-chance (if (empty? hourly)
-                        0
-                        (weather-max-rain-chance hourly))]
+        first-hour (first hourly)
+        description (cond
+                       first-hour (weather-text (get first-hour :weatherDesc))
+                       else "")
+        rain-chance (cond
+                      (empty? hourly) 0
+                      else (weather-max-rain-chance hourly))]
     (str (get day :date)
          "  "
          (get day :mintempC)
@@ -96,6 +140,6 @@
 
 (defn main "Fetch and print a weather forecast for LOCATION." [args]
   (let [location (trim (join " " args))]
-    (if (blank? location)
-        (weather-usage)
-        (weather-print-report (weather-fetch-report location)))))
+    (cond
+      (blank? location) (weather-usage)
+      else (weather-print-report (weather-fetch-report location)))))

@@ -303,6 +303,9 @@
 (define (cluck-namespace-loading? ns)
   (hash-table-exists? *cluck-loading-namespaces* ns))
 
+(define (cluck-prefix-symbol sym)
+  (string->symbol (string-append (symbol->string sym) ":")))
+
 (define (cluck-load-namespace-file! ns path)
   (let ((saved-ns (current-ns)))
     (hash-table-set! *cluck-loading-namespaces* ns #t)
@@ -442,6 +445,35 @@
                         (loop (cdr xs)))
                       (error "cannot refer missing var" target-ns source)))))))))
 
+(define (cluck-ns-require-spec->forms spec)
+  (cond
+    ((cluck-vector-form->list spec)
+     (let* ((xs (cluck-vector-form->list spec))
+            (target (cluck-ns-form->symbol (car xs)))
+            (path (cluck-locate-module-file target)))
+       (if path
+           (list `(cluck-require-spec! ',spec))
+           (let ((rest (cdr xs)))
+             (if (and (pair? rest)
+                      (pair? (cdr rest))
+                      (null? (cddr rest))
+                      (let ((kw (cluck-keyword-form-name (car rest))))
+                        (and kw (string=? kw "as"))))
+                 (list `(import (prefix ,target ,(cluck-prefix-symbol
+                                                  (cluck-ns-form->symbol (cadr rest))))))
+                 (error "egg imports require [module :as prefix]" spec))))))
+    ((symbol? spec)
+     (list `(cluck-require-spec! ',spec)))
+    ((string? spec)
+     (list `(cluck-require-spec! ',spec)))
+    ((and (pair? spec)
+          (eq? (car spec) 'quote)
+          (pair? (cdr spec))
+          (null? (cddr spec)))
+     (cluck-ns-require-spec->forms (cadr spec)))
+    (else
+     (error "require expects a namespace symbol or vector spec" spec))))
+
 (define (cluck-require-vector-spec! spec)
   (##core#let ((xs (cluck-vector-form->list spec)))
     (##core#if (not xs)
@@ -552,9 +584,9 @@
     ((and (pair? directive)
           (let ((kw (cluck-keyword-form-name (car directive))))
             (and kw (string=? kw "require"))))
-     (map (lambda (spec)
-            `(cluck-require-spec! ',spec))
-          (cdr directive)))
+     (apply append
+            (map cluck-ns-require-spec->forms
+                 (cdr directive))))
     (else
      (error "ns directives are not yet supported" directive))))
 
@@ -1415,6 +1447,9 @@
 (define (not x)
   (if (truthy? x) #f #t))
 
+(define (unspecified? x)
+  (eq? x (void)))
+
 (define (cluck-core-public-bindings)
   (list
    (cons 'current-ns current-ns)
@@ -1476,7 +1511,8 @@
    (cons 'identity identity)
    (cons 'inc inc)
    (cons 'dec dec)
-   (cons 'not not)))
+   (cons 'not not)
+   (cons 'unspecified? unspecified?)))
 
 (define (cluck-core-doc-specs)
   (list
@@ -1540,6 +1576,7 @@
    (cons 'inc "Add 1 to x.")
    (cons 'dec "Subtract 1 from x.")
    (cons 'not "Return the boolean negation of x.")
+   (cons 'unspecified? "Return true when x is CHICKEN's unspecified value.")
    (cons 'def "Define a var and intern it into the current namespace.")
    (cons 'defn "Define a named function and intern it into the current namespace.")
    (cons 'fn "Create an anonymous function.")
@@ -2063,18 +2100,21 @@
   (or (and (symbol? x) (string=? (symbol->string x) "else"))
       (and (keyword? x) (string=? (name x) "else"))))
 
+(define (cluck-if-thunks test then-thunk else-thunk)
+  (if (truthy? test)
+      (then-thunk)
+      (else-thunk)))
+
 (define (cluck-inline-truthy-form test then else-part temp)
   `(##core#let ((,temp ,test))
-     (##core#if (eq? ,temp false)
-                ,else-part
-                (##core#if (eq? ,temp nil)
-                           ,else-part
-                           ,then))))
+     (cluck-if-thunks ,temp
+                      (lambda () ,then)
+                      (lambda () ,else-part))))
 
 (define (cluck-expand-cond clauses rename)
   (let loop ((rest clauses))
     (cond
-      ((null? rest) 'nil)
+      ((null? rest) '(seq '()))
       ((null? (cdr rest))
        (error "cond expects test/expression pairs"))
       ((cluck-cond-else? (car rest))
@@ -2084,12 +2124,9 @@
       (else
        (let ((tail (loop (cddr rest)))
              (value (rename 'cluck-cond-value)))
-         `(##core#let ((,value ,(car rest)))
-            (##core#if (eq? ,value false)
-                       ,tail
-                       (##core#if (eq? ,value nil)
-                                  ,tail
-                                  ,(cadr rest)))))))))
+         `(cluck-if-thunks ,(car rest)
+                           (lambda () ,(cadr rest))
+                           (lambda () ,tail)))))))
 
 (define-syntax if
   (er-macro-transformer
