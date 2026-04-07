@@ -1,0 +1,56 @@
+;; Shell and process helpers for Cluck.
+
+(ns cluck.process
+  "Shell and process helpers for Cluck."
+  (:require [cluck.string :as str]))
+
+(import (prefix (chicken process) proc:))
+
+(define (cluck-process-port->string port)
+  (##core#let loop ((chars '()))
+    (let [ch (read-char port)]
+      (if (eof-object? ch)
+          (list->string (reverse chars))
+          (loop (cons ch chars))))))
+
+(define (cluck-process-commandline command args)
+  (if (null? args)
+      (str command)
+      (str/join " "
+                (cons (str command)
+                      (map (lambda (arg) (proc:qs (str arg))) args)))))
+
+(define (cluck-process-args->list args)
+  (if (and (= (count args) 1)
+           (let [single (first args)]
+             (or (vector? single)
+                 (list? single))))
+      (first args)
+      args))
+
+(defn qs
+  "Quote STRING for safe use in a shell command."
+  [string]
+  (proc:qs (str string)))
+
+(defn sh
+  "Run COMMANDLINE in a shell and return {:commandline :out :exit}."
+  [commandline]
+  (let* ((port (proc:open-input-pipe (string-append commandline " 2>&1")))
+         (out (cluck-process-port->string port))
+         (exit (proc:close-input-pipe port)))
+    {:commandline (str commandline)
+     :out out
+     :exit exit}))
+
+(defn exec
+  "Run COMMAND with ARGS in a shell-safe way and return the same result shape as `sh`.
+
+ARGS can be passed individually or as a single vector/list of arguments."
+  [command & args]
+  (sh (cluck-process-commandline command (cluck-process-args->list args))))
+
+(defn system
+  "Run COMMANDLINE in a shell and return the raw exit status."
+  [commandline]
+  (proc:system (str commandline)))

@@ -361,6 +361,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.core`
 - `cluck.string`
 - `cluck.fs`
+- `cluck.process`
 - `cluck.set`
 - `cluck.edn`
 
