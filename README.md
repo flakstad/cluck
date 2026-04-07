@@ -226,13 +226,30 @@ csi -q -s run-weather.scm Oslo
 csi -q -s run-weather.scm "San Francisco"
 ```
 
-Or build a native binary:
+Or build a native binary from the Cluck source tree:
 
 ```bash
 csc -k -v -O2 -strip -o build/cluck-weather run-weather.scm
 ```
 
-The weather app is intentionally small, but it is important because it proves the current Cluck shape works for a real networked tool.
+That binary is convenient for local use, but it still expects the source tree
+at runtime.
+
+For a fully standalone build that can be copied outside the repository and run
+without CHICKEN installed on the target machine, use the standalone source:
+
+```bash
+csc -static -deployed -k -v -O2 -strip \
+  -o build/cluck-weather-standalone cluck/weather-standalone.clk
+```
+
+This standalone build uses a smaller Scheme-only support layer for the weather
+app itself. The resulting binary still depends on the normal system C library,
+but it no longer needs `csi`, `cluck.scm`, or the repo checkout at runtime.
+
+The weather app is intentionally small, but it is important because it proves
+the current Cluck shape works for a real networked tool and can be packaged as a
+single native artifact.
 
 ## Namespaces
 
