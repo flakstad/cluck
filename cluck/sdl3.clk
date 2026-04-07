@@ -8,7 +8,59 @@
 
 (import (chicken foreign))
 
-(foreign-declare "#include <SDL3/SDL.h>")
+(foreign-declare "#include <SDL3/SDL.h>
+
+static SDL_Event cluck_last_event;
+static int cluck_have_last_event = 0;
+static char cluck_last_event_description[512];
+
+static int cluck_poll_event(void) {
+  if (!SDL_PollEvent(&cluck_last_event)) {
+    cluck_have_last_event = 0;
+    cluck_last_event_description[0] = '\\0';
+    return 0;
+  }
+
+  cluck_have_last_event = 1;
+  SDL_GetEventDescription(&cluck_last_event, cluck_last_event_description, sizeof(cluck_last_event_description));
+  return 1;
+}
+
+static const char *cluck_event_description(void) {
+  return cluck_have_last_event ? cluck_last_event_description : \"\";
+}
+
+static int cluck_mouse_x(void) {
+  float x = 0.0f;
+  float y = 0.0f;
+  SDL_GetMouseState(&x, &y);
+  return (int)x;
+}
+
+static int cluck_mouse_y(void) {
+  float x = 0.0f;
+  float y = 0.0f;
+  SDL_GetMouseState(&x, &y);
+  return (int)y;
+}
+
+static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
+  SDL_FRect rect;
+  rect.x = x;
+  rect.y = y;
+  rect.w = w;
+  rect.h = h;
+  return SDL_RenderFillRect(renderer, &rect);
+}
+
+static bool cluck_render_debug_text(SDL_Renderer *renderer, float x, float y, const char *text) {
+  return SDL_RenderDebugText(renderer, x, y, text);
+}
+
+static bool cluck_set_window_title(SDL_Window *window, const char *title) {
+  return SDL_SetWindowTitle(window, title);
+}
+")
 
 (def init-video-flags
   (foreign-value "SDL_INIT_VIDEO" unsigned-int))
@@ -65,6 +117,37 @@
     "}"
     "C_return(0);"))
 
+(define sdl-poll-event!
+  (foreign-lambda bool "cluck_poll_event"))
+
+(define sdl-event-description
+  (foreign-lambda c-string "cluck_event_description"))
+
+(define sdl-mouse-x
+  (foreign-lambda int "cluck_mouse_x"))
+
+(define sdl-mouse-y
+  (foreign-lambda int "cluck_mouse_y"))
+
+(define sdl-render-fill-rect!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (int x)
+                         (int y)
+                         (int w)
+                         (int h))
+    "C_return(cluck_render_fill_rect((SDL_Renderer *)renderer, (float)x, (float)y, (float)w, (float)h));"))
+
+(define sdl-render-debug-text!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (int x)
+                         (int y)
+                         (c-string text))
+    "C_return(cluck_render_debug_text((SDL_Renderer *)renderer, (float)x, (float)y, text));"))
+
+(define sdl-set-window-title!
+  (foreign-lambda* bool ((c-pointer window) (c-string title))
+    "C_return(cluck_set_window_title((SDL_Window *)window, title));"))
+
 (defn init-video!
   []
   (sdl-init! init-video-flags))
@@ -112,6 +195,34 @@
 (defn quit-requested?
   [ignored]
   (sdl-quit-requested?))
+
+(defn poll-event!
+  []
+  (sdl-poll-event!))
+
+(defn event-description
+  []
+  (sdl-event-description))
+
+(defn mouse-x
+  []
+  (sdl-mouse-x))
+
+(defn mouse-y
+  []
+  (sdl-mouse-y))
+
+(defn render-fill-rect!
+  [renderer x y w h]
+  (sdl-render-fill-rect! renderer x y w h))
+
+(defn render-debug-text!
+  [renderer x y text]
+  (sdl-render-debug-text! renderer x y text))
+
+(defn set-window-title!
+  [window title]
+  (sdl-set-window-title! window title))
 
 (defn open-context
   [title width height]

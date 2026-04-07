@@ -25,6 +25,11 @@
   :type 'string
   :group 'cluck)
 
+(defcustom cluck-draw-repl-buffer-name "*Cluck Draw*"
+  "Buffer name used for the Cluck draw REPL."
+  :type 'string
+  :group 'cluck)
+
 (defvar cluck--last-source-buffer nil)
 
 (defun cluck-clear-inline-results ()
@@ -37,7 +42,11 @@
 
 (defun cluck--project-root (&optional start)
   "Return the nearest Cluck project root for START or the current buffer."
-  (let* ((path (or start buffer-file-name default-directory))
+  (let* ((path (cond
+                ((bufferp start) (or (buffer-file-name start) default-directory))
+                ((stringp start) start)
+                ((buffer-file-name) (buffer-file-name))
+                (t default-directory)))
          (dir (if (and path (file-directory-p path))
                   path
                 (file-name-directory (expand-file-name path)))))
@@ -46,21 +55,52 @@
         (locate-dominating-file dir ".git")
         dir)))
 
-(defun cluck--repl-command (&optional start)
-  "Return the command list used to launch a Cluck REPL."
+(defun cluck--draw-source-p (&optional start)
+  "Return non-nil when START points at the draw example."
+  (let ((path (cond
+               ((bufferp start) (or (buffer-file-name start) default-directory))
+               ((stringp start) start)
+               ((buffer-file-name) (buffer-file-name))
+               (t default-directory))))
+    (and path
+         (string-match-p "/examples/cluck/draw/" path))))
+
+(defun cluck--repl-buffer-name (&optional start)
+  "Return the Cluck REPL buffer name for START."
+  (if (cluck--draw-source-p start)
+      cluck-draw-repl-buffer-name
+    cluck-repl-buffer-name))
+
+(defun cluck--draw-repl-command (&optional start)
+  "Return the command list used to launch the Cluck draw REPL."
   (let* ((root (file-name-as-directory (cluck--project-root start)))
-         (native (expand-file-name "build/cluck" root))
-         (launcher (expand-file-name "src/cluck-cli.scm" root))
-         (fallback (executable-find cluck-fallback-executable)))
+         (native (expand-file-name "build/draw" root))
+         (runner (expand-file-name "examples/cluck/draw/run.scm" root)))
     (cond
       ((file-executable-p native)
-       (list native))
-      ((file-readable-p launcher)
-       (list "csi" "-q" "-s" launcher))
-      (fallback
-       (list fallback))
+       (list native "--repl"))
+      ((file-readable-p runner)
+       (list "csi" "-q" "-s" runner "--repl"))
       (t
-       (error "Could not find a Cluck REPL launcher")))))
+       (error "Could not find a Cluck draw REPL launcher")))))
+
+(defun cluck--repl-command (&optional start)
+  "Return the command list used to launch a Cluck REPL."
+  (if (cluck--draw-source-p start)
+      (cluck--draw-repl-command start)
+    (let* ((root (file-name-as-directory (cluck--project-root start)))
+           (native (expand-file-name "build/cluck" root))
+           (launcher (expand-file-name "src/cluck-cli.scm" root))
+           (fallback (executable-find cluck-fallback-executable)))
+      (cond
+        ((file-executable-p native)
+         (list native))
+        ((file-readable-p launcher)
+         (list "csi" "-q" "-s" launcher))
+        (fallback
+         (list fallback))
+        (t
+         (error "Could not find a Cluck REPL launcher"))))))
 
 (defun cluck--prompt-present-p (buffer)
   "Return non-nil if BUFFER already shows a Cluck prompt."
@@ -93,7 +133,7 @@
   "Return a live Cluck REPL buffer, starting one if needed."
   (let* ((root (file-name-as-directory (cluck--project-root start)))
          (default-directory root)
-         (buffer (get-buffer-create cluck-repl-buffer-name)))
+         (buffer (get-buffer-create (cluck--repl-buffer-name start))))
     (unless (comint-check-proc buffer)
       (let* ((command (cluck--repl-command start))
              (program (car command))
@@ -112,6 +152,21 @@
   "Pop to the Cluck REPL, starting it if necessary."
   (interactive)
   (pop-to-buffer (cluck--ensure-repl-buffer)))
+
+(defun cluck-draw-repl ()
+  "Pop to the Cluck draw REPL, starting it if necessary."
+  (interactive)
+  (pop-to-buffer (cluck--ensure-repl-buffer (expand-file-name
+                                             "examples/cluck/draw/main.clk"
+                                             (file-name-as-directory
+                                              (cluck--project-root))))))
+
+(defun cluck-switch-to-repl ()
+  "Pop to the context-appropriate Cluck REPL."
+  (interactive)
+  (if (cluck--draw-source-p)
+      (cluck-draw-repl)
+    (cluck-repl)))
 
 (defun cluck-switch-to-source ()
   "Return to the most recent Cluck source buffer."
@@ -477,7 +532,7 @@
 (with-eval-after-load 'setup-cluck-mode
   (add-hook 'cluck-mode-hook #'cluck--enable-inline-result-clearing)
   (add-hook 'cluck-mode-hook #'cluck--disable-auto-completion)
-  (define-key cluck-mode-map (kbd "C-c C-z") #'cluck-repl)
+  (define-key cluck-mode-map (kbd "C-c C-z") #'cluck-switch-to-repl)
   (define-key cluck-mode-map (kbd "C-c C-e") #'cluck-send-last-sexp)
   (define-key cluck-mode-map (kbd "C-c C-c") #'cluck-send-defun)
   (define-key cluck-mode-map (kbd "C-c C-r") #'cluck-send-region)

@@ -224,8 +224,9 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 ## SDL3 drawing scaffold
 
-The SDL3 example is a minimal drawing app scaffold that now opens a window and
-enters a simple clear-and-quit loop:
+The SDL3 example is a minimal drawing app scaffold that now opens a window,
+tracks mouse position and recent keyboard input, and enters a simple
+clear-and-quit loop:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`cluck/sdl3.clk`](./cluck/sdl3.clk)
@@ -243,8 +244,13 @@ csi -q -s examples/cluck/draw/run.scm
 For REPL-driven work, run `./build/draw --repl`. That opens the window,
 starts a background render loop, and then drops you into the Cluck REPL so
 you can call functions like `set-background!`, `set-render-fn!`, `render-now!`,
-and `stop!` while the window stays open. The resulting binary is self-contained
-and does not depend on a separately installed SDL3 dylib.
+`mouse-position`, `input-summary`, and `stop!` while the window stays open. The
+resulting binary is self-contained and does not depend on a separately
+installed SDL3 dylib.
+
+In `cluck-mode`, `C-c C-z` switches to the context-appropriate REPL buffer.
+When you are editing the draw example, that command opens the draw REPL
+buffer, which runs `./build/draw --repl`.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.

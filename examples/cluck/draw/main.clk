@@ -15,6 +15,10 @@
 (def *draw-thread* nil)
 (def *draw-render-fn* nil)
 
+(defn draw-recent-events-limit
+  []
+  8)
+
 (defn init-video!
   []
   (sdl/init-video!))
@@ -43,7 +47,12 @@
    :height 720
    :background [24 24 28]
    :running? true
-   :frame 0})
+   :frame 0
+   :mouse-x 0
+   :mouse-y 0
+   :last-key ""
+   :last-event ""
+   :recent-events []})
 
 (defn current-state
   "Return the current draw state."
@@ -54,24 +63,28 @@
   "Reset the current draw state to the default."
   []
   (set! *draw-state* (default-state))
+  (sync-window-title!)
   *draw-state*)
 
 (defn set-state!
   "Replace the current draw state with STATE."
   [state]
   (set! *draw-state* state)
+  (sync-window-title!)
   *draw-state*)
 
 (defn set-title!
   "Update the current window title."
   [title]
   (set! *draw-state* (assoc *draw-state* :title title))
+  (sync-window-title!)
   *draw-state*)
 
 (defn set-background!
   "Update the current background color to a [R G B] vector."
   [color]
   (set! *draw-state* (assoc *draw-state* :background color))
+  (sync-window-title!)
   *draw-state*)
 
 (defn set-render-fn!
@@ -86,14 +99,140 @@
   (set! *draw-render-fn* nil)
   nil)
 
+(defn draw-event-kind
+  "Classify the SDL event description string DESC."
+  [desc]
+  (cond
+    (str/starts-with? desc "SDL_EVENT_QUIT") :quit
+    (str/starts-with? desc "SDL_EVENT_WINDOW_CLOSE_REQUESTED") :quit
+    (str/starts-with? desc "SDL_EVENT_KEY_DOWN") :key-down
+    (str/starts-with? desc "SDL_EVENT_KEY_UP") :key-up
+    (str/starts-with? desc "SDL_EVENT_MOUSE_MOTION") :mouse-motion
+    (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_DOWN") :mouse-down
+    (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_UP") :mouse-up
+    :else :other))
+
+(defn draw-trim-events
+  "Keep only the newest few entries from EVENTS."
+  [events]
+  (let [limit (draw-recent-events-limit)
+        total (count events)]
+    (if (> total limit)
+      (vec (drop (- total limit) events))
+      (vec events))))
+
+(defn draw-update-mouse!
+  "Refresh the cached mouse position in STATE."
+  [state]
+  (assoc state
+         :mouse-x (sdl/mouse-x)
+         :mouse-y (sdl/mouse-y)))
+
+(defn draw-record-input!
+  "Record the latest SDL event description in STATE."
+  [state desc]
+  (let [kind (draw-event-kind desc)
+        events (conj (get state :recent-events) desc)
+        recent (draw-trim-events events)
+        state (assoc state
+                     :recent-events recent
+                     :last-event desc)]
+    (if (eq? kind :key-down)
+      (assoc state :last-key desc)
+      state)))
+
+(defn mouse-position
+  "Return the current mouse position from the draw state."
+  []
+  {:x (get *draw-state* :mouse-x)
+   :y (get *draw-state* :mouse-y)})
+
+(defn recent-events
+  "Return the recent SDL event log."
+  []
+  (get *draw-state* :recent-events))
+
+(defn last-key-event
+  "Return the last key event description."
+  []
+  (get *draw-state* :last-key))
+
+(defn last-input-event
+  "Return the last SDL event description."
+  []
+  (get *draw-state* :last-event))
+
+(defn input-summary
+  "Return a short textual summary of the current input state."
+  []
+  (format "mouse %d,%d key %s event %s"
+          (get *draw-state* :mouse-x)
+          (get *draw-state* :mouse-y)
+          (or (get *draw-state* :last-key) "")
+          (or (get *draw-state* :last-event) "")))
+
+(defn draw-sync-title!
+  "Update the SDL window title from the current state."
+  []
+  (if *draw-context*
+    (sdl/set-window-title! (get *draw-context* :window)
+                           (describe-state *draw-state*))
+    nil))
+
+(defn draw-poll-input!
+  "Drain pending SDL input events into the current state."
+  []
+  (let [drain (fn [quit?]
+                (if (sdl/poll-event!)
+                  (let [desc (sdl/event-description)
+                        kind (draw-event-kind desc)]
+                    (set! *draw-state* (draw-record-input! *draw-state* desc))
+                    (if (eq? kind :quit)
+                      (begin
+                        (set! *draw-running?* false)
+                        (drain true))
+                      (drain quit?)))
+                  (begin
+                    (set! *draw-state* (draw-update-mouse! *draw-state*))
+                    (draw-sync-title!)
+                    quit?)))]
+    (drain false)))
+
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d"
+  (format "%s %dx%d frame %d mouse %d,%d key %s"
           (get state :title)
           (get state :width)
           (get state :height)
-          (get state :frame)))
+          (get state :frame)
+          (get state :mouse-x)
+          (get state :mouse-y)
+          (or (get state :last-key) "")))
+
+(defn draw-render-status!
+  "Render the text overlay and mouse marker for STATE."
+  [ctx state]
+  (let [renderer (get ctx :renderer)
+        mouse-x (get state :mouse-x)
+        mouse-y (get state :mouse-y)
+        recent (reverse (take (draw-recent-events-limit)
+                              (get state :recent-events)))]
+    (sdl/set-draw-color! renderer 245 245 245 255)
+    (sdl/render-debug-text! renderer 12 12 (describe-state state))
+    (sdl/render-debug-text! renderer 12 28
+                            (format "mouse: %d, %d" mouse-x mouse-y))
+    (sdl/render-debug-text! renderer 12 44
+                            (format "last key: %s" (or (get state :last-key) "")))
+    (sdl/render-debug-text! renderer 12 60
+                            (format "last event: %s" (or (get state :last-event) "")))
+    (when (not (empty? recent))
+      (sdl/render-debug-text! renderer 12 76
+                              (format "recent: %s"
+                                      (str/join " | " recent))))
+    (sdl/set-draw-color! renderer 220 180 90 255)
+    (sdl/render-fill-rect! renderer (- mouse-x 3) (- mouse-y 3) 6 6)
+    nil))
 
 (defn default-render-frame
   "Clear and present one frame using STATE."
@@ -107,6 +246,7 @@
       (nth background 2)
       255)
     (sdl/render-clear! renderer)
+    (draw-render-status! ctx state)
     (sdl/render-present! renderer)
     nil))
 
@@ -120,7 +260,8 @@
 (defn render-now!
   "Render one frame from the current state."
   []
-  (if (and *draw-context* *draw-state*)
+  (draw-poll-input!)
+  (if (and *draw-running?* *draw-context* *draw-state*)
     (render-frame *draw-context* *draw-state*)
     nil))
 
@@ -128,12 +269,13 @@
   "Render until the window is closed or the loop is stopped."
   []
   (if *draw-running?*
-    (if (quit-requested?)
-      (set! *draw-running?* false)
-      (begin
-        (render-now!)
-        (thread-sleep! 0.016)
-        (draw-loop)))
+    (begin
+      (render-now!)
+      (if *draw-running?*
+        (begin
+          (thread-sleep! 0.016)
+          (draw-loop))
+        nil))
     nil))
 
 (defn start!
@@ -147,16 +289,17 @@
           ctx (sdl/open-context (get state :title)
                                 (get state :width)
                                 (get state :height))]
-      (if (nil? ctx)
-        (begin
-          (println (format "SDL window failed: %s" (last-error)))
-          (shutdown!)
-          nil)
-        (begin
-          (set! *draw-state* state)
-          (set! *draw-context* ctx)
-          (set! *draw-running?* true)
-          ctx)))))
+        (if (nil? ctx)
+          (begin
+            (println (format "SDL window failed: %s" (last-error)))
+            (shutdown!)
+            nil)
+          (begin
+            (set! *draw-state* state)
+            (set! *draw-context* ctx)
+            (set! *draw-running?* true)
+            (draw-sync-title!)
+            ctx)))))
 
 (defn stop!
   "Stop the draw loop and close the SDL context."
@@ -187,12 +330,15 @@
 (defn run-loop
   "Run until SDL asks us to quit."
   [ctx state]
-  (if (quit-requested?)
-    nil
+  (if *draw-running?*
     (begin
-      (render-frame ctx state)
-      (delay-ms 16)
-      (run-loop ctx state))))
+      (render-now!)
+      (if *draw-running?*
+        (begin
+          (delay-ms 16)
+          (run-loop ctx state))
+        nil))
+    nil))
 
 (defn main
   "Open a window and run the minimal SDL3 loop."
