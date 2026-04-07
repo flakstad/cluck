@@ -150,6 +150,15 @@ That produces `build/cluck` plus the generated C wrapper in `build/cluck.c`. The
 
 ## Editor Support
 
+The repo includes a copyable Emacs setup under [`emacs/`](./emacs/):
+
+- `emacs/setup-cluck-mode.el`
+- `emacs/setup-cluck-repl.el`
+
+Add that directory to your `load-path`, require those setup files, and you get
+the same Cluck editing workflow used in my own config. See
+[`emacs/README.md`](./emacs/README.md) for the install snippet.
+
 In Emacs, `cluck-mode` is a derived `clojure-mode` variant for indentation, paredit, folding, and syntax coloring.
 
 It also includes interactive eval helpers:
@@ -268,6 +277,7 @@ The reusable bootstrap pattern for Cluck projects lives in
 [`cluck-bootstrap.scm`](./cluck-bootstrap.scm). It is intentionally generic:
 
 - it discovers the project root from the executable location
+- it walks upward from the executable location until it finds `cluck.scm` or `cluck-cli.scm`
 - it loads `cluck.scm`
 - it loads a project source file with `load-file`
 
@@ -303,6 +313,32 @@ app at startup. The template bootstrap walks upward from the launcher
 location, so keeping the binary under `build/` still works as long as it stays
 inside the project tree. For a fully self-contained binary, use the standalone
 weather packaging pattern described above.
+
+For a pure-Cluck utility starter with no external eggs, use
+[`template/no-eggs/`](./template/no-eggs/). It shows the same bootstrap shape,
+but the app logic stays entirely within Cluck and the bootstrap handles file
+or stdin input.
+
+## No-Eggs Example
+
+A small example app that does not use external CHICKEN eggs lives in:
+
+- [`examples/cluck/text-report.clk`](./examples/cluck/text-report.clk)
+
+Run it with:
+
+```bash
+csi -q -s run-text-report.scm README.md
+```
+
+Or pipe text on stdin:
+
+```bash
+cat README.md | csi -q -s run-text-report.scm
+```
+
+It prints a simple line/blank-line/character summary and demonstrates how to
+keep the application logic in Cluck while leaving file I/O in the bootstrap.
 
 ## Namespaces
 

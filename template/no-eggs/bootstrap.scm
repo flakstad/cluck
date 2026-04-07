@@ -1,5 +1,6 @@
 (import (chicken file)
         (chicken load)
+        (chicken port)
         (chicken process-context))
 
 (define (cluck-template-trim-trailing-slash path)
@@ -63,13 +64,6 @@
   (or (cluck-template-project-root (cluck-template-executable-root))
       (cluck-template-normalize-directory (current-directory))))
 
-(define (cluck-template-absolute-path root path)
-  (if (and path
-           (> (string-length path) 0)
-           (char=? (string-ref path 0) #\/))
-      path
-      (string-append (cluck-template-trim-trailing-slash root) "/" path)))
-
 (define (cluck-template-cluck-root root)
   (or (let ((home (get-environment-variable "CLUCK_HOME")))
         (cluck-template-normalize-directory home))
@@ -94,15 +88,12 @@
         (change-directory root)))
     cluck-root))
 
-(define (cluck-template-load-app! root path)
-  (cluck-with-module-search-root
-   root
-   (lambda ()
-     (cluck-with-directory
-      root
-      (lambda ()
-        (load (cluck-template-absolute-path root path))
-        (void))))))
+(define (cluck-template-absolute-path root path)
+  (if (and path
+           (> (string-length path) 0)
+           (char=? (string-ref path 0) #\/))
+      path
+      (string-append (cluck-template-trim-trailing-slash root) "/" path)))
 
 (define (cluck-template-port->string port)
   (let loop ((chars '()))
@@ -114,3 +105,13 @@
 (define (cluck-template-file->string root path)
   (call-with-input-file (cluck-template-absolute-path root path)
                         cluck-template-port->string))
+
+(define (cluck-template-load-app! root path)
+  (cluck-with-module-search-root
+   root
+   (lambda ()
+     (cluck-with-directory
+      root
+      (lambda ()
+        (load (cluck-template-absolute-path root path))
+        (void))))))
