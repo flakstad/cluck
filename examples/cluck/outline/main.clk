@@ -2,7 +2,7 @@
 ;;
 ;; The bootstrap handles file or stdin input. The app logic stays in Cluck.
 
-(ns cluck.outline
+(ns cluck.examples.outline
   "Markdown outline helpers for Cluck."
   (:require [cluck.fs :as fs]
             [cluck.string :as str]))

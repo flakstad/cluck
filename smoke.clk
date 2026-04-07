@@ -164,7 +164,7 @@
 (assert-true "fs delete!" (fs/delete! tmp))
 (assert-true "fs delete! missing" (not (fs/delete! tmp))))
 (assert-true "core delete!" (fs/delete! "build/cluck-core-smoke.txt"))
-(require [cluck.outline :as outline])
+(require [cluck.examples.outline :as outline])
 (let [outline-sample "# Title\n\n## Section\ntext\n### Detail\n"]
   (assert-num= "outline headings" 3 (count (outline/outline-entries outline-sample)))
   (let [first-heading (first (outline/outline-entries outline-sample))]
@@ -177,9 +177,9 @@
 (assert-num= "process sh exit" 0 (get (proc/sh "true") :exit))
 (assert-str= "process exec" "hello" (get (proc/exec "printf" ["hello"]) :out))
 (assert-num= "process system" 0 (proc/system "true"))
-(load-file "examples/cluck/changelog.clk")
-(in-ns 'cluck.changelog)
-(assert-true "changelog namespace exists" (find-ns 'cluck.changelog))
+(load-file "examples/cluck/changelog/main.clk")
+(in-ns 'cluck.examples.changelog)
+(assert-true "changelog namespace exists" (find-ns 'cluck.examples.changelog))
 (let [sample-log "a1b2c3\tfeat: add parser\nb2c3d4\tfix: handle nil\nc3d4e5\tdocs: update readme\n"]
   (let [entries (changelog-entries sample-log)]
     (assert-num= "changelog entries count" 3 (count entries))
@@ -187,9 +187,9 @@
     (assert-str= "changelog second label" "Fixes" (changelog-kind-label (get (nth entries 1) :kind)))
     (assert-str= "changelog third subject" "docs: update readme" (get (nth entries 2) :subject))))
 (in-ns 'cluck.smoke)
-(load-file "examples/cluck/link-check.clk")
-(in-ns 'cluck.links)
-(assert-true "links namespace exists" (find-ns 'cluck.links))
+(load-file "examples/cluck/link-check/main.clk")
+(in-ns 'cluck.examples.link-check)
+(assert-true "links namespace exists" (find-ns 'cluck.examples.link-check))
 (let [link-file "build/cluck-link-check-smoke.md"]
   (fs/spit link-file "[ok](../README.md)\n[broken](missing.md)\n")
   (let [matches (scan-file link-file)]
@@ -198,8 +198,8 @@
     (assert-str= "link checker broken basename" "missing.md" (fs/basename (get (first matches) :resolved))))
   (assert-true "link delete!" (fs/delete! link-file)))
 (in-ns 'cluck.smoke)
-(require [cluck.todo :as todo])
-(assert-true "todo namespace exists" (find-ns 'cluck.todo))
+(require [cluck.examples.todo :as todo])
+(assert-true "todo namespace exists" (find-ns 'cluck.examples.todo))
 (let [todo-file "build/cluck-todo-smoke.txt"]
   (fs/spit todo-file "alpha\nTODO fix this\nbeta FIXME later\n")
   (let [matches (todo/scan-file todo-file)]
@@ -215,8 +215,8 @@
 (assert-true "set superset?" (sets/superset? #{1 2 3} #{1 2}))
 (require [cluck.edn :as edn])
 (assert-str= "edn read-string" "{:a 1}" (pr-str (edn/read-string "{:a 1}")))
-(require [cluck.weather :as weather])
-(assert-true "weather namespace exists" (find-ns 'cluck.weather))
+(require [cluck.examples.weather :as weather])
+(assert-true "weather namespace exists" (find-ns 'cluck.examples.weather))
 (assert-true "weather url alias"
              (handle-exceptions exn
                  #f
@@ -229,10 +229,10 @@
 (assert-str= "weather usage"
              "Usage: cluck-weather <location>\nExample: cluck-weather Oslo\n"
              (capture-output (lambda () (weather/main '()))))
-(load-file "examples/cluck/text-report.clk")
+(load-file "examples/cluck/text-report/main.clk")
 (in-ns 'cluck.smoke)
-(require [cluck.text-report :as report])
-(assert-true "text-report namespace exists" (find-ns 'cluck.text-report))
+(require [cluck.examples.text-report :as report])
+(assert-true "text-report namespace exists" (find-ns 'cluck.examples.text-report))
 (let [stats (report/report-stats "a\n\nb")]
   (assert-num= "text-report lines" 3 (get stats :lines))
   (assert-num= "text-report blank lines" 1 (get stats :blank-lines))

@@ -3,7 +3,7 @@
 ;; This app stays Cluck-only and uses the process helpers for the Git
 ;; invocation. The bootstrap remains responsible for loading the runtime.
 
-(ns cluck.changelog
+(ns cluck.examples.changelog
   "Git changelog helpers for Cluck."
   (:require [cluck.process :as proc]
             [cluck.string :as str]))

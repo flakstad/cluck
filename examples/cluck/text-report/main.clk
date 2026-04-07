@@ -2,7 +2,7 @@
 ;;
 ;; The bootstrap handles file or stdin input. The app logic stays in Cluck.
 
-(ns cluck.text-report
+(ns cluck.examples.text-report
   (:require [cluck.string :as str]))
 
 (defn report-stats

@@ -19,7 +19,7 @@
 (include "cluck/fs.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
 
-(include "examples/cluck/outline.clk")
+(include "examples/cluck/outline/main.clk")
 
 (define (outline-standalone-port->string port)
   (##core#let loop ((chars '()))

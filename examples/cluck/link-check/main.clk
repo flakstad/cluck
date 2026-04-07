@@ -3,7 +3,7 @@
 ;; The bootstrap expands directories for source runs. The app stays in
 ;; Cluck syntax and checks local links against the file system.
 
-(ns cluck.links
+(ns cluck.examples.link-check
   "Markdown link checker helpers for Cluck."
   (:require [cluck.fs :as fs]
             [cluck.string :as str]))
@@ -148,7 +148,7 @@
         acc
         (let [path (first remaining)]
           (if (fs/directory? path)
-              (error "Directory targets must be expanded before calling cluck.links/main" path)
+              (error "Directory targets must be expanded before calling cluck.examples.link-check/main" path)
               (let [next-acc (if (link-markdown-file? path)
                                (append acc (scan-file path))
                                acc)]

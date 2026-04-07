@@ -12,14 +12,14 @@
 (include "cluck.scm")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.process #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.changelog #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.changelog #t)
 (include "cluck/string.clk")
 (include "cluck/process.clk")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.process #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.changelog #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.changelog #t)
 
-(include "examples/cluck/changelog.clk")
+(include "examples/cluck/changelog/main.clk")
 
 (main (command-line-arguments))

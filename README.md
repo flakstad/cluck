@@ -1,6 +1,6 @@
-# cluck
+# Cluck
 
-`cluck` is a Clojure-flavored language layer for CHICKEN Scheme.
+`Cluck` is a Clojure-flavored language layer for CHICKEN Scheme.
 
 It is experimental and focused on small native tools, a REPL-driven workflow, and a practical core library.
 
@@ -56,7 +56,7 @@ The current implementation supports:
 - `type` for runtime type hints and `vec` for turning collections into vectors
 - `slurp`, `spit`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, and `group-by` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.edn/read-string`
-- `cluck.outline`
+- `cluck.examples.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
@@ -124,7 +124,7 @@ That loads the language layer and installs the reader syntax, but does not start
 To load a `.clk` file with Cluck namespace resolution rooted at that file's project directory, use:
 
 ```scheme
-(load-file "examples/cluck/weather.clk")
+(load-file "examples/cluck/weather/main.clk")
 ```
 
 That is the path-aware loader used by the command-line helper scripts and by `C-c C-l` in `cluck-mode`.
@@ -243,7 +243,7 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 The canonical weather/forecast example is fully written in Cluck in:
 
-- [`examples/cluck/weather.clk`](./examples/cluck/weather.clk)
+- [`examples/cluck/weather/main.clk`](./examples/cluck/weather/main.clk)
 
 It uses `ns :require` to pull in the CHICKEN eggs with prefixed imports:
 
@@ -271,17 +271,17 @@ chicken-install http-client json uri-common
 Run the weather CLI from source with:
 
 ```bash
-csi -q -s run-weather.scm Oslo
-csi -q -s run-weather.scm "San Francisco"
+csi -q -s examples/cluck/weather/run.scm Oslo
+csi -q -s examples/cluck/weather/run.scm "San Francisco"
 ```
 
 Build a self-contained native binary with:
 
 ```bash
-csc -static -deployed -k -v -O2 -strip -o build/cluck-weather-standalone run-weather-standalone.scm
+csc -static -deployed -k -v -O2 -strip -o build/cluck-weather-standalone examples/cluck/weather/run-standalone.scm
 ```
 
-On this machine, the resulting binary is about `7.1 MB` and runs without the
+On this machine, the resulting binary is about `7.3 MB` and runs without the
 source tree present. It links only against `libSystem` on macOS.
 
 Size notes:
@@ -299,7 +299,7 @@ boundary explicit in the namespace form.
 
 A second no-eggs example lives in:
 
-- [`examples/cluck/todo.clk`](./examples/cluck/todo.clk)
+- [`examples/cluck/todo/main.clk`](./examples/cluck/todo/main.clk)
 
 It scans files for TODO/FIXME/XXX markers and stays Cluck-only by using
 `cluck.fs` for file handling and `cluck.string` for text processing. The
@@ -309,26 +309,26 @@ self-contained binary accepts file paths directly.
 Run it from source with:
 
 ```bash
-csi -q -s run-todo.scm README.md
+csi -q -s examples/cluck/todo/run.scm README.md
 ```
 
 Or point it at a directory:
 
 ```bash
-csi -q -s run-todo.scm .
+csi -q -s examples/cluck/todo/run.scm .
 ```
 
 The self-contained binary is built from the same app and is intended to take
 file paths directly:
 
 ```bash
-./build/todo-standalone README.md examples/cluck/todo.clk
+./build/todo-standalone README.md examples/cluck/todo/main.clk
 ```
 
 To build a self-contained native binary:
 
 ```bash
-csc -static -deployed -k -v -O2 -strip -o build/todo-standalone run-todo-standalone.scm
+csc -static -deployed -k -v -O2 -strip -o build/todo-standalone examples/cluck/todo/run-standalone.scm
 ```
 
 On this machine, the resulting binary is in the same small self-contained
@@ -338,7 +338,7 @@ range as the other no-eggs utilities.
 
 Another no-eggs example lives in:
 
-- [`examples/cluck/changelog.clk`](./examples/cluck/changelog.clk)
+- [`examples/cluck/changelog/main.clk`](./examples/cluck/changelog/main.clk)
 
 It runs `git log`, groups commit subjects into a few conventional categories,
 and prints a compact summary. The app stays Cluck-only and uses the process
@@ -347,13 +347,13 @@ helpers for the Git invocation.
 Run it from source with:
 
 ```bash
-csi -q -s run-changelog.scm
+csi -q -s examples/cluck/changelog/run.scm
 ```
 
 Or pass a range:
 
 ```bash
-csi -q -s run-changelog.scm HEAD~10..HEAD
+csi -q -s examples/cluck/changelog/run.scm HEAD~10..HEAD
 ```
 
 The self-contained binary is built from the same app and uses the current
@@ -366,7 +366,7 @@ repository as its data source:
 To build a self-contained native binary:
 
 ```bash
-csc -static -deployed -k -v -O2 -strip -o build/changelog-standalone run-changelog-standalone.scm
+csc -static -deployed -k -v -O2 -strip -o build/changelog-standalone examples/cluck/changelog/run-standalone.scm
 ```
 
 On this machine, the resulting binary should stay in the same self-contained
@@ -376,7 +376,7 @@ size neighborhood as the other no-eggs utilities.
 
 Another no-eggs example lives in:
 
-- [`examples/cluck/link-check.clk`](./examples/cluck/link-check.clk)
+- [`examples/cluck/link-check/main.clk`](./examples/cluck/link-check/main.clk)
 
 It scans Markdown files for broken local links. The source runner expands
 directories before calling the app, while the self-contained binary accepts
@@ -385,26 +385,26 @@ file paths directly.
 Run it from source with:
 
 ```bash
-csi -q -s run-link-check.scm README.md
+csi -q -s examples/cluck/link-check/run.scm README.md
 ```
 
 Or point it at a directory:
 
 ```bash
-csi -q -s run-link-check.scm .
+csi -q -s examples/cluck/link-check/run.scm .
 ```
 
 The self-contained binary is built from the same app and is intended to take
 file paths directly:
 
 ```bash
-./build/link-check-standalone README.md examples/cluck/link-check.clk
+./build/link-check-standalone README.md examples/cluck/link-check/main.clk
 ```
 
 To build a self-contained native binary:
 
 ```bash
-csc -static -deployed -k -v -O2 -strip -o build/link-check-standalone run-link-check-standalone.scm
+csc -static -deployed -k -v -O2 -strip -o build/link-check-standalone examples/cluck/link-check/run-standalone.scm
 ```
 
 On this machine, the resulting binary should stay in the same self-contained
@@ -414,7 +414,7 @@ size neighborhood as the other no-eggs utilities.
 
 Another no-eggs example lives in:
 
-- [`examples/cluck/outline.clk`](./examples/cluck/outline.clk)
+- [`examples/cluck/outline/main.clk`](./examples/cluck/outline/main.clk)
 
 It stays Cluck-only and uses the existing `cluck.fs` and `cluck.string`
 helpers for file and text handling.
@@ -422,13 +422,13 @@ helpers for file and text handling.
 Run it from source with:
 
 ```bash
-csi -q -s run-outline.scm README.md
+csi -q -s examples/cluck/outline/run.scm README.md
 ```
 
 Or pipe text on stdin:
 
 ```bash
-cat README.md | csi -q -s run-outline.scm
+cat README.md | csi -q -s examples/cluck/outline/run.scm
 ```
 
 It prints a simple Markdown heading outline and is a good fit for the
@@ -437,23 +437,26 @@ self-contained binary path.
 To build a self-contained native binary:
 
 ```bash
-csc -static -deployed -k -v -O2 -strip -o build/outline-standalone run-outline-standalone.scm
+csc -static -deployed -k -v -O2 -strip -o build/outline-standalone examples/cluck/outline/run-standalone.scm
 ```
 
 On this machine, the resulting binary is about `4.2 MB` and links only
 against `libSystem` on macOS.
 
-The reusable bootstrap pattern for Cluck projects lives in
-[`cluck-bootstrap.scm`](./cluck-bootstrap.scm). It is intentionally generic:
+The reusable bootstrap pattern for the bundled example apps lives in
+[`examples/cluck/bootstrap.scm`](./examples/cluck/bootstrap.scm). It is intentionally generic:
 
 - it discovers the project root from the executable location
 - it walks upward from the executable location until it finds `cluck.scm` or `cluck-cli.scm`
 - it loads `cluck.scm`
 - it loads a project source file with `load-file`
 
-For a new project, copy that helper and point it at your own entrypoint file.
-That gives you a clean Scheme-side bootstrap without mixing app logic into the
-launcher.
+The root [`cluck-bootstrap.scm`](./cluck-bootstrap.scm) remains as a
+compatibility copy for the template and for new-project bootstrapping.
+
+For a new project, copy the helper that best matches your layout and point it
+at your own entrypoint file. That gives you a clean Scheme-side bootstrap
+without mixing app logic into the launcher.
 
 ## Project Template
 
@@ -488,18 +491,18 @@ weather packaging pattern described above.
 
 A small example app that does not use external CHICKEN eggs lives in:
 
-- [`examples/cluck/text-report.clk`](./examples/cluck/text-report.clk)
+- [`examples/cluck/text-report/main.clk`](./examples/cluck/text-report/main.clk)
 
 Run it with:
 
 ```bash
-csi -q -s run-text-report.scm README.md
+csi -q -s examples/cluck/text-report/run.scm README.md
 ```
 
 Or pipe text on stdin:
 
 ```bash
-cat README.md | csi -q -s run-text-report.scm
+cat README.md | csi -q -s examples/cluck/text-report/run.scm
 ```
 
 It prints a simple line/blank-line/character summary and demonstrates how to
@@ -508,7 +511,7 @@ keep the application logic in Cluck while leaving file I/O in the bootstrap.
 To build a self-contained native binary for the same example:
 
 ```bash
-csc -static -deployed -k -v -O2 -strip -o build/text-report-standalone run-text-report-standalone.scm
+csc -static -deployed -k -v -O2 -strip -o build/text-report-standalone examples/cluck/text-report/run-standalone.scm
 ```
 
 On this machine, the resulting binary is about `3.7 MB` and runs without the
@@ -570,7 +573,7 @@ The mirrored namespace files currently live at:
 - [`cluck/edn.clk`](./cluck/edn.clk)
 - [`cluck/walk.clk`](./cluck/walk.clk)
 - [`cluck/math.clk`](./cluck/math.clk)
-- [`examples/cluck/todo.clk`](./examples/cluck/todo.clk)
+- [`examples/cluck/todo/main.clk`](./examples/cluck/todo/main.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
 
@@ -754,5 +757,5 @@ The main takeaways are:
 - Load `cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
 - The codebase is still early and intentionally narrow. The next likely steps are namespace polish and deeper packaging work.
-- For a reusable native entrypoint in a new Cluck project, copy `cluck-bootstrap.scm` and point it at your project `.clk` file.
-- The weather example now demonstrates a self-contained single-binary path; the reusable bootstrap is still the stable bit to copy into a new project today.
+- For a reusable native entrypoint in a new Cluck project, copy `cluck-bootstrap.scm` or start from `examples/cluck/bootstrap.scm` and point it at your project `.clk` file.
+- The weather example now demonstrates a self-contained single-binary path; the example-local bootstrap is the stable bit to copy into an example tree today.

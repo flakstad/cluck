@@ -19,7 +19,7 @@
 ;; try to locate it on disk at runtime.
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 
-(include "examples/cluck/text-report.clk")
+(include "examples/cluck/text-report/main.clk")
 
 (define (text-report-standalone-port->string port)
   (##core#let loop ((chars '()))

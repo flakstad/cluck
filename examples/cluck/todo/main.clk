@@ -3,7 +3,7 @@
 ;; The app stays in Cluck syntax and scans file lists supplied by the
 ;; bootstrap layer.
 
-(ns cluck.todo
+(ns cluck.examples.todo
   (:require [cluck.fs :as fs]
             [cluck.string :as str]))
 

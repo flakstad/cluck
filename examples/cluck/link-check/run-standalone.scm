@@ -12,14 +12,17 @@
 (include "cluck.scm")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.todo #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.link-check #t)
 (include "cluck/string.clk")
 (include "cluck/fs.clk")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.todo #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.link-check #t)
 
-(include "examples/cluck/todo.clk")
+(include "examples/cluck/link-check/main.clk")
 
-(main (command-line-arguments))
+(##core#let ((args (command-line-arguments)))
+  (if (null? args)
+      (error "Usage: run-link-check-standalone.scm <file> ...")
+      (main args)))

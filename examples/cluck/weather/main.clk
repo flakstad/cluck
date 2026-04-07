@@ -3,7 +3,7 @@
 ;; The app logic stays here in Cluck syntax. `ns :require` pulls in the
 ;; CHICKEN eggs with explicit prefixes at the namespace boundary.
 
-(ns cluck.weather
+(ns cluck.examples.weather
   (:require 
    [cluck.edn :as edn]
    [cluck.string :as str]

@@ -84,7 +84,7 @@ For a self-contained single binary, use the standalone packaging pattern from
 the weather example in the main Cluck repo. That path is a separate build
 story from the template starter.
 
-For a no-eggs example app, see [`examples/cluck/text-report.clk`](../examples/cluck/text-report.clk)
+For a no-eggs example app, see [`examples/cluck/text-report/main.clk`](../examples/cluck/text-report/main.clk)
 in the main repository. It shows how to keep application logic in Cluck while
 leaving file/stdin handling in the bootstrap.
 
