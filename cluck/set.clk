@@ -36,7 +36,7 @@
   (cond
     (null? colls) (set)
     (null? (cdr colls)) (cluck-set-copy (car colls))
-    else
+    :else
      (##core#let ((first-set (cluck-set-copy (car colls)))
                   (others (map cluck-set-copy (cdr colls)))
                   (out (set)))
@@ -46,7 +46,7 @@
              (##core#let ((item (car xs)))
                (if (every? (lambda (s) (contains? s item)) others)
                    (conj out item)
-                  #f)
+                  false)
               (loop (cdr xs))))))))
 
 (defn difference
@@ -60,7 +60,7 @@
           out
           (##core#let ((item (car xs)))
             (if (some (lambda (candidate) (contains? candidate item)) others)
-                #f
+                false
                 (conj out item))
             (loop (cdr xs)))))))
 

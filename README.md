@@ -29,7 +29,7 @@ That makes it a strong host for an exploratory Lisp layer that wants to feel lig
 The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 
 - keywords, maps, sets, and vectors with EDN-style syntax
-- core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond`, `->`, and `->>`
+- core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond` with `:else`, `and`, `or`, `->`, and `->>`
 - common sequence helpers like `seq`, `first`, `rest`, `count`, `map`, `filter`, and `reduce`
 - mutable maps and sets for now, with immutable collections deferred until later
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
@@ -74,7 +74,7 @@ The main caveat is that cluck repurposes a few core binding and threading forms,
 - `fn`
 - `defn`
 - `if`
-- `cond`
+- `cond` with `:else`
 - `when`
 - `->`
 - `->>`
@@ -111,7 +111,7 @@ That loads the language layer and installs the reader syntax, but does not start
 To load a `.clk` file with Cluck namespace resolution rooted at that file's project directory, use:
 
 ```scheme
-(load-file "cluck/weather.clk")
+(load-file "examples/cluck/weather.clk")
 ```
 
 That is the path-aware loader used by the command-line helper scripts and by `C-c C-l` in `cluck-mode`.
@@ -217,13 +217,17 @@ The smoke tests check the reader, printer, function macros, threading forms, and
 
 The canonical weather/forecast example is fully written in Cluck in:
 
-- [`cluck/weather.clk`](./cluck/weather.clk)
+- [`examples/cluck/weather.clk`](./examples/cluck/weather.clk)
 
 It uses `ns :require` to pull in the CHICKEN eggs with prefixed imports:
 
 - `http-client` as `http:`
 - `json` as `json:`
 - `uri-common` as `uri:`
+- `cluck.string` as `str`
+
+The app file itself stays Cluck-only; the host-specific pieces live at the
+namespace boundary.
 
 Install the eggs once in your CHICKEN environment:
 
@@ -264,11 +268,13 @@ These namespaces are the intended public surface for user-facing code. The older
 - `ns-publics` returns a map of public vars in a namespace
 - `ns-resolve` looks up a var by namespace and symbol
 
-`ns` supports a focused subset of `:require` directives:
+`ns` supports a focused subset of `:require` directives. In Cluck source,
+`:as` aliases are the preferred style; `:refer` is still supported for
+compatibility and small tests, but user code should generally stay namespace-qualified:
 
+- `[foo.bar :as fb]` registers an alias that `ns-resolve` can use
 - `[foo.bar :refer [x y]]` imports selected public vars into the current namespace
 - `[foo.bar :refer :all]` imports all public vars into the current namespace
-- `[foo.bar :as fb]` registers an alias that `ns-resolve` can use
 - `[foo.bar :exclude [x y]]` skips selected vars when using `:refer :all`
 - `[http-client :as http]` imports a CHICKEN egg into a prefixed namespace when no Cluck source file exists for the target symbol
 - `(:refer-clojure :exclude [...])` excludes selected core vars from the default core import set

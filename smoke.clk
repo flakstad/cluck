@@ -5,7 +5,7 @@
 
 (define (smoke-pass label)
   (println "ok" label)
-  #t)
+  true)
 
 (define (smoke-fail label expected actual)
   (error (string-append "smoke test failed: "
@@ -56,8 +56,11 @@
 (assert-str= "println nil" "nil\n"
              (capture-output (lambda () (println nil))))
 (assert-true "unspecified?" (unspecified? (void)))
+(assert-num= "and" 3 (and true 3))
+(assert-str= "and false" "false" (pr-str (and true false 3)))
+(assert-num= "or" 3 (or false nil 3))
 (assert-str= "if nil result" "nil" (pr-str (if false 1 nil)))
-(assert-str= "cond nil result" "nil" (pr-str (cond false 1 else nil)))
+(assert-str= "cond nil result" "nil" (pr-str (cond false 1 :else nil)))
 (assert-num= "defn" 5 (add2 3))
 (assert-num= "let" 3 (let [x 1 y 2] (+ x y)))
 (assert-num= "let vector destructuring" 3 (let [[a b] [1 2]] (+ a b)))
@@ -90,42 +93,48 @@
 (assert-str= "core hash-map" "{:a 1}" (pr-str (hash-map :a 1)))
 (assert-str= "core set" "#{1 2}" (pr-str (set 1 2)))
 (assert-str= "core disj" "#{1}" (pr-str (disj #{1 2 3} 2 3)))
-(require [cluck.string :refer [blank? join split-lines trim starts-with? ends-with?]])
-(assert-true "string blank? nil" (blank? nil))
-(assert-true "string blank? spaces" (blank? "   "))
-(assert-str= "string trim" "hello" (trim "  hello  "))
-(assert-str= "string join" "a,b,c" (join "," '("a" "b" "c")))
-(assert-str= "string split-lines" "(\"a\" \"b\")" (pr-str (split-lines "a\nb")))
-(assert-true "string starts-with?" (starts-with? "cluck" "cl"))
-(assert-true "string ends-with?" (ends-with? "cluck" "uck"))
-(require [cluck.set :refer [union intersection difference subset? superset?]])
-(assert-str= "set union" "#{1 2 3}" (pr-str (union #{1 2} #{2 3})))
-(assert-str= "set intersection" "#{2}" (pr-str (intersection #{1 2} #{2 3})))
-(assert-str= "set difference" "#{1}" (pr-str (difference #{1 2 3} #{2 3})))
-(assert-true "set subset?" (subset? #{1 2} #{1 2 3}))
-(assert-true "set superset?" (superset? #{1 2 3} #{1 2}))
-(require [cluck.edn :refer [read-string]])
-(assert-str= "edn read-string" "{:a 1}" (pr-str (read-string "{:a 1}")))
-(require [cluck.weather :as weather :refer [main]])
+(require [cluck.string :as str])
+(assert-true "string blank? nil" (str/blank? nil))
+(assert-true "string blank? spaces" (str/blank? "   "))
+(assert-str= "string trim" "hello" (str/trim "  hello  "))
+(assert-str= "string join" "a,b,c" (str/join "," '("a" "b" "c")))
+(assert-str= "string split-lines" "(\"a\" \"b\")" (pr-str (str/split-lines "a\nb")))
+(assert-true "string starts-with?" (str/starts-with? "cluck" "cl"))
+(assert-true "string ends-with?" (str/ends-with? "cluck" "uck"))
+(require [cluck.set :as sets])
+(assert-str= "set union" "#{1 2 3}" (pr-str (sets/union #{1 2} #{2 3})))
+(assert-str= "set intersection" "#{2}" (pr-str (sets/intersection #{1 2} #{2 3})))
+(assert-str= "set difference" "#{1}" (pr-str (sets/difference #{1 2 3} #{2 3})))
+(assert-true "set subset?" (sets/subset? #{1 2} #{1 2 3}))
+(assert-true "set superset?" (sets/superset? #{1 2 3} #{1 2}))
+(require [cluck.edn :as edn])
+(assert-str= "edn read-string" "{:a 1}" (pr-str (edn/read-string "{:a 1}")))
+(require [cluck.weather :as weather])
 (assert-true "weather namespace exists" (find-ns 'cluck.weather))
 (assert-str= "doc weather main"
              "weather/main\n\nFetch and print a weather forecast for LOCATION.\n"
              (capture-output (lambda () (doc weather/main))))
 (assert-str= "weather usage"
              "Usage: cluck-weather <location>\nExample: cluck-weather Oslo\n"
-             (capture-output (lambda () (main '()))))
+             (capture-output (lambda () (weather/main '()))))
 (assert-str= "doc core namespace map"
              "cluck.core/map\n\nApply F to each element of COLL and return a list of the results.\n"
              (capture-output (lambda () (doc cluck.core/map))))
+(assert-str= "doc and"
+             "and\n\nEvaluate forms left to right and return the last truthy value, or the first falsey value.\n"
+             (capture-output (lambda () (doc and))))
+(assert-str= "doc or"
+             "or\n\nEvaluate forms left to right and return the first truthy value, or false.\n"
+             (capture-output (lambda () (doc or))))
 (assert-str= "doc string join"
-             "cluck.string/join\n\nJoin COLL with SEP and return a string.\n"
-             (capture-output (lambda () (doc cluck.string/join))))
+             "str/join\n\nJoin COLL with SEP and return a string.\n"
+             (capture-output (lambda () (doc str/join))))
 (assert-str= "doc set union"
-             "cluck.set/union\n\nReturn a set containing all items from COLLS.\n"
-             (capture-output (lambda () (doc cluck.set/union))))
+             "sets/union\n\nReturn a set containing all items from COLLS.\n"
+             (capture-output (lambda () (doc sets/union))))
 (assert-str= "doc edn read-string"
-             "cluck.edn/read-string\n\nRead one EDN form from STRING.\n"
-             (capture-output (lambda () (doc cluck.edn/read-string))))
+             "edn/read-string\n\nRead one EDN form from STRING.\n"
+             (capture-output (lambda () (doc edn/read-string))))
 (assert-true "defn doc output shows procedure"
              (string-prefix? "#<procedure"
                               (capture-output
@@ -154,12 +163,9 @@
 (assert-true "seq map entry vector" (vector? (first (seq sample))))
 
 (def smoke-ns-value 123)
-(require [cluck.math :as math :refer [square sum-of-squares]])
-(assert-num= "require square" 25 (square 5))
-(assert-num= "require sum-of-squares" 14 (sum-of-squares [1 2 3]))
-(assert-str= "doc imported square"
-             "square\n\nReturn x squared.\n"
-             (capture-output (lambda () (doc square))))
+(require [cluck.math :as math])
+(assert-num= "require square" 25 (math/square 5))
+(assert-num= "require sum-of-squares" 14 (math/sum-of-squares [1 2 3]))
 (assert-str= "doc alias square"
              "math/square\n\nReturn x squared.\n"
              (capture-output (lambda () (doc math/square))))
@@ -172,7 +178,7 @@
 
 (define (ns-smoke-pass label)
   (println "ok" label)
-  #t)
+  true)
 
 (define (ns-assert-true label value)
   (if value

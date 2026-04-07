@@ -12,6 +12,6 @@
 ;; Load the language layer, then the weather app.
 (let ((root (script-root)))
   (load (string-append root "cluck-init.scm"))
-  (load-file (string-append root "cluck/weather.clk")))
+  (load-file (string-append root "examples/cluck/weather.clk")))
 
 (main (command-line-arguments))

@@ -284,7 +284,7 @@
        (loop (- i 1))))))
 
 (define (cluck-root-candidates root)
-  (let prefix-loop ((prefixes '("" "src/")) (acc '()))
+  (let prefix-loop ((prefixes '("" "src/" "examples/")) (acc '()))
     (if (null? prefixes)
         (reverse acc)
         (let ((prefix (car prefixes)))
@@ -388,6 +388,28 @@
 
 (define (cluck-prefix-symbol sym)
   (string->symbol (string-append (symbol->string sym) ":")))
+
+(define (cluck-qualified-symbol alias sym)
+  (string->symbol
+   (string-append (symbol->string alias) "/" (symbol->string sym))))
+
+(define (cluck-import-qualified! target-ns alias names)
+  (let ((current (current-ns)))
+    (let loop ((xs names))
+      (if (null? xs)
+          current
+          (let ((source (car xs)))
+            (let ((value (ns-resolve target-ns source)))
+              (if value
+                  (let ((target (cluck-qualified-symbol alias source)))
+                    (cluck-import! current target value)
+                    (cluck-copy-doc! target-ns source current target)
+                    (eval `(define ,target
+                             (lambda args
+                               (apply ,source args)))
+                          (interaction-environment))
+                    (loop (cdr xs)))
+                  (error "cannot refer missing var" target-ns source))))))))
 
 (define (cluck-load-namespace-file! ns path)
   (let ((saved-ns (current-ns)))
@@ -558,79 +580,81 @@
      (error "require expects a namespace symbol or vector spec" spec))))
 
 (define (cluck-require-vector-spec! spec)
-  (##core#let ((xs (cluck-vector-form->list spec)))
-    (##core#if (not xs)
-               (error "require spec must be a vector" spec)
-               (##core#let ((target (cluck-ns-form->symbol (car xs))))
-                 (cluck-require-namespace! target)
-                 (##core#let loop ((rest (cdr xs))
-                                   (alias #f)
-                                   (refs '())
-                                   (refer-all? #f)
-                                   (exclude '())
-                                   (rename '()))
-                   (##core#if (or (null? rest) (not (pair? rest)))
-                              (begin
-                                (if alias
-                                    (cluck-register-ns-alias! (current-ns)
-                                                               alias
-                                                               target)
-                                    #f)
-                                (##core#let ((selected (if refer-all?
-                                                           (cluck-namespace-public-symbols target)
-                                                           (cluck-unique-symbols
-                                                            (append refs (map car rename))))))
-                                  (##core#let ((selected (cluck-symbol-list-diff selected exclude)))
-                                    (if (null? selected)
-                                        target
-                                        (cluck-import-selected! target selected rename exclude))))
-                                target)
-                              (##core#let ((option (car rest))
-                                            (kw (cluck-keyword-form-name (car rest))))
-                                (##core#if (and kw (string=? kw "as"))
-                                           (if (null? (cdr rest))
-                                               (error "require :as expects an alias" spec)
-                                               (loop (cddr rest)
-                                                     (cluck-ns-form->symbol (cadr rest))
-                                                     refs
-                                                     refer-all?
-                                                     exclude
-                                                     rename))
-                                           (##core#if (and kw (string=? kw "refer"))
-                                                      (if (null? (cdr rest))
-                                                          (error "require :refer expects a symbol vector or :all" spec)
-                                                          (##core#let ((value (cadr rest)))
-                                                            (if (cluck-all-marker? value)
-                                                                (loop (cddr rest)
-                                                                      alias
-                                                                      refs
-                                                                      #t
-                                                                      exclude
-                                                                      rename)
-                                                                (##core#let ((syms (cluck-symbol-list-form->list value)))
-                                                                  (if syms
-                                                                      (loop (cddr rest)
-                                                                            alias
-                                                                            (append refs syms)
-                                                                            refer-all?
-                                                                            exclude
-                                                                            rename)
-                                                                      (error "require :refer expects a symbol vector or :all"
-                                                                             value))))))
-                                                      (##core#if (and kw (string=? kw "exclude"))
-                                                                 (if (null? (cdr rest))
-                                                                     (error "require :exclude expects a symbol vector or list" spec)
-                                                                     (##core#let ((syms (cluck-symbol-list-form->list (cadr rest))))
-                                                                       (if syms
-                                                                           (loop (cddr rest)
-                                                                                 alias
-                                                                                 refs
-                                                                                 refer-all?
-                                                                                 (append exclude syms)
-                                                                                 rename)
-                                                                           (error ":exclude expects a symbol vector or list"
-                                                                                  (cadr rest))))))
-                                                                 (error "unsupported require option" option))))))))))
+  (let ((xs (cluck-vector-form->list spec)))
+    (if (not xs)
+        (error "require spec must be a vector" spec)
+        (let ((target (cluck-ns-form->symbol (car xs))))
+          (cluck-require-namespace! target)
+          (let ((publics (cluck-namespace-public-symbols target)))
+            (let loop ((rest (cdr xs))
+                       (alias #f)
+                       (refs '())
+                       (refer-all? #f)
+                       (exclude '())
+                       (rename '()))
+              (if (or (null? rest) (not (pair? rest)))
+                  (begin
+                    (if alias
+                        (begin
+                          (cluck-register-ns-alias! (current-ns) alias target)
+                          (cluck-import-qualified! target alias publics))
+                        #f)
+                    (let* ((selected (if refer-all?
+                                         (cluck-namespace-public-symbols target)
+                                         (cluck-unique-symbols (append refs (map car rename)))))
+                           (selected (cluck-symbol-list-diff selected exclude)))
+                      (if (null? selected)
+                          target
+                          (cluck-import-selected! target selected rename exclude)))
+                    target)
+                  (let* ((option (car rest))
+                         (kw (cluck-keyword-form-name option)))
+                    (cond
+                      ((and kw (string=? kw "as"))
+                       (if (null? (cdr rest))
+                           (error "require :as expects an alias" spec)
+                           (loop (cddr rest)
+                                 (cluck-ns-form->symbol (cadr rest))
+                                 refs
+                                 refer-all?
+                                 exclude
+                                 rename)))
+                      ((and kw (string=? kw "refer"))
+                       (if (null? (cdr rest))
+                           (error "require :refer expects a symbol vector or :all" spec)
+                           (let ((value (cadr rest)))
+                             (if (cluck-all-marker? value)
+                                 (loop (cddr rest)
+                                       alias
+                                       refs
+                                       #t
+                                       exclude
+                                       rename)
+                                 (let ((syms (cluck-symbol-list-form->list value)))
+                                   (if syms
+                                       (loop (cddr rest)
+                                             alias
+                                             (append refs syms)
+                                             refer-all?
+                                             exclude
+                                             rename)
+                                       (error "require :refer expects a symbol vector or :all"
+                                              value)))))))
+                      ((and kw (string=? kw "exclude"))
+                       (if (null? (cdr rest))
+                           (error "require :exclude expects a symbol vector or list" spec)
+                           (let ((syms (cluck-symbol-list-form->list (cadr rest))))
+                             (if syms
+                                 (loop (cddr rest)
+                                       alias
+                                       refs
+                                       refer-all?
+                                       (append exclude syms)
+                                       rename)
+                                 (error ":exclude expects a symbol vector or list"
+                                        (cadr rest))))))
+                      (else
+                       (error "unsupported require option" option)))))))))))
 
 (define (cluck-require-spec! spec)
   (cond
@@ -1669,11 +1693,13 @@
    (cons 'defn "Define a named function and intern it into the current namespace.")
    (cons 'fn "Create an anonymous function.")
    (cons 'let "Bind names, vectors, or maps and evaluate the body.")
+   (cons 'and "Evaluate forms left to right and return the last truthy value, or the first falsey value.")
+   (cons 'or "Evaluate forms left to right and return the first truthy value, or false.")
    (cons 'if "Evaluate THEN or ELSE based on Cluck truthiness.")
    (cons 'when "Evaluate BODY when TEST is truthy.")
    (cons 'when-not "Evaluate BODY when TEST is falsey.")
    (cons 'if-not "Evaluate ELSE when TEST is truthy, THEN otherwise.")
-   (cons 'cond "Evaluate the first clause whose test is truthy.")
+   (cons 'cond "Evaluate the first clause whose test is truthy, with :else as the final default clause.")
    (cons '-> "Thread x through forms as the second argument.")
    (cons '->> "Thread x through forms as the last argument.")
    (cons 'ns "Set the current namespace and optionally require dependencies.")
@@ -2185,8 +2211,7 @@
                     `(cluck-set-current-ns! ',name)))))))
 
 (define (cluck-cond-else? x)
-  (or (and (symbol? x) (string=? (symbol->string x) "else"))
-      (and (keyword? x) (string=? (name x) "else"))))
+  (and (keyword? x) (string=? (name x) "else")))
 
 (define (cluck-if-thunks test then-thunk else-thunk)
   (if (truthy? test)
@@ -2199,6 +2224,38 @@
                       (lambda () ,then)
                       (lambda () ,else-part))))
 
+(define (cluck-expand-and clauses rename)
+  (cond
+    ((null? clauses) 'true)
+    ((null? (cdr clauses)) (car clauses))
+    (else
+     (let ((temp (rename 'cluck-and-value)))
+       `(##core#let ((,temp ,(car clauses)))
+          (cluck-if-thunks ,temp
+                           (lambda () ,(cluck-expand-and (cdr clauses) rename))
+                           (lambda () ,temp)))))))
+
+(define (cluck-expand-or clauses rename)
+  (cond
+    ((null? clauses) 'false)
+    ((null? (cdr clauses)) (car clauses))
+    (else
+     (let ((temp (rename 'cluck-or-value)))
+       `(##core#let ((,temp ,(car clauses)))
+          (cluck-if-thunks ,temp
+                           (lambda () ,temp)
+                           (lambda () ,(cluck-expand-or (cdr clauses) rename))))))))
+
+(define-syntax and
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-and (cdr form) rename))))
+
+(define-syntax or
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-or (cdr form) rename))))
+
 (define (cluck-expand-cond clauses rename)
   (let loop ((rest clauses))
     (cond
@@ -2208,7 +2265,7 @@
       ((cluck-cond-else? (car rest))
        (if (null? (cddr rest))
            (cadr rest)
-           (error "cond else clause must be last")))
+           (error "cond :else clause must be last")))
       (else
        (let ((tail (loop (cddr rest)))
              (value (rename 'cluck-cond-value)))

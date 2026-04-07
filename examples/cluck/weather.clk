@@ -4,36 +4,51 @@
 ;; CHICKEN eggs with explicit prefixes at the namespace boundary.
 
 (ns cluck.weather
-  (:require [cluck.string :refer [blank? join trim]]
+  (:require [cluck.string :as str]
             [http-client :as http]
             [json :as json]
             [uri-common :as uri]))
 
 (defn weather-json-entry? [x]
-  (and (seq x)
-       (string? (first x))))
+  (if (seq x)
+      (string? (first x))
+      false))
 
 (defn weather-json-entry-value [entry]
   (rest entry))
 
-(defn weather-json->cluck [x]
-  (cond
-    (unspecified? x) nil
-    (string? x) x
-    (vector? x)
-    (cond
-      (empty? x) []
-      (every? weather-json-entry? (seq x))
+(defn weather-json-vector->cluck [x]
+  (if (every? weather-json-entry? (seq x))
       (reduce (fn [result entry]
                 (assoc result
                        (keyword (first entry))
                        (weather-json->cluck (weather-json-entry-value entry))))
               (hash-map)
               (seq x))
-      else (mapv weather-json->cluck x))
-    (seq x)
-    (mapv weather-json->cluck x)
-    else x))
+      (mapv weather-json->cluck x)))
+
+(defn weather-json->cluck [x]
+  (cond
+    (unspecified? x) nil
+    (string? x) x
+    (vector? x) (if (empty? x) [] (weather-json-vector->cluck x))
+    (seq x) (mapv weather-json->cluck x)
+    :else x))
+
+(defn weather-first-present [& xs]
+  (reduce (fn [found value]
+            (if found
+                found
+                value))
+          nil
+          xs))
+
+(defn weather-map-text [x]
+  (weather-first-present (get x :value)
+                         (get x :name)
+                         (get x :region)
+                         (get x :country)
+                         ""))
 
 (defn weather-fetch-json [url]
   (http:with-input-from-request
@@ -51,47 +66,39 @@
 (defn weather-text [x]
   (cond
     (string? x) x
-    (vector? x)
-    (cond
-      (empty? x) ""
-      else (weather-text (first x)))
-    (map? x)
-    (or (get x :value)
-        (get x :name)
-        (get x :region)
-        (get x :country)
-        "")
+    (vector? x) (if (empty? x) "" (weather-text (first x)))
+    (map? x) (weather-map-text x)
     (nil? x) ""
-    else (pr-str x)))
+    :else (pr-str x)))
 
 (defn weather-location-title [area]
-  (join ", "
-        (filter (fn [part] (not (blank? part)))
-                [(weather-text (get area :areaName))
-                 (weather-text (get area :region))
-                 (weather-text (get area :country))])))
+  (str/join ", "
+            (filter (fn [part] (not (str/blank? part)))
+                    [(weather-text (get area :areaName))
+                     (weather-text (get area :region))
+                     (weather-text (get area :country))])))
+
+(defn weather-rain-chance [raw]
+  (if (str/blank? raw)
+      0
+      (read-string raw)))
 
 (defn weather-max-rain-chance [hourly]
   (reduce (fn [best entry]
-              (let [raw (get entry :chanceofrain)
-                    chance (cond
-                             (blank? raw) 0
-                             else (read-string raw))]
-                (cond
-                  (> chance best) chance
-                else best)))
+            (let [chance (weather-rain-chance (get entry :chanceofrain))]
+              (if (> chance best) chance best)))
           0
           hourly))
 
 (defn weather-day-summary [day]
   (let [hourly (get day :hourly)
         first-hour (first hourly)
-        description (cond
-                       first-hour (weather-text (get first-hour :weatherDesc))
-                       else "")
-        rain-chance (cond
-                      (empty? hourly) 0
-                      else (weather-max-rain-chance hourly))]
+        description (if first-hour
+                      (weather-text (get first-hour :weatherDesc))
+                      "")
+        rain-chance (if (empty? hourly)
+                      0
+                      (weather-max-rain-chance hourly))]
     (str (get day :date)
          "  "
          (get day :mintempC)
@@ -100,7 +107,7 @@
          "°C  "
          description
          "  rain "
-         (number->string rain-chance)
+         (str rain-chance)
          "%")))
 
 (defn weather-print-days [days]
@@ -139,7 +146,7 @@
   nil)
 
 (defn main "Fetch and print a weather forecast for LOCATION." [args]
-  (let [location (trim (join " " args))]
-    (cond
-      (blank? location) (weather-usage)
-      else (weather-print-report (weather-fetch-report location)))))
+  (let [location (str/trim (str/join " " args))]
+    (if (str/blank? location)
+      (weather-usage)
+      (weather-print-report (weather-fetch-report location)))))
