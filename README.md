@@ -314,11 +314,6 @@ location, so keeping the binary under `build/` still works as long as it stays
 inside the project tree. For a fully self-contained binary, use the standalone
 weather packaging pattern described above.
 
-For a pure-Cluck utility starter with no external eggs, use
-[`template/no-eggs/`](./template/no-eggs/). It shows the same bootstrap shape,
-but the app logic stays entirely within Cluck and the bootstrap handles file
-or stdin input.
-
 ## No-Eggs Example
 
 A small example app that does not use external CHICKEN eggs lives in:

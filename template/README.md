@@ -81,10 +81,9 @@ For a self-contained single binary, use the standalone packaging pattern from
 the weather example in the main Cluck repo. That path is a separate build
 story from the template starter.
 
-If you want a pure-Cluck utility starter with no external eggs, see
-[`template/no-eggs/`](./no-eggs/). It uses the same bootstrap shape, but the
-application focuses on file/stdin text processing instead of a generic app
-shell.
+For a no-eggs example app, see [`examples/cluck/text-report.clk`](../examples/cluck/text-report.clk)
+in the main repository. It shows how to keep application logic in Cluck while
+leaving file/stdin handling in the bootstrap.
 
 ## Notes
 
