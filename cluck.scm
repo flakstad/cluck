@@ -366,6 +366,39 @@
             (change-directory saved)))
         (thunk))))
 
+(define (cluck-rewrite-keyword-calls form)
+  (cond
+    ((pair? form)
+     (let ((head (car form)))
+       (if (or (eq? head 'quote)
+               (eq? head 'quasiquote)
+               (eq? head 'ns)
+               (eq? head 'comment))
+           form
+           (let ((rewritten (map cluck-rewrite-keyword-calls form)))
+             (let ((kw-name (cluck-keyword-form-name (car rewritten))))
+               (if kw-name
+                   (let ((kw (car rewritten))
+                         (args (cdr rewritten)))
+                     (cond
+                       ((null? args) rewritten)
+                       ((null? (cdr args))
+                        `(get ,(car args) ,kw))
+                       ((null? (cddr args))
+                        `(get ,(car args) ,kw ,(cadr args)))
+                       (else rewritten)))
+                   rewritten))))))
+    ((vector? form)
+     (list->vector
+      (map cluck-rewrite-keyword-calls (vector->list form))))
+    (else form)))
+
+(define (cluck-eval-source-form form)
+  (eval (cluck-rewrite-keyword-calls form) (interaction-environment)))
+
+(define (cluck-eval-form form)
+  (cluck-eval-source-form (cluck-source-form form)))
+
 (define (cluck-load-source-file! path)
   (let* ((absolute (cluck-absolute-path path))
          (root (cluck-find-project-root absolute)))
@@ -375,7 +408,14 @@
        (cluck-with-directory
         root
         (lambda ()
-          (load absolute)
+          (call-with-input-file
+           absolute
+           (lambda (port)
+             (let loop ()
+               (let ((form (read port)))
+                 (unless (eof-object? form)
+                   (cluck-eval-source-form form)
+                   (loop))))))
           (void)))))))
 
 (define (cluck-locate-module-file ns)
@@ -2520,7 +2560,7 @@
 (define (cluck-repl-evaluator expr)
   (call-with-values
    (lambda ()
-     (eval expr (interaction-environment)))
+     (cluck-eval-form expr))
    cluck-repl-print-results))
 
 (define (cluck-repl)

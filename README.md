@@ -52,6 +52,7 @@ The current implementation supports:
 - `[1 2 3]` vectors
 - `{:a 1 :b 2}` maps
 - `#{1 2 3}` sets
+- keywords can be used as lookup functions, e.g. `(:a {:a 1})`
 - `cluck.edn/read-string`
 - `cluck.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`

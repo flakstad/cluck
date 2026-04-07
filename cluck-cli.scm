@@ -16,7 +16,7 @@
 (define (cluck-cli-eval-form form)
   (call-with-values
    (lambda ()
-     (eval form (interaction-environment)))
+     (cluck-eval-form form))
    cluck-repl-print-results))
 
 (define (cluck-cli-eval-string expr)

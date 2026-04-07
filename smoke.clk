@@ -209,6 +209,8 @@
   (+ a b))
 (assert-num= "defn destructuring" 5 (pair-sum [2 3]))
 (assert-num= "assoc/get" 2 (-> {:a 1} (assoc :b 2) (get :b)))
+(assert-num= "keyword lookup" 1 (:a {:a 1}))
+(assert-num= "keyword lookup default" 0 (:a {:b 2} 0))
 (assert-str= "thread-last map" "(2 3 4)" (pr-str (->> [1 2 3] (map inc))))
 (assert-num= "cond" 2 (cond false 1 :else 2))
 (assert-true "contains?" (contains? (get sample :b) 3))
