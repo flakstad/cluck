@@ -1033,7 +1033,7 @@
       ((char=? next #\d)
        (cond
          ((null? items) (error "Missing format argument" fmt))
-         ((not (integer? (car items)))
+         ((not (exact-integer? (car items)))
           (error "%d expects an integer" (car items)))
          (else
           (display (number->string (car items)) port)

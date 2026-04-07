@@ -58,6 +58,12 @@
              (capture-output (lambda () (println nil))))
 (assert-str= "format basic" "hello world 3"
              (format "hello %s %d" "world" 3))
+(assert-true "format %d rejects 3.0"
+             (handle-exceptions exn
+                 #t
+               (begin
+                 (format "%d" 3.0)
+                 #f)))
 (assert-str= "format decimals" "3.14"
              (format "%.2f" 3.14159))
 (assert-str= "format nil" "nil"
