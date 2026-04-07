@@ -1,7 +1,8 @@
 ;; Small demo program for cluck.
 ;; Load this after cluck-init.scm or via run-demo.scm.
 
-(ns cluck.demo)
+(ns cluck.demo
+  (:require [cluck.edn :as edn]))
 
 (def backlog
   [{:id 101 :title "bootstrap reader" :status :done :priority 1 :tags #{:core :docs}}
@@ -12,7 +13,7 @@
    {:id 106 :title "package metadata" :status :todo :priority 3 :tags #{:docs}}])
 
 (def settings
-  (read-string "{:project \"cluck\" :owners #{:andreas} :mode :demo}"))
+  (edn/read-string "{:project \"cluck\" :owners #{:andreas} :mode :demo}"))
 
 (defn title-of [item]
   (get item :title))
@@ -53,7 +54,7 @@
     (println "Open items:" (title-list open-items))
     (println "Docs items:" (title-list docs-items))
     (println "High priority open items:" (title-list high-priority))
-    (println "Raw EDN:" (read-string "{:release \"0.1.0\" :targets #{:geiser :cli}}"))
+    (println "Raw EDN:" (edn/read-string "{:release \"0.1.0\" :targets #{:geiser :cli}}"))
     nil))
 
 (demo-report)

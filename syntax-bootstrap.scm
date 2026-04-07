@@ -1,6 +1,4 @@
-(import (chicken load))
-
-(load-relative "syntax-bootstrap-core.scm")
+(include "syntax-bootstrap-core.scm")
 
 (set-read-syntax! #\: read-keyword)
 (set-read-syntax! #\[ read-vector-literal)

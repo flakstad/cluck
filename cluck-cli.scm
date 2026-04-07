@@ -65,4 +65,9 @@
 
 (load-relative "cluck.scm")
 
+;; Preserve the convenient top-level alias for the REPL and command-line runs.
+(define read-string cluck-core-read-string)
+(cluck-intern! (current-ns) 'read-string read-string)
+(cluck-put-doc! (current-ns) 'read-string "Read one Cluck form from STRING.")
+
 (cluck-cli-main (command-line-arguments))

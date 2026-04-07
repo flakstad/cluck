@@ -3,7 +3,7 @@
 (ns cluck.edn
   "EDN helpers for Cluck.")
 
-(define cluck-edn-core-read-string read-string)
+(define cluck-edn-core-read-string cluck-core-read-string)
 (define cluck-edn-core-pr-str pr-str)
 
 (defn read-string

@@ -1,7 +1,8 @@
 ;; Smoke tests for cluck.
 ;; Load this after cluck-init.scm or via run-smoke-tests.scm.
 
-(ns cluck.smoke)
+(ns cluck.smoke
+  (:require [cluck.edn :as edn]))
 
 (define (smoke-pass label)
   (println "ok" label)
@@ -43,7 +44,7 @@
          (string=? prefix (substring s 0 plen)))))
 
 (def sample
-  (read-string "{:a [1 2] :b #{3}}"))
+  (edn/read-string "{:a [1 2] :b #{3}}"))
 
 (defn add2 "Add 2 to X." [x]
   (+ x 2))

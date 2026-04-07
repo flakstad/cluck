@@ -45,7 +45,7 @@ The current implementation supports:
 - `[1 2 3]` vectors
 - `{:a 1 :b 2}` maps
 - `#{1 2 3}` sets
-- `read-string`
+- `cluck.edn/read-string`
 - `pr-str`, `str`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
@@ -82,6 +82,8 @@ The main caveat is that cluck repurposes a few core binding and threading forms,
 If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` helper or drop to the core forms such as `##core#let`.
 
 When a `.clk` file reaches out to CHICKEN eggs, keep that work explicit by using `ns` `:require` with prefixed imports so the host interop stays visible and does not leak names into the Cluck surface.
+
+For EDN parsing, prefer `cluck.edn/read-string` in app code. The interactive `cluck-init.scm` and `cluck-cli.scm` loaders also install a convenience top-level `read-string` alias for the REPL and command-line workflow, but the namespaced form is the stable one for libraries and standalone binaries.
 
 ## Performance Direction
 
@@ -242,9 +244,29 @@ csi -q -s run-weather.scm Oslo
 csi -q -s run-weather.scm "San Francisco"
 ```
 
+Build a self-contained native binary with:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/cluck-weather-standalone run-weather-standalone.scm
+```
+
+On this machine, the resulting binary is about `7.1 MB` and runs without the
+source tree present. It links only against `libSystem` on macOS.
+
 The weather app is intentionally small, but it is important because it proves
 the current Cluck shape works for a real networked tool while keeping the egg
 boundary explicit in the namespace form.
+
+The reusable bootstrap pattern for Cluck projects lives in
+[`cluck-bootstrap.scm`](./cluck-bootstrap.scm). It is intentionally generic:
+
+- it discovers the project root from the executable location
+- it loads `cluck-init.scm`
+- it loads a project source file with `load-file`
+
+For a new project, copy that helper and point it at your own entrypoint file.
+That gives you a clean Scheme-side bootstrap without mixing app logic into the
+launcher.
 
 ## Namespaces
 
@@ -441,7 +463,8 @@ The main takeaways are:
 ## Example
 
 ```scheme
-(def x (read-string "{:a [1 2] :b #{3}}"))
+(require [cluck.edn :as edn])
+(def x (edn/read-string "{:a [1 2] :b #{3}}"))
 (println "Parsed:" x)
 (println "A:" (get x :a))
 (println "B:" (get x :b))
@@ -452,3 +475,5 @@ The main takeaways are:
 - Load `cluck-init.scm` in a fresh process when testing changes to reader syntax or macros.
 - Reloading the same source files into the same live REPL can be awkward because this project deliberately redefines core syntax forms.
 - The codebase is still early and intentionally narrow. The next likely steps are namespace polish and deeper packaging work.
+- For a reusable native entrypoint in a new Cluck project, copy `cluck-bootstrap.scm` and point it at your project `.clk` file.
+- The weather example now demonstrates a self-contained single-binary path; the reusable bootstrap is still the stable bit to copy into a new project today.

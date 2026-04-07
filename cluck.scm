@@ -9,7 +9,7 @@
         (chicken syntax)
         srfi-69)
 
-(load-relative "syntax-bootstrap.scm")
+(include "syntax-bootstrap.scm")
 
 (define (cluck-empty-seq? x)
   (or (nil? x) (null? x)))
@@ -406,7 +406,7 @@
                     (cluck-copy-doc! target-ns source current target)
                     (eval `(define ,target
                              (lambda args
-                               (apply ,source args)))
+                               (apply (ns-resolve ',target-ns ',source) args)))
                           (interaction-environment))
                     (loop (cdr xs)))
                   (error "cannot refer missing var" target-ns source))))))))
@@ -959,7 +959,7 @@
   (newline)
   nil)
 
-(define (read-string s)
+(define (cluck-core-read-string s)
   (cluck-read-one s))
 
 (define (count x)
@@ -1567,7 +1567,7 @@
    (cons 'all-ns all-ns)
    (cons 'ns-publics ns-publics)
    (cons 'ns-resolve ns-resolve)
-   (cons 'read-string read-string)
+   (cons 'read-string cluck-core-read-string)
    (cons 'load-file load-file)
    (cons 'pr-str pr-str)
    (cons 'str str)

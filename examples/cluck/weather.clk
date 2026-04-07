@@ -4,7 +4,8 @@
 ;; CHICKEN eggs with explicit prefixes at the namespace boundary.
 
 (ns cluck.weather
-  (:require [cluck.string :as str]
+  (:require [cluck.edn :as edn]
+            [cluck.string :as str]
             [http-client :as http]
             [json :as json]
             [uri-common :as uri]))
@@ -81,7 +82,7 @@
 (defn weather-rain-chance [raw]
   (if (str/blank? raw)
       0
-      (read-string raw)))
+      (edn/read-string raw)))
 
 (defn weather-max-rain-chance [hourly]
   (reduce (fn [best entry]
