@@ -160,6 +160,12 @@
 (assert-str= "edn read-string" "{:a 1}" (pr-str (edn/read-string "{:a 1}")))
 (require [cluck.weather :as weather])
 (assert-true "weather namespace exists" (find-ns 'cluck.weather))
+(assert-true "weather url alias"
+             (handle-exceptions exn
+                 #f
+               (begin
+                 (weather/weather-url "Oslo")
+                 #t)))
 (assert-str= "doc weather main"
              "weather/main\n\nFetch and print a weather forecast for LOCATION.\n"
              (capture-output (lambda () (doc weather/main))))

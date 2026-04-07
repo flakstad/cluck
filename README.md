@@ -245,10 +245,17 @@ The canonical weather/forecast example is fully written in Cluck in:
 
 It uses `ns :require` to pull in the CHICKEN eggs with prefixed imports:
 
-- `http-client` as `http:`
-- `json` as `json:`
-- `uri-common` as `uri:`
+- `http-client` as `http/`
+- `json` as `json/`
+- `uri-common` as `uri/`
 - `cluck.string` as `str`
+
+Imported eggs use slash-qualified call syntax in source, so the weather
+example reads like:
+
+- `http/with-input-from-request`
+- `json/json-read`
+- `uri/uri-reference`
 
 The app file itself stays Cluck-only; the host-specific pieces live at the
 namespace boundary.

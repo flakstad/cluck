@@ -393,8 +393,55 @@
       (map cluck-rewrite-keyword-calls (vector->list form))))
     (else form)))
 
+(define (cluck-rewrite-qualified-symbol form)
+  (if (symbol? form)
+      (let* ((text (symbol->string form))
+             (slash (let loop ((i 0))
+                      (cond
+                        ((>= i (string-length text)) #f)
+                        ((char=? (string-ref text i) #\/) i)
+                        (else (loop (+ i 1))))))
+             (alias (and slash (substring text 0 slash)))
+             (name (and slash (substring text (+ slash 1) (string-length text)))))
+        (if (and alias name)
+            (let* ((alias-sym (string->symbol alias))
+                   (target (cluck-resolved-ns-name alias-sym)))
+              (if (and target (not (find-ns target)))
+                  (string->symbol (string-append alias ":" name))
+                  form))
+            form))
+      form))
+
+(define (cluck-rewrite-source-form form)
+  (cond
+    ((pair? form)
+     (let ((head (car form)))
+       (if (or (eq? head 'quote)
+               (eq? head 'quasiquote)
+               (eq? head 'ns)
+               (eq? head 'comment))
+           form
+           (let ((rewritten (map cluck-rewrite-source-form form)))
+             (let ((kw-name (cluck-keyword-form-name (car rewritten))))
+               (if kw-name
+                   (let ((kw (car rewritten))
+                         (args (cdr rewritten)))
+                     (cond
+                       ((null? args) rewritten)
+                       ((null? (cdr args))
+                        `(get ,(car args) ,kw))
+                       ((null? (cddr args))
+                        `(get ,(car args) ,kw ,(cadr args)))
+                       (else rewritten)))
+                   rewritten))))))
+    ((vector? form)
+     (list->vector
+      (map cluck-rewrite-source-form (vector->list form))))
+    (else
+     (cluck-rewrite-qualified-symbol form))))
+
 (define (cluck-eval-source-form form)
-  (eval (cluck-rewrite-keyword-calls form) (interaction-environment)))
+  (eval (cluck-rewrite-source-form form) (interaction-environment)))
 
 (define (cluck-eval-form form)
   (cluck-eval-source-form (cluck-source-form form)))
@@ -618,8 +665,9 @@
                       (null? (cddr rest))
                       (let ((kw (cluck-keyword-form-name (car rest))))
                         (and kw (string=? kw "as"))))
-                 (list `(import (prefix ,target ,(cluck-prefix-symbol
-                                                  (cluck-ns-form->symbol (cadr rest))))))
+                 (let ((alias (cluck-ns-form->symbol (cadr rest))))
+                   (list `(cluck-register-ns-alias! (current-ns) ',alias ',target)
+                         `(import (prefix ,target ,(cluck-prefix-symbol alias)))))
                  (error "egg imports require [module :as prefix]" spec))))))
     ((symbol? spec)
      (list `(cluck-require-spec! ',spec)))

@@ -4,11 +4,12 @@
 ;; CHICKEN eggs with explicit prefixes at the namespace boundary.
 
 (ns cluck.weather
-  (:require [cluck.edn :as edn]
-            [cluck.string :as str]
-            [http-client :as http]
-            [json :as json]
-            [uri-common :as uri]))
+  (:require 
+   [cluck.edn :as edn]
+   [cluck.string :as str]
+   [http-client :as http]
+   [json :as json]
+   [uri-common :as uri]))
 
 (defn json-entry? [x]
   (if (seq x)
@@ -37,7 +38,7 @@
     (seq x) (mapv weather-json->cluck x)
     :else x))
 
-(defn weather-map-text [x]
+(defn map-text [x]
   (or
     (get x :value)
     (get x :name)
@@ -45,33 +46,35 @@
     (get x :country)
     ""))
 
-(defn weather-fetch-json [url]
-  (http:with-input-from-request
+(defn fetch-json [url]
+  (http/with-input-from-request
     url
     false
     (fn []
-      (weather-json->cluck (json:json-read)))))
+      (weather-json->cluck (json/json-read)))))
 
 (defn weather-url [location]
-  (uri:uri-reference
+  (uri/uri-reference
     (str "http://wttr.in/"
-         (uri:uri-encode-string location)
+         (uri/uri-encode-string location)
          "?format=j1")))
 
 (defn text [x]
   (cond
     (string? x) x
     (vector? x) (if (empty? x) "" (text (first x)))
-    (map? x) (weather-map-text x)
+    (map? x) (map-text x)
     (nil? x) ""
     :else (pr-str x)))
 
 (defn location-title [area]
-  (str/join ", "
-            (filter (fn [part] (not (str/blank? part)))
-                    [(text (get area :areaName))
-                     (text (get area :region))
-                     (text (get area :country))])))
+  (str/join 
+    ", "
+    (filter 
+      (fn [part] (not (str/blank? part)))
+      [(text (get area :areaName))
+       (text (get area :region))
+       (text (get area :country))])))
 
 (defn rain-chance [raw]
   (if (str/blank? raw)
@@ -79,11 +82,12 @@
     (edn/read-string raw)))
 
 (defn max-rain-chance [hourly]
-  (reduce (fn [best entry]
-            (let [chance (rain-chance (get entry :chanceofrain))]
-              (if (> chance best) chance best)))
-          0
-          hourly))
+  (reduce
+    (fn [best entry]
+      (let [chance (rain-chance (get entry :chanceofrain))]
+        (if (> chance best) chance best)))
+    0
+    hourly))
 
 (defn day-summary [day]
   (let [hourly (get day :hourly)
@@ -94,16 +98,13 @@
         rain-chance (if (empty? hourly)
                       0
                       (max-rain-chance hourly))]
-    (str (get day :date)
-         "  "
-         (get day :mintempC)
-         "°/"
-         (get day :maxtempC)
-         "°C  "
-         description
-         "  rain "
-         (str rain-chance)
-         "%")))
+    (format 
+      "%s %s°/%s°C  %s  rain %s"
+      (:date day)
+      (:mintempC day)
+      (:maxtempC day)
+      description
+      (str rain-chance))))
 
 (defn print-days [days]
   (reduce 
@@ -123,16 +124,16 @@
 (defn current-weather-string [current]
   (format
     "Current: %s°C, feels like %s°C, %s, wind %s m/s, humidity %s"
-    (get current :temp_C)
-    (get current :FeelsLikeC)
-    (text (get current :weatherDesc))
-    (meter-per-sec (get current :windspeedKmph))
-    (get current :humidity)))
+    (:temp_C current)
+    (:FeelsLikeC current)
+    (text (:weatherDesc current))
+    (meter-per-sec (:windspeedKmph current))
+    (:humidity current)))
 
 (defn print-report [payload]
-  (let [area (first (get payload :nearest_area))
-        current (first (get payload :current_condition))
-        days (get payload :weather)]
+  (let [area (first (:nearest_area payload))
+        current (first (:current_condition payload))
+        days (:weather payload)]
     (println (location-title area))
     (println (current-weather-string current))
     (println "Forecast:")
@@ -140,9 +141,9 @@
     nil))
 
 (defn fetch-report [location]
-  (weather-fetch-json (weather-url location)))
+  (fetch-json (weather-url location)))
 
-(defn weather-usage []
+(defn usage []
   (println "Usage: cluck-weather <location>")
   (println "Example: cluck-weather Oslo")
   nil)
@@ -150,7 +151,7 @@
 (defn main "Fetch and print a weather forecast for LOCATION." [args]
   (let [location (str/trim (str/join " " args))]
     (if (str/blank? location)
-      (weather-usage)
+      (usage)
       (print-report (fetch-report location)))))
 
 
