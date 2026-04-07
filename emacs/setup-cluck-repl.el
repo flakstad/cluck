@@ -374,26 +374,89 @@
               (push name names))))))
     (delete-dups (nreverse names))))
 
+(defvar-local cluck--completion-loaded-ns-form nil)
+
+(defun cluck--buffer-ns-form-text ()
+  "Return the leading ns form text in the current buffer, or nil."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^[[:space:]]*(ns\\_>" nil t)
+      (goto-char (match-beginning 0))
+      (let ((beg (point)))
+        (condition-case nil
+            (progn
+              (forward-sexp 1)
+              (buffer-substring-no-properties beg (point)))
+          (error nil))))))
+
+(defun cluck--repl-module-export-symbols (module prefix)
+  "Return exported symbol names for MODULE, prefixed with PREFIX/."
+  (let ((output (string-trim
+                 (cluck--send-string
+                  (format "(begin (import apropos-api %s) (apropos-information-list '%s))"
+                          module module)))))
+    (condition-case nil
+        (let* ((parsed (car (read-from-string output)))
+               (needle (concat prefix "/"))
+               (names (mapcar (lambda (entry)
+                                (let ((binding (and (consp entry) (car entry))))
+                                  (when (and (consp binding) (symbolp (cdr binding)))
+                                    (concat prefix "/" (symbol-name (cdr binding))))))
+                              (if (listp parsed) parsed '()))))
+          (cl-remove-if-not (lambda (name) (string-prefix-p needle name)) names))
+      (error nil))))
+
+(defun cluck--repl-namespace-public-symbols (module prefix)
+  "Return public symbol names for Cluck namespace MODULE, prefixed with PREFIX/."
+  (let ((output (string-trim
+                 (cluck--send-string
+                  (format "(keys (ns-publics '%s))" module)))))
+    (condition-case nil
+        (let* ((parsed (car (read-from-string output)))
+               (needle (concat prefix "/"))
+               (names (mapcar (lambda (sym)
+                                (when (symbolp sym)
+                                  (concat prefix "/" (symbol-name sym))))
+                              (if (listp parsed) parsed '()))))
+          (cl-remove-if-not (lambda (name) (string-prefix-p needle name)) names))
+      (error nil))))
+
+(defun cluck--completion-candidates-for-prefix (prefix)
+  "Return completion candidates for PREFIX before the slash."
+  (let* ((target (or (cluck--buffer-require-alias-target prefix)
+                     (when (string-match-p "\\." prefix)
+                       (intern prefix))))
+         (file (and target (cluck--namespace-source-file target))))
+    (cond
+      (file
+       (let ((source-symbols (cluck--source-public-symbols file)))
+         (if source-symbols
+             (mapcar (lambda (name) (concat prefix "/" name))
+                     source-symbols)
+           (if (string-match-p "\\." prefix)
+               (cluck--repl-namespace-public-symbols target prefix)
+             nil))))
+      (target
+       (if (string-match-p "\\." prefix)
+           (cluck--repl-namespace-public-symbols target prefix)
+         (cluck--repl-module-export-symbols target prefix)))
+      (t nil))))
+
 (defun cluck-completion-at-point ()
   "Complete namespace-qualified Cluck symbols like `str/trim`."
   (unless (or (nth 3 (syntax-ppss))
               (nth 4 (syntax-ppss)))
     (let* ((end (point))
            (beg (progn
-                  (skip-chars-backward cluck--completion-symbol-chars)
-                  (point)))
+                   (skip-chars-backward cluck--completion-symbol-chars)
+                   (point)))
            (token (buffer-substring-no-properties beg end))
            (slash (string-match "/" token)))
       (when slash
-        (let* ((alias (substring token 0 slash))
-               (target (cluck--buffer-require-alias-target alias))
-               (file (and target (cluck--namespace-source-file target))))
-          (when file
-            (let ((candidates
-                   (mapcar (lambda (name) (concat alias "/" name))
-                           (cluck--source-public-symbols file))))
-              (when candidates
-                (list beg end candidates)))))))))
+        (let* ((prefix (substring token 0 slash))
+               (candidates (cluck--completion-candidates-for-prefix prefix)))
+          (when candidates
+            (list beg end candidates)))))))
 
 (defun cluck-complete ()
   "Complete namespace-qualified Cluck symbols on demand."

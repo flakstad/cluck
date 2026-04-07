@@ -242,6 +242,12 @@
           m)
         (cluck-make-map))))
 
+(define (ns-imported-symbols ns)
+  (let ((table (cluck-resolve-ns-imports-table ns)))
+    (if table
+        (cluck-hash-table-keys table)
+        '())))
+
 (define (ns-resolve ns sym)
   (let ((table (cluck-resolve-ns-table ns)))
     (if table
@@ -1844,6 +1850,7 @@
    (cons 'find-ns find-ns)
    (cons 'all-ns all-ns)
    (cons 'ns-publics ns-publics)
+   (cons 'ns-imported-symbols ns-imported-symbols)
    (cons 'ns-resolve ns-resolve)
    (cons 'read-string cluck-core-read-string)
    (cons 'format format)
@@ -1914,6 +1921,7 @@
    (cons 'find-ns "Return the namespace registry table for NS, or #f.")
    (cons 'all-ns "Return a list of known namespace symbols.")
    (cons 'ns-publics "Return a map of public vars in NS.")
+   (cons 'ns-imported-symbols "Return a list of imported binding symbols in NS.")
    (cons 'ns-resolve "Resolve SYM in NS, checking public vars and imports.")
    (cons 'read-string "Read one Cluck form from STRING.")
    (cons 'format "Format TEMPLATE with %s, %d, %% and %.Nf directives.")
