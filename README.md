@@ -253,6 +253,13 @@ csc -static -deployed -k -v -O2 -strip -o build/cluck-weather-standalone run-wea
 On this machine, the resulting binary is about `7.1 MB` and runs without the
 source tree present. It links only against `libSystem` on macOS.
 
+Size notes:
+
+- `-d0 -no-trace` shaved a small amount off the binary size
+- `-O0` did not help; it actually made the binary larger on this build
+- the main size cost is the statically linked CHICKEN runtime plus the transitive egg objects pulled in by `http-client`, `json`, and `uri-common`
+- there is no automatic function-level tree-shaking pass in the build; the practical granularity is module/object-file level
+
 The weather app is intentionally small, but it is important because it proves
 the current Cluck shape works for a real networked tool while keeping the egg
 boundary explicit in the namespace form.
