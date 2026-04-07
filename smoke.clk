@@ -269,6 +269,12 @@
 (assert-str= "doc core get"
              "get\n\nLook up KEY in MAP, SET, VECTOR, or sequence-backed collection.\n"
              (capture-output (lambda () (doc get))))
+(assert-str= "doc core take"
+             "take\n\nReturn the first N items from COLL.\n"
+             (capture-output (lambda () (doc take))))
+(assert-str= "doc core frequencies"
+             "frequencies\n\nReturn a map of item frequencies from COLL.\n"
+             (capture-output (lambda () (doc frequencies))))
 (assert-true "empty? vector" (empty? []))
 (assert-true "empty? list" (empty? '()))
 (assert-num= "fn vector destructuring" 3 ((fn [[a b]] (+ a b)) [1 2]))
@@ -281,6 +287,33 @@
 (assert-num= "keyword lookup default" 0 (:a {:b 2} 0))
 (assert-str= "thread-last map" "(2 3 4)" (pr-str (->> [1 2 3] (map inc))))
 (assert-num= "cond" 2 (cond false 1 :else 2))
+(assert-str= "take" "(1 2)" (pr-str (take 2 [1 2 3 4])))
+(assert-str= "drop" "(3 4)" (pr-str (drop 2 [1 2 3 4])))
+(assert-str= "take-while" "(1 2)" (pr-str (take-while (lambda (x) (< x 3)) [1 2 3 1])))
+(assert-str= "drop-while" "(3 1)" (pr-str (drop-while (lambda (x) (< x 3)) [1 2 3 1])))
+(assert-str= "split-at left" "(1 2)" (pr-str (first (split-at 2 [1 2 3 4]))))
+(assert-str= "split-at right" "(3 4)" (pr-str (nth (split-at 2 [1 2 3 4]) 1)))
+(assert-num= "last" 4 (last [1 2 3 4]))
+(assert-str= "butlast" "(1 2 3)" (pr-str (butlast [1 2 3 4])))
+(assert-str= "concat" "(1 2 3 4)" (pr-str (concat [1 2] [3 4])))
+(assert-str= "interpose" "(1 0 2 0 3)" (pr-str (interpose 0 [1 2 3])))
+(assert-str= "distinct" "(1 2 3)" (pr-str (distinct [1 2 1 3 2 1])))
+(assert-str= "dedupe" "(1 2 1)" (pr-str (dedupe [1 1 2 2 1])))
+(assert-str= "split-with left" "(1 2)" (pr-str (first (split-with (lambda (x) (< x 3)) [1 2 3 1]))))
+(assert-str= "split-with right" "(3 1)" (pr-str (nth (split-with (lambda (x) (< x 3)) [1 2 3 1]) 1)))
+(assert-str= "reductions" "(1 3 6)" (pr-str (reductions + [1 2 3])))
+(assert-str= "reductions init" "(0 1 3 6)" (pr-str (reductions + 0 [1 2 3])))
+(assert-num= "partition count" 2 (count (partition 2 [1 2 3 4])))
+(assert-str= "partition first" "[1 2]" (pr-str (first (partition 2 [1 2 3 4]))))
+(assert-num= "partition-all count" 3 (count (partition-all 2 [1 2 3 4 5])))
+(assert-str= "partition-all last" "[5]" (pr-str (nth (partition-all 2 [1 2 3 4 5]) 2)))
+(let [freqs (frequencies [1 2 1 3 2 1])]
+  (assert-num= "frequencies 1" 3 (get freqs 1))
+  (assert-num= "frequencies 2" 2 (get freqs 2))
+  (assert-num= "frequencies 3" 1 (get freqs 3)))
+(let [grouped (group-by even? [1 2 3 4 5])]
+  (assert-num= "group-by odd count" 3 (count (get grouped false)))
+  (assert-num= "group-by even count" 2 (count (get grouped true))))
 (assert-true "contains?" (contains? (get sample :b) 3))
 (assert-num= "seq map count" 2 (count (seq sample)))
 (assert-true "seq map entry vector" (vector? (first (seq sample))))

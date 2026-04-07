@@ -1258,6 +1258,177 @@
       ((pair? s) (cdr s))
       (else '()))))
 
+(define (cluck-take-seq n coll)
+  (cond
+    ((or (not (integer? n)) (<= n 0)) '())
+    (else
+     (let loop ((i 0) (xs (seq coll)) (acc '()))
+       (if (or (cluck-empty-seq? xs) (>= i n))
+           (reverse acc)
+           (loop (+ i 1) (cdr xs) (cons (car xs) acc)))))))
+
+(define (cluck-drop-seq n coll)
+  (cond
+    ((or (not (integer? n)) (<= n 0)) (seq coll))
+    (else
+     (let loop ((i 0) (xs (seq coll)))
+       (if (or (cluck-empty-seq? xs) (>= i n))
+           xs
+           (loop (+ i 1) (cdr xs)))))))
+
+(define (cluck-take-while-seq pred coll)
+  (let loop ((xs (seq coll)) (acc '()))
+    (if (cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((item (car xs)))
+          (if (truthy? (pred item))
+              (loop (cdr xs) (cons item acc))
+              (reverse acc))))))
+
+(define (cluck-drop-while-seq pred coll)
+  (let loop ((xs (seq coll)))
+    (if (cluck-empty-seq? xs)
+        xs
+        (let ((item (car xs)))
+          (if (truthy? (pred item))
+              (loop (cdr xs))
+              xs)))))
+
+(define (cluck-split-at-seq n coll)
+  (let ((left (cluck-take-seq n coll))
+        (right (cluck-drop-seq n coll)))
+    (vector left right)))
+
+(define (cluck-partition-seq n step coll include-remainder?)
+  (cond
+    ((or (not (integer? n)) (<= n 0)) '())
+    ((or (not (integer? step)) (<= step 0)) '())
+    (else
+     (let loop ((xs (seq coll)) (acc '()))
+       (if (cluck-empty-seq? xs)
+           (reverse acc)
+           (let part-loop ((remaining xs) (i 0) (part '()))
+             (cond
+               ((= i n)
+                (loop (cluck-drop-seq step xs)
+                      (cons (list->vector (reverse part)) acc)))
+               ((cluck-empty-seq? remaining)
+                (if include-remainder?
+                    (reverse (cons (list->vector (reverse part)) acc))
+                    (reverse acc)))
+               (else
+                (part-loop (cdr remaining)
+                           (+ i 1)
+                           (cons (car remaining) part))))))))))
+
+(define (cluck-frequencies-seq coll)
+  (let ((result (hash-map)))
+    (let loop ((xs (seq coll)))
+      (if (cluck-empty-seq? xs)
+          result
+          (let* ((item (car xs))
+                 (count (cluck-hash-ref/default (map-hash result) item 0)))
+            (cluck-hash-set! (map-hash result) item (+ count 1))
+            (loop (cdr xs)))))))
+
+(define (cluck-last-seq coll)
+  (let ((xs (seq coll)))
+    (if (cluck-empty-seq? xs)
+        nil
+        (let loop ((rest xs))
+          (if (cluck-empty-seq? (cdr rest))
+              (car rest)
+              (loop (cdr rest)))))))
+
+(define (cluck-butlast-seq coll)
+  (let loop ((xs (seq coll)) (acc '()))
+    (cond
+      ((cluck-empty-seq? xs) '())
+      ((cluck-empty-seq? (cdr xs)) (reverse acc))
+      (else (loop (cdr xs) (cons (car xs) acc))))))
+
+(define (cluck-concat-seqs colls)
+  (let loop ((rest colls) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (let ((items (seq (car rest))))
+          (if (cluck-empty-seq? items)
+              (loop (cdr rest) acc)
+              (loop (cdr rest)
+                    (append (reverse items) acc)))))))
+
+(define (cluck-interpose-seq sep coll)
+  (let loop ((xs (seq coll)) (acc '()) (first? #t))
+    (if (cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((item (car xs)))
+          (if first?
+              (loop (cdr xs) (cons item acc) #f)
+              (loop (cdr xs) (cons item (cons sep acc)) #f))))))
+
+(define (cluck-distinct-seq coll)
+  (let loop ((xs (seq coll)) (seen '()) (acc '()))
+    (if (cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((item (car xs)))
+          (if (member item seen)
+              (loop (cdr xs) seen acc)
+              (loop (cdr xs) (cons item seen) (cons item acc)))))))
+
+(define (cluck-dedupe-seq coll)
+  (let loop ((xs (seq coll)) (have-prev? #f) (prev nil) (acc '()))
+    (if (cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((item (car xs)))
+          (if (and have-prev? (equal? item prev))
+              (loop (cdr xs) #t prev acc)
+              (loop (cdr xs) #t item (cons item acc)))))))
+
+(define (cluck-split-with-seq pred coll)
+  (let loop ((xs (seq coll)) (acc '()))
+    (if (cluck-empty-seq? xs)
+        (vector (reverse acc) '())
+        (let ((item (car xs)))
+          (if (truthy? (pred item))
+              (loop (cdr xs) (cons item acc))
+              (vector (reverse acc) xs))))))
+
+(define (cluck-reductions-with-init f init coll)
+  (let loop ((xs (seq coll)) (current init) (acc (list init)))
+    (if (cluck-empty-seq? xs)
+        (reverse acc)
+        (let ((next (f current (car xs))))
+          (loop (cdr xs) next (cons next acc))))))
+
+(define (cluck-reductions-no-init f coll)
+  (let ((xs (seq coll)))
+    (if (cluck-empty-seq? xs)
+        '()
+        (let ((first (car xs)))
+          (let loop ((rest (cdr xs)) (current first) (acc (list first)))
+            (if (cluck-empty-seq? rest)
+                (reverse acc)
+                (let ((next (f current (car rest))))
+                  (loop (cdr rest) next (cons next acc)))))))))
+
+(define (cluck-group-by-seq f coll)
+  (let ((scratch (hash-map)))
+    (let loop ((xs (seq coll)))
+      (if (cluck-empty-seq? xs)
+          (let ((result (hash-map)))
+            (hash-table-for-each
+             (map-hash scratch)
+             (lambda (k v)
+               (cluck-hash-set! (map-hash result)
+                                k
+                                (list->vector (reverse v)))))
+            result)
+          (let* ((item (car xs))
+                 (key (f item))
+                 (bucket (cluck-get scratch key '())))
+            (cluck-hash-set! (map-hash scratch) key (cons item bucket))
+            (loop (cdr xs)))))))
+
 (define (nth coll idx . maybe-default)
   (let ((default (if (null? maybe-default) nil (car maybe-default))))
     (cond
@@ -1695,6 +1866,85 @@
                             (seq value))))
                     coll)))
 
+(define (concat . colls)
+  (cluck-concat-seqs colls))
+
+(define (last coll)
+  (cluck-last-seq coll))
+
+(define (butlast coll)
+  (cluck-butlast-seq coll))
+
+(define (interpose sep coll)
+  (cluck-interpose-seq sep coll))
+
+(define (distinct coll)
+  (cluck-distinct-seq coll))
+
+(define (dedupe coll)
+  (cluck-dedupe-seq coll))
+
+(define (split-with pred coll)
+  (cluck-split-with-seq pred coll))
+
+(define (reductions . args)
+  (cond
+    ((= (length args) 2)
+     (cluck-reductions-no-init (car args) (cadr args)))
+    ((= (length args) 3)
+     (cluck-reductions-with-init (car args) (cadr args) (caddr args)))
+    (else
+     (error "reductions expects 2 or 3 arguments" args))))
+
+(define (group-by f coll)
+  (cluck-group-by-seq f coll))
+
+(define (take n coll)
+  (cluck-take-seq n coll))
+
+(define (drop n coll)
+  (cluck-drop-seq n coll))
+
+(define (take-while pred coll)
+  (cluck-take-while-seq pred coll))
+
+(define (drop-while pred coll)
+  (cluck-drop-while-seq pred coll))
+
+(define (split-at n coll)
+  (cluck-split-at-seq n coll))
+
+(define (partition . args)
+  (cond
+    ((= (length args) 2)
+     (let ((n (car args))
+           (coll (cadr args)))
+       (cluck-partition-seq n n coll #f)))
+    ((= (length args) 3)
+     (let ((n (car args))
+           (step (cadr args))
+           (coll (caddr args)))
+       (cluck-partition-seq n step coll #f)))
+    (else
+     (error "partition expects 2 or 3 arguments" args))))
+
+(define (partition-all . args)
+  (cond
+    ((= (length args) 2)
+     (let ((n (car args))
+           (coll (cadr args)))
+       (cluck-partition-seq n n coll #t)))
+    ((= (length args) 3)
+     (let ((n (car args))
+           (step (cadr args))
+           (coll (caddr args)))
+       (cluck-partition-seq n step coll #t)))
+    (else
+     (error "partition-all expects 2 or 3 arguments" args))))
+
+(define (frequencies coll)
+  (cluck-frequencies-seq coll))
+
 (define (partial f . args)
   (lambda rest
     (cluck-apply f (append args rest))))
@@ -1914,6 +2164,12 @@
    (cons 'merge-with merge-with)
    (cons 'keys keys)
    (cons 'vals vals)
+   (cons 'concat concat)
+   (cons 'last last)
+   (cons 'butlast butlast)
+   (cons 'interpose interpose)
+   (cons 'distinct distinct)
+   (cons 'dedupe dedupe)
    (cons 'conj conj)
    (cons 'get cluck-get)
    (cons 'get-in get-in)
@@ -1924,6 +2180,14 @@
    (cons 'seq seq)
    (cons 'first first)
    (cons 'rest rest)
+   (cons 'take take)
+   (cons 'drop drop)
+   (cons 'take-while take-while)
+   (cons 'drop-while drop-while)
+   (cons 'split-at split-at)
+   (cons 'partition partition)
+   (cons 'partition-all partition-all)
+   (cons 'frequencies frequencies)
    (cons 'nth nth)
    (cons 'map map)
    (cons 'mapv mapv)
@@ -1931,6 +2195,9 @@
    (cons 'filterv filterv)
    (cons 'map-indexed map-indexed)
    (cons 'mapcat mapcat)
+   (cons 'split-with split-with)
+   (cons 'reductions reductions)
+   (cons 'group-by group-by)
    (cons 'reduce reduce)
    (cons 'some some)
    (cons 'every? every?)
@@ -1987,6 +2254,12 @@
    (cons 'merge-with "Merge maps from left to right, combining duplicates with F.")
    (cons 'keys "Return a list of keys from MAP.")
    (cons 'vals "Return a list of values from MAP.")
+   (cons 'concat "Return a list containing items from each COLL in order.")
+   (cons 'last "Return the last item from COLL, or nil when empty.")
+   (cons 'butlast "Return COLL without its last item.")
+   (cons 'interpose "Insert SEP between items from COLL.")
+   (cons 'distinct "Return COLL with duplicate items removed.")
+   (cons 'dedupe "Return COLL with consecutive duplicates removed.")
    (cons 'conj "Add one item to a collection.")
    (cons 'get "Look up KEY in MAP, SET, VECTOR, or sequence-backed collection.")
    (cons 'get-in "Look up a nested path in a map or vector.")
@@ -1997,6 +2270,14 @@
    (cons 'seq "Return a simple sequence view of COLL.")
    (cons 'first "Return the first item in COLL.")
    (cons 'rest "Return the rest of COLL after the first item.")
+   (cons 'take "Return the first N items from COLL.")
+   (cons 'drop "Return COLL without its first N items.")
+   (cons 'take-while "Return items from COLL while PRED stays truthy.")
+   (cons 'drop-while "Drop items from COLL while PRED stays truthy.")
+   (cons 'split-at "Return a vector [TAKE DROP] split at N.")
+   (cons 'partition "Return vectors of N items from COLL, stepping by STEP when supplied.")
+   (cons 'partition-all "Return vectors of up to N items from COLL, stepping by STEP when supplied.")
+   (cons 'frequencies "Return a map of item frequencies from COLL.")
    (cons 'nth "Return the item at index N in COLL.")
    (cons 'map "Apply F to each element of COLL and return a list of the results.")
    (cons 'mapv "Apply F to each element of COLL and return a vector.")
@@ -2004,6 +2285,9 @@
    (cons 'filterv "Return the matching items of COLL in a vector.")
    (cons 'map-indexed "Apply F to each item in COLL with its index.")
    (cons 'mapcat "Map F across COLL and concatenate the resulting sequences.")
+   (cons 'split-with "Return a vector [LEFT RIGHT] split by PRED.")
+   (cons 'reductions "Return the intermediate reduction values for COLL.")
+   (cons 'group-by "Return a map from F(item) to vectors of matching items.")
    (cons 'reduce "Reduce COLL with F, optionally starting from INIT.")
    (cons 'some "Return the first truthy result of applying PRED to COLL.")
    (cons 'every? "Return true when PRED is truthy for every item in COLL.")
