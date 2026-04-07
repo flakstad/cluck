@@ -319,7 +319,7 @@
     (cluck--jump-to-match (car location) (cdr location))))
 
 (defconst cluck--completion-symbol-chars
-  "A-Za-z0-9_?!*+<>=-./"
+  "A-Za-z0-9_?!*+<>=./-"
   "Characters treated as part of Cluck completion symbols.")
 
 (defun cluck--buffer-require-alias-target (alias)
