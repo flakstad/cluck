@@ -1,0 +1,159 @@
+;; Cluck git changelog summarizer example.
+;;
+;; This app stays Cluck-only and uses the process helpers for the Git
+;; invocation. The bootstrap remains responsible for loading the runtime.
+
+(ns cluck.changelog
+  "Git changelog helpers for Cluck."
+  (:require [cluck.process :as proc]
+            [cluck.string :as str]))
+
+(def cluck-changelog-kind-order
+  ["feat" "fix" "docs" "refactor" "perf" "test" "build" "ci" "chore" "style" "revert" "other"])
+
+(defn changelog-default-range
+  "Return the default Git range for the changelog summary."
+  []
+  "HEAD~20..HEAD")
+
+(defn changelog-kind-known?
+  "Return true when KIND is a recognized changelog category."
+  [kind]
+  (##core#let loop ((kinds cluck-changelog-kind-order))
+    (if (empty? kinds)
+        false
+        (let [candidate (first kinds)]
+          (if (string=? kind candidate)
+              true
+              (loop (rest kinds)))))))
+
+(defn changelog-subject-kind
+  "Return the conventional-commit kind for SUBJECT, or other."
+  [subject]
+  (let [text (str/trim subject)
+        len (string-length text)]
+    (##core#let loop ((idx 0))
+      (if (>= idx len)
+          "other"
+          (let [ch (string-ref text idx)]
+            (if (or (char=? ch #\:)
+                    (char=? ch #\()
+                    (char=? ch #\!))
+                (let [prefix (str/lower-case (str/trim (substring text 0 idx)))]
+                  (if (or (str/blank? prefix)
+                          (not (changelog-kind-known? prefix)))
+                      "other"
+                      prefix))
+                (loop (+ idx 1))))))))
+
+(defn changelog-parse-line
+  "Parse one line of `git log` output into a changelog entry."
+  [line]
+  (let [parts (str/split line "\t")]
+    (if (< (count parts) 2)
+        nil
+        (let [hash (first parts)
+              subject (if (= (count parts) 2)
+                        (nth parts 1)
+                        (str/join "\t" (rest parts)))
+              kind (changelog-subject-kind subject)]
+          {:hash hash
+           :subject subject
+           :kind kind}))))
+
+(defn changelog-entries
+  "Parse Git log TEXT into a vector of changelog entries."
+  [text]
+  (filterv (fn [entry] (if entry true false))
+           (mapv changelog-parse-line (str/split-lines text))))
+
+(defn changelog-kind-label
+  "Return a display label for KIND."
+  [kind]
+  (cond
+    (string=? kind "feat") "Features"
+    (string=? kind "fix") "Fixes"
+    (string=? kind "docs") "Docs"
+    (string=? kind "refactor") "Refactors"
+    (string=? kind "perf") "Performance"
+    (string=? kind "test") "Tests"
+    (string=? kind "build") "Build"
+    (string=? kind "ci") "CI"
+    (string=? kind "chore") "Chores"
+    (string=? kind "style") "Style"
+    (string=? kind "revert") "Reverts"
+    :else (str/capitalize kind)))
+
+(defn changelog-git-output
+  "Run GIT with ARGS and return its stdout."
+  [args]
+  (let [result (proc/exec "git" args)]
+    (if (zero? (get result :exit))
+        (get result :out)
+        (error (format "git command failed: %s" (get result :out))))))
+
+(defn changelog-git-log
+  "Return `git log` output for RANGE."
+  [range]
+  (changelog-git-output ["log" "--no-merges" "--format=%h\t%s" range]))
+
+(defn changelog-git-branch
+  "Return the current Git branch name."
+  []
+  (str/trim (changelog-git-output ["rev-parse" "--abbrev-ref" "HEAD"])))
+
+(defn changelog-group-entries
+  "Return entries with KIND."
+  [entries kind]
+  (filterv (fn [entry]
+             (string=? (get entry :kind) kind))
+           entries))
+
+(defn print-entry
+  "Print one changelog entry."
+  [entry]
+  (println (format "- %s %s" (get entry :hash) (get entry :subject))))
+
+(defn print-entry-group
+  "Print one changelog group."
+  [entries]
+  (##core#let loop ((remaining entries))
+    (if (empty? remaining)
+        nil
+        (begin
+          (print-entry (first remaining))
+          (loop (rest remaining))))))
+
+(defn print-summary
+  "Print a grouped changelog summary."
+  [branch range entries]
+  (println "Cluck git changelog")
+  (println (format "Branch: %s" branch))
+  (println (format "Range: %s" range))
+  (println (format "Commits: %d" (count entries)))
+  (println "")
+  (##core#let loop ((kinds cluck-changelog-kind-order)
+                    (printed false))
+    (if (empty? kinds)
+        printed
+        (let [kind (first kinds)
+              group (changelog-group-entries entries kind)]
+          (if (empty? group)
+              (loop (rest kinds) printed)
+              (begin
+                (println (format "%s (%d)" (changelog-kind-label kind) (count group)))
+                (print-entry-group group)
+                (println "")
+                (loop (rest kinds) true)))))))
+
+(defn main
+  "Print a changelog summary for an optional Git RANGE."
+  [args]
+  (let [range (if (empty? args)
+                (changelog-default-range)
+                (first args))
+        branch (changelog-git-branch)
+        entries (changelog-entries (changelog-git-log range))]
+    (if (empty? entries)
+        (println "No commits found.")
+        (print-summary branch range entries))))

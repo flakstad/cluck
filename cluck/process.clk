@@ -14,11 +14,15 @@
           (loop (cons ch chars))))))
 
 (define (cluck-process-commandline command args)
-  (if (null? args)
-      (str command)
-      (str/join " "
-                (cons (str command)
-                      (map (lambda (arg) (proc:qs (str arg))) args)))))
+  (let [items (seq args)]
+    (if (cluck-empty-seq? items)
+        (str command)
+        (##core#let loop ((xs items)
+                          (parts (list (str command))))
+          (if (cluck-empty-seq? xs)
+              (str/join " " (reverse parts))
+              (loop (rest xs)
+                    (cons (proc:qs (str (first xs))) parts)))))))
 
 (define (cluck-process-args->list args)
   (if (and (= (count args) 1)

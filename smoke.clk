@@ -177,6 +177,16 @@
 (assert-num= "process sh exit" 0 (get (proc/sh "true") :exit))
 (assert-str= "process exec" "hello" (get (proc/exec "printf" ["hello"]) :out))
 (assert-num= "process system" 0 (proc/system "true"))
+(load-file "examples/cluck/changelog.clk")
+(in-ns 'cluck.changelog)
+(assert-true "changelog namespace exists" (find-ns 'cluck.changelog))
+(let [sample-log "a1b2c3\tfeat: add parser\nb2c3d4\tfix: handle nil\nc3d4e5\tdocs: update readme\n"]
+  (let [entries (changelog-entries sample-log)]
+    (assert-num= "changelog entries count" 3 (count entries))
+    (assert-str= "changelog first kind" "feat" (get (first entries) :kind))
+    (assert-str= "changelog second label" "Fixes" (changelog-kind-label (get (nth entries 1) :kind)))
+    (assert-str= "changelog third subject" "docs: update readme" (get (nth entries 2) :subject))))
+(in-ns 'cluck.smoke)
 (load-file "examples/cluck/link-check.clk")
 (in-ns 'cluck.links)
 (assert-true "links namespace exists" (find-ns 'cluck.links))

@@ -334,6 +334,44 @@ csc -static -deployed -k -v -O2 -strip -o build/todo-standalone run-todo-standal
 On this machine, the resulting binary is in the same small self-contained
 range as the other no-eggs utilities.
 
+## Git Changelog Summarizer
+
+Another no-eggs example lives in:
+
+- [`examples/cluck/changelog.clk`](./examples/cluck/changelog.clk)
+
+It runs `git log`, groups commit subjects into a few conventional categories,
+and prints a compact summary. The app stays Cluck-only and uses the process
+helpers for the Git invocation.
+
+Run it from source with:
+
+```bash
+csi -q -s run-changelog.scm
+```
+
+Or pass a range:
+
+```bash
+csi -q -s run-changelog.scm HEAD~10..HEAD
+```
+
+The self-contained binary is built from the same app and uses the current
+repository as its data source:
+
+```bash
+./build/changelog-standalone
+```
+
+To build a self-contained native binary:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/changelog-standalone run-changelog-standalone.scm
+```
+
+On this machine, the resulting binary should stay in the same self-contained
+size neighborhood as the other no-eggs utilities.
+
 ## Markdown Link Checker
 
 Another no-eggs example lives in:
