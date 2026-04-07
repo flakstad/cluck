@@ -56,6 +56,8 @@
              (capture-output (lambda () (println "hello" "world"))))
 (assert-str= "println nil" "nil\n"
              (capture-output (lambda () (println nil))))
+(assert-num= "string->number" 42 (string->number "42"))
+(assert-str= "number->string" "42" (number->string 42))
 (assert-true "unspecified?" (unspecified? (void)))
 (assert-num= "and" 3 (and true 3))
 (assert-str= "and false" "false" (pr-str (and true false 3)))

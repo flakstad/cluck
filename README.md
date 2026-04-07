@@ -173,6 +173,7 @@ It also includes interactive eval helpers:
 - `C-x C-e` and `C-c C-e` evaluate the sexp before point and show an inline result overlay
 - `C-c C-c` evaluates the current top-level form with an inline result overlay
 - `C-c C-p` evaluates the sexp before point and opens the result in a popup buffer
+- popup result buffers preserve multiline output and wrap long lines instead of truncating them
 - `C-c C-d` shows the docstring for the symbol at point in a dedicated buffer
 - inline overlays clear on the next command, so they behave more like transient feedback than permanent annotations
 - `C-c C-r`, `C-c C-b`, `C-c C-k`, and `C-c C-l` report in the echo area for larger evaluations and file loads
@@ -364,6 +365,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.process`
 - `cluck.set`
 - `cluck.edn`
+- basic type conversions like `string->number` and `number->string`
 
 These namespaces are the intended public surface for user-facing code. The older `cluck.math` and `cluck.app` files remain as sample/demo namespaces.
 
