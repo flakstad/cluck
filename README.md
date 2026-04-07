@@ -341,6 +341,15 @@ cat README.md | csi -q -s run-text-report.scm
 It prints a simple line/blank-line/character summary and demonstrates how to
 keep the application logic in Cluck while leaving file I/O in the bootstrap.
 
+To build a self-contained native binary for the same example:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/text-report-standalone run-text-report-standalone.scm
+```
+
+On this machine, the resulting binary is about `3.7 MB` and runs without the
+source tree present. It links only against `libSystem` on macOS.
+
 ## Namespaces
 
 `cluck` now has a small namespace registry plus a separate import table per namespace, so public vars and imported refs stay distinct.
