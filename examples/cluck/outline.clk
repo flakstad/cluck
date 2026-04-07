@@ -1,0 +1,74 @@
+;; Cluck-only Markdown outline example.
+;;
+;; The bootstrap handles file or stdin input. The app logic stays in Cluck.
+
+(ns cluck.outline
+  "Markdown outline helpers for Cluck."
+  (:require [cluck.fs :as fs]
+            [cluck.string :as str]))
+
+(defn count-leading-hashes
+  "Count leading # characters in CHARS."
+  [chars n]
+  (if (and (seq chars)
+           (char=? (first chars) #\#))
+      (count-leading-hashes (rest chars) (+ n 1))
+      n))
+
+(defn heading-level
+  "Return the Markdown heading level for TEXT."
+  [text]
+  (count-leading-hashes (seq (str/triml text)) 0))
+
+(defn heading-title
+  "Return the heading title for TEXT."
+  [text]
+  (let [trimmed (str/triml text)
+        level (heading-level trimmed)
+        len (count trimmed)]
+    (if (>= level len)
+        ""
+        (str/triml (substring trimmed level len)))))
+
+(defn outline-entry
+  "Return a heading entry map for LINE-NO and LINE, or nil when LINE is not a heading."
+  [line-no line]
+  (let [trimmed (str/triml line)
+        level (heading-level trimmed)]
+    (if (> level 0)
+        {:line line-no
+         :level level
+         :title (heading-title trimmed)}
+        nil)))
+
+(defn outline-entries
+  "Return a vector of heading entries for TEXT."
+  [text]
+  (filterv (fn [entry] (if entry true false))
+           (map-indexed (fn [idx line]
+                          (outline-entry (+ idx 1) line))
+                        (str/split-lines text))))
+
+(defn print-outline
+  "Print a Markdown outline for SOURCE-NAME and TEXT."
+  [source-name text]
+  (let [entries (outline-entries text)]
+    (println "Cluck markdown outline")
+    (println "Source:" (fs/basename source-name))
+    (println "Headings:" (count entries))
+    (if (empty? entries)
+        (println "(none)")
+        (reduce (fn [n entry]
+                  (println (format "%d:%d %s"
+                                   (get entry :line)
+                                   (get entry :level)
+                                   (get entry :title)))
+                  (+ n 1))
+                0
+                entries))
+    entries))
+
+(defn main
+  "Print a Markdown outline for SOURCE-NAME and TEXT."
+  [source-name text]
+  (print-outline source-name text))

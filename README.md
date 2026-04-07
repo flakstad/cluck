@@ -53,6 +53,7 @@ The current implementation supports:
 - `{:a 1 :b 2}` maps
 - `#{1 2 3}` sets
 - `cluck.edn/read-string`
+- `cluck.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
@@ -281,6 +282,39 @@ Size notes:
 The weather app is intentionally small, but it is important because it proves
 the current Cluck shape works for a real networked tool while keeping the egg
 boundary explicit in the namespace form.
+
+## Markdown Outline Utility
+
+A second no-eggs example lives in:
+
+- [`examples/cluck/outline.clk`](./examples/cluck/outline.clk)
+
+It stays Cluck-only and uses the existing `cluck.fs` and `cluck.string`
+helpers for file and text handling.
+
+Run it from source with:
+
+```bash
+csi -q -s run-outline.scm README.md
+```
+
+Or pipe text on stdin:
+
+```bash
+cat README.md | csi -q -s run-outline.scm
+```
+
+It prints a simple Markdown heading outline and is a good fit for the
+self-contained binary path.
+
+To build a self-contained native binary:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/outline-standalone run-outline-standalone.scm
+```
+
+On this machine, the resulting binary is about `4.2 MB` and links only
+against `libSystem` on macOS.
 
 The reusable bootstrap pattern for Cluck projects lives in
 [`cluck-bootstrap.scm`](./cluck-bootstrap.scm). It is intentionally generic:

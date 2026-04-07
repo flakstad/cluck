@@ -132,6 +132,13 @@
 (assert-true "fs directory?" (fs/directory? "build"))
 (assert-true "fs delete!" (fs/delete! tmp))
 (assert-true "fs delete! missing" (not (fs/delete! tmp))))
+(require [cluck.outline :as outline])
+(let [outline-sample "# Title\n\n## Section\ntext\n### Detail\n"]
+  (assert-num= "outline headings" 3 (count (outline/outline-entries outline-sample)))
+  (let [first-heading (first (outline/outline-entries outline-sample))]
+    (assert-num= "outline first line" 1 (get first-heading :line))
+    (assert-num= "outline first level" 1 (get first-heading :level))
+    (assert-str= "outline first title" "Title" (get first-heading :title))))
 (require [cluck.process :as proc])
 (assert-true "process namespace exists" (find-ns 'cluck.process))
 (assert-str= "process sh" "hello" (get (proc/sh "printf hello") :out))
