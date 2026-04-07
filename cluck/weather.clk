@@ -4,51 +4,43 @@
 ;; transformation, formatting, and CLI flow.
 
 (import (chicken base)
-        (chicken string)
-        http-client
-        json
-        srfi-69
-        uri-common)
+        (prefix http-client http:)
+        (prefix json json:)
+        (prefix uri-common uri:))
 
 (ns cluck.weather
   (:require [cluck.string :refer [blank? join trim]]))
 
-(define (weather-json-null? x)
+(defn weather-json-null? [x]
   (eq? x (void)))
 
-(define (weather-json->cluck x)
+(defn weather-json->cluck [x]
   (if (weather-json-null? x)
       nil
       (if (vector? x)
-          (let [result (hash-map)]
-            (define (loop entries)
-              (if (empty? entries)
-                  result
-                  (begin
-                    (let [entry (first entries)]
-                      (assoc result
-                             (keyword (car entry))
-                             (weather-json->cluck (cdr entry))))
-                    (loop (rest entries)))))
-            (loop (seq x))
-            result)
+          (reduce (fn [result entry]
+                    (assoc result
+                           (keyword (car entry))
+                           (weather-json->cluck (cdr entry))))
+                  (hash-map)
+                  (seq x))
           (if (or (pair? x) (null? x))
               (mapv weather-json->cluck x)
               x))))
 
-(define (weather-fetch-json url)
-  (with-input-from-request
+(defn weather-fetch-json [url]
+  (http:with-input-from-request
    url
    #f
-   (lambda ()
-     (weather-json->cluck (json-read)))))
+   (fn []
+     (weather-json->cluck (json:json-read)))))
 
-(define (weather-url location)
+(defn weather-url [location]
   (string-append "http://wttr.in/"
-                 (uri-encode-string location)
+                 (uri:uri-encode-string location)
                  "?format=j1"))
 
-(define (weather-text x)
+(defn weather-text [x]
   (if (string? x)
       x
       (if (vector? x)
@@ -65,15 +57,15 @@
                   ""
                   (pr-str x))))))
 
-(define (weather-location-title area)
+(defn weather-location-title [area]
   (join ", "
-        (filter (lambda (part) (not (blank? part)))
+        (filter (fn [part] (not (blank? part)))
                 (list (weather-text (get area :areaName))
                       (weather-text (get area :region))
                       (weather-text (get area :country))))))
 
-(define (weather-max-rain-chance hourly)
-  (reduce (lambda (best entry)
+(defn weather-max-rain-chance [hourly]
+  (reduce (fn [best entry]
             (let [chance (or (string->number (get entry :chanceofrain)) 0)]
               (if (> chance best)
                   chance
@@ -81,7 +73,7 @@
           0
           hourly))
 
-(define (weather-day-summary day)
+(defn weather-day-summary [day]
   (let [hourly (get day :hourly)
         first-hour (if (empty? hourly) nil (first hourly))
         description (if first-hour
@@ -101,17 +93,15 @@
                    (number->string rain-chance)
                    "%")))
 
-(define (weather-print-days days)
-  (define (loop xs)
-    (if (empty? xs)
-        (void)
-        (begin
-          (display (weather-day-summary (first xs)))
-          (newline)
-          (loop (rest xs)))))
-  (loop (seq days)))
+(defn weather-print-days [days]
+  (reduce (fn [ignored day]
+            (display (weather-day-summary day))
+            (newline)
+            ignored)
+          (void)
+          (seq days)))
 
-(define (weather-print-report payload)
+(defn weather-print-report [payload]
   (let [area (first (get payload :nearest_area))
         current (first (get payload :current_condition))
         days (get payload :weather)]
@@ -135,10 +125,10 @@
     (weather-print-days days)
     payload))
 
-(define (weather-fetch-report location)
+(defn weather-fetch-report [location]
   (weather-fetch-json (weather-url location)))
 
-(define (weather-usage)
+(defn weather-usage []
   (display "Usage: cluck-weather <location>")
   (newline)
   (display "Example: cluck-weather Oslo")

@@ -1,17 +1,15 @@
-;; Standalone weather CLI for Cluck.
+;; Standalone weather CLI distribution harness.
 ;;
-;; This variant is intentionally self-contained for distribution. It keeps the
-;; same weather behavior as the Cluck version, but uses plain Scheme bindings
-;; so it can compile into a single native binary without loading the Cluck
-;; runtime source files at startup.
+;; This file is intentionally separate from the canonical Cluck example in
+;; `cluck/weather.clk`. The example itself stays written in Cluck; this file is
+;; just the packaging-oriented build artifact that makes a single native binary
+;; possible without loading the Cluck runtime source files at startup.
 
 (import (chicken base)
         (chicken process-context)
-        (chicken string)
-        http-client
-        json
-        srfi-69
-        uri-common)
+        (prefix http-client http:)
+        (prefix json json:)
+        (prefix uri-common uri:))
 
 (define (weather-json-null? x)
   (eq? x (void)))
@@ -168,15 +166,15 @@
     (else x)))
 
 (define (weather-fetch-json url)
-  (with-input-from-request
+  (http:with-input-from-request
    url
    #f
    (lambda ()
-     (weather-json->value (json-read)))))
+     (weather-json->value (json:json-read)))))
 
 (define (weather-url location)
   (string-append "http://wttr.in/"
-                 (uri-encode-string location)
+                 (uri:uri-encode-string location)
                  "?format=j1"))
 
 (define (weather-max-rain-chance hourly)

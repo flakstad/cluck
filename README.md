@@ -81,6 +81,8 @@ The main caveat is that cluck repurposes a few core binding and threading forms,
 
 If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` helper or drop to the core forms such as `##core#let`.
 
+When a `.clk` file reaches out to CHICKEN eggs, prefer prefixed imports so the host interop stays explicit and does not leak names into the Cluck surface. The weather example follows that pattern.
+
 ## Performance Direction
 
 `cluck` is aiming for an eager, direct Clojure-flavored language, not a lazy one.
@@ -202,13 +204,13 @@ csi -q -s run-smoke-tests.scm
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
 
-## Weather CLI
+## Weather CLI Example
 
-The first real dogfood app is a small weather/forecast CLI in:
+The canonical weather/forecast example is fully written in Cluck in:
 
 - [`cluck/weather.clk`](./cluck/weather.clk)
 
-It uses CHICKEN eggs for the parts Cluck should not own itself:
+That example uses CHICKEN eggs for the parts Cluck should not own itself, and it keeps those egg imports prefixed:
 
 - `http-client` for fetching weather data
 - `json` for parsing the response
@@ -236,20 +238,25 @@ That binary is convenient for local use, but it still expects the source tree
 at runtime.
 
 For a fully standalone build that can be copied outside the repository and run
-without CHICKEN installed on the target machine, use the standalone source:
+without CHICKEN installed on the target machine, the repo also includes a
+separate packaging harness:
 
 ```bash
 csc -static -deployed -k -v -O2 -strip \
   -o build/cluck-weather-standalone cluck/weather-standalone.clk
 ```
 
-This standalone build uses a smaller Scheme-only support layer for the weather
-app itself. The resulting binary still depends on the normal system C library,
-but it no longer needs `csi`, `cluck.scm`, or the repo checkout at runtime.
+[`cluck/weather-standalone.clk`](./cluck/weather-standalone.clk) is not the
+canonical example app. It is a separate Scheme-only packaging harness used to
+produce a static binary without loading the Cluck runtime source files at
+startup. The Cluck-written example remains [`cluck/weather.clk`](./cluck/weather.clk),
+which is the version that demonstrates Cluck syntax together with the `json`
+and `http-client` eggs.
 
-The weather app is intentionally small, but it is important because it proves
-the current Cluck shape works for a real networked tool and can be packaged as a
-single native artifact.
+The weather app is intentionally small, but it is important because the Cluck
+example and the separate packaging harness together prove that the current
+shape works for a real networked tool and can be packaged as a single native
+artifact.
 
 ## Namespaces
 
