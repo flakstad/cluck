@@ -119,8 +119,8 @@
 (define (cluck-bootstrap-expand-target root target)
   (let ((path (cluck-bootstrap-absolute-path root target)))
     (cond
-      ((file-exists? path) (list path))
       ((posix:directory? path) (cluck-bootstrap-directory-files path))
+      ((file-exists? path) (list path))
       (else (error "Path does not exist" path)))))
 
 (define (cluck-bootstrap-expand-targets root targets)

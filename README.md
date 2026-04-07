@@ -334,6 +334,44 @@ csc -static -deployed -k -v -O2 -strip -o build/todo-standalone run-todo-standal
 On this machine, the resulting binary is in the same small self-contained
 range as the other no-eggs utilities.
 
+## Markdown Link Checker
+
+Another no-eggs example lives in:
+
+- [`examples/cluck/link-check.clk`](./examples/cluck/link-check.clk)
+
+It scans Markdown files for broken local links. The source runner expands
+directories before calling the app, while the self-contained binary accepts
+file paths directly.
+
+Run it from source with:
+
+```bash
+csi -q -s run-link-check.scm README.md
+```
+
+Or point it at a directory:
+
+```bash
+csi -q -s run-link-check.scm .
+```
+
+The self-contained binary is built from the same app and is intended to take
+file paths directly:
+
+```bash
+./build/link-check-standalone README.md examples/cluck/link-check.clk
+```
+
+To build a self-contained native binary:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/link-check-standalone run-link-check-standalone.scm
+```
+
+On this machine, the resulting binary should stay in the same self-contained
+size neighborhood as the other no-eggs utilities.
+
 ## Markdown Outline Utility
 
 Another no-eggs example lives in:

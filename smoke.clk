@@ -177,6 +177,17 @@
 (assert-num= "process sh exit" 0 (get (proc/sh "true") :exit))
 (assert-str= "process exec" "hello" (get (proc/exec "printf" ["hello"]) :out))
 (assert-num= "process system" 0 (proc/system "true"))
+(load-file "examples/cluck/link-check.clk")
+(in-ns 'cluck.links)
+(assert-true "links namespace exists" (find-ns 'cluck.links))
+(let [link-file "build/cluck-link-check-smoke.md"]
+  (fs/spit link-file "[ok](../README.md)\n[broken](missing.md)\n")
+  (let [matches (scan-file link-file)]
+    (assert-num= "link checker matches count" 1 (count matches))
+    (assert-str= "link checker broken target" "missing.md" (get (first matches) :target))
+    (assert-str= "link checker broken basename" "missing.md" (fs/basename (get (first matches) :resolved))))
+  (assert-true "link delete!" (fs/delete! link-file)))
+(in-ns 'cluck.smoke)
 (require [cluck.todo :as todo])
 (assert-true "todo namespace exists" (find-ns 'cluck.todo))
 (let [todo-file "build/cluck-todo-smoke.txt"]
