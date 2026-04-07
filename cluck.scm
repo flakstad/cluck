@@ -1331,6 +1331,51 @@
             (cluck-hash-set! (map-hash result) item (+ count 1))
             (loop (cdr xs)))))))
 
+(define (cluck-take-nth-seq n coll)
+  (cond
+    ((or (not (integer? n)) (<= n 0)) '())
+    (else
+     (let loop ((xs (seq coll)) (skip 0) (acc '()))
+       (if (cluck-empty-seq? xs)
+           (reverse acc)
+           (if (= skip 0)
+               (loop (cdr xs) (- n 1) (cons (car xs) acc))
+               (loop (cdr xs) (- skip 1) acc)))))))
+
+(define (cluck-partition-by-seq f coll)
+  (let ((xs (seq coll)))
+    (if (cluck-empty-seq? xs)
+        '()
+        (let ((first-item (car xs))
+              (first-key (f (car xs))))
+          (let loop ((rest (cdr xs))
+                     (current-key first-key)
+                     (part (list first-item))
+                     (acc '()))
+            (if (cluck-empty-seq? rest)
+                (reverse (cons (list->vector (reverse part)) acc))
+                (let* ((item (car rest))
+                       (key (f item)))
+                  (if (equal? key current-key)
+                      (loop (cdr rest) current-key (cons item part) acc)
+                      (loop (cdr rest)
+                            key
+                            (list item)
+                            (cons (list->vector (reverse part)) acc))))))))))
+
+(define (cluck-flatten-acc x acc)
+  (cond
+    ((or (nil? x) (null? x)) acc)
+    ((pair? x)
+     (cluck-flatten-acc (cdr x) (cluck-flatten-acc (car x) acc)))
+    ((vector? x)
+     (cluck-flatten-acc (vector->list x) acc))
+    (else
+     (cons x acc))))
+
+(define (cluck-flatten-seq coll)
+  (reverse (cluck-flatten-acc coll '())))
+
 (define (cluck-last-seq coll)
   (let ((xs (seq coll)))
     (if (cluck-empty-seq? xs)
@@ -1866,6 +1911,23 @@
                             (seq value))))
                     coll)))
 
+(define (interleave . colls)
+  (let ((seqs (map seq colls)))
+    (let loop ((current seqs) (acc '()))
+      (if (or (null? current)
+              (let check ((xs current))
+                (cond
+                  ((null? xs) #f)
+                  ((cluck-empty-seq? (car xs)) #t)
+                  (else (check (cdr xs))))))
+          (reverse acc)
+          (let ((heads (map car current))
+                (tails (map cdr current)))
+            (loop tails (append (reverse heads) acc)))))))
+
+(define (take-nth n coll)
+  (cluck-take-nth-seq n coll))
+
 (define (concat . colls)
   (cluck-concat-seqs colls))
 
@@ -1887,6 +1949,9 @@
 (define (split-with pred coll)
   (cluck-split-with-seq pred coll))
 
+(define (partition-by f coll)
+  (cluck-partition-by-seq f coll))
+
 (define (reductions . args)
   (cond
     ((= (length args) 2)
@@ -1898,6 +1963,9 @@
 
 (define (group-by f coll)
   (cluck-group-by-seq f coll))
+
+(define (flatten coll)
+  (cluck-flatten-seq coll))
 
 (define (take n coll)
   (cluck-take-seq n coll))
@@ -2195,9 +2263,13 @@
    (cons 'filterv filterv)
    (cons 'map-indexed map-indexed)
    (cons 'mapcat mapcat)
+   (cons 'interleave interleave)
+   (cons 'take-nth take-nth)
    (cons 'split-with split-with)
+   (cons 'partition-by partition-by)
    (cons 'reductions reductions)
    (cons 'group-by group-by)
+   (cons 'flatten flatten)
    (cons 'reduce reduce)
    (cons 'some some)
    (cons 'every? every?)
@@ -2285,9 +2357,13 @@
    (cons 'filterv "Return the matching items of COLL in a vector.")
    (cons 'map-indexed "Apply F to each item in COLL with its index.")
    (cons 'mapcat "Map F across COLL and concatenate the resulting sequences.")
+   (cons 'interleave "Return items from COLLS in alternating order.")
+   (cons 'take-nth "Return every Nth item from COLL.")
    (cons 'split-with "Return a vector [LEFT RIGHT] split by PRED.")
+   (cons 'partition-by "Return vectors of consecutive items sharing F(item).")
    (cons 'reductions "Return the intermediate reduction values for COLL.")
    (cons 'group-by "Return a map from F(item) to vectors of matching items.")
+   (cons 'flatten "Return a flat list of nested list and vector items.")
    (cons 'reduce "Reduce COLL with F, optionally starting from INIT.")
    (cons 'some "Return the first truthy result of applying PRED to COLL.")
    (cons 'every? "Return true when PRED is truthy for every item in COLL.")

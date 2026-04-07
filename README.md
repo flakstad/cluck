@@ -37,7 +37,7 @@ The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 
 - keywords, maps, sets, and vectors with EDN-style syntax
 - core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond` with `:else`, `and`, `or`, `->`, and `->>`
-- common sequence helpers like `seq`, `first`, `rest`, `take`, `drop`, `partition`, `frequencies`, `concat`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, `group-by`, `count`, `map`, `filter`, and `reduce`
+- common sequence helpers like `seq`, `first`, `rest`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, `group-by`, `count`, `map`, `filter`, and `reduce`
 - mutable maps and sets for now, with immutable collections deferred until later
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
 - `.clk` is the preferred source extension for cluck code; `.scm` stays for Scheme glue and bootstrap files
@@ -54,7 +54,7 @@ The current implementation supports:
 - `#{1 2 3}` sets
 - keywords can be used as lookup functions, e.g. `(:a {:a 1})`
 - `type` for runtime type hints and `vec` for turning collections into vectors
-- `slurp`, `spit`, `take`, `drop`, `partition`, `frequencies`, `concat`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, and `group-by` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
+- `slurp`, `spit`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, and `group-by` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.edn/read-string`
 - `cluck.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
