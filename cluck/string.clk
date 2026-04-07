@@ -37,6 +37,23 @@
                         true
                         (loop (+ i 1))))))))))
 
+(define (cluck-string-index-of text needle start)
+  (let* ((hay (str text))
+         (needle (str needle))
+         (hay-len (string-length hay))
+         (needle-len (string-length needle))
+         (start (max 0 start)))
+    (if (> needle-len hay-len)
+        #f
+        (if (= needle-len 0)
+            (if (<= start hay-len) start #f)
+            (##core#let loop ((i start))
+              (if (> (+ i needle-len) hay-len)
+                  #f
+                  (if (string=? needle (substring hay i (+ i needle-len)))
+                      i
+                      (loop (+ i 1)))))))))
+
 (defn blank?
   "Return true when S is nil, empty, or whitespace only."
   [s]
@@ -130,6 +147,24 @@
   "Return true when TEXT contains NEEDLE as a substring."
   [text needle]
   (cluck-string-contains? text needle))
+
+(defn split
+  "Split TEXT on SEP as a literal substring and return a list of parts."
+  [text sep]
+  (if (nil? text)
+      '()
+      (let* ((hay (str text))
+             (needle (str sep))
+             (hay-len (string-length hay))
+             (needle-len (string-length needle)))
+        (if (= needle-len 0)
+            (map (lambda (ch) (string ch)) (string->list hay))
+            (##core#let loop ((start 0) (acc '()))
+              (##core#let ((idx (cluck-string-index-of hay needle start)))
+                (if idx
+                    (loop (+ idx needle-len)
+                          (cons (substring hay start idx) acc))
+                    (reverse (cons (substring hay start hay-len) acc)))))))))
 
 (defn join
   "Join COLL with SEP and return a string."

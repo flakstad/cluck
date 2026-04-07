@@ -182,6 +182,7 @@ It also includes interactive eval helpers:
 - `C-c C-r` reports in the echo area for a selected region
 - `C-c C-b` and `C-c C-k` evaluate the whole buffer through a temporary file so syntax errors are caught on repeated runs
 - `C-c C-l` reloads the current file from disk using the path-aware `load-file` helper so nested `ns :require` lookups resolve relative to the loaded file
+- completion-at-point is namespace-aware, so aliases like `str/` complete from the imported Cluck namespace instead of only from bindings already used in the current buffer
 - `M-.` jumps to the definition of the symbol at point, and `M-,` returns to the previous location
 
 It is intentionally not wired to CIDER or LSP for Cluck buffers by default. Instead, the workflow is:
@@ -450,6 +451,13 @@ The mirrored namespace files currently live at:
 - [`cluck/edn.clk`](./cluck/edn.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
+
+`cluck.string` already covers the everyday helpers most small apps reach for:
+
+- `blank?`, `trim`, `triml`, `trimr`
+- `lower-case`, `upper-case`, `capitalize`
+- `includes?`, `split`, `join`, `split-lines`
+- `starts-with?`, `ends-with?`
 
 ## Direction
 

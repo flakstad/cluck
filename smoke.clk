@@ -122,6 +122,7 @@
 (assert-str= "string capitalize" "Cluck" (str/capitalize "cLUCK"))
 (assert-true "string includes?" (str/includes? "cluck" "lu"))
 (assert-true "string includes? missing" (not (str/includes? "cluck" "zz")))
+(assert-str= "string split" "(\"a\" \"b\" \"c\")" (pr-str (str/split "a,b,c" ",")))
 (assert-str= "string join" "a,b,c" (str/join "," '("a" "b" "c")))
 (assert-str= "string split-lines" "(\"a\" \"b\")" (pr-str (str/split-lines "a\nb")))
 (assert-true "string starts-with?" (str/starts-with? "cluck" "cl"))
