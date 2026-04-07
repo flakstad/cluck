@@ -54,9 +54,9 @@ The current implementation supports:
 - `#{1 2 3}` sets
 - keywords can be used as lookup functions, e.g. `(:a {:a 1})`
 - `type` for runtime type hints and `vec` for turning collections into vectors
+- `slurp` and `spit` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.edn/read-string`
 - `cluck.outline`
-- `cluck.io` for ports and string/stream helpers
 - `pr-str`, `str`, `format`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
@@ -65,7 +65,7 @@ The current implementation supports:
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
-- the public namespace layout is now mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
+- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
 
 Notes:
 
@@ -408,7 +408,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.core`
 - `cluck.string`
 - `cluck.fs`
-- `cluck.io` for ports and string/stream helpers
+- `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.process`
 - `cluck.set`
 - `cluck.edn`

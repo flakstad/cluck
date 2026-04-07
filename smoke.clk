@@ -113,6 +113,9 @@
 (assert-str= "core hash-map" "{:a 1}" (pr-str (hash-map :a 1)))
 (assert-str= "core set" "#{1 2}" (pr-str (set 1 2)))
 (assert-str= "core disj" "#{1}" (pr-str (disj #{1 2 3} 2 3)))
+(let [core-file "build/cluck-core-smoke.txt"]
+  (spit core-file "a\nb\n")
+  (assert-str= "core slurp" "a\nb\n" (slurp core-file)))
 (require [cluck.string :as str])
 (assert-true "string blank? nil" (str/blank? nil))
 (assert-true "string blank? spaces" (str/blank? "   "))
@@ -160,6 +163,7 @@
 (assert-true "fs directory?" (fs/directory? "build"))
 (assert-true "fs delete!" (fs/delete! tmp))
 (assert-true "fs delete! missing" (not (fs/delete! tmp))))
+(assert-true "core delete!" (fs/delete! "build/cluck-core-smoke.txt"))
 (require [cluck.outline :as outline])
 (let [outline-sample "# Title\n\n## Section\ntext\n### Detail\n"]
   (assert-num= "outline headings" 3 (count (outline/outline-entries outline-sample)))

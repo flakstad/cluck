@@ -1844,6 +1844,40 @@
 (define (load-file path)
   (cluck-load-source-file! path))
 
+(define (cluck-core-port->string port)
+  (##core#let loop ((chars '()))
+    (let ((ch (read-char port)))
+      (if (eof-object? ch)
+          (list->string (reverse chars))
+          (loop (cons ch chars))))))
+
+(define (cluck-core-slurp source)
+  (cond
+    ((string? source)
+     (call-with-input-file (str source)
+       cluck-core-port->string))
+    ((input-port? source)
+     (cluck-core-port->string source))
+    (else
+     (error "slurp expects a file path or input port" source))))
+
+(define (cluck-core-spit target text)
+  (if (output-port? target)
+      (begin
+        (display (str text) target)
+        target)
+      (let ((name (str target)))
+        (call-with-output-file name
+          (lambda (port)
+            (display (str text) port)))
+        name)))
+
+(define (slurp source)
+  (cluck-core-slurp source))
+
+(define (spit target text)
+  (cluck-core-spit target text))
+
 (define (cluck-core-public-bindings)
   (list
    (cons 'current-ns current-ns)
@@ -1857,6 +1891,8 @@
    (cons 'parse-long parse-long)
    (cons 'parse-double parse-double)
    (cons 'load-file load-file)
+   (cons 'slurp slurp)
+   (cons 'spit spit)
    (cons 'pr-str pr-str)
    (cons 'str str)
    (cons 'println println)
@@ -1928,6 +1964,8 @@
    (cons 'parse-long "Parse STRING as a long integer.")
    (cons 'parse-double "Parse STRING as an inexact number.")
    (cons 'load-file "Load FILE and resolve nested Cluck namespaces relative to its project root.")
+   (cons 'slurp "Read SOURCE into a string. SOURCE may be a file path or an input port.")
+   (cons 'spit "Write TEXT to TARGET and return TARGET. TARGET may be a file path or an output port.")
    (cons 'pr-str "Render values as Cluck-readable text.")
    (cons 'str "Concatenate values as plain text.")
    (cons 'println "Print values as plain text with spaces and a trailing newline.")
