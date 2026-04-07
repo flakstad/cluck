@@ -136,7 +136,7 @@
                   "%"))
     (println "Forecast:")
     (weather-print-days days)
-    payload))
+    nil))
 
 (defn weather-fetch-report [location]
   (weather-fetch-json (weather-url location)))
@@ -151,3 +151,11 @@
     (if (str/blank? location)
       (weather-usage)
       (weather-print-report (weather-fetch-report location)))))
+
+
+(comment
+
+  (weather-print-report 
+    (weather-fetch-report "Stjørdal"))
+
+  )
