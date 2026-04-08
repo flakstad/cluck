@@ -294,6 +294,7 @@ It is loaded by:
 - [`test/run.scm`](./test/run.scm)
 - [`test/run-draw-toggle.scm`](./test/run-draw-toggle.scm)
 - [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
+- [`test/run-draw-input.scm`](./test/run-draw-input.scm)
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
 
@@ -303,12 +304,13 @@ Run it with:
 csi -q -s test/run.scm
 csi -q -s test/run-draw-toggle.scm
 csi -q -s test/run-draw-tools.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
-The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL canvas cache path, and the running draw lifecycle path.
+The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL input/pressure/focus path, the SDL canvas cache path, and the running draw lifecycle path.
 
 ## Weather CLI Example
 

@@ -138,6 +138,17 @@ static int cluck_event_pen_y(void) {
   return cluck_mouse_y();
 }
 
+static float cluck_event_pen_pressure(void) {
+  if (!cluck_have_last_event) {
+    return 1.0f;
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_AXIS &&
+      cluck_last_event.paxis.axis == SDL_PEN_AXIS_PRESSURE) {
+    return cluck_last_event.paxis.value;
+  }
+  return 1.0f;
+}
+
 static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
   SDL_FRect rect;
   rect.x = x;
@@ -277,6 +288,9 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 
 (define sdl-event-pen-y
   (foreign-lambda int "cluck_event_pen_y"))
+
+(define sdl-event-pen-pressure
+  (foreign-lambda float "cluck_event_pen_pressure"))
 
 (define sdl-render-fill-rect!
   (foreign-lambda* bool ((c-pointer renderer)
@@ -428,6 +442,10 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (defn event-pen-y
   []
   (sdl-event-pen-y))
+
+(defn event-pen-pressure
+  []
+  (sdl-event-pen-pressure))
 
 (defn render-fill-rect!
   [renderer x y w h]

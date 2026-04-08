@@ -1,0 +1,87 @@
+;; Focused draw-input probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-input-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-input-fail label expected actual)
+  (error (string-append "draw input test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-input-assert-true label value)
+  (if value
+      (draw-input-pass label)
+      (draw-input-fail label "truthy value" (pr-str value))))
+
+(define (draw-input-assert-false label value)
+  (if (not value)
+      (draw-input-pass label)
+      (draw-input-fail label "falsey value" (pr-str value))))
+
+(define (draw-input-assert-str= label expected actual)
+  (if (string=? expected actual)
+      (draw-input-pass label)
+      (draw-input-fail label expected actual)))
+
+(define (draw-input-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-input-pass label)
+      (draw-input-fail label expected actual)))
+
+(draw-input-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
+(draw-input-assert-true "focus gained event kind"
+                        (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_GAINED")
+                                     :focus-gained))
+(draw-input-assert-true "focus lost event kind"
+                        (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_LOST")
+                                     :focus-lost))
+(draw-input-assert-true "pen axis event kind"
+                        (draw-kind=? (draw-event-kind "SDL_EVENT_PEN_AXIS")
+                                     :pen-axis))
+
+(let [mouse-point (draw-event-point (default-state)
+                                    "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")]
+  (draw-input-assert-str= "mouse point pressure defaults to 1"
+                          "[12 34 1.0]"
+                          (pr-str mouse-point)))
+
+(let [pen-point (draw-event-point (assoc (default-state)
+                                         :pen-pressure 0.5)
+                                  "SDL_EVENT_PEN_MOTION x=12.0 y=34.0")]
+  (draw-input-assert-str= "pen point carries pressure"
+                          "[12 34 0.5]"
+                          (pr-str pen-point)))
+
+(draw-input-assert-num= "pressure scales brush size"
+                        2
+                        (draw-point-size [10 20 0.5] 4))
+
+(let [focused (draw-focus-lost-core!
+               (assoc (default-state)
+                      :pointer-down? true
+                      :active-stroke {:points [[1 2 1.0]]
+                                      :color [1 2 3]
+                                      :size 2}
+                      :pen-pressure 0.4))]
+  (draw-input-assert-false "focus lost clears pointer down"
+                           (get focused :pointer-down?))
+  (draw-input-assert-false "focus lost clears active stroke"
+                           (get focused :active-stroke))
+  (draw-input-assert-false "focus lost turns focus off"
+                           (get focused :window-focused?))
+  (draw-input-assert-num= "focus lost resets pressure"
+                          1.0
+                          (get focused :pen-pressure)))
+
+(let [gained (draw-focus-gained-core! (assoc (default-state) :window-focused? false))]
+  (draw-input-assert-true "focus gained turns focus on"
+                          (get gained :window-focused?))
+  (draw-input-assert-num= "focus gained resets pressure"
+                          1.0
+                          (get gained :pen-pressure)))

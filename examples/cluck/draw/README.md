@@ -10,9 +10,10 @@ What is in place:
 - a first SDL3 window-open loop that clears the screen until quit
 - a REPL-first development bootstrap in `dev.clk` that you load explicitly from the normal Cluck REPL before calling `(start-dev!)`
 - live mouse, pen, and keyboard-event overlays in the window
-- freehand brush strokes while dragging
+- freehand brush strokes while dragging, with pen pressure feeding the brush size
 - an on-demand debug panel toggled with `d`
 - tool shortcuts for `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
+- focus loss cancels the active stroke instead of leaving the canvas in a half-drawn state
 - REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
@@ -34,11 +35,13 @@ The intent is to build this interactively in small steps:
 4. call `(start-dev!)` when you want to open the window and experiment live
 5. if the draw thread crashes, call `(restart-dev!)` to close and reopen the window without killing the REPL
 6. drag with the mouse or pen to paint strokes, and press `d` to toggle the debug panel
-7. add byte-buffer and texture work as needed
-8. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
-9. when you are working on draw tools and state mutations, run `csi -q -s test/run-draw-tools.scm` for a fast focused probe
-10. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm` for a fast focused probe
-11. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
+7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
+8. add byte-buffer and texture work as needed
+9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
+10. when you are working on draw tools and state mutations, run `csi -q -s test/run-draw-tools.scm` for a fast focused probe
+11. when you are working on pen pressure, focus handling, or other input-state routing, run `csi -q -s test/run-draw-input.scm` for a fast focused probe
+12. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm` for a fast focused probe
+13. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
@@ -47,8 +50,8 @@ in the REPL. After that, you can evaluate the explicit startup forms in the
 comment block at the end of `main.clk`, or run the buffer with `C-c C-k`.
 Until the draw support code is loaded, evaluating the buffer directly will
 stop at the SDL FFI boundary. If the draw thread crashes, `restart-dev!`
-closes the old window, clears the recorded error, and starts a fresh one from
-the current REPL state.
+closes the old window, resets the draw state, clears the recorded error, and
+starts a fresh one from the current REPL state.
 
 While the window is live:
 - press `d` to toggle the debug panel
@@ -56,6 +59,8 @@ While the window is live:
 - press `c` to clear the canvas, which is undoable
 - press `e` to toggle eraser mode
 - press `1`, `2`, or `3` to switch brush sizes
+- pen pressure now scales the brush while drawing on tablets that expose it
+- if the window loses focus, the active stroke is canceled so recovery is cleaner
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3
