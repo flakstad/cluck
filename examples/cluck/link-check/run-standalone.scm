@@ -13,8 +13,8 @@
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.link-check #t)
-(include "cluck/string.clk")
-(include "cluck/fs.clk")
+(include "src/cluck/string.clk")
+(include "src/cluck/fs.clk")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)

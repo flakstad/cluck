@@ -14,8 +14,8 @@
 
 ;; Bundle the runtime and the Cluck app source into one compilation unit.
 (include "src/cluck.scm")
-(include "cluck/string.clk")
-(include "cluck/edn.clk")
+(include "src/cluck/string.clk")
+(include "src/cluck/edn.clk")
 
 ;; Mark the bundled namespace as already available so `ns :require` does not
 ;; try to locate it on disk at runtime.

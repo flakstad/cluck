@@ -242,7 +242,7 @@ tracks mouse, pen, and recent keyboard input, and supports a basic sketchpad
 workflow:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
-- [`cluck/sdl3.clk`](./cluck/sdl3.clk)
+- [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
 It uses direct C interop through `cluck.sdl3`, but the application logic stays
@@ -640,15 +640,15 @@ Namespace source files are located by namespace path, starting with:
 - fallback lookups also check `foo/bar.clj.scm`, `foo/bar.scm`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
 
-The mirrored namespace files currently live at:
+- The mirrored namespace files currently live at:
 
-- [`cluck/core.clk`](./cluck/core.clk)
-- [`cluck/string.clk`](./cluck/string.clk)
-- [`cluck/set.clk`](./cluck/set.clk)
-- [`cluck/mutable.clk`](./cluck/mutable.clk)
-- [`cluck/edn.clk`](./cluck/edn.clk)
-- [`cluck/walk.clk`](./cluck/walk.clk)
-- [`cluck/math.clk`](./cluck/math.clk)
+- [`src/cluck/core.clk`](./src/cluck/core.clk)
+- [`src/cluck/string.clk`](./src/cluck/string.clk)
+- [`src/cluck/set.clk`](./src/cluck/set.clk)
+- [`src/cluck/mutable.clk`](./src/cluck/mutable.clk)
+- [`src/cluck/edn.clk`](./src/cluck/edn.clk)
+- [`src/cluck/walk.clk`](./src/cluck/walk.clk)
+- [`src/cluck/math.clk`](./src/cluck/math.clk)
 - [`examples/cluck/todo/main.clk`](./examples/cluck/todo/main.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
@@ -688,8 +688,8 @@ The next phase is about making Cluck prove itself on a real small program, not j
 
 There is a small require/ns demo in:
 
-- [`cluck/walk.clk`](./cluck/walk.clk)
-- [`cluck/math.clk`](./cluck/math.clk)
+- [`src/cluck/walk.clk`](./src/cluck/walk.clk)
+- [`src/cluck/math.clk`](./src/cluck/math.clk)
 - [`examples/cluck/app/main.clk`](./examples/cluck/app/main.clk)
 
 It is loaded by:
