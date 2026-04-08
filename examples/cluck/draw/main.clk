@@ -152,14 +152,6 @@
   [(draw-event-coordinate desc "x=")
    (draw-event-coordinate desc "y=")])
 
-(defn draw-key-name-keyword
-  "Return the current key name as a keyword, or false when unavailable."
-  []
-  (let [name (draw-nonblank (sdl/event-key-name) nil)]
-    (if name
-      (keyword (str/lower-case name))
-      false)))
-
 (defn draw-toggle-debug-panel!
   "Toggle the in-window debug panel."
   [state]
@@ -285,18 +277,16 @@
       (or (draw-kind=? kind :key-down)
           (draw-kind=? kind :key-up))
       (let [state (assoc state
-                         :last-key (draw-nonblank (sdl/event-key-name) desc))]
+                         :last-key desc)]
         (if (and (draw-kind=? kind :key-down)
-                 (draw-kind=? (draw-key-name-keyword) :f1))
+                 (str/includes? desc "F1"))
           (draw-toggle-debug-panel! state)
           state))
 
       (draw-kind=? kind :text-input)
       (assoc state
              :last-text (draw-nonblank (sdl/event-text-input) desc)
-             :last-key (draw-nonblank (sdl/event-text-input)
-                                      (draw-nonblank (sdl/event-key-name)
-                                                     desc)))
+             :last-key desc)
 
       (or (draw-kind=? kind :mouse-motion)
           (draw-kind=? kind :mouse-down)
@@ -340,7 +330,7 @@
       (draw-kind=? kind :text-editing)
       (assoc state
              :last-text (draw-nonblank (sdl/event-text-editing) desc)
-             :last-key (draw-nonblank (sdl/event-text-editing) desc))
+             :last-key desc)
 
       :else
       state)))
