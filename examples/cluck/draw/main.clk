@@ -139,6 +139,13 @@
       (vec (drop (- total limit) events))
       (vec events))))
 
+(defn draw-nonblank
+  "Return VALUE when it contains visible text, otherwise FALLBACK."
+  [value fallback]
+  (if (str/blank? value)
+    fallback
+    value))
+
 (defn draw-bump-frame!
   "Advance the frame counter in STATE."
   [state]
@@ -158,19 +165,21 @@
       (or (eq? kind :key-down)
           (eq? kind :key-up))
       (assoc state
-             :last-key (or (sdl/event-key-name) desc))
+             :last-key (draw-nonblank (sdl/event-key-name) desc))
 
       (eq? kind :text-input)
       (assoc state
-             :last-text (or (sdl/event-text-input) "")
-             :last-key (or (sdl/event-text-input) (sdl/event-key-name) desc))
+             :last-text (draw-nonblank (sdl/event-text-input) desc)
+             :last-key (draw-nonblank (sdl/event-text-input)
+                                      (draw-nonblank (sdl/event-key-name)
+                                                     desc)))
 
       (or (eq? kind :mouse-motion)
           (eq? kind :mouse-down)
           (eq? kind :mouse-up))
       (assoc state
-             :mouse-x (sdl/event-mouse-x)
-             :mouse-y (sdl/event-mouse-y))
+             :mouse-x (sdl/mouse-x)
+             :mouse-y (sdl/mouse-y))
 
       (or (eq? kind :pen-motion)
           (eq? kind :pen-down)
@@ -178,13 +187,13 @@
           (eq? kind :pen-button-down)
           (eq? kind :pen-button-up))
       (assoc state
-             :mouse-x (sdl/event-pen-x)
-             :mouse-y (sdl/event-pen-y))
+             :mouse-x (sdl/mouse-x)
+             :mouse-y (sdl/mouse-y))
 
       (eq? kind :text-editing)
       (assoc state
-             :last-text (or (sdl/event-text-editing) "")
-             :last-key (or (sdl/event-text-editing) desc))
+             :last-text (draw-nonblank (sdl/event-text-editing) desc)
+             :last-key (draw-nonblank (sdl/event-text-editing) desc))
 
       :else
       state)))
