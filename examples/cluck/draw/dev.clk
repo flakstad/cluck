@@ -34,6 +34,34 @@
   [root]
   (fs/path root "cluck/sdl3.clk"))
 
+(defn draw-dev-source-mtime
+  [path]
+  (let [result (proc/sh (format "stat -f %%m %s" (proc/qs path)))]
+    (if (zero? (get result :exit))
+      (parse-long (str/trim (get result :out)))
+      0)))
+
+(defn draw-dev-library-sources
+  [root]
+  [(draw-dev-loadable-source-path root)
+   (draw-dev-source-path root)
+   (fs/path root "src/syntax-bootstrap.scm")
+   (fs/path root "src/syntax-bootstrap-core.scm")
+   (fs/path root "src/cluck.scm")
+   (fs/path root "src/cluck-standalone-prelude.scm")])
+
+(defn draw-dev-library-stale?
+  [root]
+  (let [lib (draw-dev-library-path root)
+        lib-mtime (draw-dev-source-mtime lib)
+        sources (draw-dev-library-sources root)]
+    (reduce (fn [stale path]
+              (if stale
+                true
+                (> (draw-dev-source-mtime path) lib-mtime)))
+            (not (fs/file? lib))
+            sources)))
+
 (defn draw-dev-pkg-config
   [root args]
   (let [result (proc/sh (format "PKG_CONFIG_PATH=%s pkg-config %s"
@@ -66,7 +94,7 @@
     (begin
       (draw-dev-ensure-directory! (fs/path root "build"))
       (draw-dev-ensure-directory! (fs/path root "build/dev"))
-      (if (not (fs/file? lib))
+      (if (draw-dev-library-stale? root)
         (if (not (zero? (proc/system (draw-dev-library-build-command root))))
           (error "SDL3 dev library build failed"))
         lib)

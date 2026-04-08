@@ -1,0 +1,14 @@
+;; Process namespace smoke tests.
+
+(ns cluck.test.process
+  (:require [cluck.test.support :refer [assert-num=
+                                        assert-str=
+                                        assert-true]]))
+
+(require [cluck.process :as proc])
+
+(assert-true "process namespace exists" (find-ns 'cluck.process))
+(assert-str= "process sh" "hello" (get (proc/sh "printf hello") :out))
+(assert-num= "process sh exit" 0 (get (proc/sh "true") :exit))
+(assert-str= "process exec" "hello" (get (proc/exec "printf" ["hello"]) :out))
+(assert-num= "process system" 0 (proc/system "true"))

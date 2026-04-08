@@ -1,0 +1,23 @@
+;; Walk namespace smoke tests.
+
+(ns cluck.test.walk
+  (:require [cluck.test.support :refer [assert-str=
+                                        assert-true]]))
+
+(require [cluck.walk :as walk])
+
+(assert-true "walk namespace exists" (find-ns 'cluck.walk))
+(assert-str= "walk postwalk"
+             "{:a 2 :b [3 4]}"
+             (pr-str (walk/postwalk (fn [x] (if (number? x) (inc x) x))
+                                    {:a 1 :b [2 3]})))
+(assert-str= "walk prewalk"
+             "[2 [4]]"
+             (pr-str (walk/prewalk (fn [x] (if (number? x) (* x 2) x))
+                                   [1 [2]])))
+(assert-str= "walk keywordize-keys"
+             "{:a 1 :b {:c 2}}"
+             (pr-str (walk/keywordize-keys {"a" 1 :b {"c" 2}})))
+(assert-str= "walk stringify-keys"
+             "{\"a\" 1 \"b\" {\"c\" 2}}"
+             (pr-str (walk/stringify-keys {:a 1 :b {:c 2}})))

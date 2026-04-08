@@ -291,14 +291,21 @@ There is also a small smoke-test harness in:
 It is loaded by:
 
 - [`test/run.scm`](./test/run.scm)
+- [`test/run-draw-toggle.scm`](./test/run-draw-toggle.scm)
+- [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
+- [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 
 Run it with:
 
 ```bash
 csi -q -s test/run.scm
+csi -q -s test/run-draw-toggle.scm
+csi -q -s test/run-draw-tools.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
+The focused draw probes cover the keyboard toggle path, the mutable draw state path, and the SDL canvas cache path.
 
 ## Weather CLI Example
 

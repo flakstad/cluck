@@ -293,7 +293,7 @@
        (loop (- i 1))))))
 
 (define (cluck-root-candidates root)
-  (let prefix-loop ((prefixes '("" "src/" "examples/")) (acc '()))
+  (let prefix-loop ((prefixes '("" "src/" "examples/" "test/")) (acc '()))
     (if (null? prefixes)
         (reverse acc)
         (let ((prefix (car prefixes)))

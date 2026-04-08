@@ -1,0 +1,33 @@
+;; Mutable collection smoke tests.
+
+(ns cluck.test.mutable
+  (:require [cluck.test.support :refer [assert-num=
+                                        assert-str=
+                                        assert-true]]))
+
+(require [cluck.mutable :refer [mutable-map
+                                mutable-map?
+                                mutable-map-table
+                                mutable-set
+                                mutable-set?
+                                mutable-set-table
+                                persistent-map
+                                persistent
+                                freeze-set]])
+
+(let [m (mutable-map)]
+  (assert-true "mutable namespace exists" (find-ns 'cluck.mutable))
+  (assert-true "mutable map?" (mutable-map? m))
+  (hash-table-set! (mutable-map-table m) :a 1)
+  (hash-table-set! (mutable-map-table m) :b 2)
+  (hash-table-delete! (mutable-map-table m) :a)
+  (assert-str= "mutable persistent map" "{:b 2}" (pr-str (persistent-map m)))
+  (assert-str= "mutable persistent dispatcher map" "{:b 2}" (pr-str (persistent m))))
+
+(let [s (mutable-set 1 2)]
+  (assert-true "mutable set?" (mutable-set? s))
+  (hash-table-set! (mutable-set-table s) 3 #t)
+  (hash-table-set! (mutable-set-table s) 4 #t)
+  (hash-table-delete! (mutable-set-table s) 1)
+  (assert-str= "mutable freeze set" "#{2 3 4}" (pr-str (freeze-set s)))
+  (assert-str= "mutable persistent dispatcher set" "#{2 3 4}" (pr-str (persistent s))))

@@ -158,6 +158,30 @@ static bool cluck_render_debug_text(SDL_Renderer *renderer, float x, float y, co
 static bool cluck_set_window_title(SDL_Window *window, const char *title) {
   return SDL_SetWindowTitle(window, title);
 }
+
+static SDL_Texture *cluck_create_canvas_texture(SDL_Renderer *renderer, int width, int height) {
+  SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height);
+  if (texture) {
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+  }
+  return texture;
+}
+
+static bool cluck_set_render_target(SDL_Renderer *renderer, SDL_Texture *texture) {
+  return SDL_SetRenderTarget(renderer, texture);
+}
+
+static bool cluck_clear_render_target(SDL_Renderer *renderer) {
+  return SDL_SetRenderTarget(renderer, NULL);
+}
+
+static bool cluck_render_texture(SDL_Renderer *renderer, SDL_Texture *texture) {
+  return SDL_RenderTexture(renderer, texture, NULL, NULL);
+}
+
+static void cluck_destroy_texture(SDL_Texture *texture) {
+  SDL_DestroyTexture(texture);
+}
 ")
 
 (def init-video-flags
@@ -281,6 +305,30 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
   (foreign-lambda* bool ((c-pointer window) (c-string title))
     "C_return(cluck_set_window_title((SDL_Window *)window, title));"))
 
+(define sdl-create-canvas-texture
+  (foreign-lambda* c-pointer ((c-pointer renderer) (int width) (int height))
+    "SDL_Texture *texture = cluck_create_canvas_texture((SDL_Renderer *)renderer, width, height);"
+    "C_return(texture);"))
+
+(define sdl-set-render-target!
+  (foreign-lambda* bool ((c-pointer renderer) (c-pointer texture))
+    "C_return(cluck_set_render_target((SDL_Renderer *)renderer, (SDL_Texture *)texture));"))
+
+(define sdl-clear-render-target!
+  (foreign-lambda* bool ((c-pointer renderer))
+    "C_return(cluck_clear_render_target((SDL_Renderer *)renderer));"))
+
+(define sdl-render-texture!
+  (foreign-lambda* bool ((c-pointer renderer) (c-pointer texture))
+    "C_return(cluck_render_texture((SDL_Renderer *)renderer, (SDL_Texture *)texture));"))
+
+(define sdl-destroy-texture!
+  (foreign-lambda void "cluck_destroy_texture" c-pointer))
+
+(define sdl-pointer-ready?
+  (foreign-lambda* bool ((scheme-object value))
+    "C_return(C_truep(C_pointerp(value)) && !C_truep(C_null_pointerp(value)));"))
+
 (defn init-video!
   []
   (sdl-init! init-video-flags))
@@ -396,6 +444,30 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
 (defn set-window-title!
   [window title]
   (sdl-set-window-title! window title))
+
+(defn create-canvas-texture
+  [renderer width height]
+  (sdl-create-canvas-texture renderer width height))
+
+(defn set-render-target!
+  [renderer texture]
+  (sdl-set-render-target! renderer texture))
+
+(defn clear-render-target!
+  [renderer]
+  (sdl-clear-render-target! renderer))
+
+(defn render-texture!
+  [renderer texture]
+  (sdl-render-texture! renderer texture))
+
+(defn destroy-texture!
+  [texture]
+  (sdl-destroy-texture! texture))
+
+(defn pointer-ready?
+  [value]
+  (sdl-pointer-ready? value))
 
 (defn open-context
   [title width height]

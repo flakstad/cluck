@@ -17,6 +17,7 @@
 (def *draw-thread* nil)
 (def *draw-render-fn* nil)
 (def *draw-last-error* false)
+(def *draw-canvas-ready?* false)
 
 (defn draw-recent-events-limit
   []
@@ -84,6 +85,9 @@
   "Reset the current draw state to the default."
   []
   (set! *draw-state* (default-state))
+  (if (draw-canvas-ready?)
+    (draw-rebuild-canvas! *draw-state*)
+    nil)
   (draw-refresh!)
   *draw-state*)
 
@@ -91,6 +95,9 @@
   "Replace the current draw state with STATE."
   [state]
   (set! *draw-state* state)
+  (if (draw-canvas-ready?)
+    (draw-rebuild-canvas! *draw-state*)
+    nil)
   (draw-refresh!)
   *draw-state*)
 
@@ -185,6 +192,113 @@
   (set! *draw-last-error* false)
   false)
 
+(defn draw-canvas
+  "Return the cached canvas texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :canvas)
+    nil))
+
+(defn draw-canvas-ready?
+  "Return true when the cached canvas texture is available."
+  []
+  (and *draw-canvas-ready?*
+       (sdl/pointer-ready? (draw-canvas))))
+
+(defn draw-ensure-canvas!
+  "Create or resize the cached canvas texture to match STATE."
+  [state]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        width (get state :width)
+        height (get state :height)
+        canvas (draw-canvas)
+        canvas-width (if *draw-context* (get *draw-context* :canvas-width) nil)
+        canvas-height (if *draw-context* (get *draw-context* :canvas-height) nil)]
+    (if (and (draw-canvas-ready?)
+             (= canvas-width width)
+             (= canvas-height height))
+      *draw-context*
+      (begin
+        (if (draw-canvas-ready?)
+          (begin
+            (sdl/destroy-texture! canvas)
+            (set! *draw-context* (dissoc *draw-context* :canvas :canvas-width :canvas-height))
+            (set! *draw-canvas-ready?* false))
+          nil)
+        (if renderer
+          (let [texture (sdl/create-canvas-texture renderer width height)]
+            (if texture
+              (let [ctx (assoc *draw-context*
+                               :canvas texture
+                               :canvas-width width
+                               :canvas-height height)]
+                (set! *draw-context* ctx)
+                (set! *draw-canvas-ready?* true)
+                ctx)
+              (begin
+                (set! *draw-canvas-ready?* false)
+                *draw-context*)))
+          *draw-context*)))))
+
+(defn draw-with-canvas!
+  "Run THUNK with the canvas texture bound as the SDL render target."
+  [thunk]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        canvas (draw-canvas)]
+    (if (and renderer (draw-canvas-ready?))
+      (begin
+        (sdl/set-render-target! renderer canvas)
+        (thunk renderer)
+        (sdl/clear-render-target! renderer)
+        true)
+      false)))
+
+(defn draw-release-canvas!
+  "Destroy the cached canvas texture and clear it from the draw context."
+  []
+  (let [canvas (draw-canvas)]
+    (if (draw-canvas-ready?)
+      (sdl/destroy-texture! canvas))
+    (if *draw-context*
+      (set! *draw-context* (dissoc *draw-context* :canvas :canvas-width :canvas-height)))
+    (set! *draw-canvas-ready?* false)
+    nil))
+
+(defn draw-clear-canvas!
+  "Clear the cached canvas texture."
+  []
+  (draw-with-canvas!
+    (lambda (renderer)
+      (sdl/set-draw-color! renderer 0 0 0 0)
+      (sdl/render-clear! renderer)
+      nil)))
+
+(defn draw-commit-stroke!
+  "Render a single stroke into the cached canvas texture."
+  [stroke]
+  (draw-with-canvas!
+    (lambda (renderer)
+      (draw-render-stroke! renderer stroke)
+      nil)))
+
+(defn draw-rebuild-canvas!
+  "Rebuild the cached canvas texture from STATE."
+  [state]
+  (draw-with-canvas!
+    (lambda (renderer)
+      (sdl/set-draw-color! renderer 0 0 0 0)
+      (sdl/render-clear! renderer)
+      (reduce (lambda (acc stroke)
+                (begin
+                  (draw-render-stroke! renderer stroke)
+                  acc))
+              nil
+              (get state :strokes))
+      (if (get state :active-stroke)
+        (draw-render-stroke! renderer (get state :active-stroke))
+        nil)
+      nil)))
+
 (defn draw-history-limit
   "Return the maximum number of undo snapshots to keep."
   []
@@ -263,15 +377,23 @@
   "Clear all finished and active strokes from STATE and record undo history."
   [state]
   (let [state (draw-push-history! state)]
-    (assoc state
-           :strokes []
-           :active-stroke false
-           :pointer-down? false)))
+    (let [state (assoc state
+                       :strokes []
+                       :active-stroke false
+                       :pointer-down? false)]
+      (if (draw-canvas-ready?)
+        (draw-rebuild-canvas! state)
+        nil)
+      state)))
 
 (defn draw-undo-stroke!
   "Undo the most recent draw action."
   [state]
-  (draw-restore-history! state))
+  (let [state (draw-restore-history! state)]
+    (if (draw-canvas-ready?)
+      (draw-rebuild-canvas! state)
+      nil)
+    state))
 
 (defn draw-handle-tool-key!
   "Apply draw tool shortcuts for KEY to STATE."
@@ -304,14 +426,18 @@
   "Start a new stroke from DESC."
   [state desc]
   (let [point (draw-event-point desc)]
-    (let [state (draw-push-history! state)]
-      (assoc state
-             :pointer-down? true
-             :active-stroke {:points [point]
-                             :color (draw-stroke-color state)
-                             :size (get state :brush-size)}
-             :mouse-x (nth point 0)
-             :mouse-y (nth point 1)))))
+    (let [state (draw-push-history! state)
+          next-state (assoc state
+                            :pointer-down? true
+                            :active-stroke {:points [point]
+                                            :color (draw-stroke-color state)
+                                            :size (get state :brush-size)}
+                            :mouse-x (nth point 0)
+                            :mouse-y (nth point 1))]
+      (if (draw-canvas-ready?)
+        (draw-commit-stroke! (get next-state :active-stroke))
+        nil)
+      next-state)))
 
 (defn draw-extend-stroke
   "Add the current pointer position from DESC to the active stroke."
@@ -319,11 +445,19 @@
   (let [point (draw-event-point desc)
         stroke (get state :active-stroke)]
     (if stroke
-      (assoc state
-             :mouse-x (nth point 0)
-             :mouse-y (nth point 1)
-             :active-stroke (assoc stroke
-                                   :points (conj (get stroke :points) point)))
+      (let [points (get stroke :points)
+            previous (last points)
+            next-stroke (assoc stroke
+                               :points (conj points point))
+            next-state (assoc state
+                              :mouse-x (nth point 0)
+                              :mouse-y (nth point 1)
+                              :active-stroke next-stroke)]
+        (if (draw-canvas-ready?)
+          (draw-commit-stroke! (assoc stroke
+                                      :points [previous point]))
+          nil)
+        next-state)
       (draw-start-stroke state desc))))
 
 (defn draw-finish-stroke
@@ -332,15 +466,21 @@
   (let [point (draw-event-point desc)
         stroke (get state :active-stroke)]
     (if stroke
-        (let [finished (assoc stroke
-                              :points (conj (get stroke :points)
-                                            point))]
-          (assoc state
-                 :pointer-down? false
-                 :mouse-x (nth point 0)
-                 :mouse-y (nth point 1)
-                 :active-stroke false
-                 :strokes (conj (get state :strokes) finished)))
+        (let [points (get stroke :points)
+              previous (last points)
+              finished (assoc stroke
+                              :points (conj points point))
+              next-state (assoc state
+                                :pointer-down? false
+                                :mouse-x (nth point 0)
+                                :mouse-y (nth point 1)
+                                :active-stroke false
+                                :strokes (conj (get state :strokes) finished))]
+          (if (draw-canvas-ready?)
+            (draw-commit-stroke! (assoc stroke
+                                        :points [previous point]))
+            nil)
+          next-state)
       (assoc state
              :pointer-down? false
              :mouse-x (nth point 0)
@@ -674,6 +814,15 @@
       (draw-render-stroke! renderer active)
       nil)))
 
+(defn draw-render-canvas!
+  "Render the cached canvas texture, or fall back to stroke replay."
+  [ctx state]
+  (let [renderer (get ctx :renderer)
+        canvas (if ctx (get ctx :canvas) nil)]
+    (if (draw-canvas-ready?)
+      (sdl/render-texture! renderer canvas)
+      (draw-render-strokes! ctx state))))
+
 (defn draw-render-debug-panel!
   "Render the on-demand debug panel."
   [renderer state]
@@ -743,7 +892,7 @@
       (nth background 2)
       255)
     (sdl/render-clear! renderer)
-    (draw-render-strokes! ctx state)
+    (draw-render-canvas! ctx state)
     (draw-render-status! ctx state)
     (sdl/render-present! renderer)
     nil))
@@ -800,6 +949,10 @@
             (set! *draw-state* state)
             (set! *draw-context* ctx)
             (set! *draw-running?* true)
+            (draw-ensure-canvas! state)
+            (if (draw-canvas-ready?)
+              (draw-rebuild-canvas! state)
+              nil)
             (sdl/start-text-input! (get *draw-context* :window))
             (sync-window-title!)
             ctx))))))
@@ -808,6 +961,7 @@
   "Stop the draw loop and close the SDL context."
   []
   (set! *draw-running?* false)
+  (draw-release-canvas!)
   (if *draw-context*
     (begin
       (sdl/stop-text-input! (get *draw-context* :window))

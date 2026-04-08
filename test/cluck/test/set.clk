@@ -1,0 +1,14 @@
+;; Set namespace smoke tests.
+
+(ns cluck.test.set
+  (:require [cluck.test.support :refer [assert-num=
+                                        assert-str=
+                                        assert-true]]))
+
+(require [cluck.set :as sets])
+
+(assert-str= "set union" "#{1 2 3}" (pr-str (sets/union #{1 2} #{2 3})))
+(assert-str= "set intersection" "#{2}" (pr-str (sets/intersection #{1 2} #{2 3})))
+(assert-str= "set difference" "#{1}" (pr-str (sets/difference #{1 2 3} #{2 3})))
+(assert-true "set subset?" (sets/subset? #{1 2} #{1 2 3}))
+(assert-true "set superset?" (sets/superset? #{1 2 3} #{1 2}))

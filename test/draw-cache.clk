@@ -1,0 +1,49 @@
+;; Focused draw-cache probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-cache-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-cache-fail label expected actual)
+  (error (string-append "draw cache test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-cache-assert-true label value)
+  (if value
+      (draw-cache-pass label)
+      (draw-cache-fail label "truthy value" (pr-str value))))
+
+(define (draw-cache-assert-false label value)
+  (if (not value)
+      (draw-cache-pass label)
+      (draw-cache-fail label "falsey value" (pr-str value))))
+
+(draw-cache-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
+(draw-cache-assert-true "start! opens a context" (start!))
+(draw-cache-assert-true "canvas ready after start!" (draw-canvas-ready?))
+(draw-cache-assert-true "canvas pointer ready"
+                        (sdl/pointer-ready? (draw-canvas)))
+(draw-cache-assert-true "clear canvas works" (draw-clear-canvas!))
+(let [state (assoc (default-state)
+                   :strokes [{:points [[10 10] [40 40]]
+                              :color [255 0 0]
+                              :size 2}]
+                   :frame 1)]
+  (draw-cache-assert-true "set-state! keeps canvas ready" (set-state! state))
+  (draw-cache-assert-true "canvas ready after set-state!" (draw-canvas-ready?))
+  (draw-cache-assert-true "commit stroke works"
+                          (draw-commit-stroke!
+                           {:points [[10 10] [40 40]]
+                            :color [255 0 0]
+                            :size 2}))
+  (draw-cache-assert-true "rebuild canvas works"
+                          (draw-rebuild-canvas! (current-state)))
+  (draw-cache-assert-true "canvas stays ready after rebuild"
+                          (draw-canvas-ready?)))
+(stop!)

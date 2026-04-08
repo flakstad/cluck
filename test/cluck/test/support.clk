@@ -1,0 +1,58 @@
+;; Shared test helpers for Cluck suites.
+
+(ns cluck.test.support
+  (:require [cluck.fs :as fs]
+            [cluck.string :as str]))
+
+(defn pass
+  [label]
+  (println "ok" label)
+  true)
+
+(defn fail
+  [label expected actual]
+  (error (string-append "test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(defn assert-true
+  [label value]
+  (if value
+      (pass label)
+      (fail label "truthy value" (pr-str value))))
+
+(defn assert-str=
+  [label expected actual]
+  (if (string=? expected actual)
+      (pass label)
+      (fail label expected actual)))
+
+(defn assert-num=
+  [label expected actual]
+  (if (= expected actual)
+      (pass label)
+      (fail label (str expected) (str actual))))
+
+(defn capture-output
+  [thunk]
+  (let [port (open-output-string)]
+    (parameterize ((current-output-port port))
+      (thunk))
+    (get-output-string port)))
+
+(defn string-prefix?
+  [prefix s]
+  (let [plen (string-length prefix)
+        slen (string-length s)]
+    (and (<= plen slen)
+         (string=? prefix (substring s 0 plen)))))
+
+(defn with-temp-file
+  [path contents thunk]
+  (dynamic-wind
+    (lambda () (fs/spit path contents))
+    thunk
+    (lambda () (fs/delete! path))))

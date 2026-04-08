@@ -1,0 +1,25 @@
+;; IO namespace smoke tests.
+
+(ns cluck.test.io
+  (:require [cluck.test.support :refer [assert-str=
+                                        assert-true]]
+            [cluck.fs :as fs]))
+
+(require [cluck.io :as io])
+
+(assert-str= "io port->string" "abc"
+             (io/port->string (open-input-string "abc")))
+(assert-str= "io with-input-string" "abc"
+             (io/with-input-string "abc"
+               (fn [in] (io/port->string in))))
+(assert-str= "io copy" "abc"
+             (io/with-output-string
+               (fn [out] (io/copy (open-input-string "abc") out))))
+(let [io-file "build/cluck-io-smoke.txt"]
+  (io/spit io-file "a\nb\n")
+  (assert-str= "io slurp path" "a\nb\n" (io/slurp io-file))
+  (assert-str= "io read-lines path" "(\"a\" \"b\")" (pr-str (io/read-lines io-file)))
+  (assert-str= "io write-lines port" "a\nb\n"
+               (io/with-output-string
+                 (fn [out] (io/write-lines out '("a" "b")))))
+  (fs/delete! io-file))

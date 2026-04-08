@@ -1,0 +1,11 @@
+;; EDN namespace smoke tests.
+
+(ns cluck.test.edn
+  (:require [cluck.test.support :refer [assert-str=]]))
+
+(require [cluck.edn :as edn])
+
+(assert-str= "edn read-string" "{:a 1}" (pr-str (edn/read-string "{:a 1}")))
+(assert-str= "doc edn read-string"
+             "edn/read-string\n\nRead one EDN form from STRING.\n"
+             (capture-output (lambda () (doc edn/read-string))))

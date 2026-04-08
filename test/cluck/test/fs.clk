@@ -1,0 +1,26 @@
+;; Filesystem namespace smoke tests.
+
+(ns cluck.test.fs
+  (:require [cluck.test.support :refer [assert-num=
+                                        assert-str=
+                                        assert-true]]))
+
+(require [cluck.fs :as fs])
+
+(assert-str= "fs path" "build/cluck-fs-smoke.txt" (fs/path "build" "cluck-fs-smoke.txt"))
+(assert-str= "fs basename" "cluck-fs-smoke.txt" (fs/basename "build/cluck-fs-smoke.txt"))
+(assert-str= "fs dirname" "build/" (fs/dirname "build/cluck-fs-smoke.txt"))
+(assert-str= "fs extension" "txt" (fs/extension "build/cluck-fs-smoke.txt"))
+(assert-true "fs absolute?" (fs/absolute? "/tmp"))
+(assert-true "fs exists? README" (fs/exists? "README.md"))
+(let [tmp (fs/path "build" "cluck-fs-smoke.txt")]
+  (fs/spit tmp "one\ntwo\n")
+  (assert-str= "fs slurp" "one\ntwo\n" (fs/slurp tmp))
+  (assert-true "fs file?" (fs/file? tmp))
+  (assert-true "fs directory?" (fs/directory? "build"))
+  (assert-true "fs delete!" (fs/delete! tmp))
+  (assert-true "fs delete! missing" (not (fs/delete! tmp))))
+(let [tmp (fs/path "build" "cluck-fs-delete-smoke.txt")]
+  (fs/spit tmp "gone\n")
+  (assert-true "fs delete!" (fs/delete! tmp))
+  (assert-true "fs delete! missing" (not (fs/delete! tmp))))
