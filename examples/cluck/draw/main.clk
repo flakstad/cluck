@@ -14,6 +14,7 @@
 (def *draw-running?* false)
 (def *draw-thread* nil)
 (def *draw-render-fn* nil)
+(def *draw-last-error* false)
 
 (defn draw-recent-events-limit
   []
@@ -165,6 +166,21 @@
   (assoc state
          :debug-panel? (not (get state :debug-panel?))))
 
+(defn draw-clear-error!
+  "Clear the last recorded draw error."
+  []
+  (set! *draw-last-error* false)
+  false)
+
+(defn draw-crash!
+  "Record EXN as the last draw error and stop the background loop."
+  [exn]
+  (set! *draw-last-error* exn)
+  (set! *draw-running?* false)
+  (set! *draw-thread* nil)
+  (println (format "Cluck Draw crashed: %s" exn))
+  exn)
+
 (defn draw-start-stroke
   "Start a new stroke from DESC."
   [state desc]
@@ -232,14 +248,22 @@
       (nth parts 1)
       nil)))
 
-(defn draw-event-coordinate
-  "Parse the first integer coordinate after LABEL in DESC."
+(defn draw-event-token-value
+  "Return the first raw value token after LABEL in DESC."
   [desc label]
   (let [tail (draw-event-token desc label)]
     (if (str/blank? tail)
+      nil
+      (let [token (first (str/split tail " "))]
+        (first (str/split token ")"))))))
+
+(defn draw-event-coordinate
+  "Parse the first integer coordinate after LABEL in DESC."
+  [desc label]
+  (let [token (draw-event-token-value desc label)]
+    (if (str/blank? token)
       0
-      (let [token (first (str/split tail " "))
-            whole (first (str/split token "."))]
+      (let [whole (first (str/split token "."))]
         (parse-long whole)))))
 
 (defn draw-bump-frame!
@@ -480,8 +504,13 @@
                             (format "last text: %s" (or (get state :last-text) "")))
     (sdl/render-debug-text! renderer 12 92
                             (format "last event: %s" (or (get state :last-event) "")))
+    (sdl/render-debug-text! renderer 12 108
+                            (format "last error: %s"
+                                    (if *draw-last-error*
+                                      (format "%s" *draw-last-error*)
+                                      "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 108
+      (sdl/render-debug-text! renderer 12 124
                               (format "recent: %s"
                                       (str/join " | " recent))))
     nil))
@@ -534,15 +563,17 @@
 (defn draw-loop
   "Render until the window is closed or the loop is stopped."
   []
-  (if *draw-running?*
-    (begin
-      (render-now!)
-      (if *draw-running?*
-        (begin
-          (thread-sleep! 0.016)
-          (draw-loop))
-        nil))
-    nil))
+  (handle-exceptions exn
+    (draw-crash! exn)
+    (if *draw-running?*
+      (begin
+        (render-now!)
+        (if *draw-running?*
+          (begin
+            (thread-sleep! 0.016)
+            (draw-loop))
+          nil))
+      nil)))
 
 (defn start!
   "Open the SDL window and prepare the draw state."
@@ -588,7 +619,11 @@
   []
   (if (and *draw-running?* *draw-context*)
     *draw-context*
-    (let [ctx (start!)]
+    (begin
+      (when *draw-context*
+        (stop!))
+      (draw-clear-error!)
+      (let [ctx (start!)]
       (if ctx
         (begin
           (render-now!)
@@ -599,7 +634,14 @@
                   "cluck-draw"))
           (thread-start! *draw-thread*)
           ctx)
-        nil))))
+        nil)))))
+
+(defn restart-dev!
+  "Restart the development window after a crash or reset."
+  []
+  (stop!)
+  (draw-clear-error!)
+  (start-dev!))
 
 (defn run-loop
   "Run until SDL asks us to quit."
@@ -654,5 +696,6 @@
   (describe-state (default-state))
   (load-file "examples/cluck/draw/dev.clk")
   (start-dev!)
+  (restart-dev!)
   (draw-toggle-debug-panel! (current-state))
   (main ["--help"]))
