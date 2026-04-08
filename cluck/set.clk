@@ -4,21 +4,18 @@
   "Set helpers for Cluck.")
 
 (define (cluck-set-copy coll)
-  (##core#let ((out (set)))
-    (##core#let loop ((xs (seq coll)))
-      (if (cluck-empty-seq? xs)
-          out
-          (begin
-            (conj out (car xs))
-            (loop (cdr xs)))))))
-
-(define (cluck-set-add-all! out coll)
-  (##core#let loop ((xs (seq coll)))
+  (##core#let loop ((xs (seq coll)) (out (set)))
     (if (cluck-empty-seq? xs)
         out
-        (begin
-          (conj out (car xs))
-          (loop (cdr xs))))))
+        (loop (cdr xs)
+              (conj out (car xs))))))
+
+(define (cluck-set-add-all out coll)
+  (##core#let loop ((xs (seq coll)) (acc out))
+    (if (cluck-empty-seq? xs)
+        acc
+        (loop (cdr xs)
+              (conj acc (car xs))))))
 
 (defn union
   "Return a set containing all items from COLLS."
@@ -26,9 +23,8 @@
   (##core#let loop ((xs colls) (out (set)))
     (if (cluck-empty-seq? xs)
         out
-        (begin
-          (cluck-set-add-all! out (car xs))
-          (loop (cdr xs) out)))))
+        (loop (cdr xs)
+              (cluck-set-add-all out (car xs))))))
 
 (defn intersection
   "Return a set containing items present in every collection."
@@ -40,14 +36,13 @@
      (##core#let ((first-set (cluck-set-copy (car colls)))
                   (others (map cluck-set-copy (cdr colls)))
                   (out (set)))
-       (##core#let loop ((xs (seq first-set)))
+       (##core#let loop ((xs (seq first-set)) (acc out))
          (if (cluck-empty-seq? xs)
-             out
+             acc
              (##core#let ((item (car xs)))
                (if (every? (lambda (s) (contains? s item)) others)
-                   (conj out item)
-                  false)
-              (loop (cdr xs))))))))
+                   (loop (cdr xs) (conj acc item))
+                   (loop (cdr xs) acc))))))))
 
 (defn difference
   "Return the items in S that are not present in the other collections."
@@ -55,14 +50,13 @@
   (##core#let ((base (cluck-set-copy s))
                (others (map cluck-set-copy others))
                (out (set)))
-    (##core#let loop ((xs (seq base)))
+    (##core#let loop ((xs (seq base)) (acc out))
       (if (cluck-empty-seq? xs)
-          out
+          acc
           (##core#let ((item (car xs)))
             (if (some (lambda (candidate) (contains? candidate item)) others)
-                false
-                (conj out item))
-            (loop (cdr xs)))))))
+                (loop (cdr xs) acc)
+                (loop (cdr xs) (conj acc item))))))))
 
 (defn subset?
   "Return true when A is a subset of B."
