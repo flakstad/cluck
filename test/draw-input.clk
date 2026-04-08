@@ -48,14 +48,14 @@
 (let [mouse-point (draw-event-point (default-state)
                                     "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")]
   (draw-input-assert-str= "mouse point pressure defaults to 1"
-                          "[12 34 1.0]"
+                          "[12.0 34.0 1.0]"
                           (pr-str mouse-point)))
 
 (let [pen-point (draw-event-point (assoc (default-state)
                                          :pen-pressure 0.5)
                                   "SDL_EVENT_PEN_MOTION x=12.0 y=34.0")]
   (draw-input-assert-str= "pen point carries pressure"
-                          "[12 34 0.5]"
+                          "[12.0 34.0 0.5]"
                           (pr-str pen-point)))
 
 (draw-input-assert-num= "pressure scales brush size"

@@ -104,10 +104,11 @@
   (let [original draw-render-stroke-segment!
         calls []]
     (set! draw-render-stroke-segment!
-          (fn [renderer a b size]
+          (fn [renderer state a b size]
             (set! calls (conj calls [a b size]))
             nil))
     (draw-render-stroke-segments! 'renderer
+                                  (default-state)
                                   [[10 10] [14 14] [18 18]]
                                   2)
     (draw-tools-assert-num= "stroke segment walker calls"

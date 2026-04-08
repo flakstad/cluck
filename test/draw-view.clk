@@ -1,0 +1,65 @@
+;; Focused draw-view probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-view-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-view-fail label expected actual)
+  (error (string-append "draw view test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-view-assert-true label value)
+  (if value
+      (draw-view-pass label)
+      (draw-view-fail label "truthy value" (pr-str value))))
+
+(define (draw-view-assert-str= label expected actual)
+  (if (string=? expected actual)
+      (draw-view-pass label)
+      (draw-view-fail label expected actual)))
+
+(define (draw-view-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-view-pass label)
+      (draw-view-fail label expected actual)))
+
+(draw-view-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
+
+(draw-view-assert-str= "screen point converts to world at default zoom"
+                       "[12.0 34.0 1.0]"
+                       (pr-str (draw-event-point (default-state)
+                                                "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")))
+
+(let [state (assoc (default-state)
+                   :view-x 10.0
+                   :view-y 20.0
+                   :zoom 2.0)]
+  (draw-view-assert-str= "world point converts to screen with viewport"
+                         "[10 12 1.0]"
+                         (pr-str (draw-world-point->screen-point state [15 26 1.0])))
+  (draw-view-assert-num= "screen brush size scales with zoom"
+                         8
+                         (draw-point-screen-size state [15 26 1.0] 4))
+  (draw-view-assert-str= "event point uses viewport transform"
+                         "[17.0 32.0 1.0]"
+                         (pr-str (draw-event-point state
+                                                  "SDL_EVENT_MOUSE_MOTION x=14.0 y=24.0"))))
+
+(let [zoomed (draw-handle-view-key! (default-state) "]")]
+  (draw-view-assert-true "zoom in changes zoom"
+                         (> (draw-view-zoom zoomed) 1.0)))
+
+(let [panned (draw-handle-view-key! (assoc (default-state)
+                                           :view-x 10.0
+                                           :view-y 20.0
+                                           :zoom 2.0)
+                                    "h")]
+  (draw-view-assert-num= "pan left updates view-x"
+                         -22.0
+                         (draw-view-x panned)))

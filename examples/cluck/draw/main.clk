@@ -67,6 +67,9 @@
    :brush-size 2
    :pen-pressure 1.0
    :window-focused? true
+   :view-x 0.0
+   :view-y 0.0
+   :zoom 1.0
    :running? true
    :frame 0
    :mouse-x 0
@@ -110,6 +113,73 @@
   "Install STATE after loading it from disk."
   [state]
   (draw-set-state-core! state))
+
+(defn draw-view-zoom
+  "Return the current zoom factor from STATE."
+  [state]
+  (let [zoom (or (get state :zoom) 1.0)]
+    (if (> zoom 0.1)
+      zoom
+      0.1)))
+
+(defn draw-view-x
+  "Return the current viewport X offset from STATE."
+  [state]
+  (or (get state :view-x) 0.0))
+
+(defn draw-view-y
+  "Return the current viewport Y offset from STATE."
+  [state]
+  (or (get state :view-y) 0.0))
+
+(defn draw-clamp
+  "Clamp VALUE between LOW and HIGH."
+  [value low high]
+  (cond
+    (< value low) low
+    (> value high) high
+    :else value))
+
+(defn draw-zoom-factor
+  "Return the zoom multiplier used by keyboard shortcuts."
+  []
+  1.125)
+
+(defn draw-pan-step
+  "Return the keyboard pan step in screen pixels."
+  []
+  64)
+
+(defn draw-screen-point->world-point
+  "Convert a screen POINT into world coordinates using STATE's viewport."
+  [state point]
+  (let [zoom (draw-view-zoom state)
+        vx (draw-view-x state)
+        vy (draw-view-y state)]
+    [(+ vx (/ (nth point 0) zoom))
+     (+ vy (/ (nth point 1) zoom))
+     (draw-point-pressure point)]))
+
+(defn draw-world-point->screen-point
+  "Convert a world POINT into screen coordinates using STATE's viewport."
+  [state point]
+  (let [zoom (draw-view-zoom state)
+        vx (draw-view-x state)
+        vy (draw-view-y state)]
+    [(draw-exact-int (math/round (* (- (nth point 0) vx) zoom)))
+     (draw-exact-int (math/round (* (- (nth point 1) vy) zoom)))
+     (draw-point-pressure point)]))
+
+(defn draw-point-screen-size
+  "Scale BASE-SIZE by POINT pressure and STATE zoom."
+  [state point base-size]
+  (let [zoom (draw-view-zoom state)
+        scaled (draw-exact-int (math/ceiling (* base-size
+                                                 (draw-point-pressure point)
+                                                 zoom)))]
+    (if (> scaled 0)
+      scaled
+      1)))
 
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
@@ -312,9 +382,11 @@
 (defn draw-event-point
   "Return the [x y pressure] coordinate for DESC."
   [state desc]
-  [(draw-event-coordinate desc "x=")
-   (draw-event-coordinate desc "y=")
-   (draw-event-pressure state desc)])
+  (draw-screen-point->world-point
+    state
+    [(draw-event-coordinate desc "x=")
+     (draw-event-coordinate desc "y=")
+     (draw-event-pressure state desc)]))
 
 (defn draw-event-key-label
   "Return the normalized key label for the current SDL key event."
@@ -441,10 +513,10 @@
 
 (defn draw-commit-stroke!
   "Render a single stroke into the cached canvas texture."
-  [stroke]
+  [state stroke]
   (draw-with-canvas!
     (lambda (renderer)
-      (draw-render-stroke! renderer stroke)
+      (draw-render-stroke! renderer state stroke)
       nil)))
 
 (defn draw-rebuild-canvas!
@@ -456,12 +528,12 @@
       (sdl/render-clear! renderer)
       (reduce (lambda (acc stroke)
                 (begin
-                  (draw-render-stroke! renderer stroke)
+                  (draw-render-stroke! renderer state stroke)
                   acc))
               nil
               (get state :strokes))
       (if (get state :active-stroke)
-        (draw-render-stroke! renderer (get state :active-stroke))
+        (draw-render-stroke! renderer state (get state :active-stroke))
         nil)
       nil)))
 
@@ -623,6 +695,96 @@
                   (draw-set-brush-size-core! state 12)
                   state))))))))
 
+(defn draw-handle-view-key!
+  "Apply zoom and pan shortcuts for KEY to STATE."
+  [state key]
+  (let [key (str/lower-case (or key ""))]
+    (cond
+      (or (string=? key "]")
+          (string=? key "+")
+          (string=? key "=")
+          (str/includes? key "plus"))
+      (let [next-state (assoc state
+                              :zoom (draw-clamp (* (draw-view-zoom state)
+                                                   (draw-zoom-factor))
+                                                0.1
+                                                16.0))]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      (or (string=? key "[")
+          (string=? key "-")
+          (str/includes? key "minus"))
+      (let [next-state (assoc state
+                              :zoom (draw-clamp (/ (draw-view-zoom state)
+                                                   (draw-zoom-factor))
+                                                0.1
+                                                16.0))]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      (or (string=? key "0")
+          (str/includes? key "kp0"))
+      (let [next-state (assoc state
+                              :view-x 0.0
+                              :view-y 0.0
+                              :zoom 1.0)]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      (or (string=? key "h")
+          (str/includes? key "left"))
+      (let [step (draw-pan-step)
+            next-state (assoc state
+                              :view-x (- (draw-view-x state)
+                                         (/ step (draw-view-zoom state))))]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      (or (string=? key "l")
+          (str/includes? key "right"))
+      (let [step (draw-pan-step)
+            next-state (assoc state
+                              :view-x (+ (draw-view-x state)
+                                         (/ step (draw-view-zoom state))))]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      (or (string=? key "k")
+          (str/includes? key "up"))
+      (let [step (draw-pan-step)
+            next-state (assoc state
+                              :view-y (- (draw-view-y state)
+                                         (/ step (draw-view-zoom state))))]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      (or (string=? key "j")
+          (str/includes? key "down"))
+      (let [step (draw-pan-step)
+            next-state (assoc state
+                              :view-y (+ (draw-view-y state)
+                                         (/ step (draw-view-zoom state))))]
+        (if (draw-canvas-ready?)
+          (draw-rebuild-canvas! next-state)
+          nil)
+        next-state)
+
+      :else
+      state)))
+
 (defn draw-crash!
   "Record EXN as the last draw error and stop the background loop."
   [exn]
@@ -661,7 +823,7 @@
   "Start a new stroke from DESC."
   [state desc]
   (let [point (draw-event-point state desc)]
-    (let [state (draw-push-history! state)
+      (let [state (draw-push-history! state)
           next-state (assoc state
                             :pointer-down? true
                             :active-stroke {:points [point]
@@ -670,7 +832,7 @@
                             :mouse-x (nth point 0)
                             :mouse-y (nth point 1))]
       (if (draw-canvas-ready?)
-        (draw-commit-stroke! (get next-state :active-stroke))
+        (draw-commit-stroke! next-state (get next-state :active-stroke))
         nil)
       next-state)))
 
@@ -680,7 +842,7 @@
   (let [point (draw-event-point state desc)
         stroke (get state :active-stroke)]
     (if stroke
-      (let [points (get stroke :points)
+        (let [points (get stroke :points)
             previous (last points)
             next-stroke (assoc stroke
                                :points (conj points point))
@@ -689,7 +851,8 @@
                               :mouse-y (nth point 1)
                               :active-stroke next-stroke)]
         (if (draw-canvas-ready?)
-          (draw-commit-stroke! (assoc stroke
+          (draw-commit-stroke! next-state
+                               (assoc stroke
                                       :points [previous point]))
           nil)
         next-state)
@@ -712,7 +875,8 @@
                                 :active-stroke false
                                 :strokes (conj (get state :strokes) finished))]
           (if (draw-canvas-ready?)
-            (draw-commit-stroke! (assoc stroke
+            (draw-commit-stroke! next-state
+                                 (assoc stroke
                                         :points [previous point]))
             nil)
           next-state)
@@ -789,8 +953,9 @@
             state (assoc state
                          :last-key key-label
                          :last-key-desc desc)]
-        (if (draw-kind=? kind :key-down)
-          (let [state (draw-handle-tool-key! state key-label)]
+      (if (draw-kind=? kind :key-down)
+          (let [state (draw-handle-view-key! state key-label)
+                state (draw-handle-tool-key! state key-label)]
             (if (draw-toggle-debug-panel-key? key-label)
               (draw-toggle-debug-panel! state)
               state))
@@ -823,9 +988,10 @@
         (draw-extend-stroke state desc)
 
         :else
-        (assoc state
-               :mouse-x (draw-event-coordinate desc "x=")
-               :mouse-y (draw-event-coordinate desc "y=")))
+        (let [point (draw-event-point state desc)]
+          (assoc state
+                 :mouse-x (nth point 0)
+                 :mouse-y (nth point 1))))
 
       (or (draw-kind=? kind :pen-motion)
           (draw-kind=? kind :pen-down)
@@ -844,9 +1010,10 @@
         (draw-extend-stroke state desc)
 
         :else
-        (assoc state
-               :mouse-x (draw-event-coordinate desc "x=")
-               :mouse-y (draw-event-coordinate desc "y=")))
+        (let [point (draw-event-point state desc)]
+          (assoc state
+                 :mouse-x (nth point 0)
+                 :mouse-y (nth point 1))))
 
       (draw-kind=? kind :pen-axis)
       (let [point (draw-event-point state desc)]
@@ -887,9 +1054,12 @@
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %d,%d key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
-          (get *draw-state* :mouse-x)
-          (get *draw-state* :mouse-y)
+  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+          (or (get *draw-state* :mouse-x) 0.0)
+          (or (get *draw-state* :mouse-y) 0.0)
+          (draw-view-x *draw-state*)
+          (draw-view-y *draw-state*)
+          (draw-view-zoom *draw-state*)
           (or (get *draw-state* :last-key) "")
           (or (get *draw-state* :last-text) "")
           (or (get *draw-state* :last-event) "")
@@ -934,13 +1104,16 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
           (get state :title)
           (get state :width)
           (get state :height)
           (get state :frame)
-          (get state :mouse-x)
-          (get state :mouse-y)
+          (or (get state :mouse-x) 0.0)
+          (or (get state :mouse-y) 0.0)
+          (draw-view-x state)
+          (draw-view-y state)
+          (draw-view-zoom state)
           (or (get state :last-key) "")
           (or (get state :last-text) "")
           (count (get state :strokes))
@@ -1020,24 +1193,25 @@
 
 (defn draw-render-stroke-point-step!
   "Sample a line segment between A and B with pressure-aware brushes."
-  [renderer x1 y1 p1 dx dy dp size steps i]
+  [renderer state x1 y1 p1 dx dy dp size steps i]
   (if (> i steps)
     nil
-    (let [x (draw-exact-int (+ x1 (math/quotient (* dx i) steps)))
-          y (draw-exact-int (+ y1 (math/quotient (* dy i) steps)))
+    (let [x (+ x1 (/ (* dx i) steps))
+          y (+ y1 (/ (* dy i) steps))
           pressure (+ p1 (/ (* dp i) steps))]
-      (draw-render-stroke-brush! renderer [x y pressure] size)
-      (draw-render-stroke-point-step! renderer x1 y1 p1 dx dy dp size steps (+ i 1)))))
+      (draw-render-stroke-brush! renderer state [x y pressure] size)
+      (draw-render-stroke-point-step! renderer state x1 y1 p1 dx dy dp size steps (+ i 1)))))
 
 (defn draw-render-stroke-point!
   "Render a single stroke sample at POINT."
-  [renderer point size]
-  (draw-render-stroke-brush! renderer point size))
+  [renderer state point size]
+  (draw-render-stroke-brush! renderer state point size))
 
 (defn draw-render-stroke-brush!
   "Render a single stroke sample at POINT."
-  [renderer point size]
-  (let [base-size (draw-point-size point size)
+  [renderer state point size]
+  (let [screen-point (draw-world-point->screen-point state point)
+        base-size (draw-point-screen-size state point size)
         mid-size (if (> base-size 1)
                    (draw-exact-int (math/ceiling (/ base-size 2)))
                    base-size)
@@ -1047,17 +1221,17 @@
         alpha (draw-point-alpha point)
         mid-alpha (draw-exact-int (math/ceiling (/ alpha 2)))
         outer-alpha (draw-exact-int (math/ceiling (/ alpha 4)))]
-    (draw-soft-brush-layer! renderer point base-size alpha)
+    (draw-soft-brush-layer! renderer screen-point base-size alpha)
     (if (> mid-size 0)
-      (draw-soft-brush-layer! renderer point mid-size mid-alpha)
+      (draw-soft-brush-layer! renderer screen-point mid-size mid-alpha)
       nil)
     (if (> outer-size 0)
-      (draw-soft-brush-layer! renderer point outer-size outer-alpha)
+      (draw-soft-brush-layer! renderer screen-point outer-size outer-alpha)
       nil)))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
-  [renderer a b size]
+  [renderer state a b size]
   (let [x1 (nth a 0)
         y1 (nth a 1)
         p1 (draw-point-pressure a)
@@ -1069,12 +1243,14 @@
         distance (if (> (math/abs dx) (math/abs dy))
                    (math/abs dx)
                    (math/abs dy))
-        radius (draw-brush-radius size)
+        radius-a (draw-brush-radius (draw-point-size a size))
+        radius-b (draw-brush-radius (draw-point-size b size))
+        radius (if (< radius-a radius-b) radius-a radius-b)
         steps (draw-exact-int (math/ceiling (/ distance radius)))
         dp (- p2 p1)]
     (if (<= steps 0)
-      (draw-render-stroke-brush! renderer a size)
-      (draw-render-stroke-point-step! renderer
+      (draw-render-stroke-brush! renderer state a size)
+      (draw-render-stroke-point-step! renderer state
                                       x1
                                       y1
                                       p1
@@ -1087,14 +1263,14 @@
 
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
-  [renderer points size]
+  [renderer state points size]
   (let [total (count points)]
     (if (<= total 1)
       nil
       (begin
         (reduce (fn [previous point]
                   (begin
-                    (draw-render-stroke-segment! renderer previous point size)
+                    (draw-render-stroke-segment! renderer state previous point size)
                     point))
                 (first points)
                 (rest points))
@@ -1102,7 +1278,7 @@
 
 (defn draw-render-stroke!
   "Render a stroke map."
-  [renderer stroke]
+  [renderer state stroke]
   (let [points (get stroke :points)
         color (get stroke :color)
         size (get stroke :size)]
@@ -1110,8 +1286,8 @@
       nil
       (draw-with-stroke-color color
         (lambda ()
-          (draw-render-stroke-point! renderer (first points) size)
-          (draw-render-stroke-segments! renderer points size))))))
+          (draw-render-stroke-point! renderer state (first points) size)
+          (draw-render-stroke-segments! renderer state points size))))))
 
 (defn draw-render-strokes!
   "Render all finished strokes and the active stroke."
@@ -1121,12 +1297,12 @@
         active (get state :active-stroke)]
     (reduce (fn [acc stroke]
               (begin
-                (draw-render-stroke! renderer stroke)
+                (draw-render-stroke! renderer state stroke)
                 acc))
             nil
             strokes)
     (if active
-      (draw-render-stroke! renderer active)
+      (draw-render-stroke! renderer state active)
       nil)))
 
 (defn draw-render-canvas!
@@ -1148,40 +1324,45 @@
     (sdl/set-draw-color! renderer 245 245 245 255)
     (sdl/render-debug-text! renderer 12 12 (describe-state state))
     (sdl/render-debug-text! renderer 12 28
-                            (format "mouse: %d, %d" mouse-x mouse-y))
+                            (format "mouse: %.1f, %.1f" mouse-x mouse-y))
     (sdl/render-debug-text! renderer 12 44
+                            (format "view: %.1f, %.1f zoom: %.2f"
+                                    (draw-view-x state)
+                                    (draw-view-y state)
+                                    (draw-view-zoom state)))
+    (sdl/render-debug-text! renderer 12 60
                             (format "pointer: %s active: %d"
                                     (if (get state :pointer-down?) "down" "up")
                                     (if (get state :active-stroke)
                                       (count (get (get state :active-stroke) :points))
                                       0)))
-    (sdl/render-debug-text! renderer 12 60
+    (sdl/render-debug-text! renderer 12 76
                             (format "tool: %s size: %d color: %s"
                                     (draw-tool-mode state)
                                     (get state :brush-size)
                                     (pr-str (draw-stroke-color state))))
-    (sdl/render-debug-text! renderer 12 76
+    (sdl/render-debug-text! renderer 12 92
                             (format "undo history: %d"
                                     (count (get state :history))))
-    (sdl/render-debug-text! renderer 12 92
+    (sdl/render-debug-text! renderer 12 108
                             (format "focus: %s pressure: %.2f"
                                     (if (get state :window-focused?) "on" "off")
                                     (or (get state :pen-pressure) 1.0)))
-    (sdl/render-debug-text! renderer 12 108
-                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 124
-                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
+                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 140
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
     (sdl/render-debug-text! renderer 12 156
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last text: %s" (or (get state :last-text) "")))
     (sdl/render-debug-text! renderer 12 172
+                            (format "last event: %s" (or (get state :last-event) "")))
+    (sdl/render-debug-text! renderer 12 188
                             (format "last error: %s"
                                     (if *draw-last-error*
                                       (format "%s" *draw-last-error*)
                                       "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 188
+      (sdl/render-debug-text! renderer 12 204
                               (format "recent: %s"
                                       (str/join " | " recent))))
     nil))
@@ -1191,9 +1372,13 @@
   [ctx state]
   (let [renderer (get ctx :renderer)
         mouse-x (get state :mouse-x)
-        mouse-y (get state :mouse-y)]
+        mouse-y (get state :mouse-y)
+        pressure (or (get state :pen-pressure) 1.0)
+        marker-point [mouse-x mouse-y pressure]
+        marker-size (draw-point-screen-size state marker-point 3)
+        screen-point (draw-world-point->screen-point state marker-point)]
     (sdl/set-draw-color! renderer 220 180 90 255)
-    (draw-render-brush! renderer [mouse-x mouse-y] 3)
+    (draw-render-brush! renderer screen-point marker-size)
     (if (get state :debug-panel?)
       (draw-render-debug-panel! renderer state)
       nil)

@@ -269,6 +269,10 @@ press `d` to toggle the debug panel on demand. The current tool shortcuts are:
 - `c` clear the canvas
 - `e` eraser
 - `1`/`2`/`3` brush sizes
+- `]`/`+`/`=` zoom in
+- `[`/`-` zoom out
+- `h`/`j`/`k`/`l` pan left/down/up/right
+- `0` reset the viewport
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
 State changes redraw the live window immediately, and the resulting release
@@ -297,6 +301,7 @@ It is loaded by:
 - [`test/run-draw-toggle.scm`](./test/run-draw-toggle.scm)
 - [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
 - [`test/run-draw-save-load.scm`](./test/run-draw-save-load.scm)
+- [`test/run-draw-view.scm`](./test/run-draw-view.scm)
 - [`test/run-draw-input.scm`](./test/run-draw-input.scm)
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
@@ -308,6 +313,7 @@ csi -q -s test/run.scm
 csi -q -s test/run-draw-toggle.scm
 csi -q -s test/run-draw-tools.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-save-load.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-view.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
