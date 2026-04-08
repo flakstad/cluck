@@ -25,9 +25,9 @@
   :type 'string
   :group 'cluck)
 
-(defcustom cluck-draw-repl-buffer-name "*Cluck Draw*"
-  "Buffer name used for the Cluck draw REPL."
-  :type 'string
+(defcustom cluck-draw-bootstrap-timeout 60.0
+  "Seconds to wait while loading the SDL3 draw dev bootstrap."
+  :type 'number
   :group 'cluck)
 
 (defvar cluck--last-source-buffer nil)
@@ -65,42 +65,26 @@
     (and path
          (string-match-p "/examples/cluck/draw/" path))))
 
-(defun cluck--repl-buffer-name (&optional start)
-  "Return the Cluck REPL buffer name for START."
-  (if (cluck--draw-source-p start)
-      cluck-draw-repl-buffer-name
-    cluck-repl-buffer-name))
-
-(defun cluck--draw-repl-command (&optional start)
-  "Return the command list used to launch the Cluck draw REPL."
-  (let* ((root (file-name-as-directory (cluck--project-root start)))
-         (native (expand-file-name "build/draw" root))
-         (runner (expand-file-name "examples/cluck/draw/run.scm" root)))
-    (cond
-      ((file-executable-p native)
-       (list native "--repl"))
-      ((file-readable-p runner)
-       (list "csi" "-q" "-s" runner "--repl"))
-      (t
-       (error "Could not find a Cluck draw REPL launcher")))))
+(defun cluck--draw-dev-bootstrap-path (&optional start)
+  "Return the absolute path to the draw development bootstrap."
+  (expand-file-name "examples/cluck/draw/dev.scm"
+                    (file-name-as-directory (cluck--project-root start))))
 
 (defun cluck--repl-command (&optional start)
   "Return the command list used to launch a Cluck REPL."
-  (if (cluck--draw-source-p start)
-      (cluck--draw-repl-command start)
-    (let* ((root (file-name-as-directory (cluck--project-root start)))
-           (native (expand-file-name "build/cluck" root))
-           (launcher (expand-file-name "src/cluck-cli.scm" root))
-           (fallback (executable-find cluck-fallback-executable)))
-      (cond
-        ((file-executable-p native)
-         (list native))
-        ((file-readable-p launcher)
-         (list "csi" "-q" "-s" launcher))
-        (fallback
-         (list fallback))
-        (t
-         (error "Could not find a Cluck REPL launcher"))))))
+  (let* ((root (file-name-as-directory (cluck--project-root start)))
+         (native (expand-file-name "build/cluck" root))
+         (launcher (expand-file-name "src/cluck-cli.scm" root))
+         (fallback (executable-find cluck-fallback-executable)))
+    (cond
+     ((file-readable-p launcher)
+      (list "csi" "-q" "-s" launcher))
+     ((file-executable-p native)
+      (list native))
+     (fallback
+      (list fallback))
+     (t
+      (error "Could not find a Cluck REPL launcher")))))
 
 (defun cluck--prompt-present-p (buffer)
   "Return non-nil if BUFFER already shows a Cluck prompt."
@@ -133,7 +117,7 @@
   "Return a live Cluck REPL buffer, starting one if needed."
   (let* ((root (file-name-as-directory (cluck--project-root start)))
          (default-directory root)
-         (buffer (get-buffer-create (cluck--repl-buffer-name start))))
+         (buffer (get-buffer-create cluck-repl-buffer-name)))
     (unless (comint-check-proc buffer)
       (let* ((command (cluck--repl-command start))
              (program (car command))
@@ -154,12 +138,15 @@
   (pop-to-buffer (cluck--ensure-repl-buffer)))
 
 (defun cluck-draw-repl ()
-  "Pop to the Cluck draw REPL, starting it if necessary."
+  "Pop to the Cluck draw REPL, starting the generic REPL and loading the draw bootstrap."
   (interactive)
-  (pop-to-buffer (cluck--ensure-repl-buffer (expand-file-name
-                                             "examples/cluck/draw/main.clk"
-                                             (file-name-as-directory
-                                              (cluck--project-root))))))
+  (let* ((buffer (cluck--ensure-repl-buffer))
+         (output (cluck--send-string
+                  (cluck--load-file-command (cluck--draw-dev-bootstrap-path))
+                  nil
+                  cluck-draw-bootstrap-timeout)))
+    (pop-to-buffer buffer)
+    (cluck--show-echo-output output "Cluck draw dev bootstrap loaded")))
 
 (defun cluck-switch-to-repl ()
   "Pop to the context-appropriate Cluck REPL."
@@ -183,10 +170,17 @@
 (defun cluck--show-echo-output (output &optional fallback)
   "Show OUTPUT in the echo area, or FALLBACK when OUTPUT is empty."
   (let ((text (cluck--trim-output output)))
-    (message "%s" (if (string= text "") (or fallback "") text))
+    (message "%s" (if (or (string= text "") (string= text "loaded"))
+                      (or fallback "")
+                    text))
     text))
 
-(defun cluck--eval-string-sync (string &optional start)
+(defun cluck--load-file-command (path)
+  "Return a Cluck expression that loads PATH and prints any error."
+  (format "(handle-exceptions exn (list 'error exn) (begin (load-file %S) 'loaded))"
+          path))
+
+(defun cluck--eval-string-sync (string &optional start timeout)
   "Evaluate STRING in the Cluck REPL and return the captured output."
   (let* ((buffer (cluck--ensure-repl-buffer start))
          (process (get-buffer-process buffer))
@@ -197,7 +191,7 @@
           (with-current-buffer buffer
             (comint-redirect-send-command-to-process string output-buffer process t t))
           (with-current-buffer buffer
-            (let ((deadline (+ (float-time) 10.0)))
+            (let ((deadline (+ (float-time) (or timeout 10.0))))
               (while (and (not comint-redirect-completed)
                           (< (float-time) deadline))
                 (accept-process-output process 0.1)))
@@ -211,10 +205,10 @@
         (kill-buffer output-buffer)))
     result))
 
-(defun cluck--send-string (string &optional start)
+(defun cluck--send-string (string &optional start timeout)
   "Send STRING to the Cluck REPL and return its output."
   (setq cluck--last-source-buffer (current-buffer))
-  (cluck--eval-string-sync string start))
+  (cluck--eval-string-sync string start timeout))
 
 (defun cluck--show-inline-result (end result)
   "Show RESULT inline after END."

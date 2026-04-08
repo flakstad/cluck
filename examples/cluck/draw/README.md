@@ -8,7 +8,7 @@ What is in place:
 - a compiled runner entrypoint in `run.scm`
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
 - a first SDL3 window-open loop that clears the screen until quit
-- a `--repl` development mode that starts the window and then drops into the Cluck REPL
+- a REPL-first development bootstrap in `dev.scm` that loads SDL3 after the normal Cluck REPL starts
 - live mouse position and keyboard-event overlays in the window
 
 What is not here yet:
@@ -25,12 +25,12 @@ csi -q -s examples/cluck/draw/run.scm
 
 The intent is to build this interactively in small steps:
 1. keep the SDL3 boundary isolated in `cluck.sdl3`
-2. use `./build/draw --repl` to open the window and experiment live from the Cluck REPL
+2. start a normal Cluck REPL, then load `examples/cluck/draw/dev.scm` to open the window and experiment live
 3. extend the window loop with input and drawing commands
 4. add byte-buffer and texture work as needed
 
-If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the draw
-REPL buffer, which runs `./build/draw --repl`.
+If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the Cluck
+REPL and loads `examples/cluck/draw/dev.scm` into it.
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

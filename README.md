@@ -233,24 +233,26 @@ clear-and-quit loop:
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
 It uses direct C interop through `cluck.sdl3`, but the application logic stays
-in Cluck. The launcher vendors a static SDL3 build into `build/vendor/` and
-compiles a self-contained native binary:
+in Cluck. The release launcher vendors a static SDL3 build into `build/vendor/`
+and compiles a self-contained native binary:
 
 ```bash
 csi -q -s examples/cluck/draw/run.scm
 ./build/draw
 ```
 
-For REPL-driven work, run `./build/draw --repl`. That opens the window,
-starts a background render loop, and then drops you into the Cluck REPL so
-you can call functions like `set-background!`, `set-render-fn!`, `render-now!`,
-`mouse-position`, `input-summary`, and `stop!` while the window stays open. The
-resulting binary is self-contained and does not depend on a separately
-installed SDL3 dylib.
+For REPL-driven work, start a normal Cluck REPL and load
+`examples/cluck/draw/dev.scm`. That bootstrap compiles a loadable SDL3
+extension on demand, loads it into the current REPL process, opens the window,
+and starts the background render loop so you can call functions like
+`set-background!`, `set-render-fn!`, `render-now!`, `mouse-position`,
+`input-summary`, and `stop!` while the window stays open. The resulting release
+binary is self-contained and does not depend on a separately installed SDL3
+dylib.
 
 In `cluck-mode`, `C-c C-z` switches to the context-appropriate REPL buffer.
-When you are editing the draw example, that command opens the draw REPL
-buffer, which runs `./build/draw --repl`.
+When you are editing the draw example, that command opens the ordinary Cluck
+REPL buffer and then loads `examples/cluck/draw/dev.scm` into it.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.

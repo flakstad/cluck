@@ -281,7 +281,9 @@
 (defn start!
   "Open the SDL window and prepare the draw state."
   []
-  (if (not (init-video!))
+  (if (and *draw-running?* *draw-context*)
+    *draw-context*
+    (if (not (init-video!))
     (begin
       (println (format "SDL init failed: %s" (last-error)))
       nil)
@@ -299,7 +301,7 @@
             (set! *draw-context* ctx)
             (set! *draw-running?* true)
             (draw-sync-title!)
-            ctx)))))
+            ctx))))))
 
 (defn stop!
   "Stop the draw loop and close the SDL context."
@@ -309,23 +311,26 @@
     (begin
       (sdl/close-context! *draw-context*)
       (set! *draw-context* nil)))
+  (set! *draw-thread* nil)
   (shutdown!)
   nil)
 
 (defn start-dev!
   "Start the SDL window and background loop for REPL-driven development."
   []
-  (let [ctx (start!)]
-    (if ctx
-      (begin
-        (set! *draw-thread*
-              (make-thread
-                (lambda ()
-                  (draw-loop))
-                "cluck-draw"))
-        (thread-start! *draw-thread*)
-        ctx)
-      nil)))
+  (if (and *draw-running?* *draw-context*)
+    *draw-context*
+    (let [ctx (start!)]
+      (if ctx
+        (begin
+          (set! *draw-thread*
+                (make-thread
+                  (lambda ()
+                    (draw-loop))
+                  "cluck-draw"))
+          (thread-start! *draw-thread*)
+          ctx)
+        nil))))
 
 (defn run-loop
   "Run until SDL asks us to quit."
