@@ -632,16 +632,14 @@
   (let [total (count points)]
     (if (<= total 1)
       nil
-      (let [loop (fn [i]
-                   (if (>= i total)
-                     nil
-                     (begin
-                       (draw-render-stroke-segment! renderer
-                                                    (nth points (- i 1))
-                                                    (nth points i)
-                                                    size)
-                       (loop (+ i 1)))))]
-        (loop 1)))))
+      (begin
+        (reduce (fn [previous point]
+                  (begin
+                    (draw-render-stroke-segment! renderer previous point size)
+                    point))
+                (first points)
+                (rest points))
+        nil))))
 
 (defn draw-render-stroke!
   "Render a stroke map."

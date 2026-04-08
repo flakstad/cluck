@@ -97,4 +97,21 @@
   (let [tool-state (draw-handle-tool-key! (default-state) "3")]
     (draw-tools-assert-str= "brush size key preset"
                             "12"
-                            (str (get tool-state :brush-size)))))
+                            (str (get tool-state :brush-size))))
+
+  (let [original draw-render-stroke-segment!
+        calls []]
+    (set! draw-render-stroke-segment!
+          (fn [renderer a b size]
+            (set! calls (conj calls [a b size]))
+            nil))
+    (draw-render-stroke-segments! 'renderer
+                                  [[10 10] [14 14] [18 18]]
+                                  2)
+    (draw-tools-assert-num= "stroke segment walker calls"
+                            2
+                            (count calls))
+    (draw-tools-assert-str= "stroke segment first call"
+                            "[[10 10] [14 14] 2]"
+                            (pr-str (first calls)))
+    (set! draw-render-stroke-segment! original)))
