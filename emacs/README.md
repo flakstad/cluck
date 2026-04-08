@@ -21,7 +21,7 @@ files into a directory already on your `load-path`.
 - `cluck-mode` for editing `*.clk` files
 - REPL launch and switching commands, including a draw-aware `C-c C-z`
   dispatcher that opens the normal Cluck REPL and then loads
-  `examples/cluck/draw/dev.scm`, plus an explicit `cluck-draw-repl` command
+  `examples/cluck/draw/dev.clk`, plus an explicit `cluck-draw-repl` command
 - inline eval overlays
 - doc lookup with `C-c C-d`
 - definition jumping with `M-.`

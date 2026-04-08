@@ -1,0 +1,79 @@
+;; REPL-first development bootstrap for the SDL3 drawing example.
+;;
+;; Load this from a normal Cluck REPL after starting the project runtime:
+;;
+;;   (load-file "examples/cluck/draw/dev.clk")
+;;
+;; It compiles a loadable SDL3 extension on demand, loads it into the current
+;; process, then loads the draw example and starts the background loop.
+
+(ns cluck.examples.draw.dev
+  "REPL-first development bootstrap for the SDL3 drawing example."
+  (:require [cluck.fs :as fs]
+            [cluck.process :as proc]
+            [cluck.string :as str]))
+
+(defn draw-dev-root
+  []
+  (fs/cwd))
+
+(defn draw-dev-vendor-pkg-config-path
+  [root]
+  (fs/path root "build/vendor/sdl3-static/lib/pkgconfig"))
+
+(defn draw-dev-loadable-source-path
+  [root]
+  (fs/path root "examples/cluck/draw/dev-loadable.scm"))
+
+(defn draw-dev-library-path
+  [root]
+  (fs/path root "build/dev/cluck-sdl3.so"))
+
+(defn draw-dev-source-path
+  [root]
+  (fs/path root "cluck/sdl3.clk"))
+
+(defn draw-dev-pkg-config
+  [root args]
+  (let [result (proc/sh (format "PKG_CONFIG_PATH=%s pkg-config %s"
+                                (proc/qs (draw-dev-vendor-pkg-config-path root))
+                                args))]
+    (if (zero? (get result :exit))
+      (str/trim (get result :out))
+      (error (format "pkg-config failed for %s: %s"
+                     args
+                     (get result :out))))))
+
+(defn draw-dev-library-build-command
+  [root]
+  (format "cd %s && csc -v -s -J -unit cluck.sdl3 -o %s %s %s -L \"%s\""
+          (proc/qs root)
+          (proc/qs (draw-dev-library-path root))
+          (proc/qs (draw-dev-loadable-source-path root))
+          (draw-dev-pkg-config root "--cflags sdl3")
+          (draw-dev-pkg-config root "--libs --static sdl3")))
+
+(defn draw-dev-ensure-directory!
+  [path]
+  (if (not (fs/directory? path))
+    (create-directory path)
+    path))
+
+(defn draw-dev-ensure-library!
+  [root]
+  (let [lib (draw-dev-library-path root)]
+    (if (not (fs/file? lib))
+      (begin
+        (draw-dev-ensure-directory! (fs/path root "build"))
+        (draw-dev-ensure-directory! (fs/path root "build/dev"))
+        (if (not (zero? (proc/system (draw-dev-library-build-command root))))
+          (error "SDL3 dev library build failed"))
+        lib)
+      lib)))
+
+(let [root (draw-dev-root)
+      lib (draw-dev-ensure-library! root)
+      app (fs/path root "examples/cluck/draw/main.clk")]
+  (load-library 'cluck.sdl3 lib)
+  (load-file app)
+  (start-dev!))

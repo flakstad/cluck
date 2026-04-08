@@ -67,7 +67,7 @@
 
 (defun cluck--draw-dev-bootstrap-path (&optional start)
   "Return the absolute path to the draw development bootstrap."
-  (expand-file-name "examples/cluck/draw/dev.scm"
+  (expand-file-name "examples/cluck/draw/dev.clk"
                     (file-name-as-directory (cluck--project-root start))))
 
 (defun cluck--repl-command (&optional start)
