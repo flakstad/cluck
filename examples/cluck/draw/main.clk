@@ -152,6 +152,14 @@
   [(draw-event-coordinate desc "x=")
    (draw-event-coordinate desc "y=")])
 
+(defn draw-event-key-label
+  "Return the normalized key label for the current SDL key event."
+  [desc]
+  (let [key (str/trim (sdl/event-key-name))]
+    (if (str/blank? key)
+      desc
+      key)))
+
 (defn draw-toggle-debug-panel!
   "Toggle the in-window debug panel."
   [state]
@@ -159,9 +167,14 @@
          :debug-panel? (not (get state :debug-panel?))))
 
 (defn draw-toggle-debug-panel-key?
-  "Return true when DESC should toggle the debug panel."
-  [desc]
-  (str/includes? (str/lower-case desc) "key=d"))
+  "Return true when KEY should toggle the debug panel."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "d")
+        (string=? key "f1")
+        (str/includes? key "key=d")
+        (str/includes? key "sdlk_d")
+        (str/includes? key "scancode_d"))))
 
 (defn draw-clear-error!
   "Clear the last recorded draw error."
@@ -281,10 +294,12 @@
     (cond
       (or (draw-kind=? kind :key-down)
           (draw-kind=? kind :key-up))
-      (let [state (assoc state
-                         :last-key desc)]
+      (let [key-label (draw-event-key-label desc)
+            state (assoc state
+                         :last-key key-label
+                         :last-key-desc desc)]
         (if (and (draw-kind=? kind :key-down)
-                 (draw-toggle-debug-panel-key? desc))
+                 (draw-toggle-debug-panel-key? key-label))
           (draw-toggle-debug-panel! state)
           state))
 
@@ -497,16 +512,18 @@
     (sdl/render-debug-text! renderer 12 60
                             (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 76
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
     (sdl/render-debug-text! renderer 12 92
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last text: %s" (or (get state :last-text) "")))
     (sdl/render-debug-text! renderer 12 108
+                            (format "last event: %s" (or (get state :last-event) "")))
+    (sdl/render-debug-text! renderer 12 124
                             (format "last error: %s"
                                     (if *draw-last-error*
                                       (format "%s" *draw-last-error*)
                                       "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 124
+      (sdl/render-debug-text! renderer 12 140
                               (format "recent: %s"
                                       (str/join " | " recent))))
     nil))

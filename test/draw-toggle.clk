@@ -1,0 +1,24 @@
+;; Focused draw-input probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-toggle-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-toggle-fail label expected actual)
+  (error (string-append "draw toggle test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-toggle-assert-true label value)
+  (if value
+      (draw-toggle-pass label)
+      (draw-toggle-fail label "truthy value" (pr-str value))))
+
+(draw-toggle-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
+(draw-toggle-assert-true "draw toggle d" (draw-toggle-debug-panel-key? "d"))
+(draw-toggle-assert-true "draw toggle F1" (draw-toggle-debug-panel-key? "F1"))

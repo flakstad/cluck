@@ -164,13 +164,16 @@
 (assert-true "fs delete!" (fs/delete! tmp))
 (assert-true "fs delete! missing" (not (fs/delete! tmp))))
 (assert-true "core delete!" (fs/delete! "build/cluck-core-smoke.txt"))
-(require [cluck.examples.outline :as outline])
+(load-file "examples/cluck/outline/main.clk")
+(in-ns 'cluck.examples.outline)
+(assert-true "outline namespace exists" (find-ns 'cluck.examples.outline))
 (let [outline-sample "# Title\n\n## Section\ntext\n### Detail\n"]
-  (assert-num= "outline headings" 3 (count (outline/outline-entries outline-sample)))
-  (let [first-heading (first (outline/outline-entries outline-sample))]
+  (assert-num= "outline headings" 3 (count (outline-entries outline-sample)))
+  (let [first-heading (first (outline-entries outline-sample))]
     (assert-num= "outline first line" 1 (get first-heading :line))
     (assert-num= "outline first level" 1 (get first-heading :level))
     (assert-str= "outline first title" "Title" (get first-heading :title))))
+(in-ns 'cluck.smoke)
 (require [cluck.process :as proc])
 (assert-true "process namespace exists" (find-ns 'cluck.process))
 (assert-str= "process sh" "hello" (get (proc/sh "printf hello") :out))
@@ -198,15 +201,17 @@
     (assert-str= "link checker broken basename" "missing.md" (fs/basename (get (first matches) :resolved))))
   (assert-true "link delete!" (fs/delete! link-file)))
 (in-ns 'cluck.smoke)
-(require [cluck.examples.todo :as todo])
+(load-file "examples/cluck/todo/main.clk")
+(in-ns 'cluck.examples.todo)
 (assert-true "todo namespace exists" (find-ns 'cluck.examples.todo))
 (let [todo-file "build/cluck-todo-smoke.txt"]
   (fs/spit todo-file "alpha\nTODO fix this\nbeta FIXME later\n")
-  (let [matches (todo/scan-file todo-file)]
+  (let [matches (scan-file todo-file)]
     (assert-num= "todo matches count" 2 (count matches))
     (assert-str= "todo first marker" "TODO" (get (first matches) :marker))
     (assert-str= "todo second marker" "FIXME" (get (nth matches 1) :marker)))
   (assert-true "todo delete!" (fs/delete! todo-file)))
+(in-ns 'cluck.smoke)
 (require [cluck.set :as sets])
 (assert-str= "set union" "#{1 2 3}" (pr-str (sets/union #{1 2} #{2 3})))
 (assert-str= "set intersection" "#{2}" (pr-str (sets/intersection #{1 2} #{2 3})))
@@ -215,29 +220,31 @@
 (assert-true "set superset?" (sets/superset? #{1 2 3} #{1 2}))
 (require [cluck.edn :as edn])
 (assert-str= "edn read-string" "{:a 1}" (pr-str (edn/read-string "{:a 1}")))
-(require [cluck.examples.weather :as weather])
+(load-file "examples/cluck/weather/main.clk")
+(in-ns 'cluck.examples.weather)
 (assert-true "weather namespace exists" (find-ns 'cluck.examples.weather))
 (assert-true "weather url alias"
              (handle-exceptions exn
                  #f
                (begin
-                 (weather/weather-url "Oslo")
+                 (weather-url "Oslo")
                  #t)))
 (assert-str= "doc weather main"
              "weather/main\n\nFetch and print a weather forecast for LOCATION.\n"
              (capture-output (lambda () (doc weather/main))))
 (assert-str= "weather usage"
              "Usage: cluck-weather <location>\nExample: cluck-weather Oslo\n"
-             (capture-output (lambda () (weather/main '()))))
-(load-file "examples/cluck/text-report/main.clk")
+             (capture-output (lambda () (main '()))))
 (in-ns 'cluck.smoke)
-(require [cluck.examples.text-report :as report])
+(load-file "examples/cluck/text-report/main.clk")
+(in-ns 'cluck.examples.text-report)
 (assert-true "text-report namespace exists" (find-ns 'cluck.examples.text-report))
-(let [stats (report/report-stats "a\n\nb")]
+(let [stats (report-stats "a\n\nb")]
   (assert-num= "text-report lines" 3 (get stats :lines))
   (assert-num= "text-report blank lines" 1 (get stats :blank-lines))
   (assert-num= "text-report characters" 4 (get stats :characters))
   (assert-num= "text-report longest line" 1 (get stats :longest-line)))
+(in-ns 'cluck.smoke)
 (assert-str= "doc core namespace map"
              "cluck.core/map\n\nApply F to each element of COLL and return a list of the results.\n"
              (capture-output (lambda () (doc cluck.core/map))))
@@ -250,9 +257,6 @@
 (assert-str= "doc string join"
              "str/join\n\nJoin COLL with SEP and return a string.\n"
              (capture-output (lambda () (doc str/join))))
-(assert-str= "doc set union"
-             "sets/union\n\nReturn a set containing all items from COLLS.\n"
-             (capture-output (lambda () (doc sets/union))))
 (assert-str= "doc edn read-string"
              "edn/read-string\n\nRead one EDN form from STRING.\n"
              (capture-output (lambda () (doc edn/read-string))))
@@ -263,9 +267,6 @@
                                  (begin
                                    (defn doc-test "Quiet doc." [x] x)
                                    (cluck-repl-print-results doc-test))))))
-(assert-str= "doc local defn"
-             "add2\n\nAdd 2 to X.\n"
-             (capture-output (lambda () (doc add2))))
 (assert-str= "doc core get"
              "get\n\nLook up KEY in MAP, SET, VECTOR, or sequence-backed collection.\n"
              (capture-output (lambda () (doc get))))

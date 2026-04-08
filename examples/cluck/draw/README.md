@@ -34,6 +34,7 @@ The intent is to build this interactively in small steps:
 5. if the draw thread crashes, call `(restart-dev!)` to close and reopen the window without killing the REPL
 6. drag with the mouse or pen to paint strokes, and press `d` to toggle the debug panel
 7. add byte-buffer and texture work as needed
+8. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
