@@ -28,15 +28,19 @@ csi -q -s examples/cluck/draw/run.scm
 
 The intent is to build this interactively in small steps:
 1. keep the SDL3 boundary isolated in `cluck.sdl3`
-2. start a normal Cluck REPL, then evaluate `(load-file "examples/cluck/draw/dev.clk")` to load the draw definitions, then call `(start-dev!)` when you want to open the window and experiment live
-3. drag with the mouse or pen to paint strokes, and press `F1` to toggle the debug panel
-4. add byte-buffer and texture work as needed
+2. start a normal Cluck REPL, then evaluate `(load-file "examples/cluck/draw/dev.clk")` to load the SDL3 support code
+3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
+4. call `(start-dev!)` when you want to open the window and experiment live
+5. drag with the mouse or pen to paint strokes, and press `F1` to toggle the debug panel
+6. add byte-buffer and texture work as needed
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
-bring up the window, evaluate the explicit startup forms in the comment block
-at the end of `main.clk`, or evaluate `(load-file
-"examples/cluck/draw/dev.clk")` yourself and then call `(start-dev!)`.
+bring up the window, first evaluate `(load-file "examples/cluck/draw/dev.clk")`
+in the REPL. After that, you can evaluate the explicit startup forms in the
+comment block at the end of `main.clk`, or run the buffer with `C-c C-k`.
+Until the draw support code is loaded, evaluating the buffer directly will
+stop at the SDL FFI boundary.
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3
