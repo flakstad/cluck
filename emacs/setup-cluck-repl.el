@@ -31,6 +31,7 @@
   :group 'cluck)
 
 (defvar cluck--last-source-buffer nil)
+(defvar-local cluck--draw-bootstrap-loaded-p nil)
 
 (defun cluck-clear-inline-results ()
   "Delete Cluck inline result overlays in the current buffer."
@@ -69,6 +70,20 @@
   "Return the absolute path to the draw development bootstrap."
   (expand-file-name "examples/cluck/draw/dev.clk"
                     (file-name-as-directory (cluck--project-root start))))
+
+(defun cluck--load-draw-bootstrap (&optional start)
+  "Load the SDL3 draw bootstrap into the current Cluck REPL once."
+  (let* ((buffer (cluck--ensure-repl-buffer start))
+         (loaded (with-current-buffer buffer cluck--draw-bootstrap-loaded-p)))
+    (unless loaded
+      (let ((output (cluck--eval-string-sync
+                     (cluck--load-file-command (cluck--draw-dev-bootstrap-path start))
+                     start
+                     cluck-draw-bootstrap-timeout)))
+        (unless (string= (cluck--trim-output output) "loaded")
+          (error "Cluck draw dev bootstrap failed: %s" output))
+        (with-current-buffer buffer
+          (setq-local cluck--draw-bootstrap-loaded-p t))))))
 
 (defun cluck--repl-command (&optional start)
   "Return the command list used to launch a Cluck REPL."
@@ -144,10 +159,9 @@ returning."
   "Pop to the Cluck draw REPL, starting the generic REPL and loading the draw bootstrap."
   (interactive)
   (let* ((buffer (cluck--ensure-repl-buffer))
-         (output (cluck--send-string
-                  (cluck--load-file-command (cluck--draw-dev-bootstrap-path))
-                  nil
-                  cluck-draw-bootstrap-timeout)))
+         (output (progn
+                   (cluck--load-draw-bootstrap)
+                   "loaded")))
     (pop-to-buffer buffer)
     (cluck--show-echo-output output "Cluck draw dev bootstrap loaded; call (start-dev!) to open the window")))
 
@@ -209,6 +223,8 @@ returning."
 (defun cluck--send-string (string &optional start timeout)
   "Send STRING to the Cluck REPL and return its output."
   (setq cluck--last-source-buffer (current-buffer))
+  (when (cluck--draw-source-p (or start cluck--last-source-buffer))
+    (cluck--load-draw-bootstrap (or start cluck--last-source-buffer)))
   (cluck--eval-string-sync string start timeout))
 
 (defun cluck--show-inline-result (end result)

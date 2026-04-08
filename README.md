@@ -241,21 +241,21 @@ csi -q -s examples/cluck/draw/run.scm
 ./build/draw
 ```
 
-For REPL-driven work, start a normal Cluck REPL and load
-`examples/cluck/draw/dev.clk`. That bootstrap compiles a loadable SDL3
-extension on demand, loads it into the current REPL process, and defines the
-draw app. Call `(start-dev!)` explicitly when you want to open the window and
-start the background render loop. From there you can call functions like
+For REPL-driven work, start a normal Cluck REPL and evaluate
+`(load-file "examples/cluck/draw/dev.clk")`. That bootstrap compiles a loadable
+SDL3 extension on demand, loads it into the current REPL process, and defines
+the draw app. Call `(start-dev!)` explicitly when you want to open the window
+and start the background render loop. From there you can call functions like
 `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, and `stop!` while the window stays open.
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
-In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. Load
-`examples/cluck/draw/dev.clk` manually in that REPL when you want the draw
-definitions available, then call `(start-dev!)` explicitly to open the window.
-The REPL itself starts with no window and does not load SDL automatically.
+In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. Draw
+buffers automatically load `examples/cluck/draw/dev.clk` the first time you
+evaluate draw code there, so `C-c C-k` works without any extra manual bootstrap.
+The REPL itself still starts with no window and does not load SDL automatically.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.

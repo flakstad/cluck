@@ -8,7 +8,7 @@ What is in place:
 - a compiled runner entrypoint in `run.scm`
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
 - a first SDL3 window-open loop that clears the screen until quit
-- a REPL-first development bootstrap in `dev.clk` that loads SDL3 after the normal Cluck REPL starts and waits for an explicit `(start-dev!)` call
+- a REPL-first development bootstrap in `dev.clk` that loads SDL3 after the normal Cluck REPL starts; draw-buffer evals auto-load that bootstrap once, and `(start-dev!)` still opens the window explicitly
 - live mouse, pen, and keyboard-event overlays in the window
 - REPL state changes redraw the window immediately once the app is live
 
@@ -26,14 +26,14 @@ csi -q -s examples/cluck/draw/run.scm
 
 The intent is to build this interactively in small steps:
 1. keep the SDL3 boundary isolated in `cluck.sdl3`
-2. start a normal Cluck REPL, then load `examples/cluck/draw/dev.clk` manually to load the draw definitions, then call `(start-dev!)` when you want to open the window and experiment live
+2. start a normal Cluck REPL, then evaluate `(load-file "examples/cluck/draw/dev.clk")` to load the draw definitions, then call `(start-dev!)` when you want to open the window and experiment live
 3. extend the window loop with input and drawing commands
 4. add byte-buffer and texture work as needed
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
-ordinary Cluck REPL. Load `examples/cluck/draw/dev.clk` manually in that REPL
-when you want the draw definitions available, then call `(start-dev!)` to open
-the window.
+ordinary Cluck REPL. The first eval in a draw buffer loads
+`examples/cluck/draw/dev.clk` automatically, so `C-c C-k` works once the REPL
+is up. Call `(start-dev!)` explicitly when you want to open the window.
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

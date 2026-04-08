@@ -20,9 +20,11 @@ files into a directory already on your `load-path`.
 
 - `cluck-mode` for editing `*.clk` files
 - REPL launch and switching commands with `C-c C-z` opening the ordinary
-  Cluck REPL buffer. For the draw example, load `examples/cluck/draw/dev.clk`
-  manually in that REPL, then call `(start-dev!)` when you want the window to
-  open. The REPL itself does not load SDL automatically.
+  Cluck REPL buffer. For the draw example, the first eval in a draw buffer
+  loads `examples/cluck/draw/dev.clk` automatically, so `C-c C-k` works
+  against the live draw session after you explicitly call `(start-dev!)` in
+  the REPL. The REPL itself still starts with no window and does not load SDL
+  automatically.
 - inline eval overlays
 - doc lookup with `C-c C-d`
 - definition jumping with `M-.`
