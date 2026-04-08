@@ -1,0 +1,70 @@
+;; Focused draw-save-load probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-save-load-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-save-load-fail label expected actual)
+  (error (string-append "draw save/load test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-save-load-assert-true label value)
+  (if value
+      (draw-save-load-pass label)
+      (draw-save-load-fail label "truthy value" (pr-str value))))
+
+(define (draw-save-load-assert-str= label expected actual)
+  (if (string=? expected actual)
+      (draw-save-load-pass label)
+      (draw-save-load-fail label expected actual)))
+
+(define (draw-save-load-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-save-load-pass label)
+      (draw-save-load-fail label expected actual)))
+
+(let [path (fs/path (fs/temp-dir) "cluck-draw-save-load.edn")
+      original (assoc (default-state)
+                      :title "Saved Draw"
+                      :brush-size 7
+                      :strokes [{:color [1 2 3]
+                                 :size 4
+                                 :points [[10 10 1.0] [20 20 0.5]]}]
+                      :history [(assoc (default-state)
+                                       :title "Older"
+                                       :brush-size 3)]
+                      :last-event "save test")]
+  (dynamic-wind
+    (lambda ()
+      (set-state! original)
+      (draw-save-load-assert-str= "save returns path"
+                                  (pr-str path)
+                                  (pr-str (save-canvas-to! path))))
+    (lambda ()
+      (set-state! (default-state))
+      (draw-save-load-assert-str= "load returns path"
+                                  (pr-str path)
+                                  (pr-str (load-canvas-from! path)))
+      (draw-save-load-assert-str= "load restored title"
+                                  "Saved Draw"
+                                  (get (current-state) :title))
+      (draw-save-load-assert-num= "load restored brush size"
+                                  7
+                                  (get (current-state) :brush-size))
+      (draw-save-load-assert-num= "load restored stroke count"
+                                  1
+                                  (count (get (current-state) :strokes)))
+      (draw-save-load-assert-num= "load restored history count"
+                                  1
+                                  (count (get (current-state) :history)))
+      (draw-save-load-assert-true "load restored last event"
+                                  (string=? "save test"
+                                            (get (current-state) :last-event))))
+    (lambda ()
+      (fs/delete! path))))

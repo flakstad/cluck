@@ -261,14 +261,16 @@ startup forms in the comment block at the end of
 defines the draw app. Call `(start-dev!)` explicitly when you want to open the
 window and start the background render loop. From there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
-`mouse-position`, `input-summary`, and `stop!` while the window stays open.
-Drag with the mouse or pen to paint strokes, and press `d` to toggle the
-debug panel on demand. The current tool shortcuts are:
+`mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
+while the window stays open. Drag with the mouse or pen to paint strokes, and
+press `d` to toggle the debug panel on demand. The current tool shortcuts are:
 
 - `u` undo the last action
 - `c` clear the canvas
 - `e` eraser
 - `1`/`2`/`3` brush sizes
+- `save-canvas!` / `load-canvas!` round-trip the current canvas to
+  `build/cluck-draw-state.edn` by default
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
@@ -294,6 +296,7 @@ It is loaded by:
 - [`test/run.scm`](./test/run.scm)
 - [`test/run-draw-toggle.scm`](./test/run-draw-toggle.scm)
 - [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
+- [`test/run-draw-save-load.scm`](./test/run-draw-save-load.scm)
 - [`test/run-draw-input.scm`](./test/run-draw-input.scm)
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
@@ -304,6 +307,7 @@ Run it with:
 csi -q -s test/run.scm
 csi -q -s test/run-draw-toggle.scm
 csi -q -s test/run-draw-tools.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-save-load.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm

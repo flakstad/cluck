@@ -5,6 +5,8 @@
 
 (ns cluck.examples.draw
   (:require [cluck.sdl3 :as sdl]
+            [cluck.fs :as fs]
+            [cluck.io :as io]
             [cluck.edn :as edn]
             [cluck.math :as math]
             [cluck.string :as str]))
@@ -79,6 +81,36 @@
    :last-event ""
    :recent-events []})
 
+(defn draw-state-file-path
+  "Return the default path used for saving and loading the canvas state."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-state.edn"))
+
+(defn draw-ensure-parent-directory!
+  "Ensure PATH's parent directory exists before writing a save file."
+  [path]
+  (let [dir (fs/dirname path)]
+    (if (and dir (not (fs/directory? dir)))
+      (create-directory dir)
+      dir)))
+
+(defn draw-set-state-core!
+  "Install STATE and refresh the cached canvas if needed."
+  [state]
+  (set! *draw-state* state)
+  (if (draw-canvas-ready?)
+    (draw-rebuild-canvas! *draw-state*)
+    nil)
+  (if *draw-running?*
+    nil
+    (draw-render-current!))
+  *draw-state*)
+
+(defn draw-load-state-core!
+  "Install STATE after loading it from disk."
+  [state]
+  (draw-set-state-core! state))
+
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
   []
@@ -106,28 +138,91 @@
   []
   (draw-with-lock
     (lambda ()
-      (set! *draw-state* (default-state))
-      (if (draw-canvas-ready?)
-        (draw-rebuild-canvas! *draw-state*)
-        nil)
-      (if *draw-running?*
-        nil
-        (draw-render-current!))
-      *draw-state*)))
+      (draw-set-state-core! (default-state)))))
 
 (defn set-state!
   "Replace the current draw state with STATE."
   [state]
   (draw-with-lock
     (lambda ()
-      (set! *draw-state* state)
-      (if (draw-canvas-ready?)
-        (draw-rebuild-canvas! *draw-state*)
-        nil)
-      (if *draw-running?*
-        nil
-        (draw-render-current!))
-      *draw-state*)))
+      (draw-set-state-core! state))))
+
+(defn draw-save-state-to!
+  "Write the current draw state to PATH."
+  [path]
+  (draw-with-lock
+    (lambda ()
+      (let [save-path (fs/path path)]
+        (draw-ensure-parent-directory! save-path)
+        (io/spit save-path (pr-str *draw-state*))
+        save-path))))
+
+(defn save-canvas!
+  "Write the current draw state to the default save file."
+  []
+  (draw-save-state-to! (draw-state-file-path)))
+
+(defn save-canvas-to!
+  "Write the current draw state to PATH."
+  [path]
+  (draw-save-state-to! path))
+
+(defn draw-load-state-from!
+  "Load a draw state from PATH."
+  [path]
+  (draw-with-lock
+    (lambda ()
+      (draw-load-state-core!
+       (edn/read-string (io/slurp (fs/path path))))
+      (fs/path path))))
+
+(defn load-canvas!
+  "Load the current draw state from the default save file."
+  []
+  (draw-load-state-from! (draw-state-file-path)))
+
+(defn load-canvas-from!
+  "Load a draw state from PATH."
+  [path]
+  (draw-load-state-from! path))
+
+(defn draw-save-state-to!
+  "Write the current draw state to PATH."
+  [path]
+  (draw-with-lock
+    (lambda ()
+      (draw-ensure-parent-directory! path)
+      (io/spit path (pr-str *draw-state*))
+      path)))
+
+(defn save-canvas!
+  "Save the current draw state to the default save file."
+  []
+  (draw-save-state-to! (draw-state-file-path)))
+
+(defn save-canvas-to!
+  "Save the current draw state to PATH."
+  [path]
+  (draw-save-state-to! path))
+
+(defn draw-load-state-from!
+  "Load a draw state from PATH."
+  [path]
+  (draw-with-lock
+    (lambda ()
+      (draw-set-state-core!
+       (edn/read-string (io/slurp path)))
+      path)))
+
+(defn load-canvas!
+  "Load the current draw state from the default save file."
+  []
+  (draw-load-state-from! (draw-state-file-path)))
+
+(defn load-canvas-from!
+  "Load a draw state from PATH."
+  [path]
+  (draw-load-state-from! path))
 
 (defn set-title!
   "Update the current window title."

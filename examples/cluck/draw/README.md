@@ -13,6 +13,8 @@ What is in place:
 - freehand brush strokes while dragging, with pen pressure feeding the brush size
 - an on-demand debug panel toggled with `d`
 - tool shortcuts for `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
+- `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
+  state to `build/cluck-draw-state.edn` by default
 - focus loss cancels the active stroke instead of leaving the canvas in a half-drawn state
 - REPL state changes redraw the window immediately once the app is live
 
@@ -39,9 +41,10 @@ The intent is to build this interactively in small steps:
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
 10. when you are working on draw tools and state mutations, run `csi -q -s test/run-draw-tools.scm` for a fast focused probe
-11. when you are working on pen pressure, focus handling, or other input-state routing, run `csi -q -s test/run-draw-input.scm` for a fast focused probe
-12. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm` for a fast focused probe
-13. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
+11. when you are working on save/load round-trips, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-save-load.scm` for a fast focused probe
+12. when you are working on pen pressure, focus handling, or other input-state routing, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm` for a fast focused probe
+13. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm` for a fast focused probe
+14. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
@@ -59,6 +62,7 @@ While the window is live:
 - press `c` to clear the canvas, which is undoable
 - press `e` to toggle eraser mode
 - press `1`, `2`, or `3` to switch brush sizes
+- call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state
 - pen pressure now scales the brush while drawing on tablets that expose it
 - if the window loses focus, the active stroke is canceled so recovery is cleaner
 
