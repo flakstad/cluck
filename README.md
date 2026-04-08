@@ -309,6 +309,7 @@ It is loaded by:
 - [`test/run-draw-input.scm`](./test/run-draw-input.scm)
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
+- [`test/run-draw-replay.scm`](./test/run-draw-replay.scm)
 
 Run it with:
 
@@ -321,6 +322,8 @@ SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-view.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
@@ -717,6 +720,42 @@ csi -q -s examples/cluck/app/run.scm
 ```
 
 The smoke tests also load `cluck.walk` and `cluck.math` through `require` to verify namespace restoration and alias lookup.
+
+## Extension Loader Experiment
+
+Another no-eggs example lives in:
+
+- [`examples/cluck/extensions/main.clk`](./examples/cluck/extensions/main.clk)
+- [`examples/cluck/extensions/scheme-ext.scm`](./examples/cluck/extensions/scheme-ext.scm)
+- [`examples/cluck/extensions/cluck-ext.clk`](./examples/cluck/extensions/cluck-ext.clk)
+
+It demonstrates loading plain Scheme source and Cluck source into the same
+compiled launcher through a small registry. The app keeps the registry in
+Cluck, then loads extra source files and prints the registered sections.
+
+Run it from source with:
+
+```bash
+csi -q -s examples/cluck/extensions/run.scm
+csi -q -s examples/cluck/extensions/run.scm examples/cluck/extensions/scheme-ext.scm examples/cluck/extensions/cluck-ext.clk
+```
+
+Build a self-contained native binary with:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/extensions-standalone examples/cluck/extensions/run-standalone.scm
+```
+
+Then run the compiled binary with either no extensions or both example
+extensions:
+
+```bash
+./build/extensions-standalone
+./build/extensions-standalone examples/cluck/extensions/scheme-ext.scm examples/cluck/extensions/cluck-ext.clk
+```
+
+The experiment is intentionally small, but it proves the launcher can load
+both plain Scheme source and Cluck source into the same native process.
 
 ## Native Build
 

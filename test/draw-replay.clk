@@ -1,0 +1,105 @@
+;; Focused draw replay probe for the SDL3 example.
+;;
+;; This script exercises the synthetic replay helpers so the draw app can be
+;; driven from the REPL or from tests without hand-crafted SDL input.
+
+(in-ns 'cluck.examples.draw)
+
+(import (chicken time))
+
+(define (draw-replay-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-replay-fail label expected actual)
+  (error (string-append "draw replay test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-replay-assert-true label value)
+  (if value
+      (draw-replay-pass label)
+      (draw-replay-fail label "truthy value" (pr-str value))))
+
+(define (draw-replay-assert-false label value)
+  (if (not value)
+      (draw-replay-pass label)
+      (draw-replay-fail label "falsey value" (pr-str value))))
+
+(define (draw-replay-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-replay-pass label)
+      (draw-replay-fail label expected actual)))
+
+(define (draw-replay-assert-zoom>1 label state)
+  (if (> (draw-view-zoom state) 1.0)
+      (draw-replay-pass label)
+      (draw-replay-fail label "> 1.0" (draw-view-zoom state))))
+
+(define (draw-replay-script)
+  [ {:kind :mouse-down
+     :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=10 y=10"
+     :mouse-x 10
+     :mouse-y 10
+     :shift? false}
+    {:kind :mouse-motion
+     :desc "SDL_EVENT_MOUSE_MOTION x=20 y=20"
+     :mouse-x 20
+     :mouse-y 20
+     :shift? false}
+    {:kind :mouse-up
+     :desc "SDL_EVENT_MOUSE_BUTTON_UP x=20 y=20"
+     :mouse-x 20
+     :mouse-y 20
+     :shift? false}
+    {:kind :mouse-wheel
+     :desc "SDL_EVENT_MOUSE_WHEEL x=100 y=50"
+     :wheel-y 1.0
+     :wheel-mouse-x 100
+     :wheel-mouse-y 50}
+    {:kind :mouse-down
+     :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=150 y=150"
+     :mouse-x 150
+     :mouse-y 150
+     :shift? true}
+    {:kind :mouse-motion
+     :desc "SDL_EVENT_MOUSE_MOTION x=170 y=180"
+     :mouse-x 170
+     :mouse-y 180
+     :shift? true}
+    {:kind :mouse-up
+     :desc "SDL_EVENT_MOUSE_BUTTON_UP x=170 y=180"
+     :mouse-x 170
+     :mouse-y 180
+     :shift? true}
+    {:kind :key-down
+     :desc "SDL_EVENT_KEY_DOWN key=d"
+     :key "d"}
+    {:kind :pen-axis
+     :desc "SDL_EVENT_PEN_AXIS x=40 y=50"
+     :mouse-x 40
+     :mouse-y 50
+     :pressure 0.5}
+    {:kind :focus-lost
+     :desc "SDL_EVENT_WINDOW_FOCUS_LOST"}
+    {:kind :focus-gained
+     :desc "SDL_EVENT_WINDOW_FOCUS_GAINED"}])
+
+(let [start (current-process-milliseconds)
+      state (draw-replay-benchmark! (draw-replay-script) 1)
+      elapsed (- (current-process-milliseconds) start)]
+  (draw-replay-assert-true "replay namespace exists" (find-ns 'cluck.examples.draw))
+  (draw-replay-assert-true "replay stroke count" (= 1 (count (get state :strokes))))
+  (draw-replay-assert-zoom>1 "replay zoom changes" state)
+  (draw-replay-assert-true "replay debug panel toggles" (get state :debug-panel?))
+  (draw-replay-assert-true "replay focus regains"
+                           (get state :window-focused?))
+  (draw-replay-assert-num= "replay pen pressure resets on focus regain"
+                           1.0
+                           (get state :pen-pressure))
+  (draw-replay-assert-true "replay panning clears after mouse-up"
+                          (not (get state :panning?)))
+  (println "ok replay elapsed" elapsed "ms"))

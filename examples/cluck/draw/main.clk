@@ -11,7 +11,8 @@
             [cluck.math :as math]
             [cluck.string :as str]))
 
-(import srfi-18)
+(import srfi-18
+        (chicken time))
 
 (def *draw-state* nil)
 (def *draw-context* nil)
@@ -1031,10 +1032,54 @@
   [value]
   (inexact->exact value))
 
-(defn draw-record-input!
-  "Record the latest SDL event description in STATE."
+(defn draw-input-event-screen-point
+  "Return the raw [x y] screen coordinate from EVENT."
+  [event]
+  [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
+   (or (get event :mouse-y) (get event :wheel-mouse-y) 0)])
+
+(defn draw-input-event-point
+  "Return the [x y pressure] world coordinate from EVENT."
+  [state event]
+  (draw-screen-point->world-point
+    state
+    [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
+     (or (get event :mouse-y) (get event :wheel-mouse-y) 0)
+     (or (get event :pressure) 1.0)]))
+
+(defn draw-build-input-event
+  "Build a synthetic event map for DESC using the current SDL event state."
   [state desc]
-  (let [kind (draw-event-kind desc)
+  (let [kind (draw-event-kind desc)]
+    {:kind kind
+     :desc desc
+     :key (draw-event-key-label desc)
+     :text (draw-nonblank (sdl/event-text-input) desc)
+     :text-edit (draw-nonblank (sdl/event-text-editing) desc)
+     :mouse-x (draw-event-coordinate desc "x=")
+     :mouse-y (draw-event-coordinate desc "y=")
+     :pressure (draw-event-pressure state desc)
+     :shift? (sdl/mod-shift-pressed?)
+     :wheel-y (sdl/event-wheel-y)
+     :wheel-mouse-x (sdl/event-wheel-mouse-x)
+     :wheel-mouse-y (sdl/event-wheel-mouse-y)}))
+
+(defn draw-handle-wheel-event!
+  "Apply mouse-wheel zoom from EVENT to STATE."
+  [state event]
+  (let [delta (or (get event :wheel-y) 0.0)]
+    (if (= delta 0.0)
+      state
+      (draw-zoom-at-core! state
+                          delta
+                          (or (get event :wheel-mouse-x) 0.0)
+                          (or (get event :wheel-mouse-y) 0.0)))))
+
+(defn draw-apply-input-event!
+  "Apply a synthetic or live EVENT map to STATE."
+  [state event]
+  (let [kind (get event :kind)
+        desc (or (get event :desc) "")
         events (conj (get state :recent-events) desc)
         recent (draw-trim-events events)
         state (assoc state
@@ -1043,7 +1088,7 @@
     (cond
       (or (draw-kind=? kind :key-down)
           (draw-kind=? kind :key-up))
-      (let [key-label (draw-event-key-label desc)
+      (let [key-label (or (get event :key) "")
             state (assoc state
                          :last-key key-label
                          :last-key-desc desc)]
@@ -1056,7 +1101,7 @@
           state))
 
       (draw-kind=? kind :mouse-wheel)
-      (draw-handle-wheel! state)
+      (draw-handle-wheel-event! state event)
 
       (or (draw-kind=? kind :focus-lost)
           (draw-kind=? kind :mouse-leave))
@@ -1068,48 +1113,67 @@
 
       (draw-kind=? kind :text-input)
       (assoc state
-             :last-text (draw-nonblank (sdl/event-text-input) desc)
-             :last-key desc)
+             :last-text (draw-nonblank (or (get event :text) desc) desc)
+             :last-key (or (get event :key) desc))
 
       (or (draw-kind=? kind :mouse-motion)
           (draw-kind=? kind :mouse-down)
           (draw-kind=? kind :mouse-up))
-      (cond
+      (let [state (assoc state :pen-pressure 1.0)]
+        (cond
         (and (draw-kind=? kind :mouse-down)
-             (sdl/mod-shift-pressed?))
-        (draw-start-pan-core! state (draw-event-screen-point desc))
+             (get event :shift?))
+        (draw-start-pan-core! state (draw-input-event-screen-point event))
 
         (draw-kind=? kind :mouse-down)
-        (draw-start-stroke state desc)
+        (let [point (draw-input-event-point state event)]
+          (draw-start-stroke state
+                             (format "SDL_EVENT_MOUSE_MOTION x=%.1f y=%.1f"
+                                     (nth point 0)
+                                     (nth point 1))))
 
         (and (draw-kind=? kind :mouse-up)
              (get state :panning?))
         (draw-finish-pan-core! state)
 
         (draw-kind=? kind :mouse-up)
-        (draw-finish-stroke state desc)
+        (let [point (draw-input-event-point state event)]
+          (draw-finish-stroke state
+                              (format "SDL_EVENT_MOUSE_MOTION x=%.1f y=%.1f"
+                                      (nth point 0)
+                                      (nth point 1))))
 
         (get state :pointer-down?)
-        (draw-extend-stroke state desc)
+        (let [point (draw-input-event-point state event)]
+          (draw-extend-stroke state
+                              (format "SDL_EVENT_MOUSE_MOTION x=%.1f y=%.1f"
+                                      (nth point 0)
+                                      (nth point 1))))
 
         :else
-        (let [point (draw-event-point state desc)]
+        (let [point (draw-input-event-point state event)]
           (assoc state
                  :mouse-x (nth point 0)
-                 :mouse-y (nth point 1))))
+                 :mouse-y (nth point 1)))))
 
       (or (draw-kind=? kind :pen-motion)
           (draw-kind=? kind :pen-down)
           (draw-kind=? kind :pen-up)
           (draw-kind=? kind :pen-button-down)
           (draw-kind=? kind :pen-button-up))
-      (cond
+      (let [state (assoc state
+                         :pen-pressure (or (get event :pressure) 1.0))]
+        (cond
         (and (draw-kind=? kind :pen-down)
-             (sdl/mod-shift-pressed?))
-        (draw-start-pan-core! state (draw-event-screen-point desc))
+             (get event :shift?))
+        (draw-start-pan-core! state (draw-input-event-screen-point event))
 
         (draw-kind=? kind :pen-down)
-        (draw-start-stroke state desc)
+        (let [point (draw-input-event-point state event)]
+          (draw-start-stroke state
+                             (format "SDL_EVENT_PEN_MOTION x=%.1f y=%.1f"
+                                     (nth point 0)
+                                     (nth point 1))))
 
         (and (or (draw-kind=? kind :pen-up)
                  (draw-kind=? kind :pen-button-up))
@@ -1118,34 +1182,102 @@
 
         (or (draw-kind=? kind :pen-up)
             (draw-kind=? kind :pen-button-up))
-        (draw-finish-stroke state desc)
+        (let [point (draw-input-event-point state event)]
+          (draw-finish-stroke state
+                              (format "SDL_EVENT_PEN_MOTION x=%.1f y=%.1f"
+                                      (nth point 0)
+                                      (nth point 1))))
 
         (get state :panning?)
-        (draw-pan-core! state (draw-event-screen-point desc))
+        (draw-pan-core! state (draw-input-event-screen-point event))
 
         (get state :pointer-down?)
-        (draw-extend-stroke state desc)
+        (let [point (draw-input-event-point state event)]
+          (draw-extend-stroke state
+                              (format "SDL_EVENT_PEN_MOTION x=%.1f y=%.1f"
+                                      (nth point 0)
+                                      (nth point 1))))
 
         :else
-        (let [point (draw-event-point state desc)]
+        (let [point (draw-input-event-point state event)]
           (assoc state
                  :mouse-x (nth point 0)
-                 :mouse-y (nth point 1))))
+                 :mouse-y (nth point 1)))))
 
       (draw-kind=? kind :pen-axis)
-      (let [point (draw-event-point state desc)]
+      (let [point (draw-input-event-point state event)]
         (assoc state
-               :pen-pressure (sdl/event-pen-pressure)
+               :pen-pressure (or (get event :pressure) 1.0)
                :mouse-x (nth point 0)
                :mouse-y (nth point 1)))
 
       (draw-kind=? kind :text-editing)
       (assoc state
-             :last-text (draw-nonblank (sdl/event-text-editing) desc)
-             :last-key desc)
+             :last-text (draw-nonblank (or (get event :text-edit) desc) desc)
+             :last-key (or (get event :key) desc))
 
       :else
       state)))
+
+(defn draw-record-input!
+  "Record the latest SDL event description in STATE."
+  [state desc]
+  (draw-apply-input-event! state (draw-build-input-event state desc)))
+
+(defn draw-simulate-input!
+  "Apply a synthetic input EVENT to the current draw state."
+  [event]
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state*
+            (draw-apply-input-event! (or *draw-state* (default-state))
+                                     event))
+      (if *draw-running?*
+        (draw-render-current!)
+        nil)
+      *draw-state*)))
+
+(defn draw-replay-events!
+  "Apply EVENTS in order to the current draw state."
+  [events]
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state*
+            (reduce (lambda (state event)
+                      (draw-apply-input-event! state event))
+                    (or *draw-state* (default-state))
+                    events))
+      (if *draw-running?*
+        (draw-render-current!)
+        nil)
+      *draw-state*)))
+
+(defn draw-repeat-events!
+  "Replay EVENTS ROUNDS times starting from STATE."
+  [state events rounds]
+  (if (<= rounds 0)
+    state
+    (draw-repeat-events! (reduce (lambda (next-state event)
+                                   (draw-apply-input-event! next-state event))
+                                 state
+                                 events)
+                         events
+                         (- rounds 1))))
+
+(defn draw-replay-benchmark!
+  "Replay EVENTS and print the elapsed wall-clock time."
+  [events rounds]
+  (let [start (current-process-milliseconds)
+        state (draw-repeat-events! (or *draw-state* (default-state))
+                                   events
+                                   rounds)
+        elapsed (- (current-process-milliseconds) start)]
+    (println (format "draw replay: %d events x %d rounds in %d ms"
+                     (count events)
+                     rounds
+                     elapsed))
+    (println (format "draw state: %s" (describe-state state)))
+    state))
 
 (defn mouse-position
   "Return the current mouse position from the draw state."
