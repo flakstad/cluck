@@ -1,0 +1,28 @@
+;; Focused draw lifecycle probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-life-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-life-fail label expected actual)
+  (error (string-append "draw lifecycle test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-life-assert-true label value)
+  (if value
+      (draw-life-pass label)
+      (draw-life-fail label "truthy value" (pr-str value))))
+
+(draw-life-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
+(draw-life-assert-true "start-dev! opens a context" (start-dev!))
+(draw-life-assert-true "current-state exists" (current-state))
+(draw-life-assert-true "undo while running" (draw-undo-stroke! (current-state)))
+(draw-life-assert-true "clear while running" (draw-clear-strokes! (current-state)))
+(draw-life-assert-true "restart-dev! recovers" (restart-dev!))
+(stop!)

@@ -18,6 +18,7 @@
 (def *draw-render-fn* nil)
 (def *draw-last-error* false)
 (def *draw-canvas-ready?* false)
+(def *draw-io-lock* (make-mutex 'cluck-draw-io))
 
 (defn draw-recent-events-limit
   []
@@ -42,6 +43,15 @@
 (defn delay-ms
   [ms]
   (sdl/delay-ms ms))
+
+(defn draw-with-lock
+  "Run THUNK while holding the draw I/O mutex."
+  [thunk]
+  (mutex-lock! *draw-io-lock*)
+  (dynamic-wind
+    (lambda () false)
+    (lambda () (thunk))
+    (lambda () (mutex-unlock! *draw-io-lock*))))
 
 (defn default-state
   "Return the starter app state."
@@ -69,6 +79,13 @@
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
   []
+  (draw-with-lock
+    (lambda ()
+      (draw-render-current!))))
+
+(defn draw-render-current!
+  "Render the current state if the draw context is live."
+  []
   (if (and *draw-running?* *draw-context* *draw-state*)
     (begin
       (sync-window-title!)
@@ -84,36 +101,52 @@
 (defn reset-state!
   "Reset the current draw state to the default."
   []
-  (set! *draw-state* (default-state))
-  (if (draw-canvas-ready?)
-    (draw-rebuild-canvas! *draw-state*)
-    nil)
-  (draw-refresh!)
-  *draw-state*)
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state* (default-state))
+      (if (draw-canvas-ready?)
+        (draw-rebuild-canvas! *draw-state*)
+        nil)
+      (if *draw-running?*
+        nil
+        (draw-render-current!))
+      *draw-state*)))
 
 (defn set-state!
   "Replace the current draw state with STATE."
   [state]
-  (set! *draw-state* state)
-  (if (draw-canvas-ready?)
-    (draw-rebuild-canvas! *draw-state*)
-    nil)
-  (draw-refresh!)
-  *draw-state*)
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state* state)
+      (if (draw-canvas-ready?)
+        (draw-rebuild-canvas! *draw-state*)
+        nil)
+      (if *draw-running?*
+        nil
+        (draw-render-current!))
+      *draw-state*)))
 
 (defn set-title!
   "Update the current window title."
   [title]
-  (set! *draw-state* (assoc *draw-state* :title title))
-  (draw-refresh!)
-  *draw-state*)
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state* (assoc *draw-state* :title title))
+      (if *draw-running?*
+        nil
+        (draw-render-current!))
+      *draw-state*)))
 
 (defn set-background!
   "Update the current background color to a [R G B] vector."
   [color]
-  (set! *draw-state* (assoc *draw-state* :background color))
-  (draw-refresh!)
-  *draw-state*)
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state* (assoc *draw-state* :background color))
+      (if *draw-running?*
+        nil
+        (draw-render-current!))
+      *draw-state*)))
 
 (defn set-render-fn!
   "Install a custom render function of (lambda [ctx state] ...)."
@@ -358,7 +391,7 @@
     (get state :background)
     (get state :brush-color)))
 
-(defn draw-set-brush-size!
+(defn draw-set-brush-size-core!
   "Set the brush size and return to brush mode, recording undo history."
   [state size]
   (let [state (draw-push-history! state)]
@@ -366,14 +399,36 @@
            :brush-size size
            :eraser? false)))
 
-(defn draw-toggle-eraser!
+(defn draw-set-brush-size!
+  "Set the brush size and return to brush mode, recording undo history."
+  [state size]
+  (draw-with-lock
+    (lambda ()
+      (let [state (draw-set-brush-size-core! state size)]
+        (if *draw-running?*
+          nil
+          (draw-render-current!))
+        state))))
+
+(defn draw-toggle-eraser-core!
   "Toggle eraser mode for STATE and record undo history."
   [state]
   (let [state (draw-push-history! state)]
     (assoc state
            :eraser? (not (get state :eraser?)))))
 
-(defn draw-clear-strokes!
+(defn draw-toggle-eraser!
+  "Toggle eraser mode for STATE and record undo history."
+  [state]
+  (draw-with-lock
+    (lambda ()
+      (let [state (draw-toggle-eraser-core! state)]
+        (if *draw-running?*
+          nil
+          (draw-render-current!))
+        state))))
+
+(defn draw-clear-strokes-core!
   "Clear all finished and active strokes from STATE and record undo history."
   [state]
   (let [state (draw-push-history! state)]
@@ -386,7 +441,18 @@
         nil)
       state)))
 
-(defn draw-undo-stroke!
+(defn draw-clear-strokes!
+  "Clear all finished and active strokes from STATE and record undo history."
+  [state]
+  (draw-with-lock
+    (lambda ()
+      (let [state (draw-clear-strokes-core! state)]
+        (if *draw-running?*
+          nil
+          (draw-render-current!))
+        state))))
+
+(defn draw-undo-stroke-core!
   "Undo the most recent draw action."
   [state]
   (let [state (draw-restore-history! state)]
@@ -395,22 +461,33 @@
       nil)
     state))
 
+(defn draw-undo-stroke!
+  "Undo the most recent draw action."
+  [state]
+  (draw-with-lock
+    (lambda ()
+      (let [state (draw-undo-stroke-core! state)]
+        (if *draw-running?*
+          nil
+          (draw-render-current!))
+        state))))
+
 (defn draw-handle-tool-key!
   "Apply draw tool shortcuts for KEY to STATE."
   [state key]
   (let [key (str/lower-case (or key ""))]
     (if (string=? key "c")
-      (draw-clear-strokes! state)
+      (draw-clear-strokes-core! state)
       (if (string=? key "u")
-        (draw-undo-stroke! state)
+        (draw-undo-stroke-core! state)
         (if (string=? key "e")
-          (draw-toggle-eraser! state)
+          (draw-toggle-eraser-core! state)
           (if (string=? key "1")
-            (draw-set-brush-size! state 2)
+            (draw-set-brush-size-core! state 2)
               (if (string=? key "2")
-                (draw-set-brush-size! state 6)
+                (draw-set-brush-size-core! state 6)
                 (if (string=? key "3")
-                  (draw-set-brush-size! state 12)
+                  (draw-set-brush-size-core! state 12)
                   state))))))))
 
 (defn draw-crash!
@@ -907,10 +984,10 @@
 (defn render-now!
   "Render one frame from the current state."
   []
-  (draw-poll-input!)
-  (if (and *draw-running?* *draw-context* *draw-state*)
-    (render-frame *draw-context* *draw-state*)
-    nil))
+  (draw-with-lock
+    (lambda ()
+      (draw-poll-input!)
+      (draw-render-current!))))
 
 (defn draw-loop
   "Render until the window is closed or the loop is stopped."
@@ -930,46 +1007,50 @@
 (defn start!
   "Open the SDL window and prepare the draw state."
   []
-  (if (and *draw-running?* *draw-context*)
-    *draw-context*
-    (if (not (init-video!))
-    (begin
-      (println (format "SDL init failed: %s" (last-error)))
-      nil)
-    (let [state (or *draw-state* (default-state))
-          ctx (sdl/open-context (get state :title)
-                                (get state :width)
-                                (get state :height))]
-        (if (nil? ctx)
-          (begin
-            (println (format "SDL window failed: %s" (last-error)))
-            (shutdown!)
-            nil)
-          (begin
-            (set! *draw-state* state)
-            (set! *draw-context* ctx)
-            (set! *draw-running?* true)
-            (draw-ensure-canvas! state)
-            (if (draw-canvas-ready?)
-              (draw-rebuild-canvas! state)
+  (draw-with-lock
+    (lambda ()
+      (if (and *draw-running?* *draw-context*)
+        *draw-context*
+        (if (not (init-video!))
+        (begin
+          (println (format "SDL init failed: %s" (last-error)))
+          nil)
+        (let [state (or *draw-state* (default-state))
+              ctx (sdl/open-context (get state :title)
+                                    (get state :width)
+                                    (get state :height))]
+          (if (nil? ctx)
+            (begin
+              (println (format "SDL window failed: %s" (last-error)))
+              (shutdown!)
               nil)
-            (sdl/start-text-input! (get *draw-context* :window))
-            (sync-window-title!)
-            ctx))))))
+            (begin
+              (set! *draw-state* state)
+              (set! *draw-context* ctx)
+              (set! *draw-running?* true)
+              (draw-ensure-canvas! state)
+              (if (draw-canvas-ready?)
+                (draw-rebuild-canvas! state)
+                nil)
+              (sdl/start-text-input! (get *draw-context* :window))
+              (sync-window-title!)
+              ctx))))))))
 
 (defn stop!
   "Stop the draw loop and close the SDL context."
   []
-  (set! *draw-running?* false)
-  (draw-release-canvas!)
-  (if *draw-context*
-    (begin
-      (sdl/stop-text-input! (get *draw-context* :window))
-      (sdl/close-context! *draw-context*)
-      (set! *draw-context* nil)))
-  (set! *draw-thread* nil)
-  (shutdown!)
-  nil)
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-running?* false)
+      (draw-release-canvas!)
+      (if *draw-context*
+        (begin
+          (sdl/stop-text-input! (get *draw-context* :window))
+          (sdl/close-context! *draw-context*)
+          (set! *draw-context* nil)))
+      (set! *draw-thread* nil)
+      (shutdown!)
+      nil)))
 
 (defn start-dev!
   "Start the SDL window and background loop for REPL-driven development."

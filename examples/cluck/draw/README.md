@@ -38,6 +38,7 @@ The intent is to build this interactively in small steps:
 8. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
 9. when you are working on draw tools and state mutations, run `csi -q -s test/run-draw-tools.scm` for a fast focused probe
 10. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm` for a fast focused probe
+11. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
