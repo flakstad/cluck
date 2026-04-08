@@ -25,13 +25,7 @@
   :type 'string
   :group 'cluck)
 
-(defcustom cluck-draw-bootstrap-timeout 60.0
-  "Seconds to wait while loading the SDL3 draw dev bootstrap."
-  :type 'number
-  :group 'cluck)
-
 (defvar cluck--last-source-buffer nil)
-(defvar-local cluck--draw-bootstrap-loaded-p nil)
 
 (defun cluck-clear-inline-results ()
   "Delete Cluck inline result overlays in the current buffer."
@@ -55,35 +49,6 @@
         (locate-dominating-file dir "src/cluck.scm")
         (locate-dominating-file dir ".git")
         dir)))
-
-(defun cluck--draw-source-p (&optional start)
-  "Return non-nil when START points at the draw example."
-  (let ((path (cond
-               ((bufferp start) (or (buffer-file-name start) default-directory))
-               ((stringp start) start)
-               ((buffer-file-name) (buffer-file-name))
-               (t default-directory))))
-    (and path
-         (string-match-p "/examples/cluck/draw/" path))))
-
-(defun cluck--draw-dev-bootstrap-path (&optional start)
-  "Return the absolute path to the draw development bootstrap."
-  (expand-file-name "examples/cluck/draw/dev.clk"
-                    (file-name-as-directory (cluck--project-root start))))
-
-(defun cluck--load-draw-bootstrap (&optional start)
-  "Load the SDL3 draw bootstrap into the current Cluck REPL once."
-  (let* ((buffer (cluck--ensure-repl-buffer start))
-         (loaded (with-current-buffer buffer cluck--draw-bootstrap-loaded-p)))
-    (unless loaded
-      (let ((output (cluck--eval-string-sync
-                     (cluck--load-file-command (cluck--draw-dev-bootstrap-path start))
-                     start
-                     cluck-draw-bootstrap-timeout)))
-        (unless (string= (cluck--trim-output output) "loaded")
-          (error "Cluck draw dev bootstrap failed: %s" output))
-        (with-current-buffer buffer
-          (setq-local cluck--draw-bootstrap-loaded-p t))))))
 
 (defun cluck--repl-command (&optional start)
   "Return the command list used to launch a Cluck REPL."
@@ -156,14 +121,12 @@ returning."
   (pop-to-buffer (cluck--ensure-repl-buffer)))
 
 (defun cluck-draw-repl ()
-  "Pop to the Cluck draw REPL, starting the generic REPL and loading the draw bootstrap."
+  "Pop to the ordinary Cluck REPL for draw development."
   (interactive)
-  (let* ((buffer (cluck--ensure-repl-buffer))
-         (output (progn
-                   (cluck--load-draw-bootstrap)
-                   "loaded")))
-    (pop-to-buffer buffer)
-    (cluck--show-echo-output output "Cluck draw dev bootstrap loaded; call (start-dev!) to open the window")))
+  (pop-to-buffer (cluck--ensure-repl-buffer))
+  (cluck--show-echo-output
+   ""
+   "Cluck REPL ready; load examples/cluck/draw/dev.clk explicitly, then call (start-dev!) when you want the window"))
 
 (defun cluck-switch-to-repl ()
   "Pop to the Cluck REPL, starting it if necessary."
@@ -223,8 +186,6 @@ returning."
 (defun cluck--send-string (string &optional start timeout)
   "Send STRING to the Cluck REPL and return its output."
   (setq cluck--last-source-buffer (current-buffer))
-  (when (cluck--draw-source-p (or start cluck--last-source-buffer))
-    (cluck--load-draw-bootstrap (or start cluck--last-source-buffer)))
   (cluck--eval-string-sync string start timeout))
 
 (defun cluck--show-inline-result (end result)

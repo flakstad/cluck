@@ -652,6 +652,7 @@
 (comment
   (default-state)
   (describe-state (default-state))
+  (load-file "examples/cluck/draw/dev.clk")
   (start-dev!)
   (draw-toggle-debug-panel! (current-state))
   (main ["--help"]))

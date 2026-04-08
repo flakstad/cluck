@@ -241,12 +241,13 @@ csi -q -s examples/cluck/draw/run.scm
 ./build/draw
 ```
 
-For REPL-driven work, start a normal Cluck REPL and evaluate
-`(load-file "examples/cluck/draw/dev.clk")`. That bootstrap compiles a loadable
-SDL3 extension on demand, loads it into the current REPL process, and defines
-the draw app. Call `(start-dev!)` explicitly when you want to open the window
-and start the background render loop. From there you can call functions like
-`set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
+For REPL-driven work, start a normal Cluck REPL and evaluate the explicit
+startup forms in the comment block at the end of
+[`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk). That loads
+`examples/cluck/draw/dev.clk`, compiles the SDL3 support library on demand, and
+defines the draw app. Call `(start-dev!)` explicitly when you want to open the
+window and start the background render loop. From there you can call functions
+like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, and `stop!` while the window stays open.
 Drag with the mouse or pen to paint strokes, and press `F1` to toggle the
 debug panel on demand.
@@ -254,10 +255,12 @@ State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
-In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. Draw
-buffers automatically load `examples/cluck/draw/dev.clk` the first time you
-evaluate draw code there, so `C-c C-k` works without any extra manual bootstrap.
-The REPL itself still starts with no window and does not load SDL automatically.
+In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. The REPL
+starts with no window and does not load SDL automatically. When you want the
+draw app, evaluate the explicit startup forms in the comment block at the end
+of `examples/cluck/draw/main.clk`, or evaluate
+`(load-file "examples/cluck/draw/dev.clk")` yourself and then call
+`(start-dev!)`.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.
