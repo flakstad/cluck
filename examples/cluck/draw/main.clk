@@ -390,6 +390,11 @@
   (assoc state
          :frame (+ (get state :frame) 1)))
 
+(defn draw-exact-int
+  "Coerce VALUE to an exact integer."
+  [value]
+  (inexact->exact value))
+
 (defn draw-record-input!
   "Record the latest SDL event description in STATE."
   [state desc]
@@ -555,7 +560,7 @@
   "Return the brush radius for SIZE."
   [size]
   (if (> size 0)
-    size
+    (draw-exact-int size)
     1))
 
 (defn draw-render-brush-rows!
@@ -563,8 +568,8 @@
   [renderer x y radius dy]
   (if (> dy radius)
     nil
-    (let [span (math/floor (math/sqrt (- (* radius radius)
-                                         (* dy dy))))]
+    (let [span (draw-exact-int (math/floor (math/sqrt (- (* radius radius)
+                                                         (* dy dy)))))]
       (sdl/render-line! renderer
                         (- x span)
                         (+ y dy)
@@ -585,8 +590,8 @@
   [renderer x1 y1 dx dy radius steps i]
   (if (> i steps)
     nil
-    (let [x (+ x1 (math/quotient (* dx i) steps))
-          y (+ y1 (math/quotient (* dy i) steps))]
+    (let [x (draw-exact-int (+ x1 (math/quotient (* dx i) steps)))
+          y (draw-exact-int (+ y1 (math/quotient (* dy i) steps)))]
       (draw-render-brush! renderer [x y] radius)
       (draw-render-stroke-point-step! renderer x1 y1 dx dy radius steps (+ i 1)))))
 
