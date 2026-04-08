@@ -149,7 +149,7 @@ returning."
                   nil
                   cluck-draw-bootstrap-timeout)))
     (pop-to-buffer buffer)
-    (cluck--show-echo-output output "Cluck draw dev bootstrap loaded")))
+    (cluck--show-echo-output output "Cluck draw dev bootstrap loaded; call (start-dev!) to open the window")))
 
 (defun cluck-switch-to-repl ()
   "Pop to the context-appropriate Cluck REPL."

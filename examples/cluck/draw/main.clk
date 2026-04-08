@@ -383,4 +383,5 @@
 (comment
   (default-state)
   (describe-state (default-state))
+  (start-dev!)
   (main ["--help"]))

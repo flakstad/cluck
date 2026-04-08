@@ -4,8 +4,9 @@
 ;;
 ;;   (load-file "examples/cluck/draw/dev.clk")
 ;;
-;; It compiles a loadable SDL3 extension on demand, loads it into the current
-;; process, then loads the draw example and starts the background loop.
+;; It compiles a loadable SDL3 extension on demand and loads it into the
+;; current process, then loads the draw example definitions. Call `start-dev!`
+;; explicitly from the REPL when you want to open the window.
 
 (ns cluck.examples.draw.dev
   "REPL-first development bootstrap for the SDL3 drawing example."
@@ -75,5 +76,4 @@
       lib (draw-dev-ensure-library! root)
       app (fs/path root "examples/cluck/draw/main.clk")]
   (load-library 'cluck.sdl3 lib)
-  (load-file app)
-  (start-dev!))
+  (load-file app))
