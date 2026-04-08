@@ -1620,7 +1620,8 @@
      (##core#let ((c coll)
                   (k key)
                   (v val))
-       (assoc c more ...)))))
+       (##core#let ((next (cluck-assoc c k v)))
+         (assoc next more ...))))))
 
 (define (dissoc coll . keys)
   (cond

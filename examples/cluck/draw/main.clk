@@ -139,12 +139,37 @@
       (vec (drop (- total limit) events))
       (vec events))))
 
+(defn draw-kind=?
+  "Compare two keyword event kinds by name."
+  [kind expected]
+  (and (keyword? kind)
+       (keyword? expected)
+       (string=? (name kind) (name expected))))
+
 (defn draw-nonblank
   "Return VALUE when it contains visible text, otherwise FALLBACK."
   [value fallback]
   (if (str/blank? value)
     fallback
     value))
+
+(defn draw-event-token
+  "Return the text after LABEL in DESC, or nil when LABEL is missing."
+  [desc label]
+  (let [parts (str/split desc label)]
+    (if (> (count parts) 1)
+      (nth parts 1)
+      nil)))
+
+(defn draw-event-coordinate
+  "Parse the first integer coordinate after LABEL in DESC."
+  [desc label]
+  (let [tail (draw-event-token desc label)]
+    (if (str/blank? tail)
+      0
+      (let [token (first (str/split tail " "))
+            whole (first (str/split token "."))]
+        (parse-long whole)))))
 
 (defn draw-bump-frame!
   "Advance the frame counter in STATE."
@@ -162,35 +187,35 @@
                      :recent-events recent
                      :last-event desc)]
     (cond
-      (or (eq? kind :key-down)
-          (eq? kind :key-up))
+      (or (draw-kind=? kind :key-down)
+          (draw-kind=? kind :key-up))
       (assoc state
              :last-key (draw-nonblank (sdl/event-key-name) desc))
 
-      (eq? kind :text-input)
+      (draw-kind=? kind :text-input)
       (assoc state
              :last-text (draw-nonblank (sdl/event-text-input) desc)
              :last-key (draw-nonblank (sdl/event-text-input)
                                       (draw-nonblank (sdl/event-key-name)
                                                      desc)))
 
-      (or (eq? kind :mouse-motion)
-          (eq? kind :mouse-down)
-          (eq? kind :mouse-up))
+      (or (draw-kind=? kind :mouse-motion)
+          (draw-kind=? kind :mouse-down)
+          (draw-kind=? kind :mouse-up))
       (assoc state
-             :mouse-x (sdl/mouse-x)
-             :mouse-y (sdl/mouse-y))
+             :mouse-x (draw-event-coordinate desc "x=")
+             :mouse-y (draw-event-coordinate desc "y="))
 
-      (or (eq? kind :pen-motion)
-          (eq? kind :pen-down)
-          (eq? kind :pen-up)
-          (eq? kind :pen-button-down)
-          (eq? kind :pen-button-up))
+      (or (draw-kind=? kind :pen-motion)
+          (draw-kind=? kind :pen-down)
+          (draw-kind=? kind :pen-up)
+          (draw-kind=? kind :pen-button-down)
+          (draw-kind=? kind :pen-button-up))
       (assoc state
-             :mouse-x (sdl/mouse-x)
-             :mouse-y (sdl/mouse-y))
+             :mouse-x (draw-event-coordinate desc "x=")
+             :mouse-y (draw-event-coordinate desc "y="))
 
-      (eq? kind :text-editing)
+      (draw-kind=? kind :text-editing)
       (assoc state
              :last-text (draw-nonblank (sdl/event-text-editing) desc)
              :last-key (draw-nonblank (sdl/event-text-editing) desc))
@@ -244,7 +269,7 @@
     (let [desc (sdl/event-description)
           kind (draw-event-kind desc)]
       (set! *draw-state* (draw-record-input! *draw-state* desc))
-      (if (eq? kind :quit)
+      (if (draw-kind=? kind :quit)
         (begin
           (set! *draw-running?* false)
           (draw-drain-input! true))
