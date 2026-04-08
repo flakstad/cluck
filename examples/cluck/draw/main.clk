@@ -158,6 +158,11 @@
   (assoc state
          :debug-panel? (not (get state :debug-panel?))))
 
+(defn draw-toggle-debug-panel-key?
+  "Return true when DESC should toggle the debug panel."
+  [desc]
+  (str/includes? (str/lower-case desc) "key=d"))
+
 (defn draw-clear-error!
   "Clear the last recorded draw error."
   []
@@ -279,7 +284,7 @@
       (let [state (assoc state
                          :last-key desc)]
         (if (and (draw-kind=? kind :key-down)
-                 (str/includes? desc "F1"))
+                 (draw-toggle-debug-panel-key? desc))
           (draw-toggle-debug-panel! state)
           state))
 

@@ -249,7 +249,7 @@ defines the draw app. Call `(start-dev!)` explicitly when you want to open the
 window and start the background render loop. From there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, and `stop!` while the window stays open.
-Drag with the mouse or pen to paint strokes, and press `F1` to toggle the
+Drag with the mouse or pen to paint strokes, and press `d` to toggle the
 debug panel on demand.
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3

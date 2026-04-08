@@ -11,7 +11,7 @@ What is in place:
 - a REPL-first development bootstrap in `dev.clk` that you load explicitly from the normal Cluck REPL before calling `(start-dev!)`
 - live mouse, pen, and keyboard-event overlays in the window
 - freehand brush strokes while dragging
-- an on-demand debug panel toggled with `F1`
+- an on-demand debug panel toggled with `d`
 - REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
@@ -32,7 +32,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live
 5. if the draw thread crashes, call `(restart-dev!)` to close and reopen the window without killing the REPL
-6. drag with the mouse or pen to paint strokes, and press `F1` to toggle the debug panel
+6. drag with the mouse or pen to paint strokes, and press `d` to toggle the debug panel
 7. add byte-buffer and texture work as needed
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
