@@ -19,6 +19,7 @@
 (def *draw-last-error* false)
 (def *draw-canvas-ready?* false)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
+(def *draw-current-stroke-color* false)
 
 (defn draw-recent-events-limit
   []
@@ -249,6 +250,18 @@
   []
   (set! *draw-last-error* false)
   false)
+
+(defn draw-with-stroke-color
+  "Run THUNK while binding the current stroke color."
+  [color thunk]
+  (let [saved *draw-current-stroke-color*]
+    (dynamic-wind
+      (lambda () false)
+      (lambda ()
+        (set! *draw-current-stroke-color* color)
+        (thunk))
+      (lambda ()
+        (set! *draw-current-stroke-color* saved)))))
 
 (defn draw-canvas
   "Return the cached canvas texture if one is available."
@@ -866,6 +879,28 @@
       scaled
       1)))
 
+(defn draw-point-alpha
+  "Scale the stroke alpha by POINT pressure."
+  [point]
+  (let [pressure (draw-point-pressure point)
+        alpha (draw-exact-int (math/ceiling (+ 72 (* 183 pressure))))]
+    (if (> alpha 255)
+      255
+      alpha)))
+
+(defn draw-soft-brush-layer!
+  "Render a soft brush layer using the current stroke color."
+  [renderer point size alpha]
+  (let [color (if *draw-current-stroke-color*
+                *draw-current-stroke-color*
+                [255 255 255])]
+    (sdl/set-draw-color! renderer
+                         (nth color 0)
+                         (nth color 1)
+                         (nth color 2)
+                         alpha)
+    (draw-render-brush! renderer point size)))
+
 (defn draw-render-brush-rows!
   "Render the filled disc rows for POINT with RADIUS."
   [renderer x y radius dy]
@@ -907,7 +942,23 @@
 (defn draw-render-stroke-brush!
   "Render a single stroke sample at POINT."
   [renderer point size]
-  (draw-render-brush! renderer point (draw-point-size point size)))
+  (let [base-size (draw-point-size point size)
+        mid-size (if (> base-size 1)
+                   (draw-exact-int (math/ceiling (/ base-size 2)))
+                   base-size)
+        outer-size (if (> mid-size 1)
+                     (draw-exact-int (math/ceiling (/ mid-size 2)))
+                     mid-size)
+        alpha (draw-point-alpha point)
+        mid-alpha (draw-exact-int (math/ceiling (/ alpha 2)))
+        outer-alpha (draw-exact-int (math/ceiling (/ alpha 4)))]
+    (draw-soft-brush-layer! renderer point base-size alpha)
+    (if (> mid-size 0)
+      (draw-soft-brush-layer! renderer point mid-size mid-alpha)
+      nil)
+    (if (> outer-size 0)
+      (draw-soft-brush-layer! renderer point outer-size outer-alpha)
+      nil)))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
@@ -962,14 +1013,10 @@
         size (get stroke :size)]
     (if (empty? points)
       nil
-      (begin
-        (sdl/set-draw-color! renderer
-                             (nth color 0)
-                             (nth color 1)
-                             (nth color 2)
-                             255)
-        (draw-render-stroke-point! renderer (first points) size)
-        (draw-render-stroke-segments! renderer points size)))))
+      (draw-with-stroke-color color
+        (lambda ()
+          (draw-render-stroke-point! renderer (first points) size)
+          (draw-render-stroke-segments! renderer points size))))))
 
 (defn draw-render-strokes!
   "Render all finished strokes and the active stroke."
