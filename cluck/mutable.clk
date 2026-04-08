@@ -1,0 +1,82 @@
+;; Explicit mutable collection helpers for Cluck.
+
+(ns cluck.mutable
+  "Explicit mutable collection helpers for Cluck.")
+
+(import (prefix srfi-69 ht:))
+
+(define-record-type cluck-mutable-map
+  (make-cluck-mutable-map table)
+  cluck-mutable-map?
+  (table cluck-mutable-map-table))
+
+(define-record-type cluck-mutable-set
+  (make-cluck-mutable-set table)
+  cluck-mutable-set?
+  (table cluck-mutable-set-table))
+
+(defn mutable-map? [x]
+  (cluck-mutable-map? x))
+
+(defn mutable-map-table [x]
+  (cluck-mutable-map-table x))
+
+(defn mutable-set? [x]
+  (cluck-mutable-set? x))
+
+(defn mutable-set-table [x]
+  (cluck-mutable-set-table x))
+
+(define (cluck-mutable-table x who)
+  (if (cluck-mutable-map? x)
+      (mutable-map-table x)
+      (if (cluck-mutable-set? x)
+          (mutable-set-table x)
+          (if (ht:hash-table? x)
+              x
+              (error who "expects a mutable map or set" x)))))
+
+(defn mutable-map [& kvs]
+  (##core#let ((table (ht:make-hash-table)))
+    (##core#let loop ((xs kvs))
+      (if (null? xs)
+          (make-cluck-mutable-map table)
+          (if (null? (cdr xs))
+              (error "mutable-map expects an even number of forms" kvs)
+              (begin
+                (ht:hash-table-set! table (car xs) (cadr xs))
+                (loop (cddr xs))))))))
+
+(defn mutable-set [& items]
+  (##core#let ((table (ht:make-hash-table)))
+    (##core#let loop ((xs items))
+      (if (null? xs)
+          (make-cluck-mutable-set table)
+          (begin
+            (ht:hash-table-set! table (car xs) #t)
+            (loop (cdr xs)))))))
+
+(defn persistent-map [table]
+  (##core#let ((out (hash-map)))
+    (ht:hash-table-for-each
+     (cluck-mutable-table table 'persistent-map)
+     (lambda (k v)
+       (set! out (assoc out k v))))
+    out))
+
+(defn freeze-set [table]
+  (##core#let ((out (set)))
+    (ht:hash-table-for-each
+     (cluck-mutable-table table 'freeze-set)
+     (lambda (k v)
+       (set! out (conj out k))))
+    out))
+
+(defn persistent [table]
+  (if (cluck-mutable-map? table)
+      (persistent-map table)
+      (if (cluck-mutable-set? table)
+          (freeze-set table)
+          (if (ht:hash-table? table)
+              (persistent-map table)
+              table))))

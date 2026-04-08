@@ -111,12 +111,7 @@
 (define (cluck-standalone-map-form->pairs x)
   (cond
     ((map? x)
-     (let ((pairs '()))
-       (hash-table-for-each
-        (map-hash x)
-        (lambda (k v)
-          (set! pairs (cons (cons k v) pairs))))
-       (reverse pairs)))
+     (cluck-map-alist x))
     ((and (pair? x) (eq? (car x) 'hash-map))
      (let loop ((xs (cdr x)) (acc '()))
        (cond

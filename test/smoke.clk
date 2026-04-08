@@ -72,9 +72,16 @@
 (assert-num= "parse-double" 42.5 (parse-double "42.5"))
 (assert-str= "type vector" "vector" (pr-str (type [1 2 3])))
 (assert-str= "type map" "cluck.map" (pr-str (type {:a 1})))
+(assert-str= "type atom" "cluck.atom" (pr-str (type (atom 1))))
 (assert-str= "type list" "list" (pr-str (type (rest [1 2 3]))))
 (assert-str= "vec" "[1 2 3]" (pr-str (vec '(1 2 3))))
 (assert-str= "vec nil" "[]" (pr-str (vec nil)))
+(let [a (atom 1)]
+  (assert-num= "atom deref" 1 (deref a))
+  (assert-num= "swap!" 3 (swap! a + 2))
+  (assert-num= "reset!" 7 (reset! a 7))
+  (assert-true "compare-and-set! success" (compare-and-set! a 7 8))
+  (assert-true "compare-and-set! fail" (not (compare-and-set! a 7 9))))
 (assert-true "unspecified?" (unspecified? (void)))
 (assert-num= "and" 3 (and true 3))
 (assert-str= "and false" "false" (pr-str (and true false 3)))
@@ -113,6 +120,30 @@
 (assert-str= "core hash-map" "{:a 1}" (pr-str (hash-map :a 1)))
 (assert-str= "core set" "#{1 2}" (pr-str (set 1 2)))
 (assert-str= "core disj" "#{1}" (pr-str (disj #{1 2 3} 2 3)))
+(require [cluck.mutable :refer [mutable-map
+                                mutable-map?
+                                mutable-map-table
+                                mutable-set
+                                mutable-set?
+                                mutable-set-table
+                                persistent-map
+                                persistent
+                                freeze-set]])
+(let [m (mutable-map)]
+  (assert-true "mutable namespace exists" (find-ns 'cluck.mutable))
+  (assert-true "mutable map?" (mutable-map? m))
+  (hash-table-set! (mutable-map-table m) :a 1)
+  (hash-table-set! (mutable-map-table m) :b 2)
+  (hash-table-delete! (mutable-map-table m) :a)
+  (assert-str= "mutable persistent map" "{:b 2}" (pr-str (persistent-map m)))
+  (assert-str= "mutable persistent dispatcher map" "{:b 2}" (pr-str (persistent m))))
+(let [s (mutable-set 1 2)]
+  (assert-true "mutable set?" (mutable-set? s))
+  (hash-table-set! (mutable-set-table s) 3 #t)
+  (hash-table-set! (mutable-set-table s) 4 #t)
+  (hash-table-delete! (mutable-set-table s) 1)
+  (assert-str= "mutable freeze set" "#{2 3 4}" (pr-str (freeze-set s)))
+  (assert-str= "mutable persistent dispatcher set" "#{2 3 4}" (pr-str (persistent s))))
 (let [core-file "build/cluck-core-smoke.txt"]
   (spit core-file "a\nb\n")
   (assert-str= "core slurp" "a\nb\n" (slurp core-file)))
@@ -274,7 +305,7 @@
              "take\n\nReturn the first N items from COLL.\n"
              (capture-output (lambda () (doc take))))
 (assert-str= "doc core frequencies"
-             "frequencies\n\nReturn a map of item frequencies from COLL.\n"
+             "frequencies\n\nReturn a persistent map of item frequencies from COLL.\n"
              (capture-output (lambda () (doc frequencies))))
 (assert-true "empty? vector" (empty? []))
 (assert-true "empty? list" (empty? '()))
@@ -284,12 +315,16 @@
   (+ a b))
 (assert-num= "defn destructuring" 5 (pair-sum [2 3]))
 (assert-num= "assoc/get" 2 (-> {:a 1} (assoc :b 2) (get :b)))
-(let [m (hash-map)]
-  (assoc m :a 1 :b 2 :c 3)
-  (assert-num= "assoc multi map a" 1 (get m :a))
-  (assert-num= "assoc multi map b" 2 (get m :b))
-  (assert-num= "assoc multi map c" 3 (get m :c)))
-(assert-str= "assoc multi vector" "[1 2 3]" (pr-str (assoc [0 0 0] 0 1 1 2 2 3)))
+(let [m (hash-map)
+      m2 (assoc m :a 1 :b 2 :c 3)]
+  (assert-true "assoc original map stays empty" (empty? m))
+  (assert-num= "assoc multi map a" 1 (get m2 :a))
+  (assert-num= "assoc multi map b" 2 (get m2 :b))
+  (assert-num= "assoc multi map c" 3 (get m2 :c)))
+(let [v [0 0 0]
+      v2 (assoc v 0 1 1 2 2 3)]
+  (assert-str= "assoc multi vector" "[1 2 3]" (pr-str v2))
+  (assert-str= "assoc original vector stays" "[0 0 0]" (pr-str v)))
 (assert-num= "keyword lookup" 1 (:a {:a 1}))
 (assert-num= "keyword lookup default" 0 (:a {:b 2} 0))
 (assert-str= "thread-last map" "(2 3 4)" (pr-str (->> [1 2 3] (map inc))))
@@ -366,6 +401,145 @@
   (assert-num= "require alias ns-resolve" 16 (math-square 4)))
 (assert-true "ns current" (equal? (current-ns) 'cluck.smoke))
 (assert-num= "ns publics" 123 (get (ns-publics (current-ns)) 'smoke-ns-value))
+
+(load-file "examples/cluck/app/main.clk")
+(in-ns 'cluck.examples.app)
+(assert-true "app namespace exists" (find-ns 'cluck.examples.app))
+(assert-str= "app report"
+             "{:alias-square 1 :count 3 :first-square 1 :sum 6 :sum-of-squares 14}"
+             (pr-str (report [1 2 3])))
+(in-ns 'cluck.smoke)
+
+(assert-str= "demo load output"
+             "cluck demo\nProject settings: {:mode :demo :owners #{:andreas} :project \"cluck\"}\nTotal items: 6\nStatus counts: {:doing 2 :done 2 :todo 2}\nOpen items: (\"namespace support\" \"destructuring\" \"demo program\" \"package metadata\")\nDocs items: (\"bootstrap reader\" \"demo program\" \"package metadata\")\nHigh priority open items: (\"namespace support\" \"destructuring\" \"demo program\")\nRaw EDN: {:release \"0.1.0\" :targets #{:cli :geiser}}\n"
+             (capture-output (lambda () (load-file "examples/cluck/demo/main.clk"))))
+(in-ns 'cluck.examples.demo)
+(assert-true "demo namespace exists" (find-ns 'cluck.examples.demo))
+(assert-num= "demo backlog count" 6 (count backlog))
+(assert-str= "demo status counts" "{:doing 2 :done 2 :todo 2}"
+             (pr-str (status-counts backlog)))
+(assert-str= "demo docs titles"
+             "(\"bootstrap reader\" \"demo program\" \"package metadata\")"
+             (pr-str (title-list (items-with-tag backlog :docs))))
+(assert-str= "demo open titles"
+             "(\"namespace support\" \"destructuring\" \"demo program\" \"package metadata\")"
+             (pr-str (title-list (filter unfinished? backlog))))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/outline/main.clk")
+(in-ns 'cluck.examples.outline)
+(assert-str= "outline report"
+             "Cluck markdown outline\nSource: sample.md\nHeadings: 3\n1:1 Title\n3:2 Section\n5:3 Detail\n"
+             (capture-output
+              (lambda ()
+                (main "sample.md" "# Title\n\n## Section\ntext\n### Detail\n"))))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/text-report/main.clk")
+(in-ns 'cluck.examples.text-report)
+(assert-str= "text-report report"
+             "Cluck text report\nSource: sample.txt\nLines: 3\nNonblank lines: 2\nBlank lines: 1\nCharacters: 4\nLongest line: 1\n"
+             (capture-output (lambda () (main "sample.txt" "a\n\nb"))))
+(in-ns 'cluck.smoke)
+
+(define (with-temp-file path contents thunk)
+  (dynamic-wind
+    (lambda () (fs/spit path contents))
+    thunk
+    (lambda () (fs/delete! path))))
+
+(load-file "examples/cluck/todo/main.clk")
+(in-ns 'cluck.examples.todo)
+(with-temp-file "cluck-example-todo.txt"
+                "alpha\nTODO fix this\nbeta FIXME later\n"
+                (lambda ()
+                  (assert-str= "todo report"
+                               "TODO markers: 2\ncluck-example-todo.txt:2 [TODO] TODO fix this\ncluck-example-todo.txt:3 [FIXME] beta FIXME later\n"
+                               (capture-output
+                                (lambda ()
+                                  (main (list "cluck-example-todo.txt")))))
+                  (assert-num= "todo scan-file count"
+                               2
+                               (count (scan-file "cluck-example-todo.txt")))))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/link-check/main.clk")
+(in-ns 'cluck.examples.link-check)
+(with-temp-file "cluck-example-link-check.md"
+                "[ok](README.md)\n[broken](missing.md)\n"
+                (lambda ()
+                  (assert-str= "link-check report"
+                               "Broken links: 1\ncluck-example-link-check.md:2 [broken] missing.md -> missing.md\n"
+                               (capture-output
+                                (lambda ()
+                                  (main (list "cluck-example-link-check.md")))))
+                  (assert-num= "link-check scan-file count"
+                               1
+                               (count (scan-file "cluck-example-link-check.md")))))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/changelog/main.clk")
+(in-ns 'cluck.examples.changelog)
+(let [old-log changelog-git-log
+      old-branch changelog-git-branch
+      sample-log "a1b2c3\tfeat: add parser\nb2c3d4\tfix: handle nil\nc3d4e5\tdocs: update readme\n"]
+  (dynamic-wind
+    (lambda ()
+      (set! changelog-git-log (lambda (range) sample-log))
+      (set! changelog-git-branch (lambda () "main")))
+    (lambda ()
+      (assert-str= "changelog main"
+                   (string-append
+                    "Cluck git changelog\n"
+                    "Branch: main\n"
+                    "Range: HEAD~3..HEAD\n"
+                    "Commits: 3\n"
+                    "\n"
+                    "Features (1)\n"
+                    "- a1b2c3 feat: add parser\n"
+                    "\n"
+                    "Fixes (1)\n"
+                    "- b2c3d4 fix: handle nil\n"
+                    "\n"
+                    "Docs (1)\n"
+                    "- c3d4e5 docs: update readme\n"
+                    "\n")
+                   (capture-output
+                    (lambda ()
+                      (main (list "HEAD~3..HEAD"))))))
+    (lambda ()
+      (set! changelog-git-log old-log)
+      (set! changelog-git-branch old-branch))))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/weather/main.clk")
+(in-ns 'cluck.examples.weather)
+(let [old-fetch fetch-report
+      payload {:nearest_area [{:areaName [{:value "Skatval"}]
+                               :region [{:value "Trondheim"}]
+                               :country [{:value "Norway"}]}]
+               :current_condition [{:temp_C "3"
+                                    :FeelsLikeC "0"
+                                    :weatherDesc [{:value "Partly Cloudy"}]
+                                    :windspeedKmph "18"
+                                    :humidity "87"}]
+               :weather [{:date "2026-04-08"
+                          :mintempC "-1"
+                          :maxtempC "4"
+                          :hourly [{:chanceofrain "20"
+                                    :weatherDesc [{:value "Light Rain"}]}]}]}]
+  (dynamic-wind
+    (lambda () (set! fetch-report (lambda (location) payload)))
+    (lambda ()
+      (assert-str= "weather main"
+                   "Skatval, Trondheim, Norway\nCurrent: 3°C, feels like 0°C, partly cloudy, wind 5.0 m/s, humidity 87\nForecast:\n2026-04-08 -1°/4°C  light rain  rain 20\n"
+                   (capture-output
+                    (lambda ()
+                      (main (list "Skatval"))))))
+    (lambda ()
+      (set! fetch-report old-fetch))))
+(in-ns 'cluck.smoke)
+
 (ns cluck.smoke.ns-options
   (:require [cluck.math :refer :all :exclude [square]]))
 

@@ -39,7 +39,7 @@ The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 - keywords, maps, sets, and vectors with EDN-style syntax
 - core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond` with `:else`, `and`, `or`, `->`, and `->>`
 - common sequence helpers like `seq`, `first`, `rest`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, `group-by`, `count`, `map`, `filter`, and `reduce`
-- mutable maps and sets for now, with immutable collections deferred until later
+- persistent maps and sets by default, with explicit mutable escape hatches when needed
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
 - `.clk` is the preferred source extension for cluck code; `.scm` stays for Scheme glue and bootstrap files
 
@@ -57,22 +57,24 @@ The current implementation supports:
 - `type` for runtime type hints and `vec` for turning collections into vectors
 - `slurp`, `spit`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, and `group-by` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.edn/read-string`
+- `atom`, `atom?`, `deref`, `reset!`, `swap!`, and `compare-and-set!`
+- `cluck.mutable` for explicit mutable map/set helpers and host interop
 - `cluck.examples.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
-- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
+- persistent `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
-- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
+- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
 
 Notes:
 
 - vectors are still ordinary CHICKEN vectors, so the host REPL prints them as `#(...)`
 - keywords, maps, and sets use custom record types so the host REPL can print them in Clojure-style form
-- the collection layer is mutable for now
+- the collection layer is persistent by default; mutation is explicit
 - the namespace layer is intentionally lightweight and uses separate public/import tables; it is not full Clojure namespace resolution yet
 - `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
 
@@ -95,6 +97,8 @@ If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` 
 
 When a `.clk` file reaches out to CHICKEN eggs, keep that work explicit by using `ns` `:require` with prefixed imports so the host interop stays visible and does not leak names into the Cluck surface.
 
+If you need mutable escape hatches, use `cluck.mutable` for host hash tables and sets, or keep the raw Scheme interop in `.scm` helpers; the ordinary Cluck collection API stays persistent by default. `set!` remains Scheme binding mutation, not a collection mutator.
+
 For EDN parsing, prefer `cluck.edn/read-string` in app code. The interactive `src/cluck-init.scm` and `src/cluck-cli.scm` loaders also install a convenience top-level `read-string` alias for the REPL and command-line workflow, but the namespaced form is the stable one for libraries and standalone binaries.
 
 ## Performance Direction
@@ -115,6 +119,14 @@ The practical goal is to keep the syntax familiar while making the runtime feel 
 ## Loading it
 
 From the repository root, in Geiser or any other REPL where you want to return to the host prompt:
+
+```bash
+chicken-install hash-trie
+```
+
+That installs the persistent collection backend used by Cluck's maps and sets.
+
+Then load the language layer:
 
 ```scheme
 (load "src/cluck-init.scm")
@@ -578,6 +590,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.process`
 - `cluck.set`
+- `cluck.mutable`
 - `cluck.edn`
 - `cluck.walk`
 - `cluck.math`
@@ -619,6 +632,7 @@ The mirrored namespace files currently live at:
 - [`cluck/core.clk`](./cluck/core.clk)
 - [`cluck/string.clk`](./cluck/string.clk)
 - [`cluck/set.clk`](./cluck/set.clk)
+- [`cluck/mutable.clk`](./cluck/mutable.clk)
 - [`cluck/edn.clk`](./cluck/edn.clk)
 - [`cluck/walk.clk`](./cluck/walk.clk)
 - [`cluck/math.clk`](./cluck/math.clk)
@@ -650,8 +664,8 @@ This is enough to structure source files, inspect exports, and load small module
 
 The next phase is about making Cluck prove itself on a real small program, not just adding syntax.
 
-- keep the runtime eager, direct, and mutable-first
-- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and related modules
+- keep the runtime eager, direct, and persistent-by-default
+- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and related modules
 - expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
 - use one real dogfood app to drive the next round of API and namespace decisions
 - prefer small native CLI or local data tools first; TODO scanning, link checking, and CSV/TSV summarization are all good candidates before larger app work

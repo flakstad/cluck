@@ -3,6 +3,7 @@
         (chicken io)
         (chicken port)
         (chicken read-syntax)
+        hash-trie
         srfi-69)
 
 (define cluck-nil (list 'cluck-nil))
@@ -119,11 +120,216 @@
     ((string? x) (car (cluck-split-qualified-name x)))
     (else #f)))
 
+(define cluck-hash-modulus 536870909)
+
+(define (cluck-hash-normalize n)
+  (let ((x (modulo n cluck-hash-modulus)))
+    (if (< x 0)
+        (+ x cluck-hash-modulus)
+        x)))
+
+(define (cluck-hash-add a b)
+  (cluck-hash-normalize (+ a b)))
+
+(define (cluck-hash-combine seed value)
+  (cluck-hash-normalize (+ (* 16777619 (cluck-hash-normalize seed))
+                           (cluck-hash-normalize value)
+                           1)))
+
+(define (cluck-optional-string=? a b)
+  (cond
+    ((and (not a) (not b)) #t)
+    ((and (string? a) (string? b)) (string=? a b))
+    (else #f)))
+
+(define (cluck-map=? a b)
+  (and (= (hash-trie/count (map-hash a))
+          (hash-trie/count (map-hash b)))
+       (let loop ((entries (hash-trie->alist (map-hash a))))
+         (if (null? entries)
+             #t
+             (let* ((entry (car entries))
+                    (key (car entry))
+                    (value (cdr entry))
+                    (missing (list 'cluck-map-missing))
+                    (other (hash-trie/lookup (map-hash b) key missing)))
+               (and (not (eq? other missing))
+                    (cluck-value=? value other)
+                    (loop (cdr entries))))))))
+
+(define (cluck-set=? a b)
+  (and (= (hash-trie/count (set-hash a))
+          (hash-trie/count (set-hash b)))
+       (let loop ((items (hash-trie/key-list (set-hash a))))
+         (if (null? items)
+             #t
+             (and (hash-trie/member? (set-hash b) (car items))
+                  (loop (cdr items)))))))
+
+(define (cluck-vector=? a b)
+  (let ((len (vector-length a)))
+    (and (= len (vector-length b))
+         (let loop ((i 0))
+           (if (= i len)
+               #t
+               (and (cluck-value=? (vector-ref a i) (vector-ref b i))
+                    (loop (+ i 1))))))))
+
+(define (cluck-pair=? a b)
+  (and (cluck-value=? (car a) (car b))
+       (cluck-value=? (cdr a) (cdr b))))
+
+(define (cluck-value=? a b)
+  (cond
+    ((eq? a b) #t)
+    ((and (nil? a) (nil? b)) #t)
+    ((or (nil? a) (nil? b)) #f)
+    ((and (boolean? a) (boolean? b)) (eq? a b))
+    ((or (boolean? a) (boolean? b)) #f)
+    ((and (number? a) (number? b)) (= a b))
+    ((or (number? a) (number? b)) #f)
+    ((and (string? a) (string? b)) (string=? a b))
+    ((or (string? a) (string? b)) #f)
+    ((and (char? a) (char? b)) (char=? a b))
+    ((or (char? a) (char? b)) #f)
+    ((and (symbol? a) (symbol? b)) (eq? a b))
+    ((or (symbol? a) (symbol? b)) #f)
+    ((and (keyword? a) (keyword? b))
+     (and (cluck-optional-string=? (keyword-namespace a)
+                                   (keyword-namespace b))
+          (string=? (keyword-name a)
+                    (keyword-name b))))
+    ((or (keyword? a) (keyword? b)) #f)
+    ((and (map? a) (map? b)) (cluck-map=? a b))
+    ((or (map? a) (map? b)) #f)
+    ((and (set? a) (set? b)) (cluck-set=? a b))
+    ((or (set? a) (set? b)) #f)
+    ((and (vector? a) (vector? b)) (cluck-vector=? a b))
+    ((or (vector? a) (vector? b)) #f)
+    ((and (pair? a) (pair? b)) (cluck-pair=? a b))
+    ((or (pair? a) (pair? b)) #f)
+    (else (eq? a b))))
+
+(define (cluck-vector-hash v tag)
+  (let ((len (vector-length v)))
+    (let loop ((i 0) (acc tag))
+      (if (= i len)
+          (cluck-hash-combine acc len)
+          (loop (+ i 1)
+                (cluck-hash-combine acc
+                                    (cluck-value-hash (vector-ref v i))))))))
+
+(define (cluck-pair-hash p tag)
+  (let loop ((current p) (acc tag))
+    (if (pair? current)
+        (loop (cdr current)
+              (cluck-hash-combine acc
+                                  (cluck-value-hash (car current))))
+        (cluck-hash-combine (cluck-hash-combine acc (cluck-value-hash current))
+                            tag))))
+
+(define (cluck-map-hash-value m tag)
+  (let ((entry-sum
+         (hash-trie/fold
+          (map-hash m)
+          0
+          (lambda (k v acc)
+            (cluck-hash-add
+             acc
+             (cluck-hash-combine (cluck-value-hash k)
+                                 (cluck-value-hash v)))))))
+    (cluck-hash-combine (cluck-hash-combine tag entry-sum)
+                        (hash-trie/count (map-hash m)))))
+
+(define (cluck-set-hash-value s tag)
+  (let ((entry-sum
+         (hash-trie/fold
+          (set-hash s)
+          0
+          (lambda (k v acc)
+            (cluck-hash-add acc (cluck-value-hash k))))))
+    (cluck-hash-combine (cluck-hash-combine tag entry-sum)
+                        (hash-trie/count (set-hash s)))))
+
+(define (cluck-value-hash x)
+  (cond
+    ((nil? x) (cluck-hash-combine 1 0))
+    ((eq? x false) (cluck-hash-combine 2 0))
+    ((eq? x true) (cluck-hash-combine 3 0))
+    ((number? x) (cluck-hash-combine 4 (equal?-hash x)))
+    ((string? x) (cluck-hash-combine 5 (string-hash x)))
+    ((char? x) (cluck-hash-combine 6 (char->integer x)))
+    ((symbol? x) (cluck-hash-combine 7 (symbol-hash x)))
+    ((keyword? x)
+     (cluck-hash-combine
+      8
+      (cluck-hash-combine (if (keyword-namespace x)
+                              (string-hash (keyword-namespace x))
+                              0)
+                          (string-hash (keyword-name x)))))
+    ((map? x) (cluck-map-hash-value x 9))
+    ((set? x) (cluck-set-hash-value x 10))
+    ((vector? x) (cluck-vector-hash x 11))
+    ((pair? x) (cluck-pair-hash x 12))
+    (else (cluck-hash-combine 13 (object-uid-hash x)))))
+
+(define cluck-hash-trie-type
+  (make-hash-trie-type cluck-value=? cluck-value-hash))
+
 (define (cluck-make-map)
-  (make-cluck-map (make-hash-table)))
+  (make-cluck-map (make-hash-trie cluck-hash-trie-type)))
 
 (define (cluck-make-set)
-  (make-cluck-set (make-hash-table)))
+  (make-cluck-set (make-hash-trie cluck-hash-trie-type)))
+
+(define (cluck-map-count m)
+  (hash-trie/count (map-hash m)))
+
+(define (cluck-set-count s)
+  (hash-trie/count (set-hash s)))
+
+(define (cluck-map-empty? m)
+  (hash-trie/empty? (map-hash m)))
+
+(define (cluck-set-empty? s)
+  (hash-trie/empty? (set-hash s)))
+
+(define (cluck-map-ref/default m key default)
+  (hash-trie/lookup (map-hash m) key default))
+
+(define (cluck-set-member? s key)
+  (hash-trie/member? (set-hash s) key))
+
+(define (cluck-map-insert m key value)
+  (make-cluck-map (hash-trie/insert (map-hash m) key value)))
+
+(define (cluck-set-insert s key)
+  (make-cluck-set (hash-trie/insert (set-hash s) key #t)))
+
+(define (cluck-map-delete m key)
+  (make-cluck-map (hash-trie/delete (map-hash m) key)))
+
+(define (cluck-set-delete s key)
+  (make-cluck-set (hash-trie/delete (set-hash s) key)))
+
+(define (cluck-map-alist m)
+  (hash-trie->alist (map-hash m)))
+
+(define (cluck-set-list s)
+  (hash-trie/key-list (set-hash s)))
+
+(define (cluck-map-items m)
+  (let loop ((xs (cluck-map-alist m)) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let* ((entry (car xs))
+               (k (car entry))
+               (v (cdr entry)))
+          (loop (cdr xs)
+                (cons (vector k v) acc))))))
+
+(define (cluck-set-items s)
+  (cluck-set-list s))
 
 (define (cluck-ensure-even-list items who)
   (let loop ((xs items))
@@ -136,21 +342,19 @@
 (define (hash-map . kvs)
   (let ((m (cluck-make-map)))
     (cluck-ensure-even-list kvs 'hash-map)
-    (let loop ((xs kvs))
+    (let loop ((xs kvs) (out m))
       (if (null? xs)
-          m
-          (begin
-            (hash-table-set! (map-hash m) (car xs) (cadr xs))
-            (loop (cddr xs)))))))
+          out
+          (loop (cddr xs)
+                (cluck-map-insert out (car xs) (cadr xs)))))))
 
 (define (set . xs)
   (let ((s (cluck-make-set)))
-    (let loop ((items xs))
+    (let loop ((items xs) (out s))
       (if (null? items)
-          s
-          (begin
-            (hash-table-set! (set-hash s) (car items) #t)
-            (loop (cdr items)))))))
+          out
+          (loop (cdr items)
+                (cluck-set-insert out (car items)))))))
 
 (define hash-set set)
 
@@ -173,24 +377,21 @@
     (else (normalize-edn x))))
 
 (define (cluck-normalize-map m)
-  (let ((out (cluck-make-map)))
-    (hash-table-for-each
-     (map-hash m)
-     (lambda (k v)
-       (hash-table-set! (map-hash out)
-                        (normalize-edn k)
-                        (normalize-edn v))))
-    out))
+  (hash-trie/fold
+   (map-hash m)
+   (cluck-make-map)
+   (lambda (k v acc)
+     (cluck-map-insert acc
+                       (normalize-edn k)
+                       (normalize-edn v)))))
 
 (define (cluck-normalize-set s)
-  (let ((out (cluck-make-set)))
-    (hash-table-for-each
-     (set-hash s)
-     (lambda (k v)
-       (hash-table-set! (set-hash out)
-                        (normalize-edn k)
-                        #t)))
-    out))
+  (hash-trie/fold
+   (set-hash s)
+   (cluck-make-set)
+   (lambda (k v acc)
+     (cluck-set-insert acc
+                       (normalize-edn k)))))
 
 (define (normalize-edn x)
   (cond
@@ -222,19 +423,19 @@
            `(keyword ,nm))))
     ((map? x)
      (let ((pairs '()))
-       (hash-table-for-each
-        (map-hash x)
-        (lambda (k v)
+       (for-each
+        (lambda (entry)
           (set! pairs
-                (cons (cluck-source-form v)
-                      (cons (cluck-source-form k) pairs)))))
+                (cons (cluck-source-form (cdr entry))
+                      (cons (cluck-source-form (car entry)) pairs))))
+        (cluck-map-alist x))
        `(hash-map ,@(reverse pairs))))
     ((set? x)
      (let ((items '()))
-       (hash-table-for-each
-        (set-hash x)
-        (lambda (k v)
-          (set! items (cons (cluck-source-form k) items))))
+       (for-each
+        (lambda (k)
+          (set! items (cons (cluck-source-form k) items)))
+        (cluck-set-list x))
        `(set ,@(reverse items))))
     ((vector? x)
      (let loop ((i 0) (items '()))
@@ -433,12 +634,11 @@
     (cluck-ensure-even-list items 'read-map-literal)
     (if (cluck-string-input-port? port)
         (let ((m (cluck-make-map)))
-          (let loop ((xs items))
+          (let loop ((xs items) (out m))
             (if (null? xs)
-                m
-                (begin
-                  (hash-table-set! (map-hash m) (car xs) (cadr xs))
-                  (loop (cddr xs))))))
+                out
+                (loop (cddr xs)
+                      (cluck-map-insert out (car xs) (cadr xs))))))
         (let loop ((xs items) (acc '()))
           (if (null? xs)
               (cons 'hash-map acc)
@@ -451,12 +651,11 @@
   (let ((items (cluck-read-forms (cluck-read-balanced-content port #\}))))
     (if (cluck-string-input-port? port)
         (let ((s (cluck-make-set)))
-          (let loop ((xs items))
+          (let loop ((xs items) (out s))
             (if (null? xs)
-                s
-                (begin
-                  (hash-table-set! (set-hash s) (car xs) #t)
-                  (loop (cdr xs))))))
+                out
+                (loop (cdr xs)
+                      (cluck-set-insert out (car xs))))))
         (cons 'set (map cluck-source-form items)))))
 
 (define (read-discard port)
