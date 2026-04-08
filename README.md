@@ -6,9 +6,10 @@ It is experimental and focused on small native tools, a REPL-driven workflow, an
 
 Binary policy: when this README says "native binary", it means a
 self-contained artifact that can be handed to someone else and run without the
-source tree or a separately managed runtime install. Source-backed launchers
-are useful development helpers, but they are not counted as distributable
-binary deliverables.
+source tree or a separately managed runtime install. That also means no
+third-party dynamic library dependency in the deliverable. Source-backed
+launchers are useful development helpers, but they are not counted as
+distributable binary deliverables.
 
 The goal is not to reimplement Clojure on the JVM. The goal is to get the parts of the Clojure experience that matter most for small native tools:
 
@@ -223,13 +224,38 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 ## SDL3 drawing scaffold
 
-The next larger example is a minimal drawing app scaffold intended for SDL3 work later:
+The SDL3 example is a minimal drawing app scaffold that now opens a window,
+tracks mouse position and recent keyboard input, and enters a simple
+clear-and-quit loop:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
+- [`cluck/sdl3.clk`](./cluck/sdl3.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
-It does not talk to SDL3 yet. The current goal is just to establish the Cluck app
-shape so the interactive drawing work can happen one step at a time.
+It uses direct C interop through `cluck.sdl3`, but the application logic stays
+in Cluck. The release launcher vendors a static SDL3 build into `build/vendor/`
+and compiles a self-contained native binary:
+
+```bash
+csi -q -s examples/cluck/draw/run.scm
+./build/draw
+```
+
+For REPL-driven work, start a normal Cluck REPL and load
+`examples/cluck/draw/dev.clk`. That bootstrap compiles a loadable SDL3
+extension on demand, loads it into the current REPL process, opens the window,
+and starts the background render loop so you can call functions like
+`set-background!`, `set-render-fn!`, `render-now!`, `mouse-position`,
+`input-summary`, and `stop!` while the window stays open. The resulting release
+binary is self-contained and does not depend on a separately installed SDL3
+dylib.
+
+In `cluck-mode`, `C-c C-z` switches to the context-appropriate REPL buffer.
+When you are editing the draw example, that command opens the ordinary Cluck
+REPL buffer and then loads `examples/cluck/draw/dev.clk` into it.
+
+The current goal is to keep the SDL3 boundary isolated while extending the
+interactive drawing loop one step at a time.
 
 ## Smoke tests
 

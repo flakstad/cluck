@@ -1,0 +1,248 @@
+;; Thin SDL3 interop layer for Cluck.
+;;
+;; This is the direct C-interop boundary for the drawing example. The app
+;; itself stays in Cluck; this namespace keeps the SDL-specific calls in one
+;; place.
+
+(ns cluck.sdl3)
+
+(import (chicken foreign))
+
+(foreign-declare "#include <SDL3/SDL.h>
+
+static SDL_Event cluck_last_event;
+static int cluck_have_last_event = 0;
+static char cluck_last_event_description[512];
+
+static int cluck_poll_event(void) {
+  if (!SDL_PollEvent(&cluck_last_event)) {
+    cluck_have_last_event = 0;
+    cluck_last_event_description[0] = '\\0';
+    return 0;
+  }
+
+  cluck_have_last_event = 1;
+  SDL_GetEventDescription(&cluck_last_event, cluck_last_event_description, sizeof(cluck_last_event_description));
+  return 1;
+}
+
+static const char *cluck_event_description(void) {
+  return cluck_have_last_event ? cluck_last_event_description : \"\";
+}
+
+static int cluck_mouse_x(void) {
+  float x = 0.0f;
+  float y = 0.0f;
+  SDL_GetMouseState(&x, &y);
+  return (int)x;
+}
+
+static int cluck_mouse_y(void) {
+  float x = 0.0f;
+  float y = 0.0f;
+  SDL_GetMouseState(&x, &y);
+  return (int)y;
+}
+
+static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
+  SDL_FRect rect;
+  rect.x = x;
+  rect.y = y;
+  rect.w = w;
+  rect.h = h;
+  return SDL_RenderFillRect(renderer, &rect);
+}
+
+static bool cluck_render_debug_text(SDL_Renderer *renderer, float x, float y, const char *text) {
+  return SDL_RenderDebugText(renderer, x, y, text);
+}
+
+static bool cluck_set_window_title(SDL_Window *window, const char *title) {
+  return SDL_SetWindowTitle(window, title);
+}
+")
+
+(def init-video-flags
+  (foreign-value "SDL_INIT_VIDEO" unsigned-int))
+
+(define sdl-init!
+  (foreign-lambda bool "SDL_Init" unsigned-int))
+
+(define sdl-shutdown!
+  (foreign-lambda void "SDL_Quit"))
+
+(define sdl-last-error
+  (foreign-lambda c-string "SDL_GetError"))
+
+(define sdl-delay-ms
+  (foreign-lambda void "SDL_Delay" unsigned-int))
+
+(define sdl-destroy-window!
+  (foreign-lambda void "SDL_DestroyWindow" c-pointer))
+
+(define sdl-destroy-renderer!
+  (foreign-lambda void "SDL_DestroyRenderer" c-pointer))
+
+(define sdl-create-window
+  (foreign-lambda* c-pointer ((c-string title) (int width) (int height) (unsigned-int flags))
+    "SDL_Window *window = SDL_CreateWindow(title, width, height, flags);"
+    "C_return(window);"))
+
+(define sdl-create-renderer
+  (foreign-lambda* c-pointer ((c-pointer window))
+    "SDL_Renderer *renderer = SDL_CreateRenderer((SDL_Window *)window, NULL);"
+    "C_return(renderer);"))
+
+(define sdl-set-draw-color!
+  (foreign-lambda bool "SDL_SetRenderDrawColor"
+                  c-pointer
+                  unsigned-int
+                  unsigned-int
+                  unsigned-int
+                  unsigned-int))
+
+(define sdl-render-clear!
+  (foreign-lambda bool "SDL_RenderClear" c-pointer))
+
+(define sdl-render-present!
+  (foreign-lambda bool "SDL_RenderPresent" c-pointer))
+
+(define sdl-quit-requested?
+  (foreign-lambda* bool ()
+    "SDL_Event event;"
+    "while (SDL_PollEvent(&event)) {"
+    "  if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {"
+    "    C_return(1);"
+    "  }"
+    "}"
+    "C_return(0);"))
+
+(define sdl-poll-event!
+  (foreign-lambda bool "cluck_poll_event"))
+
+(define sdl-event-description
+  (foreign-lambda c-string "cluck_event_description"))
+
+(define sdl-mouse-x
+  (foreign-lambda int "cluck_mouse_x"))
+
+(define sdl-mouse-y
+  (foreign-lambda int "cluck_mouse_y"))
+
+(define sdl-render-fill-rect!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (int x)
+                         (int y)
+                         (int w)
+                         (int h))
+    "C_return(cluck_render_fill_rect((SDL_Renderer *)renderer, (float)x, (float)y, (float)w, (float)h));"))
+
+(define sdl-render-debug-text!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (int x)
+                         (int y)
+                         (c-string text))
+    "C_return(cluck_render_debug_text((SDL_Renderer *)renderer, (float)x, (float)y, text));"))
+
+(define sdl-set-window-title!
+  (foreign-lambda* bool ((c-pointer window) (c-string title))
+    "C_return(cluck_set_window_title((SDL_Window *)window, title));"))
+
+(defn init-video!
+  []
+  (sdl-init! init-video-flags))
+
+(defn shutdown!
+  [ignored]
+  (sdl-shutdown!))
+
+(defn last-error
+  [ignored]
+  (sdl-last-error))
+
+(defn delay-ms
+  [ms]
+  (sdl-delay-ms ms))
+
+(defn destroy-window
+  [window]
+  (sdl-destroy-window! window))
+
+(defn destroy-renderer
+  [renderer]
+  (sdl-destroy-renderer! renderer))
+
+(defn create-window
+  [title width height flags]
+  (sdl-create-window title width height flags))
+
+(defn create-renderer
+  [window]
+  (sdl-create-renderer window))
+
+(defn set-draw-color!
+  [renderer r g b a]
+  (sdl-set-draw-color! renderer r g b a))
+
+(defn render-clear!
+  [renderer]
+  (sdl-render-clear! renderer))
+
+(defn render-present!
+  [renderer]
+  (sdl-render-present! renderer))
+
+(defn quit-requested?
+  [ignored]
+  (sdl-quit-requested?))
+
+(defn poll-event!
+  []
+  (sdl-poll-event!))
+
+(defn event-description
+  []
+  (sdl-event-description))
+
+(defn mouse-x
+  []
+  (sdl-mouse-x))
+
+(defn mouse-y
+  []
+  (sdl-mouse-y))
+
+(defn render-fill-rect!
+  [renderer x y w h]
+  (sdl-render-fill-rect! renderer x y w h))
+
+(defn render-debug-text!
+  [renderer x y text]
+  (sdl-render-debug-text! renderer x y text))
+
+(defn set-window-title!
+  [window title]
+  (sdl-set-window-title! window title))
+
+(defn open-context
+  [title width height]
+  (let [window (create-window title width height 0)]
+    (if window
+      (let [renderer (create-renderer window)]
+        (if renderer
+          {:window window
+           :renderer renderer}
+          (begin
+            (destroy-window window)
+            nil)))
+      nil)))
+
+(defn close-context!
+  [ctx]
+  (let [renderer (get ctx :renderer)
+        window (get ctx :window)]
+    (if renderer
+      (destroy-renderer renderer))
+    (if window
+      (destroy-window window))
+    nil))
