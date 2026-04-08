@@ -525,9 +525,7 @@
         (begin
           (set! *draw-running?* false)
           (draw-drain-input! true))
-        (begin
-          (draw-refresh!)
-          (draw-drain-input! quit?))))
+        (draw-drain-input! quit?)))
     (begin
       (set! *draw-state* (draw-bump-frame! *draw-state*))
       (sync-window-title!)
@@ -610,9 +608,10 @@
         dx (- x2 x1)
         dy (- y2 y1)
         radius (draw-brush-radius size)
-        steps (if (> (math/abs dx) (math/abs dy))
-                (math/abs dx)
-                (math/abs dy))]
+        distance (if (> (math/abs dx) (math/abs dy))
+                   (math/abs dx)
+                   (math/abs dy))
+        steps (draw-exact-int (math/ceiling (/ distance radius)))]
     (if (<= steps 0)
       (draw-render-brush! renderer a size)
       (draw-render-stroke-point-step! renderer
