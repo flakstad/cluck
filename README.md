@@ -225,7 +225,7 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 ## SDL3 drawing scaffold
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
-tracks mouse position and recent keyboard input, and enters a simple
+tracks mouse, pen, and recent keyboard input, and enters a simple
 clear-and-quit loop:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
@@ -246,8 +246,9 @@ For REPL-driven work, start a normal Cluck REPL and load
 extension on demand, loads it into the current REPL process, and defines the
 draw app. Call `(start-dev!)` explicitly when you want to open the window and
 start the background render loop. From there you can call functions like
-`set-background!`, `set-render-fn!`, `render-now!`, `mouse-position`,
-`input-summary`, and `stop!` while the window stays open. The resulting release
+`set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
+`mouse-position`, `input-summary`, and `stop!` while the window stays open.
+State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 

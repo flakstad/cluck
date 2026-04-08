@@ -9,7 +9,8 @@ What is in place:
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
 - a first SDL3 window-open loop that clears the screen until quit
 - a REPL-first development bootstrap in `dev.clk` that loads SDL3 after the normal Cluck REPL starts and waits for an explicit `(start-dev!)` call
-- live mouse position and keyboard-event overlays in the window
+- live mouse, pen, and keyboard-event overlays in the window
+- REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
 - advanced drawing tools

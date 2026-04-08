@@ -51,8 +51,19 @@
    :mouse-x 0
    :mouse-y 0
    :last-key ""
+   :last-text ""
    :last-event ""
    :recent-events []})
+
+(defn draw-refresh!
+  "Render the current draw state immediately when the window is live."
+  []
+  (if (and *draw-running?* *draw-context* *draw-state*)
+    (begin
+      (sync-window-title!)
+      (render-frame *draw-context* *draw-state*)
+      *draw-state*)
+    nil))
 
 (defn current-state
   "Return the current draw state."
@@ -63,28 +74,28 @@
   "Reset the current draw state to the default."
   []
   (set! *draw-state* (default-state))
-  (sync-window-title!)
+  (draw-refresh!)
   *draw-state*)
 
 (defn set-state!
   "Replace the current draw state with STATE."
   [state]
   (set! *draw-state* state)
-  (sync-window-title!)
+  (draw-refresh!)
   *draw-state*)
 
 (defn set-title!
   "Update the current window title."
   [title]
   (set! *draw-state* (assoc *draw-state* :title title))
-  (sync-window-title!)
+  (draw-refresh!)
   *draw-state*)
 
 (defn set-background!
   "Update the current background color to a [R G B] vector."
   [color]
   (set! *draw-state* (assoc *draw-state* :background color))
-  (sync-window-title!)
+  (draw-refresh!)
   *draw-state*)
 
 (defn set-render-fn!
@@ -107,9 +118,16 @@
     (str/starts-with? desc "SDL_EVENT_WINDOW_CLOSE_REQUESTED") :quit
     (str/starts-with? desc "SDL_EVENT_KEY_DOWN") :key-down
     (str/starts-with? desc "SDL_EVENT_KEY_UP") :key-up
+    (str/starts-with? desc "SDL_EVENT_TEXT_INPUT") :text-input
+    (str/starts-with? desc "SDL_EVENT_TEXT_EDITING") :text-editing
     (str/starts-with? desc "SDL_EVENT_MOUSE_MOTION") :mouse-motion
     (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_DOWN") :mouse-down
     (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_UP") :mouse-up
+    (str/starts-with? desc "SDL_EVENT_PEN_MOTION") :pen-motion
+    (str/starts-with? desc "SDL_EVENT_PEN_DOWN") :pen-down
+    (str/starts-with? desc "SDL_EVENT_PEN_UP") :pen-up
+    (str/starts-with? desc "SDL_EVENT_PEN_BUTTON_DOWN") :pen-button-down
+    (str/starts-with? desc "SDL_EVENT_PEN_BUTTON_UP") :pen-button-up
     :else :other))
 
 (defn draw-trim-events
@@ -120,13 +138,6 @@
     (if (> total limit)
       (vec (drop (- total limit) events))
       (vec events))))
-
-(defn draw-update-mouse!
-  "Refresh the cached mouse position in STATE."
-  [state]
-  (assoc state
-         :mouse-x (sdl/mouse-x)
-         :mouse-y (sdl/mouse-y)))
 
 (defn draw-bump-frame!
   "Advance the frame counter in STATE."
@@ -143,8 +154,39 @@
         state (assoc state
                      :recent-events recent
                      :last-event desc)]
-    (if (eq? kind :key-down)
-      (assoc state :last-key desc)
+    (cond
+      (or (eq? kind :key-down)
+          (eq? kind :key-up))
+      (assoc state
+             :last-key (or (sdl/event-key-name) desc))
+
+      (eq? kind :text-input)
+      (assoc state
+             :last-text (or (sdl/event-text-input) "")
+             :last-key (or (sdl/event-text-input) (sdl/event-key-name) desc))
+
+      (or (eq? kind :mouse-motion)
+          (eq? kind :mouse-down)
+          (eq? kind :mouse-up))
+      (assoc state
+             :mouse-x (sdl/event-mouse-x)
+             :mouse-y (sdl/event-mouse-y))
+
+      (or (eq? kind :pen-motion)
+          (eq? kind :pen-down)
+          (eq? kind :pen-up)
+          (eq? kind :pen-button-down)
+          (eq? kind :pen-button-up))
+      (assoc state
+             :mouse-x (sdl/event-pen-x)
+             :mouse-y (sdl/event-pen-y))
+
+      (eq? kind :text-editing)
+      (assoc state
+             :last-text (or (sdl/event-text-editing) "")
+             :last-key (or (sdl/event-text-editing) desc))
+
+      :else
       state)))
 
 (defn mouse-position
@@ -171,10 +213,11 @@
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %d,%d key %s event %s"
+  (format "mouse %d,%d key %s text %s event %s"
           (get *draw-state* :mouse-x)
           (get *draw-state* :mouse-y)
           (or (get *draw-state* :last-key) "")
+          (or (get *draw-state* :last-text) "")
           (or (get *draw-state* :last-event) "")))
 
 (defn sync-window-title!
@@ -196,9 +239,10 @@
         (begin
           (set! *draw-running?* false)
           (draw-drain-input! true))
-        (draw-drain-input! quit?)))
+        (begin
+          (draw-refresh!)
+          (draw-drain-input! quit?))))
     (begin
-      (set! *draw-state* (draw-update-mouse! *draw-state*))
       (set! *draw-state* (draw-bump-frame! *draw-state*))
       (sync-window-title!)
       quit?)))
@@ -211,14 +255,15 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %d,%d key %s"
+  (format "%s %dx%d frame %d mouse %d,%d key %s text %s"
           (get state :title)
           (get state :width)
           (get state :height)
           (get state :frame)
           (get state :mouse-x)
           (get state :mouse-y)
-          (or (get state :last-key) "")))
+          (or (get state :last-key) "")
+          (or (get state :last-text) "")))
 
 (defn draw-render-status!
   "Render the text overlay and mouse marker for STATE."
@@ -235,9 +280,11 @@
     (sdl/render-debug-text! renderer 12 44
                             (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 60
+                            (format "last text: %s" (or (get state :last-text) "")))
+    (sdl/render-debug-text! renderer 12 76
                             (format "last event: %s" (or (get state :last-event) "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 76
+      (sdl/render-debug-text! renderer 12 92
                               (format "recent: %s"
                                       (str/join " | " recent))))
     (sdl/set-draw-color! renderer 220 180 90 255)
@@ -283,7 +330,7 @@
       (render-now!)
       (if *draw-running?*
         (begin
-          (delay-ms 16)
+          (thread-sleep! 0.016)
           (draw-loop))
         nil))
     nil))
@@ -310,6 +357,7 @@
             (set! *draw-state* state)
             (set! *draw-context* ctx)
             (set! *draw-running?* true)
+            (sdl/start-text-input! (get *draw-context* :window))
             (sync-window-title!)
             ctx))))))
 
@@ -319,6 +367,7 @@
   (set! *draw-running?* false)
   (if *draw-context*
     (begin
+      (sdl/stop-text-input! (get *draw-context* :window))
       (sdl/close-context! *draw-context*)
       (set! *draw-context* nil)))
   (set! *draw-thread* nil)

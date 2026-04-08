@@ -30,6 +30,36 @@ static const char *cluck_event_description(void) {
   return cluck_have_last_event ? cluck_last_event_description : \"\";
 }
 
+static const char *cluck_event_key_name(void) {
+  if (!cluck_have_last_event) {
+    return \"\";
+  }
+  if (cluck_last_event.type == SDL_EVENT_KEY_DOWN || cluck_last_event.type == SDL_EVENT_KEY_UP) {
+    return SDL_GetKeyName(cluck_last_event.key.key);
+  }
+  return \"\";
+}
+
+static const char *cluck_event_text_input(void) {
+  if (!cluck_have_last_event) {
+    return \"\";
+  }
+  if (cluck_last_event.type == SDL_EVENT_TEXT_INPUT) {
+    return cluck_last_event.text.text ? cluck_last_event.text.text : \"\";
+  }
+  return \"\";
+}
+
+static const char *cluck_event_text_editing(void) {
+  if (!cluck_have_last_event) {
+    return \"\";
+  }
+  if (cluck_last_event.type == SDL_EVENT_TEXT_EDITING) {
+    return cluck_last_event.edit.text ? cluck_last_event.edit.text : \"\";
+  }
+  return \"\";
+}
+
 static int cluck_mouse_x(void) {
   float x = 0.0f;
   float y = 0.0f;
@@ -42,6 +72,70 @@ static int cluck_mouse_y(void) {
   float y = 0.0f;
   SDL_GetMouseState(&x, &y);
   return (int)y;
+}
+
+static int cluck_event_mouse_x(void) {
+  if (!cluck_have_last_event) {
+    return cluck_mouse_x();
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_MOTION) {
+    return (int)cluck_last_event.motion.x;
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+      cluck_last_event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+    return (int)cluck_last_event.button.x;
+  }
+  return cluck_mouse_x();
+}
+
+static int cluck_event_mouse_y(void) {
+  if (!cluck_have_last_event) {
+    return cluck_mouse_y();
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_MOTION) {
+    return (int)cluck_last_event.motion.y;
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+      cluck_last_event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+    return (int)cluck_last_event.button.y;
+  }
+  return cluck_mouse_y();
+}
+
+static int cluck_event_pen_x(void) {
+  if (!cluck_have_last_event) {
+    return cluck_mouse_x();
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_MOTION) {
+    return (int)cluck_last_event.pmotion.x;
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_DOWN ||
+      cluck_last_event.type == SDL_EVENT_PEN_UP) {
+    return (int)cluck_last_event.ptouch.x;
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_BUTTON_DOWN ||
+      cluck_last_event.type == SDL_EVENT_PEN_BUTTON_UP) {
+    return (int)cluck_last_event.pbutton.x;
+  }
+  return cluck_mouse_x();
+}
+
+static int cluck_event_pen_y(void) {
+  if (!cluck_have_last_event) {
+    return cluck_mouse_y();
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_MOTION) {
+    return (int)cluck_last_event.pmotion.y;
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_DOWN ||
+      cluck_last_event.type == SDL_EVENT_PEN_UP) {
+    return (int)cluck_last_event.ptouch.y;
+  }
+  if (cluck_last_event.type == SDL_EVENT_PEN_BUTTON_DOWN ||
+      cluck_last_event.type == SDL_EVENT_PEN_BUTTON_UP) {
+    return (int)cluck_last_event.pbutton.y;
+  }
+  return cluck_mouse_y();
 }
 
 static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
@@ -76,6 +170,12 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
 
 (define sdl-delay-ms
   (foreign-lambda void "SDL_Delay" unsigned-int))
+
+(define sdl-start-text-input!
+  (foreign-lambda bool "SDL_StartTextInput" c-pointer))
+
+(define sdl-stop-text-input!
+  (foreign-lambda bool "SDL_StopTextInput" c-pointer))
 
 (define sdl-destroy-window!
   (foreign-lambda void "SDL_DestroyWindow" c-pointer))
@@ -123,11 +223,32 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
 (define sdl-event-description
   (foreign-lambda c-string "cluck_event_description"))
 
+(define sdl-event-key-name
+  (foreign-lambda c-string "cluck_event_key_name"))
+
+(define sdl-event-text-input
+  (foreign-lambda c-string "cluck_event_text_input"))
+
+(define sdl-event-text-editing
+  (foreign-lambda c-string "cluck_event_text_editing"))
+
 (define sdl-mouse-x
   (foreign-lambda int "cluck_mouse_x"))
 
 (define sdl-mouse-y
   (foreign-lambda int "cluck_mouse_y"))
+
+(define sdl-event-mouse-x
+  (foreign-lambda int "cluck_event_mouse_x"))
+
+(define sdl-event-mouse-y
+  (foreign-lambda int "cluck_event_mouse_y"))
+
+(define sdl-event-pen-x
+  (foreign-lambda int "cluck_event_pen_x"))
+
+(define sdl-event-pen-y
+  (foreign-lambda int "cluck_event_pen_y"))
 
 (define sdl-render-fill-rect!
   (foreign-lambda* bool ((c-pointer renderer)
@@ -163,6 +284,14 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
 (defn delay-ms
   [ms]
   (sdl-delay-ms ms))
+
+(defn start-text-input!
+  [window]
+  (sdl-start-text-input! window))
+
+(defn stop-text-input!
+  [window]
+  (sdl-stop-text-input! window))
 
 (defn destroy-window
   [window]
@@ -204,6 +333,18 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
   []
   (sdl-event-description))
 
+(defn event-key-name
+  []
+  (sdl-event-key-name))
+
+(defn event-text-input
+  []
+  (sdl-event-text-input))
+
+(defn event-text-editing
+  []
+  (sdl-event-text-editing))
+
 (defn mouse-x
   []
   (sdl-mouse-x))
@@ -211,6 +352,22 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
 (defn mouse-y
   []
   (sdl-mouse-y))
+
+(defn event-mouse-x
+  []
+  (sdl-event-mouse-x))
+
+(defn event-mouse-y
+  []
+  (sdl-event-mouse-y))
+
+(defn event-pen-x
+  []
+  (sdl-event-pen-x))
+
+(defn event-pen-y
+  []
+  (sdl-event-pen-y))
 
 (defn render-fill-rect!
   [renderer x y w h]
