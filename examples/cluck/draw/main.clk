@@ -1279,6 +1279,43 @@
     (println (format "draw state: %s" (describe-state state)))
     state))
 
+(defn draw-replay-live!
+  "Replay EVENTS in the live window, pausing PAUSE-MS milliseconds between events."
+  [events pause-ms]
+  (let [pause (if (> (or pause-ms 0) 0)
+                pause-ms
+                0)]
+    (reduce (lambda (state event)
+              (let [next-state (draw-simulate-input! event)]
+                (if (> pause 0)
+                  (delay-ms pause)
+                  nil)
+                next-state))
+            (or *draw-state* (default-state))
+            events)))
+
+(defn draw-repeat-live-events!
+  "Replay EVENTS ROUNDS times in the live window."
+  [events rounds pause-ms]
+  (if (<= rounds 0)
+    (or *draw-state* (default-state))
+    (begin
+      (draw-replay-live! events pause-ms)
+      (draw-repeat-live-events! events (- rounds 1) pause-ms))))
+
+(defn draw-replay-live-benchmark!
+  "Replay EVENTS live and print the elapsed wall-clock time."
+  [events rounds pause-ms]
+  (let [start (current-process-milliseconds)
+        state (draw-repeat-live-events! events rounds pause-ms)
+        elapsed (- (current-process-milliseconds) start)]
+    (println (format "draw live replay: %d events x %d rounds in %d ms"
+                     (count events)
+                     rounds
+                     elapsed))
+    (println (format "draw state: %s" (describe-state state)))
+    state))
+
 (defn mouse-position
   "Return the current mouse position from the draw state."
   []
@@ -1640,7 +1677,9 @@
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"
    "  d: debug panel   0: reset view"
-   "  repl: save-canvas!, load-canvas!, restart-dev!"])
+   "  repl: save-canvas!, load-canvas!, restart-dev!"
+   "  repl: draw-simulate-input!, draw-replay-live!"
+   "  repl: draw-replay-benchmark!, draw-replay-live-benchmark!"])
 
 (defn draw-render-debug-lines!
   "Render LINES in the debug overlay starting at Y."

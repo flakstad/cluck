@@ -310,6 +310,7 @@ It is loaded by:
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
 - [`test/run-draw-replay.scm`](./test/run-draw-replay.scm)
+- [`test/run-draw-live-replay.scm`](./test/run-draw-live-replay.scm)
 
 Run it with:
 
@@ -323,6 +324,7 @@ SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-replay.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000
 ```
 

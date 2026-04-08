@@ -1,0 +1,56 @@
+;; Shared event script for the draw replay probes.
+;;
+;; The event list stays in a separate file so both the headless benchmark and
+;; the live-window replay mode can use the same sequence.
+
+(in-ns 'cluck.examples.draw)
+
+(defn draw-replay-script
+  []
+  [ {:kind :mouse-down
+      :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=10 y=10"
+      :mouse-x 10
+      :mouse-y 10
+      :shift? false}
+    {:kind :mouse-motion
+     :desc "SDL_EVENT_MOUSE_MOTION x=20 y=20"
+     :mouse-x 20
+     :mouse-y 20
+     :shift? false}
+    {:kind :mouse-up
+     :desc "SDL_EVENT_MOUSE_BUTTON_UP x=20 y=20"
+     :mouse-x 20
+     :mouse-y 20
+     :shift? false}
+    {:kind :mouse-wheel
+     :desc "SDL_EVENT_MOUSE_WHEEL x=100 y=50"
+     :wheel-y 1.0
+     :wheel-mouse-x 100
+     :wheel-mouse-y 50}
+    {:kind :mouse-down
+     :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=150 y=150"
+     :mouse-x 150
+     :mouse-y 150
+     :shift? true}
+    {:kind :mouse-motion
+     :desc "SDL_EVENT_MOUSE_MOTION x=170 y=180"
+     :mouse-x 170
+     :mouse-y 180
+     :shift? true}
+    {:kind :mouse-up
+     :desc "SDL_EVENT_MOUSE_BUTTON_UP x=170 y=180"
+     :mouse-x 170
+     :mouse-y 180
+     :shift? true}
+    {:kind :key-down
+     :desc "SDL_EVENT_KEY_DOWN key=d"
+     :key "d"}
+    {:kind :pen-axis
+     :desc "SDL_EVENT_PEN_AXIS x=40 y=50"
+     :mouse-x 40
+     :mouse-y 50
+     :pressure 0.5}
+    {:kind :focus-lost
+     :desc "SDL_EVENT_WINDOW_FOCUS_LOST"}
+    {:kind :focus-gained
+     :desc "SDL_EVENT_WINDOW_FOCUS_GAINED"}])
