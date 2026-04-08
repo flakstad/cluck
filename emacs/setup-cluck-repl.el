@@ -152,11 +152,9 @@ returning."
     (cluck--show-echo-output output "Cluck draw dev bootstrap loaded; call (start-dev!) to open the window")))
 
 (defun cluck-switch-to-repl ()
-  "Pop to the context-appropriate Cluck REPL."
+  "Pop to the Cluck REPL, starting it if necessary."
   (interactive)
-  (if (cluck--draw-source-p)
-      (cluck-draw-repl)
-    (cluck-repl)))
+  (cluck-repl))
 
 (defun cluck-switch-to-source ()
   "Return to the most recent Cluck source buffer."

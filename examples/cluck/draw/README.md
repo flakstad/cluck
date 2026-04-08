@@ -26,13 +26,14 @@ csi -q -s examples/cluck/draw/run.scm
 
 The intent is to build this interactively in small steps:
 1. keep the SDL3 boundary isolated in `cluck.sdl3`
-2. start a normal Cluck REPL, then load `examples/cluck/draw/dev.clk` to load the draw definitions, then call `(start-dev!)` when you want to open the window and experiment live
+2. start a normal Cluck REPL, then load `examples/cluck/draw/dev.clk` manually to load the draw definitions, then call `(start-dev!)` when you want to open the window and experiment live
 3. extend the window loop with input and drawing commands
 4. add byte-buffer and texture work as needed
 
-If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the Cluck
-REPL and loads `examples/cluck/draw/dev.clk` into it. Call `(start-dev!)` in
-that REPL when you want the window to open.
+If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
+ordinary Cluck REPL. Load `examples/cluck/draw/dev.clk` manually in that REPL
+when you want the draw definitions available, then call `(start-dev!)` to open
+the window.
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

@@ -19,11 +19,10 @@ files into a directory already on your `load-path`.
 ## What it gives you
 
 - `cluck-mode` for editing `*.clk` files
-- REPL launch and switching commands, including a draw-aware `C-c C-z`
-  dispatcher that opens the normal Cluck REPL and then loads
-  `examples/cluck/draw/dev.clk`, plus an explicit `cluck-draw-repl` command.
-  The bootstrap loads definitions only; call `(start-dev!)` in the REPL when
-  you want the window to open.
+- REPL launch and switching commands with `C-c C-z` opening the ordinary
+  Cluck REPL buffer. For the draw example, load `examples/cluck/draw/dev.clk`
+  manually in that REPL, then call `(start-dev!)` when you want the window to
+  open. The REPL itself does not load SDL automatically.
 - inline eval overlays
 - doc lookup with `C-c C-d`
 - definition jumping with `M-.`

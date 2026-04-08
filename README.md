@@ -252,10 +252,10 @@ State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
-In `cluck-mode`, `C-c C-z` switches to the context-appropriate REPL buffer.
-When you are editing the draw example, that command opens the ordinary Cluck
-REPL buffer and then loads `examples/cluck/draw/dev.clk` into it. The REPL
-starts with no window; call `(start-dev!)` explicitly to open one.
+In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. Load
+`examples/cluck/draw/dev.clk` manually in that REPL when you want the draw
+definitions available, then call `(start-dev!)` explicitly to open the window.
+The REPL itself starts with no window and does not load SDL automatically.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.
