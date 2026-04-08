@@ -408,7 +408,8 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d dbg %s"
+  (get state :title)
+  #_(format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d dbg %s"
           (get state :title)
           (get state :width)
           (get state :height)
