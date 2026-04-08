@@ -721,42 +721,6 @@ csi -q -s examples/cluck/app/run.scm
 
 The smoke tests also load `cluck.walk` and `cluck.math` through `require` to verify namespace restoration and alias lookup.
 
-## Extension Loader Experiment
-
-Another no-eggs example lives in:
-
-- [`examples/cluck/extensions/main.clk`](./examples/cluck/extensions/main.clk)
-- [`examples/cluck/extensions/scheme-ext.scm`](./examples/cluck/extensions/scheme-ext.scm)
-- [`examples/cluck/extensions/cluck-ext.clk`](./examples/cluck/extensions/cluck-ext.clk)
-
-It demonstrates loading plain Scheme source and Cluck source into the same
-compiled launcher through a small registry. The app keeps the registry in
-Cluck, then loads extra source files and prints the registered sections.
-
-Run it from source with:
-
-```bash
-csi -q -s examples/cluck/extensions/run.scm
-csi -q -s examples/cluck/extensions/run.scm examples/cluck/extensions/scheme-ext.scm examples/cluck/extensions/cluck-ext.clk
-```
-
-Build a self-contained native binary with:
-
-```bash
-csc -static -deployed -k -v -O2 -strip -o build/extensions-standalone examples/cluck/extensions/run-standalone.scm
-```
-
-Then run the compiled binary with either no extensions or both example
-extensions:
-
-```bash
-./build/extensions-standalone
-./build/extensions-standalone examples/cluck/extensions/scheme-ext.scm examples/cluck/extensions/cluck-ext.clk
-```
-
-The experiment is intentionally small, but it proves the launcher can load
-both plain Scheme source and Cluck source into the same native process.
-
 ## Native Build
 
 There is now a trivial CLI benchmark in:
