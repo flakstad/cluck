@@ -14,6 +14,10 @@
             [cluck.process :as proc]
             [cluck.string :as str]))
 
+(import (chicken file))
+
+(def *draw-dev-build-dir* (create-temporary-directory))
+
 (defn draw-dev-root
   []
   (fs/cwd))
@@ -28,11 +32,11 @@
 
 (defn draw-dev-library-path
   [root]
-  (fs/path root "build/dev/cluck-sdl3.so"))
+  (fs/path *draw-dev-build-dir* "cluck-sdl3.so"))
 
 (defn draw-dev-source-path
   [root]
-  (fs/path root "cluck/sdl3.clk"))
+  (fs/path root "src/cluck/sdl3.clk"))
 
 (defn draw-dev-source-mtime
   [path]
@@ -92,8 +96,7 @@
   [root]
   (let [lib (draw-dev-library-path root)]
     (begin
-      (draw-dev-ensure-directory! (fs/path root "build"))
-      (draw-dev-ensure-directory! (fs/path root "build/dev"))
+      (draw-dev-ensure-directory! *draw-dev-build-dir*)
       (if (draw-dev-library-stale? root)
         (if (not (zero? (proc/system (draw-dev-library-build-command root))))
           (error "SDL3 dev library build failed"))

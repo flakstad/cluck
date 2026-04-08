@@ -39,7 +39,7 @@ The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 - keywords, maps, sets, and vectors with EDN-style syntax
 - core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond` with `:else`, `and`, `or`, `->`, and `->>`
 - common sequence helpers like `seq`, `first`, `rest`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, `group-by`, `count`, `map`, `filter`, and `reduce`
-- persistent maps and sets by default, with explicit mutable escape hatches when needed
+- mutable maps and sets by default, with an opt-in `cluck.persistent` namespace for persistent collections and `cluck.mutable` for host hash tables and sets
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
 - `.clk` is the preferred source extension for cluck code; `.scm` stays for Scheme glue and bootstrap files
 
@@ -59,22 +59,23 @@ The current implementation supports:
 - `cluck.edn/read-string`
 - `atom`, `atom?`, `deref`, `reset!`, `swap!`, and `compare-and-set!`
 - `cluck.mutable` for explicit mutable map/set helpers and host interop
+- `cluck.persistent` for opt-in persistent/immutable map and set helpers
 - `cluck.examples.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
-- persistent `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
+- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce` in the core layer, plus a separate opt-in persistent collection namespace
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
-- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
+- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, `cluck.persistent`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
 
 Notes:
 
 - vectors are still ordinary CHICKEN vectors, so the host REPL prints them as `#(...)`
 - keywords, maps, and sets use custom record types so the host REPL can print them in Clojure-style form
-- the collection layer is persistent by default; mutation is explicit
+- the collection layer is mutable by default; persistent collections live in `cluck.persistent`
 - the namespace layer is intentionally lightweight and uses separate public/import tables; it is not full Clojure namespace resolution yet
 - `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
 
@@ -97,7 +98,7 @@ If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` 
 
 When a `.clk` file reaches out to CHICKEN eggs, keep that work explicit by using `ns` `:require` with prefixed imports so the host interop stays visible and does not leak names into the Cluck surface.
 
-If you need mutable escape hatches, use `cluck.mutable` for host hash tables and sets, or keep the raw Scheme interop in `.scm` helpers; the ordinary Cluck collection API stays persistent by default. `set!` remains Scheme binding mutation, not a collection mutator.
+If you need mutable escape hatches, use `cluck.mutable` for host hash tables and sets, or keep the raw Scheme interop in `.scm` helpers; the ordinary Cluck collection API stays mutable by default. If you want persistent maps and sets, require `cluck.persistent` explicitly. `set!` remains Scheme binding mutation, not a collection mutator.
 
 For EDN parsing, prefer `cluck.edn/read-string` in app code. The interactive `src/cluck-init.scm` and `src/cluck-cli.scm` loaders also install a convenience top-level `read-string` alias for the REPL and command-line workflow, but the namespaced form is the stable one for libraries and standalone binaries.
 
@@ -124,7 +125,7 @@ From the repository root, in Geiser or any other REPL where you want to return t
 chicken-install hash-trie
 ```
 
-That installs the persistent collection backend used by Cluck's maps and sets.
+That installs the optional persistent collection backend used by `cluck.persistent`. You only need this if you plan to use the opt-in persistent namespace.
 
 Then load the language layer:
 
@@ -241,7 +242,7 @@ tracks mouse, pen, and recent keyboard input, and supports a basic sketchpad
 workflow:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
-- [`cluck/sdl3.clk`](./cluck/sdl3.clk)
+- [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
 It uses direct C interop through `cluck.sdl3`, but the application logic stays
@@ -260,14 +261,24 @@ startup forms in the comment block at the end of
 defines the draw app. Call `(start-dev!)` explicitly when you want to open the
 window and start the background render loop. From there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
-`mouse-position`, `input-summary`, and `stop!` while the window stays open.
-Drag with the mouse or pen to paint strokes, and press `d` to toggle the
-debug panel on demand. The current tool shortcuts are:
+`mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
+while the window stays open. Use the mouse wheel to zoom around the cursor,
+hold `shift` while dragging to pan, and drag with the mouse or pen to paint
+strokes. Press `d` to toggle the debug panel on demand. The current tool
+shortcuts are:
 
 - `u` undo the last action
 - `c` clear the canvas
 - `e` eraser
 - `1`/`2`/`3` brush sizes
+- `]`/`+`/`=` zoom in
+- `[`/`-` zoom out
+- `h`/`j`/`k`/`l` pan left/down/up/right
+- `0` reset the viewport
+- wheel zooms around the cursor
+- `shift`+drag pans the viewport
+- `save-canvas!` / `load-canvas!` round-trip the current canvas to
+  `build/cluck-draw-state.edn` by default
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
@@ -320,9 +331,14 @@ It is loaded by:
 - [`test/run.scm`](./test/run.scm)
 - [`test/run-draw-toggle.scm`](./test/run-draw-toggle.scm)
 - [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
+- [`test/run-draw-save-load.scm`](./test/run-draw-save-load.scm)
+- [`test/run-draw-view.scm`](./test/run-draw-view.scm)
+- [`test/run-draw-input.scm`](./test/run-draw-input.scm)
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
 - [`test/run-tui-todos.scm`](./test/run-tui-todos.scm)
+- [`test/run-draw-replay.scm`](./test/run-draw-replay.scm)
+- [`test/run-draw-live-replay.scm`](./test/run-draw-live-replay.scm)
 
 Run it with:
 
@@ -330,13 +346,20 @@ Run it with:
 csi -q -s test/run.scm
 csi -q -s test/run-draw-toggle.scm
 csi -q -s test/run-draw-tools.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-save-load.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-view.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
 csi -q -s test/run-tui-todos.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-replay.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
-The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL canvas cache path, and the running draw lifecycle path.
+The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL input/pressure/focus path, the SDL canvas cache path, and the running draw lifecycle path.
+The draw replay probes cover the scripted replay path and the live replay mode.
 The TUI Todos probe covers the SQLite-backed example helpers, seed data, and a few formatting helpers without opening the TUI.
 
 ## Weather CLI Example
@@ -630,6 +653,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.process`
 - `cluck.set`
 - `cluck.mutable`
+- `cluck.persistent`
 - `cluck.edn`
 - `cluck.walk`
 - `cluck.math`
@@ -666,15 +690,15 @@ Namespace source files are located by namespace path, starting with:
 - fallback lookups also check `foo/bar.clj.scm`, `foo/bar.scm`, and root-level `bar.*`
 - `src/` is searched as a secondary prefix
 
-The mirrored namespace files currently live at:
+- The mirrored namespace files currently live at:
 
-- [`cluck/core.clk`](./cluck/core.clk)
-- [`cluck/string.clk`](./cluck/string.clk)
-- [`cluck/set.clk`](./cluck/set.clk)
-- [`cluck/mutable.clk`](./cluck/mutable.clk)
-- [`cluck/edn.clk`](./cluck/edn.clk)
-- [`cluck/walk.clk`](./cluck/walk.clk)
-- [`cluck/math.clk`](./cluck/math.clk)
+- [`src/cluck/core.clk`](./src/cluck/core.clk)
+- [`src/cluck/string.clk`](./src/cluck/string.clk)
+- [`src/cluck/set.clk`](./src/cluck/set.clk)
+- [`src/cluck/mutable.clk`](./src/cluck/mutable.clk)
+- [`src/cluck/edn.clk`](./src/cluck/edn.clk)
+- [`src/cluck/walk.clk`](./src/cluck/walk.clk)
+- [`src/cluck/math.clk`](./src/cluck/math.clk)
 - [`examples/cluck/todo/main.clk`](./examples/cluck/todo/main.clk)
 
 This is enough to structure source files, inspect exports, and load small module trees. Full Clojure-style namespace qualification is still future work, but the current split between public vars and imports keeps `ns-publics` and `ns-resolve` usable.
@@ -704,7 +728,7 @@ This is enough to structure source files, inspect exports, and load small module
 The next phase is about making Cluck prove itself on a real small program, not just adding syntax.
 
 - keep the runtime eager, direct, and mutable by default
-- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and a separate opt-in namespace for persistent / immutable collections
+- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and a separate opt-in `cluck.persistent` namespace for persistent / immutable collections
 - expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
 - use one real dogfood app to drive the next round of API and namespace decisions
 - prefer small native CLI or local data tools first; TODO scanning, link checking, and CSV/TSV summarization are all good candidates before larger app work
@@ -714,8 +738,8 @@ The next phase is about making Cluck prove itself on a real small program, not j
 
 There is a small require/ns demo in:
 
-- [`cluck/walk.clk`](./cluck/walk.clk)
-- [`cluck/math.clk`](./cluck/math.clk)
+- [`src/cluck/walk.clk`](./src/cluck/walk.clk)
+- [`src/cluck/math.clk`](./src/cluck/math.clk)
 - [`examples/cluck/app/main.clk`](./examples/cluck/app/main.clk)
 
 It is loaded by:

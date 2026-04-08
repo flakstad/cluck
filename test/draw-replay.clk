@@ -1,0 +1,58 @@
+;; Focused draw replay probe for the SDL3 example.
+;;
+;; This script exercises the synthetic replay helpers so the draw app can be
+;; driven from the REPL or from tests without hand-crafted SDL input.
+
+(in-ns 'cluck.examples.draw)
+
+(import (chicken time))
+
+(load-file "test/draw-replay-script.clk")
+
+(define (draw-replay-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-replay-fail label expected actual)
+  (error (string-append "draw replay test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-replay-assert-true label value)
+  (if value
+      (draw-replay-pass label)
+      (draw-replay-fail label "truthy value" (pr-str value))))
+
+(define (draw-replay-assert-false label value)
+  (if (not value)
+      (draw-replay-pass label)
+      (draw-replay-fail label "falsey value" (pr-str value))))
+
+(define (draw-replay-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-replay-pass label)
+      (draw-replay-fail label expected actual)))
+
+(define (draw-replay-assert-zoom>1 label state)
+  (if (> (draw-view-zoom state) 1.0)
+      (draw-replay-pass label)
+      (draw-replay-fail label "> 1.0" (draw-view-zoom state))))
+
+(let [start (current-process-milliseconds)
+      state (draw-replay-benchmark! (draw-replay-script) 1)
+      elapsed (- (current-process-milliseconds) start)]
+  (draw-replay-assert-true "replay namespace exists" (find-ns 'cluck.examples.draw))
+  (draw-replay-assert-true "replay stroke count" (= 1 (count (get state :strokes))))
+  (draw-replay-assert-zoom>1 "replay zoom changes" state)
+  (draw-replay-assert-true "replay debug panel toggles" (get state :debug-panel?))
+  (draw-replay-assert-true "replay focus regains"
+                           (get state :window-focused?))
+  (draw-replay-assert-num= "replay pen pressure resets on focus regain"
+                           1.0
+                           (get state :pen-pressure))
+  (draw-replay-assert-true "replay panning clears after mouse-up"
+                          (not (get state :panning?)))
+  (println "ok replay elapsed" elapsed "ms"))

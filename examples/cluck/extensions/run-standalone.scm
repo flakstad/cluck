@@ -10,16 +10,18 @@
   (include "src/cluck-standalone-prelude.scm"))
 
 (include "src/cluck.scm")
+
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.todo #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.extensions #t)
+
 (include "src/cluck/string.clk")
 (include "src/cluck/fs.clk")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.todo #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.extensions #t)
 
-(include "examples/cluck/todo/main.clk")
+(include "examples/cluck/extensions/main.clk")
 
 (main (command-line-arguments))

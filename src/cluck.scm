@@ -3092,18 +3092,19 @@
               (reverse acc)
               (let* ((pair (car xs))
                      (key (car pair))
-                     (sym (cond
-                            ((symbol? key) key)
-                            ((cluck-keyword-form-name key)
-                             => string->symbol)
-                            ((and (pair? key)
-                                  (eq? (car key) 'quote)
-                                  (pair? (cdr key))
-                                  (null? (cddr key))
-                                  (symbol? (cadr key)))
-                             (cadr key))
-                            (:else
-                             (error ":or keys must be symbols" key)))))
+                     (sym (let ((keyword-name (cluck-keyword-form-name key)))
+                            (if keyword-name
+                                (string->symbol keyword-name)
+                                (cond
+                                  ((symbol? key) key)
+                                  ((and (pair? key)
+                                        (eq? (car key) 'quote)
+                                        (pair? (cdr key))
+                                        (null? (cddr key))
+                                        (symbol? (cadr key)))
+                                   (cadr key))
+                                  (:else
+                                   (error ":or keys must be symbols" key)))))))
                 (loop (cdr xs) (cons (cons sym (cdr pair)) acc)))))
         (error ":or expects a map" defaults))))
 
@@ -3369,6 +3370,45 @@
                               acc)))
                 (error "fn arity clauses must start with an argument vector")))))))
 
+(define (cluck-let-binding-pair-list? bindings)
+  (if (null? bindings)
+      #t
+      (if (and (pair? (car bindings))
+               (pair? (cdr (car bindings)))
+               (null? (cddr (car bindings))))
+          (cluck-let-binding-pair-list? (cdr bindings))
+          #f)))
+
+(define (cluck-let-binding-pair-names bindings)
+  (let loop ((xs bindings) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((binding (car xs)))
+          (loop (cdr xs) (cons (car binding) acc))))))
+
+(define (cluck-let-binding-pair-values bindings)
+  (let loop ((xs bindings) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((binding (car xs)))
+          (loop (cdr xs) (cons (cadr binding) acc))))))
+
+(define (cluck-expand-named-let name bindings body)
+  (let* ((names (cluck-let-binding-pair-names bindings))
+         (values (cluck-let-binding-pair-values bindings))
+         (params (list->vector names)))
+    `(letrec ((,name (fn ,params ,@body)))
+       (,name ,@values))))
+
+(define (cluck-let-binding-pair-list? bindings)
+  (cond
+    ((null? bindings) #t)
+    ((and (pair? (car bindings))
+          (pair? (cdr (car bindings)))
+          (null? (cddr (car bindings))))
+     (cluck-let-binding-pair-list? (cdr bindings)))
+    (:else #f)))
+
 (define-syntax def
   (er-macro-transformer
    (lambda (form rename compare)
@@ -3455,37 +3495,33 @@
                                (forms '())
                                (saw-docstring? #f)
                                (core-excludes '()))
-                      (cond
-                        ((null? xs)
-                         `(begin
-                            (cluck-set-current-ns! ',name)
-                            (cluck-reset-ns-aliases! ',name)
-                            (cluck-refer-core! ',(reverse core-excludes))
-                            ,@forms))
-                        ((string? (car xs))
-                         (if saw-docstring?
-                             (error "ns docstring must appear at most once" (car xs))
-                             (if (null? forms)
-                                 (loop (cdr xs) forms #t core-excludes)
-                                 (error "ns docstring must come before directives"
-                                        (car xs)))))
-                        (:else
-                         (let ((directive (car xs)))
-                           (let ((kw (cluck-keyword-form-name (car directive))))
-                             (cond
-                               ((and kw (string=? kw "refer-clojure"))
-                                (loop (cdr xs)
-                                      forms
-                                      saw-docstring?
-                                      (append core-excludes
-                                              (cluck-refer-clojure-directive->exclude
-                                               directive))))
-                               (:else
-                                (loop (cdr xs)
-                                      (append forms
-                                              (cluck-ns-directive->forms directive))
-                                      saw-docstring?
-                                      core-excludes))))))))))))))
+                      (if (null? xs)
+                          `(begin
+                             (cluck-set-current-ns! ',name)
+                             (cluck-reset-ns-aliases! ',name)
+                             (cluck-refer-core! ',(reverse core-excludes))
+                             ,@forms)
+                          (if (string? (car xs))
+                              (if saw-docstring?
+                                  (error "ns docstring must appear at most once" (car xs))
+                                  (if (null? forms)
+                                      (loop (cdr xs) forms #t core-excludes)
+                                      (error "ns docstring must come before directives"
+                                             (car xs))))
+                              (let ((directive (car xs)))
+                                (let ((kw (cluck-keyword-form-name (car directive))))
+                                  (if (and kw (string=? kw "refer-clojure"))
+                                      (loop (cdr xs)
+                                            forms
+                                            saw-docstring?
+                                            (append core-excludes
+                                                    (cluck-refer-clojure-directive->exclude
+                                                     directive)))
+                                      (loop (cdr xs)
+                                            (append forms
+                                                    (cluck-ns-directive->forms directive))
+                                            saw-docstring?
+                                            core-excludes)))))))))))))
 
 (define-syntax require
   (syntax-rules ()
@@ -3521,26 +3557,26 @@
                       (lambda () ,else-part))))
 
 (define (cluck-expand-and clauses rename)
-  (cond
-    ((null? clauses) 'true)
-    ((null? (cdr clauses)) (car clauses))
-    (:else
-     (let ((temp (rename 'cluck-and-value)))
-       `(##core#let ((,temp ,(car clauses)))
-          (cluck-if-thunks ,temp
-                           (lambda () ,(cluck-expand-and (cdr clauses) rename))
-                           (lambda () ,temp)))))))
+  (if (null? clauses)
+      'true
+      (if (null? (cdr clauses))
+          (car clauses)
+          (let ((temp (rename 'cluck-and-value)))
+            `(##core#let ((,temp ,(car clauses)))
+               (cluck-if-thunks ,temp
+                                (lambda () ,(cluck-expand-and (cdr clauses) rename))
+                                (lambda () ,temp)))))))
 
 (define (cluck-expand-or clauses rename)
-  (cond
-    ((null? clauses) 'false)
-    ((null? (cdr clauses)) (car clauses))
-    (:else
-     (let ((temp (rename 'cluck-or-value)))
-       `(##core#let ((,temp ,(car clauses)))
-          (cluck-if-thunks ,temp
-                           (lambda () ,temp)
-                           (lambda () ,(cluck-expand-or (cdr clauses) rename))))))))
+  (if (null? clauses)
+      'false
+      (if (null? (cdr clauses))
+          (car clauses)
+          (let ((temp (rename 'cluck-or-value)))
+            `(##core#let ((,temp ,(car clauses)))
+               (cluck-if-thunks ,temp
+                                (lambda () ,temp)
+                                (lambda () ,(cluck-expand-or (cdr clauses) rename))))))))
 
 (define-syntax and
   (er-macro-transformer
@@ -3559,20 +3595,19 @@
 
 (define (cluck-expand-cond clauses rename)
   (let loop ((rest clauses))
-    (cond
-      ((null? rest) '(seq '()))
-      ((null? (cdr rest))
-       (error "cond expects test/expression pairs"))
-      ((cluck-cond-else? (car rest))
-       (if (null? (cddr rest))
-           (cadr rest)
-           (error "cond :else clause must be last")))
-      (:else
-       (let ((tail (loop (cddr rest)))
-             (value (rename 'cluck-cond-value)))
-         `(cluck-if-thunks ,(car rest)
-                           (lambda () ,(cadr rest))
-                           (lambda () ,tail)))))))
+    (if (null? rest)
+        '(seq '())
+        (if (null? (cdr rest))
+            (error "cond expects test/expression pairs" rest)
+            (if (cluck-cond-else? (car rest))
+                (if (null? (cddr rest))
+                    (cadr rest)
+                    (error "cond :else clause must be last"))
+                (let ((tail (loop (cddr rest)))
+                      (value (rename 'cluck-cond-value)))
+                  `(cluck-if-thunks ,(car rest)
+                                    (lambda () ,(cadr rest))
+                                    (lambda () ,tail))))))))
 
 (define-syntax if
   (er-macro-transformer
@@ -3664,7 +3699,23 @@
 (define-syntax let
   (er-macro-transformer
    (lambda (form rename compare)
-     (##core#let ((bindings (cadr form))
-                  (body (cddr form)))
-       `(let* ,(cluck-parse-let-bindings bindings)
-          ,@body)))))
+     (##core#let ((parts (cdr form)))
+       (if (null? parts)
+           (error "let expects a binding form and a body")
+           (if (and (pair? parts) (symbol? (car parts)))
+               (##core#let ((name (car parts))
+                            (bindings (cadr parts))
+                            (body (cddr parts)))
+                 (if (cluck-let-binding-pair-list? bindings)
+                     (cluck-expand-named-let name bindings body)
+                     (error "let bindings must be a vector or list" bindings)))
+               (##core#let ((bindings (car parts))
+                            (body (cdr parts))
+                            (vector-bindings (cluck-vector-form->list (car parts))))
+                 (if vector-bindings
+                     `(let* ,(cluck-parse-let-bindings bindings)
+                        ,@body)
+                     (if (cluck-let-binding-pair-list? bindings)
+                         `(let* ,bindings
+                            ,@body)
+                         (error "let bindings must be a vector or list" bindings))))))))))

@@ -39,6 +39,7 @@
   (draw-cache-assert-true "canvas ready after set-state!" (draw-canvas-ready?))
   (draw-cache-assert-true "commit stroke works"
                           (draw-commit-stroke!
+                           state
                            {:points [[10 10] [40 40]]
                             :color [255 0 0]
                             :size 2}))

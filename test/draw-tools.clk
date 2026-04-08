@@ -33,11 +33,13 @@
   {:title "Cluck Draw"
    :width 1280
    :height 720
-   :background [24 24 28]
-   :brush-color [245 245 245]
-   :brush-size 2
-   :eraser? false
-   :running? true
+  :background [24 24 28]
+  :brush-color [245 245 245]
+  :brush-size 2
+  :pen-pressure 1.0
+  :window-focused? true
+  :eraser? false
+  :running? true
    :frame 0
    :mouse-x 0
    :mouse-y 0
@@ -102,10 +104,11 @@
   (let [original draw-render-stroke-segment!
         calls []]
     (set! draw-render-stroke-segment!
-          (fn [renderer a b size]
+          (fn [renderer state a b size]
             (set! calls (conj calls [a b size]))
             nil))
     (draw-render-stroke-segments! 'renderer
+                                  (default-state)
                                   [[10 10] [14 14] [18 18]]
                                   2)
     (draw-tools-assert-num= "stroke segment walker calls"

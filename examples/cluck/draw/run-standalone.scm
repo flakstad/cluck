@@ -15,8 +15,8 @@
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.sdl3 #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw #t)
 
-(include "cluck/string.clk")
-(include "cluck/sdl3.clk")
+(include "src/cluck/string.clk")
+(include "src/cluck/sdl3.clk")
 (include "examples/cluck/draw/main.clk")
 
 (main (command-line-arguments))

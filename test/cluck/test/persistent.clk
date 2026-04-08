@@ -1,0 +1,41 @@
+;; Persistent collection smoke tests.
+
+(ns cluck.test.persistent
+  (:require [cluck.test.support :refer [assert-num=
+                                        assert-str=
+                                        assert-true]]))
+
+(require [cluck.persistent :as p])
+
+(assert-true "persistent namespace exists" (find-ns 'cluck.persistent))
+
+(let [m (p/hash-map :a 1 :b 2)]
+  (assert-str= "persistent hash-map" "{:a 1 :b 2}" (p/pr-str m))
+  (assert-num= "persistent map count" 2 (p/count m))
+  (assert-true "persistent map contains?" (p/contains? m :a))
+  (assert-num= "persistent map get" 2 (p/get m :b))
+  (assert-true "persistent map empty?" (not (p/empty? m)))
+  (assert-str= "persistent assoc copy" "{:a 1 :b 2 :c 3}"
+               (p/pr-str (p/assoc m :c 3)))
+  (assert-str= "persistent original map unchanged" "{:a 1 :b 2}" (p/pr-str m))
+  (assert-str= "persistent dissoc" "{:a 1}" (p/pr-str (p/dissoc m :b)))
+  (assert-num= "persistent keys count" 2 (count (p/keys m)))
+  (assert-num= "persistent vals count" 2 (count (p/vals m)))
+  (assert-num= "persistent seq count" 2 (count (p/seq m))))
+
+(let [s (p/hash-set 1 2)]
+  (assert-str= "persistent hash-set" "#{1 2}" (p/pr-str s))
+  (assert-num= "persistent set count" 2 (p/count s))
+  (assert-true "persistent set contains?" (p/contains? s 2))
+  (assert-true "persistent set empty?" (not (p/empty? s)))
+  (assert-str= "persistent conj set" "#{1 2 3}" (p/pr-str (p/conj s 3)))
+  (assert-str= "persistent disj set" "#{2}" (p/pr-str (p/disj s 1)))
+  (assert-num= "persistent set seq count" 2 (count (p/seq s))))
+
+(let [core-map (hash-map :x 1)]
+  (let [pm (p/persistent core-map)]
+    (assert-str= "persistent conversion from mutable map" "{:x 1}" (p/pr-str pm))
+    (assert-str= "persistent conversion assoc" "{:x 1 :y 2}"
+                 (p/pr-str (p/assoc pm :y 2)))
+    (assert-str= "persistent original mutable map unchanged" "{:x 1}" (pr-str core-map))))
+

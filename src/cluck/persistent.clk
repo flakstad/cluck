@@ -1,0 +1,603 @@
+;; Explicit persistent / immutable collection helpers for Cluck.
+;;
+;; This namespace is opt-in. The main Cluck core stays mutable-by-default;
+;; use these helpers only when you want the persistent collection model.
+
+(ns cluck.persistent
+  "Explicit persistent / immutable collection helpers for Cluck."
+  (:require [cluck.core :as core]))
+
+(import hash-trie)
+
+(define-record-type
+  cluck-persistent-map
+  (make-cluck-persistent-map table)
+  cluck-persistent-map?
+  (table persistent-map-table))
+
+(define-record-type
+  cluck-persistent-set
+  (make-cluck-persistent-set table)
+  cluck-persistent-set?
+  (table persistent-set-table))
+
+(define (persistent-map? x) (cluck-persistent-map? x))
+
+(define (persistent-set? x) (cluck-persistent-set? x))
+
+(define (persistent-sorted-insert x xs less?)
+  (cond (null? xs)
+        (list x)
+        (less? x (car xs))
+        (cons x xs)
+        :else
+        (cons (car xs) (persistent-sorted-insert x (cdr xs) less?))))
+
+(define (persistent-sort-list xs less?)
+  (let loop ((rest xs) (acc '()))
+    (if (null? rest)
+      acc
+      (loop (cdr rest) (persistent-sorted-insert (car rest) acc less?)))))
+
+(define (persistent-map-entry? x)
+  (or (and (vector? x) (= (vector-length x) 2))
+      (and (pair? x) (pair? (cdr x)) (null? (cddr x)))))
+
+(define (persistent-map-entry-key x) (if (vector? x) (vector-ref x 0) (car x)))
+
+(define (persistent-map-entry-val x)
+  (if (vector? x) (vector-ref x 1) (cadr x)))
+
+(define (persistent-hash-combine seed value)
+  (modulo (+ (* 16777619 seed) value 1) 536870909))
+
+(define (persistent-hash-add a b) (modulo (+ a b) 536870909))
+
+(define (persistent-string-hash s)
+  (let loop ((i 0) (seed 2166136261))
+    (if (= i (string-length s))
+        (modulo seed 536870909)
+        (loop (+ i 1)
+              (persistent-hash-combine
+               seed
+               (char->integer (string-ref s i)))))))
+
+(define (persistent-map-hash-value m tag)
+  (let ((entry-sum
+          (hash-trie/fold
+            (persistent-map-table m)
+            0
+            (lambda (k v acc)
+              (persistent-hash-add
+                acc
+                (persistent-hash-combine
+                  (persistent-value-hash k)
+                  (persistent-value-hash v)))))))
+    (persistent-hash-combine
+      (persistent-hash-combine tag entry-sum)
+      (hash-trie/count (persistent-map-table m)))))
+
+(define (persistent-set-hash-value s tag)
+  (let ((entry-sum
+          (hash-trie/fold
+            (persistent-set-table s)
+            0
+            (lambda (k v acc)
+              (persistent-hash-add acc (persistent-value-hash k))))))
+    (persistent-hash-combine
+      (persistent-hash-combine tag entry-sum)
+      (hash-trie/count (persistent-set-table s)))))
+
+(define (persistent-value=? a b)
+  (cond (eq? a b)
+        #t
+        (and (persistent-map? a) (persistent-map? b))
+        (and
+         (= (hash-trie/count (persistent-map-table a))
+            (hash-trie/count (persistent-map-table b)))
+         (let loop ((entries (hash-trie->alist (persistent-map-table a))))
+           (if (null? entries)
+             #t
+             (let* ((entry (car entries))
+                    (key (car entry))
+                    (value (cdr entry))
+                    (missing (list 'cluck-persistent-missing))
+                    (other (hash-trie/lookup
+                             (persistent-map-table b)
+                             key
+                             missing)))
+               (and (not (eq? other missing))
+                    (persistent-value=? value other)
+                    (loop (cdr entries)))))))
+        (or (persistent-map? a) (persistent-map? b))
+        #f
+        (and (persistent-set? a) (persistent-set? b))
+        (and
+         (= (hash-trie/count (persistent-set-table a))
+            (hash-trie/count (persistent-set-table b)))
+         (let loop ((items (hash-trie/key-list (persistent-set-table a))))
+           (if (null? items)
+             #t
+             (and (hash-trie/member? (persistent-set-table b) (car items))
+                  (loop (cdr items))))))
+        (or (persistent-set? a) (persistent-set? b))
+        #f
+        :else
+        (cluck-value=? a b)))
+
+(define (persistent-value-hash x)
+  (cond (nil? x)
+        (persistent-hash-combine 1 0)
+        (eq? x false)
+        (persistent-hash-combine 2 0)
+        (eq? x true)
+        (persistent-hash-combine 3 0)
+        (persistent-map? x)
+        (persistent-map-hash-value x 9)
+        (persistent-set? x)
+        (persistent-set-hash-value x 10)
+        :else
+        (persistent-string-hash (core/pr-str x))))
+
+(define persistent-hash-trie-type
+  (make-hash-trie-type persistent-value=? persistent-value-hash))
+
+(define (persistent-fresh-map)
+  (make-cluck-persistent-map (make-hash-trie persistent-hash-trie-type)))
+
+(define (persistent-fresh-set)
+  (make-cluck-persistent-set (make-hash-trie persistent-hash-trie-type)))
+
+(define (persistent-copy-map table)
+  (let ((out (persistent-fresh-map)))
+    (hash-trie/fold
+      (persistent-map-table table)
+      out
+      (lambda (k v acc) (persistent-map-insert acc k v)))))
+
+(define (persistent-copy-set table)
+  (let ((out (persistent-fresh-set)))
+    (hash-trie/fold
+      (persistent-set-table table)
+      out
+      (lambda (k v acc) (persistent-set-insert acc k)))))
+
+(define (persistent-map-count m) (hash-trie/count (persistent-map-table m)))
+
+(define (persistent-set-count s) (hash-trie/count (persistent-set-table s)))
+
+(define (persistent-map-empty? m) (hash-trie/empty? (persistent-map-table m)))
+
+(define (persistent-set-empty? s) (hash-trie/empty? (persistent-set-table s)))
+
+(define (persistent-map-ref/default m key default)
+  (hash-trie/lookup (persistent-map-table m) key default))
+
+(define (persistent-set-member? s key)
+  (hash-trie/member? (persistent-set-table s) key))
+
+(define (persistent-map-insert m key value)
+  (make-cluck-persistent-map
+    (hash-trie/insert (persistent-map-table m) key value)))
+
+(define (persistent-set-insert s key)
+  (make-cluck-persistent-set
+    (hash-trie/insert (persistent-set-table s) key #t)))
+
+(define (persistent-map-delete m key)
+  (make-cluck-persistent-map (hash-trie/delete (persistent-map-table m) key)))
+
+(define (persistent-set-delete s key)
+  (make-cluck-persistent-set (hash-trie/delete (persistent-set-table s) key)))
+
+(define (persistent-map-alist m) (hash-trie->alist (persistent-map-table m)))
+
+(define (persistent-set-list s) (hash-trie/key-list (persistent-set-table s)))
+
+(define (persistent-map-items m)
+  (let loop ((xs (persistent-map-alist m)) (acc '()))
+    (if (null? xs)
+      (reverse acc)
+      (let* ((entry (car xs)) (k (car entry)) (v (cdr entry)))
+        (loop (cdr xs) (cons (vector k v) acc))))))
+
+(define (persistent-set-items s) (persistent-set-list s))
+
+(define persistent-map
+  (lambda kvs
+    (let ((m (persistent-fresh-map)))
+      (let loop ((xs kvs) (out m))
+        (if (null? xs)
+            out
+            (if (null? (cdr xs))
+                (error "persistent-map expects an even number of forms" kvs)
+                (loop (cddr xs) (persistent-map-insert out (car xs) (cadr xs)))))))))
+
+(define persistent-set
+  (lambda items
+    (let ((s (persistent-fresh-set)))
+      (let loop ((xs items) (out s))
+        (if (null? xs)
+            out
+            (loop (cdr xs) (persistent-set-insert out (car xs))))))))
+
+(define hash-map persistent-map)
+
+(define hash-set persistent-set)
+
+(define set persistent-set)
+
+(define (persistent value)
+  (cond (persistent-map? value)
+        value
+        (persistent-set? value)
+        value
+        (map? value)
+        (let
+         loop
+         ((entries (seq value)) (out (persistent-fresh-map)))
+         (if (null? entries)
+           out
+           (let ((entry (car entries)))
+             (loop (cdr entries)
+                   (persistent-map-insert
+                     out
+                     (vector-ref entry 0)
+                     (vector-ref entry 1))))))
+        (set? value)
+        (let
+         loop
+         ((items (seq value)) (out (persistent-fresh-set)))
+         (if (null? items)
+           out
+           (loop (cdr items) (persistent-set-insert out (car items)))))
+        :else
+        value))
+
+(define get
+  (lambda args
+    (let ((coll (car args))
+          (key (cadr args))
+          (maybe-default (cddr args)))
+      (let ((default (if (null? maybe-default) nil (car maybe-default))))
+        (cond (persistent-map? coll)
+              (persistent-map-ref/default coll key default)
+              (persistent-set? coll)
+              (if (persistent-set-member? coll key) key default)
+              (vector? coll)
+              (if
+               (and (integer? key) (>= key 0) (< key (vector-length coll)))
+               (vector-ref coll key)
+               default)
+              (pair? coll)
+              (let
+               loop
+               ((xs coll) (i 0))
+               (cond (null? xs)
+                     default
+                     (= i key)
+                     (car xs)
+                     :else
+                     (loop (cdr xs) (+ i 1))))
+              :else
+              default)))))
+
+(define (contains? coll key)
+  (cond (persistent-map? coll)
+        (let
+         ((missing (list 'persistent-contains-missing)))
+         (not (eq? (persistent-map-ref/default coll key missing) missing)))
+        (persistent-set? coll)
+        (persistent-set-member? coll key)
+        (vector? coll)
+        (and (integer? key) (>= key 0) (< key (vector-length coll)))
+        :else
+        #f))
+
+(define (count x)
+  (cond (persistent-map? x)
+        (persistent-map-count x)
+        (persistent-set? x)
+        (persistent-set-count x)
+        :else
+        (core/count x)))
+
+(define (empty? x)
+  (cond (persistent-map? x)
+        (persistent-map-empty? x)
+        (persistent-set? x)
+        (persistent-set-empty? x)
+        :else
+        (core/empty? x)))
+
+(define (seq x)
+  (cond (persistent-map? x)
+        (let ((items (persistent-map-items x))) (if (null? items) nil items))
+        (persistent-set? x)
+        (let ((items (persistent-set-items x))) (if (null? items) nil items))
+        :else
+        (core/seq x)))
+
+(define (first x)
+  (let ((s (seq x)))
+    (cond (or (nil? s) (null? s))
+          nil
+          (pair? s)
+          (car s)
+          :else
+          (core/first s))))
+
+(define (rest x)
+  (let ((s (seq x)))
+    (cond (or (nil? s) (null? s))
+          '()
+          (pair? s)
+          (cdr s)
+          :else
+          (core/rest s))))
+
+(define (keys m)
+  (if (persistent-map? m)
+    (let loop ((entries (persistent-map-alist m)) (acc '()))
+      (if (null? entries)
+        (reverse acc)
+        (loop (cdr entries) (cons (car (car entries)) acc))))
+    (core/keys m)))
+
+(define (vals m)
+  (if (persistent-map? m)
+    (let loop ((entries (persistent-map-alist m)) (acc '()))
+      (if (null? entries)
+        (reverse acc)
+        (loop (cdr entries) (cons (cdr (car entries)) acc))))
+    (core/vals m)))
+
+(define (persistent-conj-map m item)
+  (cond (persistent-map? item)
+        (let
+         ((out m))
+         (for-each
+           (lambda (entry)
+             (set! out (persistent-map-insert out (car entry) (cdr entry))))
+           (persistent-map-alist item))
+         out)
+        (persistent-map-entry? item)
+        (persistent-map-insert
+         m
+         (persistent-map-entry-key item)
+         (persistent-map-entry-val item))
+        :else
+        (error
+         "conj expects map entries or maps when target is a persistent map"
+         item)))
+
+(define assoc
+  (lambda args
+    (let ((coll (car args))
+          (kvs (cdr args)))
+      (cond (persistent-map? coll)
+            (let
+             loop
+             ((xs kvs) (out coll))
+             (cond (null? xs)
+                   out
+                   (null? (cdr xs))
+                   (error "assoc expects key/value pairs")
+                   :else
+                   (loop
+                    (cddr xs)
+                    (persistent-map-insert out (car xs) (cadr xs)))))
+            (vector? coll)
+            (let
+             loop
+             ((xs kvs) (out coll))
+             (cond (null? xs)
+                   out
+                   (null? (cdr xs))
+                   (error "assoc expects index/value pairs")
+                   :else
+                   (let
+                    ((idx (car xs)) (value (cadr xs)))
+                    (set! out (cluck-vector-assoc out idx value))
+                    (loop (cddr xs) out))))
+            :else
+            (error "assoc only supports persistent maps and vectors" coll)))))
+
+(define dissoc
+  (lambda args
+    (let ((coll (car args))
+          (keys (cdr args)))
+      (cond (persistent-map? coll)
+            (let
+             loop
+             ((xs keys) (out coll))
+             (if (null? xs)
+                 out
+                 (loop (cdr xs) (persistent-map-delete out (car xs)))))
+            (persistent-set? coll)
+            (let
+             loop
+             ((xs keys) (out coll))
+             (if (null? xs)
+                 out
+                 (loop (cdr xs) (persistent-set-delete out (car xs)))))
+            :else
+            (error "dissoc only supports persistent maps and sets" coll)))))
+
+(define conj
+  (lambda args
+    (let ((coll (car args))
+          (items (cdr args)))
+      (cond (persistent-map? coll)
+            (let
+             loop
+             ((xs items) (acc coll))
+             (if (null? xs)
+                 acc
+                 (loop (cdr xs) (persistent-conj-map acc (car xs)))))
+            (persistent-set? coll)
+            (let
+             loop
+             ((xs items) (acc coll))
+             (if (null? xs)
+                 acc
+                 (loop (cdr xs) (persistent-set-insert acc (car xs)))))
+            (vector? coll)
+            (cluck-vector-append coll items)
+            (or (null? coll) (pair? coll))
+            (let
+             loop
+             ((xs items) (acc coll))
+             (if (null? xs) acc (loop (cdr xs) (cons (car xs) acc))))
+            :else
+            (error
+             "conj only supports persistent maps, sets, vectors, and lists"
+             coll)))))
+
+(define disj
+  (lambda args
+    (let ((coll (car args))
+          (items (cdr args)))
+      (cond (persistent-set? coll)
+            (let
+             loop
+             ((xs items) (acc coll))
+             (if (null? xs)
+                 acc
+                 (loop (cdr xs) (persistent-set-delete acc (car xs)))))
+            :else
+            (error "disj only supports persistent sets" coll)))))
+
+(define (persistent-pr-piece x)
+  (cond (string? x)
+        x
+        (char? x)
+        (let ((p (open-output-string))) (write-char x p) (get-output-string p))
+        (nil? x)
+        "nil"
+        (eq? x true)
+        "true"
+        (eq? x false)
+        "false"
+        (keyword? x)
+        (core/pr-str x)
+        (symbol? x)
+        (symbol->string x)
+        :else
+        (core/pr-str x)))
+
+(define (persistent-write-pr x port)
+  (cond (persistent-map? x)
+        (begin
+          (display "{" port)
+          (let
+           loop
+           ((pairs (persistent-sort-list
+                     (persistent-map-alist x)
+                     (lambda (a b)
+                       (string<? (pr-str (car a)) (pr-str (car b))))))
+            (first? #t))
+           (if (null? pairs)
+               (display "}" port)
+               (begin
+                 (if (not first?) (write-char #\space port))
+                 (persistent-write-pr (caar pairs) port)
+                 (write-char #\space port)
+                 (persistent-write-pr (cdar pairs) port)
+                 (loop (cdr pairs) #f)))))
+        (persistent-set? x)
+        (begin
+          (display "#{" port)
+          (let
+           loop
+           ((items (persistent-sort-list
+                     (persistent-set-list x)
+                     (lambda (a b) (string<? (pr-str a) (pr-str b)))))
+            (first? #t))
+           (if (null? items)
+               (display "}" port)
+               (begin
+                 (if (not first?) (write-char #\space port))
+                 (persistent-write-pr (car items) port)
+                 (loop (cdr items) #f)))))
+        (vector? x)
+        (begin
+          (display "[" port)
+          (let
+           loop
+           ((i 0))
+           (if (= i (vector-length x))
+               (display "]" port)
+               (begin
+                 (if (> i 0) (write-char #\space port))
+                 (persistent-write-pr (vector-ref x i) port)
+                 (loop (+ i 1))))))
+        (pair? x)
+        (begin
+          (display "(" port)
+          (let
+           loop
+           ((xs x) (first? #t))
+           (cond (null? xs)
+                 (display ")" port)
+                 (pair? xs)
+                 (begin
+                  (if (not first?) (write-char #\space port))
+                  (persistent-write-pr (car xs) port)
+                  (loop (cdr xs) #f))
+                 :else
+                 (begin
+                  (display " . " port)
+                  (persistent-write-pr xs port)
+                  (display ")" port)))))
+        :else
+        (display (core/pr-str x) port)))
+
+(define pr-str
+  (lambda items
+    (let ((p (open-output-string)))
+      (let loop ((xs items))
+        (if (null? xs)
+            (get-output-string p)
+            (begin
+              (persistent-write-pr (car xs) p)
+              (if (null? (cdr xs))
+                  (get-output-string p)
+                  (begin (write-char #\space p) (loop (cdr xs))))))))))
+
+(define (cluck-persistent-public-bindings)
+  (list
+   (cons 'persistent-map? persistent-map?)
+   (cons 'persistent-set? persistent-set?)
+   (cons 'hash-map hash-map)
+   (cons 'hash-set hash-set)
+   (cons 'set set)
+   (cons 'persistent persistent)
+   (cons 'get get)
+   (cons 'contains? contains?)
+   (cons 'count count)
+   (cons 'empty? empty?)
+   (cons 'seq seq)
+   (cons 'first first)
+   (cons 'rest rest)
+   (cons 'keys keys)
+   (cons 'vals vals)
+   (cons 'assoc assoc)
+   (cons 'dissoc dissoc)
+   (cons 'conj conj)
+   (cons 'disj disj)
+   (cons 'pr-str pr-str)))
+
+(define (cluck-install-persistent-namespace!)
+  (let ((ns 'cluck.persistent))
+    (cluck-ensure-ns! ns)
+    (cluck-reset-ns-imports! ns)
+    (cluck-reset-ns-aliases! ns)
+    (let loop ((xs (cluck-persistent-public-bindings)))
+      (if (null? xs)
+          (void)
+          (begin
+            (cluck-intern! ns (caar xs) (cdar xs))
+            (loop (cdr xs)))))))
+
+(cluck-install-persistent-namespace!)

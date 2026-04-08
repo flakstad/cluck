@@ -25,7 +25,8 @@ files into a directory already on your `load-path`.
   evaluate the draw buffer or the explicit startup forms in
   `examples/cluck/draw/main.clk`, then call `(start-dev!)` when you want the
   window. The REPL itself still starts with no window and does not load SDL
-  automatically.
+  automatically. In the draw app, mouse wheel zooms and `shift`+drag pans the
+  viewport.
 - inline eval overlays
 - doc lookup with `C-c C-d`
 - definition jumping with `M-.`
