@@ -317,10 +317,11 @@
 (assert-num= "assoc/get" 2 (-> {:a 1} (assoc :b 2) (get :b)))
 (let [m (hash-map)
       m2 (assoc m :a 1 :b 2 :c 3)]
-  (assert-true "assoc original map stays empty" (empty? m))
-  (assert-num= "assoc multi map a" 1 (get m2 :a))
-  (assert-num= "assoc multi map b" 2 (get m2 :b))
-  (assert-num= "assoc multi map c" 3 (get m2 :c)))
+  (assert-true "assoc mutates original map" (not (empty? m)))
+  (assert-true "assoc returns same map" (eq? m m2))
+  (assert-num= "assoc multi map a" 1 (get m :a))
+  (assert-num= "assoc multi map b" 2 (get m :b))
+  (assert-num= "assoc multi map c" 3 (get m :c)))
 (let [v [0 0 0]
       v2 (assoc v 0 1 1 2 2 3)]
   (assert-str= "assoc multi vector" "[1 2 3]" (pr-str v2))

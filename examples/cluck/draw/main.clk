@@ -226,7 +226,9 @@
             prior-history (if (> total 1)
                             (vec (drop (- total 1) history))
                             [])]
-        (assoc snapshot :history prior-history)))))
+        (assoc snapshot
+               :history prior-history
+               :strokes (vec (get snapshot :strokes)))))))
 
 (defn draw-tool-mode
   "Return the current tool mode label."
@@ -330,14 +332,15 @@
   (let [point (draw-event-point desc)
         stroke (get state :active-stroke)]
     (if stroke
-      (let [finished (assoc stroke
-                            :points (conj (get stroke :points) point))]
-        (assoc state
-               :pointer-down? false
-               :mouse-x (nth point 0)
-               :mouse-y (nth point 1)
-               :active-stroke false
-               :strokes (conj (get state :strokes) finished)))
+        (let [finished (assoc stroke
+                              :points (conj (get stroke :points)
+                                            point))]
+          (assoc state
+                 :pointer-down? false
+                 :mouse-x (nth point 0)
+                 :mouse-y (nth point 1)
+                 :active-stroke false
+                 :strokes (conj (get state :strokes) finished)))
       (assoc state
              :pointer-down? false
              :mouse-x (nth point 0)
@@ -626,13 +629,19 @@
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
   [renderer points size]
-  (if (or (empty? points)
-          (empty? (rest points)))
-    nil
-    (let [a (first points)
-          b (first (rest points))]
-      (draw-render-stroke-segment! renderer a b size)
-      (draw-render-stroke-segments! renderer (rest points) size))))
+  (let [total (count points)]
+    (if (<= total 1)
+      nil
+      (let [loop (fn [i]
+                   (if (>= i total)
+                     nil
+                     (begin
+                       (draw-render-stroke-segment! renderer
+                                                    (nth points (- i 1))
+                                                    (nth points i)
+                                                    size)
+                       (loop (+ i 1)))))]
+        (loop 1)))))
 
 (defn draw-render-stroke!
   "Render a stroke map."

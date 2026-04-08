@@ -664,8 +664,8 @@ This is enough to structure source files, inspect exports, and load small module
 
 The next phase is about making Cluck prove itself on a real small program, not just adding syntax.
 
-- keep the runtime eager, direct, and persistent-by-default
-- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and related modules
+- keep the runtime eager, direct, and mutable by default
+- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and a separate opt-in namespace for persistent / immutable collections
 - expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
 - use one real dogfood app to drive the next round of API and namespace decisions
 - prefer small native CLI or local data tools first; TODO scanning, link checking, and CSV/TSV summarization are all good candidates before larger app work

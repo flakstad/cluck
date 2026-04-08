@@ -7,7 +7,6 @@
         (chicken process-context)
         (chicken repl)
         (chicken syntax)
-        hash-trie
         srfi-69)
 
 (include "src/syntax-bootstrap.scm")
@@ -19,7 +18,7 @@
   (cond
     ((null? xs) (list x))
     ((less? x (car xs)) (cons x xs))
-    (else (cons (car xs) (cluck-insert-sorted x (cdr xs) less?)))))
+    (:else (cons (car xs) (cluck-insert-sorted x (cdr xs) less?)))))
 
 (define (cluck-sort-list xs less?)
   (let loop ((rest xs) (acc '()))
@@ -42,6 +41,9 @@
             dir
             (string-append dir "/")))
       #f))
+
+(define (cluck-value=? a b)
+  (equal? a b))
 
 (define *ns* 'user)
 (define *cluck-ns-registry* (make-hash-table))
@@ -130,7 +132,7 @@
   (let* ((target-sym (cond
                        ((symbol? sym) sym)
                        ((string? sym) (string->symbol sym))
-                       (else sym)))
+                       (:else sym)))
          (target-ns (and (symbol? target-sym)
                          (namespace target-sym)))
          (resolved-ns (and target-ns
@@ -147,7 +149,7 @@
             ((null? namespaces) #f)
             ((eq? (car namespaces) ns)
              (loop (cdr namespaces)))
-            (else
+            (:else
              (let ((doc (cluck-doc-for (car namespaces) resolved-sym)))
                (if doc
                    doc
@@ -158,7 +160,7 @@
         (target (cond
                   ((symbol? sym) sym)
                   ((string? sym) (string->symbol sym))
-                  (else sym))))
+                  (:else sym))))
     (if doc
         (begin
           (display (pr-str target))
@@ -221,7 +223,7 @@
           (null? (cddr form))
           (symbol? (cadr form)))
      (cadr form))
-    (else
+    (:else
      (error "namespace name must be a symbol" form))))
 
 (define (all-ns)
@@ -287,7 +289,7 @@
       ((< i 0) path)
       ((char=? (string-ref path i) #\/)
        (substring path (+ i 1) (string-length path)))
-      (else
+      (:else
        (loop (- i 1))))))
 
 (define (cluck-root-candidates root)
@@ -343,7 +345,7 @@
       ((< i 0) #f)
       ((char=? (string-ref path i) #\/)
        (substring path 0 (+ i 1)))
-      (else
+      (:else
        (loop (- i 1))))))
 
 (define (cluck-parent-directory path)
@@ -366,7 +368,7 @@
       ((or (file-exists? (string-append dir "src/cluck-cli.scm"))
            (file-exists? (string-append dir "src/cluck.scm")))
        dir)
-      (else
+      (:else
        (let ((parent (cluck-parent-directory dir)))
          (if (and parent (not (string=? parent dir)))
              (loop parent)
@@ -416,12 +418,12 @@
                         `(get ,(car args) ,kw))
                        ((null? (cddr args))
                         `(get ,(car args) ,kw ,(cadr args)))
-                       (else rewritten)))
+                       (:else rewritten)))
                    rewritten))))))
     ((vector? form)
      (list->vector
       (map cluck-rewrite-keyword-calls (vector->list form))))
-    (else form)))
+    (:else form)))
 
 (define (cluck-rewrite-qualified-symbol form)
   (if (symbol? form)
@@ -430,7 +432,7 @@
                       (cond
                         ((>= i (string-length text)) #f)
                         ((char=? (string-ref text i) #\/) i)
-                        (else (loop (+ i 1))))))
+                        (:else (loop (+ i 1))))))
              (alias (and slash (substring text 0 slash)))
              (name (and slash (substring text (+ slash 1) (string-length text)))))
         (if (and alias name)
@@ -462,12 +464,12 @@
                         `(get ,(car args) ,kw))
                        ((null? (cddr args))
                         `(get ,(car args) ,kw ,(cadr args)))
-                       (else rewritten)))
+                       (:else rewritten)))
                    rewritten))))))
     ((vector? form)
      (list->vector
       (map cluck-rewrite-source-form (vector->list form))))
-    (else
+    (:else
      (cluck-rewrite-qualified-symbol form))))
 
 (define (cluck-eval-source-form form)
@@ -500,12 +502,12 @@
     (let root-loop ((roots *cluck-module-search-roots*))
       (cond
         ((null? roots) #f)
-        (else
+        (:else
          (let ((root (cluck-normalize-directory (car roots))))
            (let candidate-loop ((xs candidates))
              (cond
                ((null? xs) (root-loop (cdr roots)))
-               (else
+               (:else
                 (let ((path (string-append root (car xs))))
                   (if (file-exists? path)
                       path
@@ -561,7 +563,7 @@
     ((cluck-namespace-loaded? ns) ns)
     ((cluck-namespace-loading? ns)
      (error "circular require detected" ns))
-    (else
+    (:else
      (let ((path (cluck-locate-module-file ns)))
        (if path
            (cluck-load-namespace-file! ns path)
@@ -574,7 +576,7 @@
     ((pair? x) x)
     ((symbol? x) (list x))
     ((string? x) (list (string->symbol x)))
-    (else #f)))
+    (:else #f)))
 
 (define (cluck-keyword-form-name x)
   (cond
@@ -591,7 +593,7 @@
           (null? (cddr x))
           (keyword? (cadr x)))
      (name (cadr x)))
-    (else #f)))
+    (:else #f)))
 
 (define (cluck-all-marker? x)
   (let ((name (cluck-keyword-form-name x)))
@@ -713,7 +715,7 @@
           (pair? (cdr spec))
           (null? (cddr spec)))
      (cluck-ns-require-spec->forms (cadr spec)))
-    (else
+    (:else
      (error "require expects a namespace symbol or vector spec" spec))))
 
 (define (cluck-require-vector-spec! spec)
@@ -790,7 +792,7 @@
                                        rename)
                                  (error ":exclude expects a symbol vector or list"
                                         (cadr rest))))))
-                      (else
+                      (:else
                        (error "unsupported require option" option)))))))))))
 
 (define (cluck-require-spec! spec)
@@ -803,7 +805,7 @@
           (pair? (cdr spec))
           (null? (cddr spec)))
      (cluck-require-spec! (cadr spec)))
-    (else
+    (:else
      (error "require expects a namespace symbol or vector spec" spec))))
 
 (define (cluck-refer-clojure-directive->exclude directive)
@@ -812,7 +814,7 @@
       ((null? rest) (reverse exclude))
       ((null? (cdr rest))
        (error "refer-clojure directive expects option/value pairs" directive))
-      (else
+      (:else
        (let ((kw (cluck-keyword-form-name (car rest))))
          (cond
            ((and kw (string=? kw "exclude"))
@@ -820,7 +822,7 @@
               (if syms
                   (loop (cddr rest) (append syms exclude))
                   (error ":exclude expects a symbol vector or list" (cadr rest)))))
-           (else
+           (:else
             (error "unsupported refer-clojure option" (car rest)))))))))
 
 (define (cluck-ns-directive->forms directive)
@@ -831,7 +833,7 @@
      (apply append
             (map cluck-ns-require-spec->forms
                  (cdr directive))))
-    (else
+    (:else
      (error "ns directives are not yet supported" directive))))
 
 (define (cluck-collect-hash-pairs table)
@@ -844,14 +846,14 @@
 
 (define (cluck-sorted-map-pairs m)
   (cluck-sort-list
-   (cluck-map-alist m)
+   (cluck-map-view-alist m)
    (lambda (a b)
      (string<? (pr-str (car a))
                (pr-str (car b))))))
 
 (define (cluck-sorted-set-items s)
   (cluck-sort-list
-   (cluck-set-list s)
+   (cluck-set-view-list s)
    (lambda (a b)
      (string<? (pr-str a)
                (pr-str b)))))
@@ -905,6 +907,362 @@
                   (loop (+ i 1)))))))
       (error "vector index must be a non-negative integer" idx)))
 
+(define-record-type cluck-transient-map
+  (make-cluck-transient-map cell)
+  cluck-transient-map?
+  (cell cluck-transient-map-cell))
+
+(define-record-type cluck-transient-set
+  (make-cluck-transient-set cell)
+  cluck-transient-set?
+  (cell cluck-transient-set-cell))
+
+(define-record-type cluck-transient-vector
+  (make-cluck-transient-vector cell)
+  cluck-transient-vector?
+  (cell cluck-transient-vector-cell))
+
+(define (cluck-transient-map-table m)
+  (vector-ref (cluck-transient-map-cell m) 0))
+
+(define (cluck-transient-map-count m)
+  (vector-ref (cluck-transient-map-cell m) 1))
+
+(define (cluck-transient-map-frozen? m)
+  (vector-ref (cluck-transient-map-cell m) 2))
+
+(define (cluck-transient-map-set-table! m table)
+  (vector-set! (cluck-transient-map-cell m) 0 table))
+
+(define (cluck-transient-map-set-count! m count)
+  (vector-set! (cluck-transient-map-cell m) 1 count))
+
+(define (cluck-transient-map-set-frozen! m frozen?)
+  (vector-set! (cluck-transient-map-cell m) 2 frozen?))
+
+(define (cluck-transient-set-table s)
+  (vector-ref (cluck-transient-set-cell s) 0))
+
+(define (cluck-transient-set-count s)
+  (vector-ref (cluck-transient-set-cell s) 1))
+
+(define (cluck-transient-set-frozen? s)
+  (vector-ref (cluck-transient-set-cell s) 2))
+
+(define (cluck-transient-set-set-table! s table)
+  (vector-set! (cluck-transient-set-cell s) 0 table))
+
+(define (cluck-transient-set-set-count! s count)
+  (vector-set! (cluck-transient-set-cell s) 1 count))
+
+(define (cluck-transient-set-set-frozen! s frozen?)
+  (vector-set! (cluck-transient-set-cell s) 2 frozen?))
+
+(define (cluck-transient-vector-items v)
+  (vector-ref (cluck-transient-vector-cell v) 0))
+
+(define (cluck-transient-vector-count v)
+  (vector-ref (cluck-transient-vector-cell v) 1))
+
+(define (cluck-transient-vector-frozen? v)
+  (vector-ref (cluck-transient-vector-cell v) 2))
+
+(define (cluck-transient-vector-set-items! v items)
+  (vector-set! (cluck-transient-vector-cell v) 0 items))
+
+(define (cluck-transient-vector-set-count! v count)
+  (vector-set! (cluck-transient-vector-cell v) 1 count))
+
+(define (cluck-transient-vector-set-frozen! v frozen?)
+  (vector-set! (cluck-transient-vector-cell v) 2 frozen?))
+
+(define (cluck-transient-map-alist m)
+  (let ((pairs '()))
+    (hash-table-for-each
+     (cluck-transient-map-table m)
+     (lambda (k v)
+       (set! pairs (cons (cons k v) pairs))))
+    pairs))
+
+(define (cluck-transient-set-list s)
+  (let ((items '()))
+    (hash-table-for-each
+     (cluck-transient-set-table s)
+     (lambda (k v)
+       (set! items (cons k items))))
+    items))
+
+(define (cluck-transient-vector->list v)
+  (let ((items (cluck-transient-vector-items v))
+        (count (cluck-transient-vector-count v)))
+    (let loop ((i 0) (acc '()))
+      (if (= i count)
+          (reverse acc)
+          (loop (+ i 1) (cons (vector-ref items i) acc))))))
+
+(define (cluck-map-view-alist m)
+  (cond
+    ((map? m) (cluck-map-alist m))
+    ((cluck-transient-map? m) (cluck-transient-map-alist m))
+    (:else '())))
+
+(define (cluck-set-view-list s)
+  (cond
+    ((set? s) (cluck-set-list s))
+    ((cluck-transient-set? s) (cluck-transient-set-list s))
+    (:else '())))
+
+(define (cluck-vector-view-count v)
+  (cond
+    ((vector? v) (vector-length v))
+    ((cluck-transient-vector? v) (cluck-transient-vector-count v))
+    (:else #f)))
+
+(define (cluck-vector-view-ref v idx)
+  (cond
+    ((vector? v) (vector-ref v idx))
+    ((cluck-transient-vector? v)
+     (vector-ref (cluck-transient-vector-items v) idx))
+    (:else (error "expected a vector" v))))
+
+(define (cluck-fresh-transient-vector capacity)
+  (make-cluck-transient-vector (vector (make-vector capacity nil) 0 #f)))
+
+(define (cluck-vector->transient-vector vec)
+  (let* ((len (vector-length vec))
+         (capacity (if (= len 0) 4 len))
+         (out (cluck-fresh-transient-vector capacity)))
+    (let loop ((i 0))
+      (if (= i len)
+          (begin
+            (cluck-transient-vector-set-count! out len)
+            out)
+          (begin
+            (vector-set! (cluck-transient-vector-items out)
+                         i
+                         (vector-ref vec i))
+            (loop (+ i 1)))))))
+
+(define (cluck-map->transient-map m)
+  (let ((table (make-hash-table)))
+    (for-each
+     (lambda (entry)
+       (hash-table-set! table (car entry) (cdr entry)))
+     (cluck-map-alist m))
+    (make-cluck-transient-map (vector table (cluck-map-count m) #f))))
+
+(define (cluck-set->transient-set s)
+  (let ((table (make-hash-table)))
+    (for-each
+     (lambda (item)
+       (hash-table-set! table item #t))
+     (cluck-set-list s))
+    (make-cluck-transient-set (vector table (cluck-set-count s) #f))))
+
+(define (cluck-transient-value x)
+  (cond
+    ((cluck-transient-map? x) x)
+    ((cluck-transient-set? x) x)
+    ((cluck-transient-vector? x) x)
+    ((map? x) (cluck-map->transient-map x))
+    ((set? x) (cluck-set->transient-set x))
+    ((vector? x) (cluck-vector->transient-vector x))
+    (:else x)))
+
+(define (cluck-persistent-transient-vector v)
+  (let* ((count (cluck-transient-vector-count v))
+         (items (cluck-transient-vector-items v))
+         (out (make-vector count)))
+    (let loop ((i 0))
+      (if (= i count)
+          out
+          (begin
+            (vector-set! out i (vector-ref items i))
+            (loop (+ i 1)))))))
+
+(define (cluck-persistent-transient-map m)
+  (let ((out (hash-map)))
+    (hash-table-for-each
+     (cluck-transient-map-table m)
+     (lambda (k v)
+       (set! out (cluck-map-insert out k v))))
+    out))
+
+(define (cluck-persistent-transient-set s)
+  (let ((out (set)))
+    (hash-table-for-each
+     (cluck-transient-set-table s)
+     (lambda (k v)
+       (set! out (cluck-set-insert out k))))
+    out))
+
+(define (cluck-persistent-value x)
+  (cond
+    ((cluck-transient-map? x)
+     (begin
+       (cluck-transient-map-set-frozen! x #t)
+       (cluck-persistent-transient-map x)))
+    ((cluck-transient-set? x)
+     (begin
+       (cluck-transient-set-set-frozen! x #t)
+       (cluck-persistent-transient-set x)))
+    ((cluck-transient-vector? x)
+     (begin
+       (cluck-transient-vector-set-frozen! x #t)
+       (cluck-persistent-transient-vector x)))
+    (:else x)))
+
+(define (cluck-transient-ensure! x who)
+  (cond
+    ((cluck-transient-map? x)
+     (if (cluck-transient-map-frozen? x)
+         (error who "called after persistent!" x)
+         #t))
+    ((cluck-transient-set? x)
+     (if (cluck-transient-set-frozen? x)
+         (error who "called after persistent!" x)
+         #t))
+    ((cluck-transient-vector? x)
+     (if (cluck-transient-vector-frozen? x)
+         (error who "called after persistent!" x)
+         #t))
+    (:else
+     (error who "expects a transient collection" x))))
+
+(define (cluck-transient-vector-copy-into! out items count)
+  (let loop ((i 0))
+    (if (= i count)
+        out
+        (begin
+          (vector-set! out i (vector-ref items i))
+          (loop (+ i 1))))))
+
+(define (cluck-transient-vector-ensure-capacity! v needed)
+  (let* ((items (cluck-transient-vector-items v))
+         (capacity (vector-length items)))
+    (if (>= capacity needed)
+        v
+        (let* ((count (cluck-transient-vector-count v))
+               (next (let loop ((cap (if (= capacity 0) 4 capacity)))
+                       (if (>= cap needed)
+                           cap
+                           (loop (* 2 cap)))))
+               (out (make-vector next nil)))
+          (cluck-transient-vector-copy-into! out items count)
+          (cluck-transient-vector-set-items! v out)
+          v))))
+
+(define (cluck-transient-vector-append! v value)
+  (cluck-transient-ensure! v 'conj!)
+  (let ((count (cluck-transient-vector-count v)))
+    (cluck-transient-vector-ensure-capacity! v (+ count 1))
+    (vector-set! (cluck-transient-vector-items v) count value)
+    (cluck-transient-vector-set-count! v (+ count 1))
+    v))
+
+(define (cluck-transient-vector-assoc! v idx value)
+  (cluck-transient-ensure! v 'assoc!)
+  (if (and (integer? idx) (>= idx 0))
+      (let ((count (cluck-transient-vector-count v)))
+        (cond
+          ((< idx count)
+           (vector-set! (cluck-transient-vector-items v) idx value)
+           v)
+          ((= idx count)
+           (cluck-transient-vector-append! v value))
+          (:else
+           (cluck-transient-vector-ensure-capacity! v (+ idx 1))
+           (let ((items (cluck-transient-vector-items v)))
+             (let fill ((i count))
+               (if (< i idx)
+                   (begin
+                     (vector-set! items i nil)
+                     (fill (+ i 1)))
+                   (begin
+                     (vector-set! items idx value)
+                     (cluck-transient-vector-set-count! v (+ idx 1))
+                     v)))))))
+      (error "vector index must be a non-negative integer" idx)))
+
+(define (cluck-transient-vector-conj! v . items)
+  (let loop ((xs items) (acc v))
+    (if (null? xs)
+        acc
+        (loop (cdr xs)
+              (cluck-transient-vector-append! acc (car xs))))))
+
+(define (cluck-transient-map-put! m key value)
+  (cluck-transient-ensure! m 'assoc!)
+  (let ((table (cluck-transient-map-table m)))
+    (if (hash-table-exists? table key)
+        (hash-table-set! table key value)
+        (begin
+          (hash-table-set! table key value)
+          (cluck-transient-map-set-count! m (+ (cluck-transient-map-count m) 1))))
+    m))
+
+(define (cluck-transient-map-conj! m item)
+  (cluck-transient-ensure! m 'conj!)
+  (cond
+    ((map? item)
+     (let ((acc m))
+       (for-each
+        (lambda (entry)
+          (set! acc (cluck-transient-map-put! acc (car entry) (cdr entry))))
+        (cluck-map-alist item))
+       acc))
+    ((cluck-transient-map? item)
+     (let ((acc m))
+       (for-each
+        (lambda (entry)
+          (set! acc (cluck-transient-map-put! acc (car entry) (cdr entry))))
+        (cluck-transient-map-alist item))
+       acc))
+    ((cluck-map-entry? item)
+     (cluck-transient-map-put! m
+                               (cluck-map-entry-key item)
+                               (cluck-map-entry-val item)))
+    (:else
+     (error "conj! expects map entries or maps when target is a transient map" item))))
+
+(define (cluck-transient-map-delete! m key)
+  (cluck-transient-ensure! m 'dissoc!)
+  (let ((table (cluck-transient-map-table m)))
+    (if (hash-table-exists? table key)
+        (begin
+          (hash-table-delete! table key)
+          (cluck-transient-map-set-count! m (- (cluck-transient-map-count m) 1))))
+    m))
+
+(define (cluck-transient-set-add! s key)
+  (cluck-transient-ensure! s 'conj!)
+  (let ((table (cluck-transient-set-table s)))
+    (if (hash-table-exists? table key)
+        (hash-table-set! table key #t)
+        (begin
+          (hash-table-set! table key #t)
+          (cluck-transient-set-set-count! s (+ (cluck-transient-set-count s) 1))))
+    s))
+
+(define (cluck-transient-set-remove! s key)
+  (cluck-transient-ensure! s 'disj!)
+  (let ((table (cluck-transient-set-table s)))
+    (if (hash-table-exists? table key)
+        (begin
+          (hash-table-delete! table key)
+          (cluck-transient-set-set-count! s (- (cluck-transient-set-count s) 1))))
+    s))
+
+(define (cluck-transient-map-count-or-zero m)
+  (if (cluck-transient-map? m)
+      (cluck-transient-map-count m)
+      0))
+
+(define (cluck-transient-set-count-or-zero s)
+  (if (cluck-transient-set? s)
+      (cluck-transient-set-count s)
+      0))
+
 (define (cluck-seq-list x)
   (cond
     ((cluck-empty-seq? x) nil)
@@ -913,16 +1271,25 @@
     ((map? x)
      (let ((items (cluck-map-items x)))
        (if (null? items) nil items)))
+    ((cluck-transient-map? x)
+     (let ((items (cluck-transient-map-alist x)))
+       (if (null? items) nil items)))
     ((set? x)
      (let ((items (cluck-set-items x)))
+       (if (null? items) nil items)))
+    ((cluck-transient-set? x)
+     (let ((items (cluck-transient-set-list x)))
        (if (null? items) nil items)))
     ((vector? x)
      (let ((items (vector->list x)))
        (if (null? items) nil items)))
+    ((cluck-transient-vector? x)
+     (let ((items (cluck-transient-vector->list x)))
+       (if (null? items) nil items)))
     ((string? x)
      (let ((items (string->list x)))
        (if (null? items) nil items)))
-    (else nil)))
+    (:else nil)))
 
 (define (cluck-write-pr x port)
   (cond
@@ -955,7 +1322,27 @@
              (write-char #\space port)
              (cluck-write-pr (cdar pairs) port)
              (loop (cdr pairs) #f)))))
+    ((cluck-transient-map? x)
+     (display "{" port)
+     (let loop ((pairs (cluck-sorted-map-pairs x)) (first? #t))
+       (if (null? pairs)
+           (display "}" port)
+           (begin
+             (if (not first?) (write-char #\space port))
+             (cluck-write-pr (caar pairs) port)
+             (write-char #\space port)
+             (cluck-write-pr (cdar pairs) port)
+             (loop (cdr pairs) #f)))))
     ((set? x)
+     (display "#{" port)
+     (let loop ((items (cluck-sorted-set-items x)) (first? #t))
+       (if (null? items)
+           (display "}" port)
+           (begin
+             (if (not first?) (write-char #\space port))
+             (cluck-write-pr (car items) port)
+             (loop (cdr items) #f)))))
+    ((cluck-transient-set? x)
      (display "#{" port)
      (let loop ((items (cluck-sorted-set-items x)) (first? #t))
        (if (null? items)
@@ -973,6 +1360,17 @@
              (if (> i 0) (write-char #\space port))
              (cluck-write-pr (vector-ref x i) port)
              (loop (+ i 1))))))
+    ((cluck-transient-vector? x)
+     (display "[" port)
+     (let ((count (cluck-transient-vector-count x))
+           (items (cluck-transient-vector-items x)))
+       (let loop ((i 0))
+         (if (= i count)
+             (display "]" port)
+             (begin
+               (if (> i 0) (write-char #\space port))
+               (cluck-write-pr (vector-ref items i) port)
+               (loop (+ i 1)))))))
     ((null? x)
      (display "()" port))
     ((pair? x)
@@ -984,11 +1382,11 @@
           (if (not first?) (write-char #\space port))
           (cluck-write-pr (car xs) port)
           (loop (cdr xs) #f))
-         (else
+         (:else
           (display " . " port)
           (cluck-write-pr xs port)
           (display ")" port)))))
-    (else
+    (:else
      (write x port))))
 
 (set-record-printer! cluck-keyword
@@ -1025,7 +1423,7 @@
     ((eq? x false) "false")
     ((keyword? x) (pr-str x))
     ((symbol? x) (symbol->string x))
-    (else (pr-str x))))
+    (:else (pr-str x))))
 
 (define (str . xs)
   (let ((p (open-output-string)))
@@ -1048,7 +1446,7 @@
     ((eq? x false) "false")
     ((keyword? x) (pr-str x))
     ((symbol? x) (symbol->string x))
-    (else (pr-str x))))
+    (:else (pr-str x))))
 
 (define (println . xs)
   (let ((p (open-output-string)))
@@ -1076,7 +1474,7 @@
      (let ((p (open-output-string)))
        (write-char x p)
        (get-output-string p)))
-    (else (str x))))
+    (:else (str x))))
 
 (define (cluck-format-pad-left s width)
   (let ((pad (- width (string-length s))))
@@ -1122,7 +1520,7 @@
       ((char=? next #\s)
        (cond
          ((null? items) (error "Missing format argument" fmt))
-         (else
+         (:else
           (display (cluck-format-piece (car items)) port)
           (values (+ i 1) (cdr items)))))
       ((char=? next #\d)
@@ -1130,7 +1528,7 @@
          ((null? items) (error "Missing format argument" fmt))
          ((not (exact-integer? (car items)))
           (error "%d expects an integer" (car items)))
-         (else
+         (:else
           (display (number->string (car items)) port)
           (values (+ i 1) (cdr items)))))
       ((char=? next #\f)
@@ -1138,7 +1536,7 @@
          ((null? items) (error "Missing format argument" fmt))
          ((not (number? (car items)))
           (error "%f expects a number" (car items)))
-         (else
+         (:else
           (display (cluck-format-fixed (car items) 6) port)
           (values (+ i 1) (cdr items)))))
       ((char=? next #\.)
@@ -1161,12 +1559,12 @@
                      (error "Missing format argument" fmt))
                     ((not (number? (car items)))
                      (error "%f expects a number" (car items)))
-                    (else
+                    (:else
                      (display (cluck-format-fixed (car items) precision) port)
                      (values (+ j 1) (cdr items)))))
-                 (else
+                 (:else
                   (error "Unsupported format directive" fmt)))))))
-      (else
+      (:else
        (error "Unsupported format directive" fmt)))))
 
 (define (format template . args)
@@ -1179,13 +1577,13 @@
         ((= i len)
          (cond
            ((null? items) (get-output-string port))
-           (else (error "Too many arguments for format" fmt))))
+           (:else (error "Too many arguments for format" fmt))))
         ((not (char=? (string-ref fmt i) #\%))
          (write-char (string-ref fmt i) port)
          (loop (+ i 1) items))
         ((= (+ i 1) len)
          (error "Incomplete format directive" fmt))
-        (else
+        (:else
          (call-with-values
              (lambda () (cluck-format-handle-directive fmt (+ i 1) items port))
            (lambda (next-i next-items)
@@ -1218,14 +1616,17 @@
     ((null? x) 0)
     ((string? x) (string-length x))
     ((map? x) (cluck-map-count x))
+    ((cluck-transient-map? x) (cluck-transient-map-count x))
     ((set? x) (cluck-set-count x))
+    ((cluck-transient-set? x) (cluck-transient-set-count x))
     ((vector? x) (vector-length x))
+    ((cluck-transient-vector? x) (cluck-transient-vector-count x))
     ((pair? x)
      (let loop ((xs x) (n 0))
        (if (pair? xs)
            (loop (cdr xs) (+ n 1))
            n)))
-    (else 0)))
+    (:else 0)))
 
 (define (empty? x)
   (cond
@@ -1245,24 +1646,30 @@
     ((or (nil? x) (null? x)) nil)
     ((pair? x) (car x))
     ((map? x) (first (seq x)))
+    ((cluck-transient-map? x) (first (seq x)))
     ((set? x) (first (seq x)))
+    ((cluck-transient-set? x) (first (seq x)))
     ((vector? x)
      (if (> (vector-length x) 0)
          (vector-ref x 0)
          nil))
-    (else nil)))
+    ((cluck-transient-vector? x)
+     (if (> (cluck-transient-vector-count x) 0)
+         (vector-ref (cluck-transient-vector-items x) 0)
+         nil))
+    (:else nil)))
 
 (define (rest x)
   (let ((s (seq x)))
     (cond
       ((or (nil? s) (null? s)) '())
       ((pair? s) (cdr s))
-      (else '()))))
+      (:else '()))))
 
 (define (cluck-take-seq n coll)
   (cond
     ((or (not (integer? n)) (<= n 0)) '())
-    (else
+    (:else
      (let loop ((i 0) (xs (seq coll)) (acc '()))
        (if (or (cluck-empty-seq? xs) (>= i n))
            (reverse acc)
@@ -1271,7 +1678,7 @@
 (define (cluck-drop-seq n coll)
   (cond
     ((or (not (integer? n)) (<= n 0)) (seq coll))
-    (else
+    (:else
      (let loop ((i 0) (xs (seq coll)))
        (if (or (cluck-empty-seq? xs) (>= i n))
            xs
@@ -1304,7 +1711,7 @@
   (cond
     ((or (not (integer? n)) (<= n 0)) '())
     ((or (not (integer? step)) (<= step 0)) '())
-    (else
+    (:else
      (let loop ((xs (seq coll)) (acc '()))
        (if (cluck-empty-seq? xs)
            (reverse acc)
@@ -1317,7 +1724,7 @@
                 (if include-remainder?
                     (reverse (cons (list->vector (reverse part)) acc))
                     (reverse acc)))
-               (else
+               (:else
                 (part-loop (cdr remaining)
                            (+ i 1)
                            (cons (car remaining) part))))))))))
@@ -1334,7 +1741,7 @@
 (define (cluck-take-nth-seq n coll)
   (cond
     ((or (not (integer? n)) (<= n 0)) '())
-    (else
+    (:else
      (let loop ((xs (seq coll)) (skip 0) (acc '()))
        (if (cluck-empty-seq? xs)
            (reverse acc)
@@ -1370,7 +1777,7 @@
      (cluck-flatten-acc (cdr x) (cluck-flatten-acc (car x) acc)))
     ((vector? x)
      (cluck-flatten-acc (vector->list x) acc))
-    (else
+    (:else
      (cons x acc))))
 
 (define (cluck-flatten-seq coll)
@@ -1390,7 +1797,7 @@
     (cond
       ((cluck-empty-seq? xs) '())
       ((cluck-empty-seq? (cdr xs)) (reverse acc))
-      (else (loop (cdr xs) (cons (car xs) acc))))))
+      (:else (loop (cdr xs) (cons (car xs) acc))))))
 
 (define (cluck-concat-seqs colls)
   (let loop ((rest colls) (acc '()))
@@ -1484,17 +1891,21 @@
        (if (< idx (vector-length coll))
            (vector-ref coll idx)
            default))
+      ((cluck-transient-vector? coll)
+       (if (< idx (cluck-transient-vector-count coll))
+           (vector-ref (cluck-transient-vector-items coll) idx)
+           default))
       ((pair? coll)
        (let loop ((xs coll) (i 0))
          (cond
            ((null? xs) default)
            ((= i idx) (car xs))
-           (else (loop (cdr xs) (+ i 1))))))
+           (:else (loop (cdr xs) (+ i 1))))))
       ((string? coll)
        (if (< idx (string-length coll))
            (string-ref coll idx)
            default))
-      (else default))))
+      (:else default))))
 
 (define (cluck-hash-ref/default table key default)
   (hash-table-ref/default table key default))
@@ -1513,13 +1924,25 @@
     (cond
       ((map? coll)
        (cluck-map-ref/default coll key default))
+      ((cluck-transient-map? coll)
+       (cluck-hash-ref/default (cluck-transient-map-table coll) key default))
       ((set? coll)
        (if (cluck-set-member? coll key) key default))
+      ((cluck-transient-set? coll)
+       (if (hash-table-exists? (cluck-transient-set-table coll) key)
+           key
+           default))
       ((vector? coll)
        (if (and (integer? key) (>= key 0) (< key (vector-length coll)))
            (vector-ref coll key)
            default))
-      (else default))))
+      ((cluck-transient-vector? coll)
+       (if (and (integer? key)
+                (>= key 0)
+                (< key (cluck-transient-vector-count coll)))
+           (vector-ref (cluck-transient-vector-items coll) key)
+           default))
+      (:else default))))
 
 (define-syntax get
   (syntax-rules ()
@@ -1538,10 +1961,18 @@
     ((map? coll)
      (let ((missing (list 'cluck-contains-missing)))
        (not (eq? (cluck-map-ref/default coll key missing) missing))))
+    ((cluck-transient-map? coll)
+     (hash-table-exists? (cluck-transient-map-table coll) key))
     ((set? coll) (cluck-set-member? coll key))
+    ((cluck-transient-set? coll)
+     (hash-table-exists? (cluck-transient-set-table coll) key))
     ((vector? coll)
      (and (integer? key) (>= key 0) (< key (vector-length coll))))
-    (else #f)))
+    ((cluck-transient-vector? coll)
+     (and (integer? key)
+          (>= key 0)
+          (< key (cluck-transient-vector-count coll))))
+    (:else #f)))
 
 (define-syntax contains?
   (syntax-rules ()
@@ -1562,12 +1993,30 @@
 
 (define (cluck-assoc coll . kvs)
   (cond
+    ((cluck-transient-map? coll)
+     (let loop ((xs kvs) (out coll))
+       (cond
+         ((null? xs) out)
+         ((null? (cdr xs)) (error "assoc expects key/value pairs"))
+         (:else
+          (loop (cddr xs)
+                (cluck-transient-map-put! out (car xs) (cadr xs)))))))
+    ((cluck-transient-vector? coll)
+     (let loop ((xs kvs) (out coll))
+       (cond
+         ((null? xs) out)
+         ((null? (cdr xs)) (error "assoc expects index/value pairs"))
+         (:else
+          (let ((idx (car xs))
+                (value (cadr xs)))
+            (set! out (cluck-transient-vector-assoc! out idx value))
+            (loop (cddr xs) out))))))
     ((map? coll)
      (let loop ((xs kvs) (out coll))
        (cond
          ((null? xs) out)
          ((null? (cdr xs)) (error "assoc expects key/value pairs"))
-         (else
+         (:else
           (loop (cddr xs)
                 (cluck-map-insert out (car xs) (cadr xs)))))))
     ((vector? coll)
@@ -1575,12 +2024,12 @@
        (cond
          ((null? xs) out)
          ((null? (cdr xs)) (error "assoc expects index/value pairs"))
-         (else
+         (:else
           (let ((idx (car xs))
                 (value (cadr xs)))
             (set! out (cluck-vector-assoc out idx value))
             (loop (cddr xs) out))))))
-    (else
+    (:else
      (error "assoc only supports maps and vectors"))))
 
 (define-syntax assoc
@@ -1601,19 +2050,31 @@
 
 (define (dissoc coll . keys)
   (cond
+    ((cluck-transient-map? coll)
+     (let loop ((xs keys) (out coll))
+       (if (null? xs)
+           out
+           (loop (cdr xs)
+                 (cluck-transient-map-delete! out (car xs))))))
     ((map? coll)
      (let loop ((xs keys) (out coll))
        (if (null? xs)
            out
            (loop (cdr xs)
                  (cluck-map-delete out (car xs))))))
+    ((cluck-transient-set? coll)
+     (let loop ((xs keys) (out coll))
+       (if (null? xs)
+           out
+           (loop (cdr xs)
+                 (cluck-transient-set-remove! out (car xs))))))
     ((set? coll)
      (let loop ((xs keys) (out coll))
        (if (null? xs)
            out
            (loop (cdr xs)
                  (cluck-set-delete out (car xs))))))
-    (else
+    (:else
      (error "dissoc only supports maps and sets"))))
 
 (define (merge . maps)
@@ -1672,11 +2133,24 @@
      (cluck-map-insert m
                        (cluck-map-entry-key item)
                        (cluck-map-entry-val item)))
-    (else
+    (:else
      (error "conj expects map entries or maps when target is a map" item))))
 
 (define (conj coll . items)
   (cond
+    ((cluck-transient-map? coll)
+     (let loop ((xs items) (acc coll))
+       (if (null? xs)
+           acc
+           (loop (cdr xs) (cluck-transient-map-conj! acc (car xs))))))
+    ((cluck-transient-set? coll)
+     (let loop ((xs items) (acc coll))
+       (if (null? xs)
+           acc
+           (loop (cdr xs)
+                 (cluck-transient-set-add! acc (car xs))))))
+    ((cluck-transient-vector? coll)
+     (apply cluck-transient-vector-conj! coll items))
     ((map? coll)
      (let loop ((xs items) (acc coll))
        (if (null? xs)
@@ -1695,18 +2169,24 @@
        (if (null? xs)
            acc
            (loop (cdr xs) (cons (car xs) acc)))))
-    (else
+    (:else
      (error "conj only supports maps, sets, vectors, and lists"))))
 
 (define (disj coll . items)
   (cond
+    ((cluck-transient-set? coll)
+     (let loop ((xs items) (acc coll))
+       (if (null? xs)
+           acc
+           (loop (cdr xs)
+                 (cluck-transient-set-remove! acc (car xs))))))
     ((set? coll)
      (let loop ((xs items) (acc coll))
        (if (null? xs)
            acc
            (loop (cdr xs)
                  (cluck-set-delete acc (car xs))))))
-    (else
+    (:else
      (error "disj only supports sets"))))
 
 (define (keys m)
@@ -1757,7 +2237,7 @@
 (define (mapv f coll)
   (cond
     ((vector? coll) (cluck-mapv-vector f coll))
-    (else (list->vector (map f (seq coll))))))
+    (:else (list->vector (map f (seq coll))))))
 
 (define (filter pred coll)
   (let loop ((xs (seq coll)) (acc '()))
@@ -1771,7 +2251,7 @@
 (define (filterv pred coll)
   (cond
     ((vector? coll) (cluck-filterv-vector pred coll))
-    (else (list->vector (filter pred (seq coll))))))
+    (:else (list->vector (filter pred (seq coll))))))
 
 (define (cluck-map-indexed-vector f vec)
   (let* ((len (vector-length vec)))
@@ -1792,7 +2272,7 @@
 (define (map-indexed f coll)
   (cond
     ((vector? coll) (cluck-map-indexed-vector f coll))
-    (else (cluck-map-indexed-seq f coll))))
+    (:else (cluck-map-indexed-seq f coll))))
 
 (define (cluck-keep-vector f vec)
   (let* ((len (vector-length vec)))
@@ -1816,7 +2296,7 @@
 (define (keep f coll)
   (cond
     ((vector? coll) (cluck-keep-vector f coll))
-    (else (cluck-keep-seq f coll))))
+    (:else (cluck-keep-seq f coll))))
 
 (define (remove pred coll)
   (filter (lambda (x) (if (pred x) #f #t)) coll))
@@ -1827,13 +2307,13 @@
     ((pair? x) x)
     ((vector? x) (vector->list x))
     ((or (map? x) (set? x) (string? x)) (seq x))
-    (else
+    (:else
      (error "apply expects a sequence as the last argument" x))))
 
 (define (cluck-apply f . args)
   (cond
     ((null? args) (f))
-    (else
+    (:else
      (let loop ((rest args) (prefix '()))
        (if (null? (cdr rest))
            (##sys#apply f (append (reverse prefix)
@@ -1865,7 +2345,7 @@
                             ((map? coll) coll)
                             ((vector? coll) coll)
                             ((nil? coll) (hash-map))
-                            (else
+                            (:else
                              (error "assoc-in only supports maps and vectors" coll)))))
           (if (cluck-empty-seq? rest)
               (cluck-assoc container key value)
@@ -1923,7 +2403,7 @@
                 (cond
                   ((null? xs) #f)
                   ((cluck-empty-seq? (car xs)) #t)
-                  (else (check (cdr xs))))))
+                  (:else (check (cdr xs))))))
           (reverse acc)
           (let ((heads (map car current))
                 (tails (map cdr current)))
@@ -1962,7 +2442,7 @@
      (cluck-reductions-no-init (car args) (cadr args)))
     ((= (length args) 3)
      (cluck-reductions-with-init (car args) (cadr args) (caddr args)))
-    (else
+    (:else
      (error "reductions expects 2 or 3 arguments" args))))
 
 (define (group-by f coll)
@@ -1997,7 +2477,7 @@
            (step (cadr args))
            (coll (caddr args)))
        (cluck-partition-seq n step coll #f)))
-    (else
+    (:else
      (error "partition expects 2 or 3 arguments" args))))
 
 (define (partition-all . args)
@@ -2011,7 +2491,7 @@
            (step (cadr args))
            (coll (caddr args)))
        (cluck-partition-seq n step coll #t)))
-    (else
+    (:else
      (error "partition-all expects 2 or 3 arguments" args))))
 
 (define (frequencies coll)
@@ -2030,7 +2510,7 @@
            (car args))))
     ((null? (cdr fs))
      (car fs))
-    (else
+    (:else
      (let ((rev (reverse fs)))
        (lambda args
          (let loop ((rest (cdr rev))
@@ -2056,7 +2536,17 @@
                       acc
                       (loop (+ i 1)
                             (f acc (vector-ref coll i))))))))
-         (else
+         ((cluck-transient-vector? coll)
+          (let ((len (cluck-transient-vector-count coll))
+                (items (cluck-transient-vector-items coll)))
+            (if (= len 0)
+                (error "reduce of empty collection with no initial value")
+                (let loop ((i 1) (acc (vector-ref items 0)))
+                  (if (= i len)
+                      acc
+                      (loop (+ i 1)
+                            (f acc (vector-ref items i))))))))
+         (:else
           (let ((xs (seq coll)))
             (if (cluck-empty-seq? xs)
                 (error "reduce of empty collection with no initial value")
@@ -2064,7 +2554,7 @@
                   (if (cluck-empty-seq? rest-xs)
                       acc
                       (loop (f acc (car rest-xs)) (cdr rest-xs))))))))))
-    (else
+    (:else
      (let ((init (car args))
            (coll (cadr args)))
        (cond
@@ -2075,7 +2565,15 @@
                   acc
                   (loop (+ i 1)
                         (f acc (vector-ref coll i)))))))
-         (else
+         ((cluck-transient-vector? coll)
+          (let ((len (cluck-transient-vector-count coll))
+                (items (cluck-transient-vector-items coll)))
+            (let loop ((i 0) (acc init))
+              (if (= i len)
+                  acc
+                  (loop (+ i 1)
+                        (f acc (vector-ref items i)))))))
+         (:else
           (let loop ((acc init) (xs (seq coll)))
             (if (cluck-empty-seq? xs)
                 acc
@@ -2111,13 +2609,13 @@
      (cluck-vector-append-vector to from))
     ((or (null? from) (pair? from))
      (cluck-vector-append-list to from))
-    (else
+    (:else
      (cluck-vector-append-list to (seq from)))))
 
 (define (into to from)
   (cond
     ((vector? to) (cluck-into-vector to from))
-    (else
+    (:else
      (let loop ((xs (seq from)) (acc to))
        (if (cluck-empty-seq? xs)
            acc
@@ -2150,6 +2648,9 @@
     ((map? x) 'cluck.map)
     ((set? x) 'cluck.set)
     ((atom? x) 'cluck.atom)
+    ((cluck-transient-map? x) 'cluck.transient.map)
+    ((cluck-transient-set? x) 'cluck.transient.set)
+    ((cluck-transient-vector? x) 'cluck.transient.vector)
     ((procedure? x) 'procedure)
     ((port? x) 'port)
     ((eof-object? x) 'eof-object)
@@ -2160,9 +2661,28 @@
   (cluck-type-name x))
 
 (define (vec coll)
-  (if (vector? coll)
-      coll
-      (into [] coll)))
+  (cond
+    ((vector? coll) coll)
+    ((cluck-transient-vector? coll) (cluck-persistent-transient-vector coll))
+    (:else (into [] coll))))
+
+(define (transient x)
+  (cluck-transient-value x))
+
+(define (persistent! x)
+  (cluck-persistent-value x))
+
+(define (assoc! coll . kvs)
+  (apply cluck-assoc coll kvs))
+
+(define (conj! coll . items)
+  (apply conj coll items))
+
+(define (dissoc! coll . keys)
+  (apply dissoc coll keys))
+
+(define (disj! coll . items)
+  (apply disj coll items))
 
 (define (cluck-load-source-port! port)
   (let loop ()
@@ -2192,7 +2712,7 @@
        cluck-core-port->string))
     ((input-port? source)
      (cluck-core-port->string source))
-    (else
+    (:else
      (error "slurp expects a file path or input port" source))))
 
 (define (cluck-core-spit target text)
@@ -2354,7 +2874,13 @@
    (cons 'inc inc)
    (cons 'dec dec)
    (cons 'not not)
-   (cons 'unspecified? unspecified?)))
+   (cons 'unspecified? unspecified?)
+   (cons 'transient transient)
+   (cons 'persistent! persistent!)
+   (cons 'assoc! assoc!)
+   (cons 'conj! conj!)
+   (cons 'dissoc! dissoc!)
+   (cons 'disj! disj!)))
 
 (define (cluck-core-doc-specs)
   (list
@@ -2453,6 +2979,12 @@
    (cons 'dec "Subtract 1 from x.")
    (cons 'not "Return the boolean negation of x.")
    (cons 'unspecified? "Return true when x is CHICKEN's unspecified value.")
+   (cons 'transient "Create a transient map, set, or vector from COLL.")
+   (cons 'persistent! "Return the persistent collection for a transient COLL.")
+   (cons 'assoc! "Associate keys or vector indexes in a transient collection.")
+   (cons 'conj! "Conjoin items onto a transient collection.")
+   (cons 'dissoc! "Remove keys from a transient map or items from a transient set.")
+   (cons 'disj! "Remove items from a transient set.")
    (cons 'type "Return a symbol describing the runtime type of x.")
    (cons 'vec "Return a vector containing the items of COLL.")
    (cons 'def "Define a var and intern it into the current namespace.")
@@ -2507,7 +3039,7 @@
   (cond
     ((vector? x) (vector->list x))
     ((and (pair? x) (eq? (car x) 'vector)) (cdr x))
-    (else #f)))
+    (:else #f)))
 
 (define (cluck-seq-drop x n)
   (let loop ((i 0) (xs (seq x)))
@@ -2525,9 +3057,9 @@
         ((null? xs) (reverse acc))
          ((null? (cdr xs))
           (error "map destructuring form must contain an even number of forms" x))
-         (else
+         (:else
           (loop (cddr xs) (cons (cons (car xs) (cadr xs)) acc))))))
-    (else #f)))
+    (:else #f)))
 
 (define (cluck-alist-ref-pair key alist)
   (let loop ((xs alist))
@@ -2536,7 +3068,7 @@
       ((and (pair? (car xs))
             (eq? (caar xs) key))
        (car xs))
-      (else (loop (cdr xs))))))
+      (:else (loop (cdr xs))))))
 
 (define (cluck-destructure-key-expr key)
   (let ((kw (cluck-keyword-form-name key)))
@@ -2550,7 +3082,7 @@
        key)
       ((symbol? key) `(quote ,key))
       ((string? key) key)
-      (else key))))
+      (:else key))))
 
 (define (cluck-destructure-defaults-alist defaults)
   (let ((pairs (cluck-map-form->pairs defaults)))
@@ -2570,7 +3102,7 @@
                                   (null? (cddr key))
                                   (symbol? (cadr key)))
                              (cadr key))
-                            (else
+                            (:else
                              (error ":or keys must be symbols" key)))))
                 (loop (cdr xs) (cons (cons sym (cdr pair)) acc)))))
         (error ":or expects a map" defaults))))
@@ -2623,9 +3155,9 @@
                             (error ":as expects a symbol" form)
                             (let ((sym (cluck-ns-form->symbol (cadr rest))))
                               (loop (cddr rest) idx groups rest-binding sym seen-rest?)))))
-                   (else
+                   (:else
                     (error "only :as may follow & in vector destructuring" form)))))
-              (else
+              (:else
                (let* ((item (car rest))
                       (kw (cluck-keyword-form-name item)))
                  (cond
@@ -2643,7 +3175,7 @@
                             (error "& expects a symbol" form)
                             (let ((sym (cluck-ns-form->symbol (cadr rest))))
                               (loop (cddr rest) idx groups sym as-binding #t)))))
-                   (else
+                   (:else
                     (loop (cdr rest)
                           (+ idx 1)
                           (cons (cluck-destructure-binding item `(nth ,tmp ,idx) defaults)
@@ -2718,7 +3250,7 @@
                                                 (cons sym `(get ,tmp (quote ,sym) nil)))
                                               syms)))
                            (error ":syms expects a vector or list of symbols" value))))
-                    (else
+                    (:else
                      (loop (cdr rest)
                            as-binding
                            defaults
@@ -2737,7 +3269,7 @@
        (cluck-destructure-vector-pattern pattern source defaults))
       (map-pairs
        (cluck-destructure-map-pattern pattern source defaults))
-      (else
+      (:else
        (error "unsupported destructuring pattern" pattern)))))
 
 (define (cluck-parse-fn-arg pattern)
@@ -2771,7 +3303,7 @@
                        (if (symbol? tail-name)
                            (loop (cddr rest) params bindings tail-name)
                            (error "variadic fn/vector rest must be a symbol" tail-name))))))
-            (else
+            (:else
              (let* ((parsed (cluck-parse-fn-arg (car rest)))
                     (param (car parsed))
                     (more-bindings (cdr parsed)))
@@ -2813,7 +3345,7 @@
              (error "let bindings do not support &"))
             ((null? (cdr rest))
              (error "let bindings must contain an even number of forms"))
-            (else
+            (:else
              (loop (cddr rest)
                    (append acc
                            (cluck-destructure-binding (car rest) (cadr rest) '()))))))
@@ -2872,7 +3404,7 @@
                              (bindings (cdr parsed)))
                         (cons params (cluck-wrap-body bindings (cdr clause)))))
                     parts)))
-         (else
+         (:else
           (error "fn expects an argument vector or arity clauses")))))))
 
 (define-syntax defn
@@ -2904,7 +3436,7 @@
                        `(cluck-show-doc ',target))
                       ((string? target)
                        `(cluck-show-doc ,target))
-                      (else
+                      (:else
                        (error "doc expects a symbol" target)))))))))
 
 (define-syntax ns
@@ -2935,7 +3467,7 @@
                                  (loop (cdr xs) forms #t core-excludes)
                                  (error "ns docstring must come before directives"
                                         (car xs)))))
-                        (else
+                        (:else
                          (let ((directive (car xs)))
                            (let ((kw (cluck-keyword-form-name (car directive))))
                              (cond
@@ -2946,7 +3478,7 @@
                                       (append core-excludes
                                               (cluck-refer-clojure-directive->exclude
                                                directive))))
-                               (else
+                               (:else
                                 (loop (cdr xs)
                                       (append forms
                                               (cluck-ns-directive->forms directive))
@@ -2990,7 +3522,7 @@
   (cond
     ((null? clauses) 'true)
     ((null? (cdr clauses)) (car clauses))
-    (else
+    (:else
      (let ((temp (rename 'cluck-and-value)))
        `(##core#let ((,temp ,(car clauses)))
           (cluck-if-thunks ,temp
@@ -3001,7 +3533,7 @@
   (cond
     ((null? clauses) 'false)
     ((null? (cdr clauses)) (car clauses))
-    (else
+    (:else
      (let ((temp (rename 'cluck-or-value)))
        `(##core#let ((,temp ,(car clauses)))
           (cluck-if-thunks ,temp
@@ -3033,7 +3565,7 @@
        (if (null? (cddr rest))
            (cadr rest)
            (error "cond :else clause must be last")))
-      (else
+      (:else
        (let ((tail (loop (cddr rest)))
              (value (rename 'cluck-cond-value)))
          `(cluck-if-thunks ,(car rest)
