@@ -5,6 +5,8 @@
 
 (ns cluck.examples.draw
   (:require [cluck.sdl3 :as sdl]
+            [cluck.edn :as edn]
+            [cluck.math :as math]
             [cluck.string :as str]))
 
 (import srfi-18)
@@ -55,6 +57,7 @@
    :mouse-y 0
    :pointer-down? false
    :debug-panel? false
+   :history []
    :strokes []
    :active-stroke false
    :last-key ""
@@ -182,6 +185,49 @@
   (set! *draw-last-error* false)
   false)
 
+(defn draw-history-limit
+  "Return the maximum number of undo snapshots to keep."
+  []
+  32)
+
+(defn draw-history-snapshot
+  "Return a history snapshot for STATE."
+  [state]
+  (edn/read-string (pr-str (dissoc state :history))))
+
+(defn draw-history-trim
+  "Trim HISTORY to the configured size."
+  [history]
+  (let [limit (draw-history-limit)
+        total (count history)]
+    (if (> total limit)
+      (vec (drop (- total limit) history))
+      (vec history))))
+
+(defn draw-push-history!
+  "Push the current STATE onto the undo history."
+  [state]
+  (let [history (conj (get state :history)
+                      (draw-history-snapshot state))]
+    (assoc state :history (draw-history-trim history))))
+
+(defn draw-restore-history!
+  "Restore the most recent undo snapshot."
+  [state]
+  (let [history (get state :history)]
+    (if (empty? history)
+      (if (get state :active-stroke)
+        (assoc state
+               :active-stroke false
+               :pointer-down? false)
+        state)
+      (let [total (count history)
+            snapshot (nth history (- total 1))
+            prior-history (if (> total 1)
+                            (vec (drop (- total 1) history))
+                            [])]
+        (assoc snapshot :history prior-history)))))
+
 (defn draw-tool-mode
   "Return the current tool mode label."
   [state]
@@ -197,58 +243,33 @@
     (get state :brush-color)))
 
 (defn draw-set-brush-size!
-  "Set the brush size and return to brush mode."
+  "Set the brush size and return to brush mode, recording undo history."
   [state size]
-  (assoc state
-         :brush-size size
-         :eraser? false))
+  (let [state (draw-push-history! state)]
+    (assoc state
+           :brush-size size
+           :eraser? false)))
 
 (defn draw-toggle-eraser!
-  "Toggle eraser mode for STATE."
+  "Toggle eraser mode for STATE and record undo history."
   [state]
-  (assoc state
-         :eraser? (not (get state :eraser?))))
+  (let [state (draw-push-history! state)]
+    (assoc state
+           :eraser? (not (get state :eraser?)))))
 
 (defn draw-clear-strokes!
-  "Clear all finished and active strokes from STATE."
+  "Clear all finished and active strokes from STATE and record undo history."
   [state]
-  (assoc state
-         :strokes []
-         :active-stroke false
-         :pointer-down? false))
-
-(defn draw-take-strokes-step
-  "Take the first KEEP strokes from STROKES into ACC."
-  [strokes keep acc]
-  (if (or (<= keep 0)
-          (empty? strokes))
-    acc
-    (draw-take-strokes-step (rest strokes)
-                            (- keep 1)
-                            (conj acc (first strokes)))))
-
-(defn draw-take-strokes
-  "Return the first KEEP strokes from STROKES as a vector."
-  [strokes keep]
-  (draw-take-strokes-step strokes keep []))
+  (let [state (draw-push-history! state)]
+    (assoc state
+           :strokes []
+           :active-stroke false
+           :pointer-down? false)))
 
 (defn draw-undo-stroke!
-  "Remove the active stroke, or the most recent finished stroke."
+  "Undo the most recent draw action."
   [state]
-  (let [active (get state :active-stroke)
-        strokes (get state :strokes)]
-    (if active
-      (assoc state
-             :active-stroke false
-             :pointer-down? false)
-      (if (empty? strokes)
-        (assoc state
-               :pointer-down? false)
-        (let [total (count strokes)
-              keep (if (> total 0) (- total 1) 0)]
-          (assoc state
-                 :strokes (draw-take-strokes strokes keep)
-                 :pointer-down? false))))))
+  (draw-restore-history! state))
 
 (defn draw-handle-tool-key!
   "Apply draw tool shortcuts for KEY to STATE."
@@ -281,13 +302,14 @@
   "Start a new stroke from DESC."
   [state desc]
   (let [point (draw-event-point desc)]
-    (assoc state
-           :pointer-down? true
-           :active-stroke {:points [point]
-                           :color (draw-stroke-color state)
-                           :size (get state :brush-size)}
-           :mouse-x (nth point 0)
-           :mouse-y (nth point 1))))
+    (let [state (draw-push-history! state)]
+      (assoc state
+             :pointer-down? true
+             :active-stroke {:points [point]
+                             :color (draw-stroke-color state)
+                             :size (get state :brush-size)}
+             :mouse-x (nth point 0)
+             :mouse-y (nth point 1)))))
 
 (defn draw-extend-stroke
   "Add the current pointer position from DESC to the active stroke."
@@ -467,13 +489,14 @@
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %d,%d key %s text %s event %s strokes %d tool %s size %d dbg %s"
+  (format "mouse %d,%d key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s"
           (get *draw-state* :mouse-x)
           (get *draw-state* :mouse-y)
           (or (get *draw-state* :last-key) "")
           (or (get *draw-state* :last-text) "")
           (or (get *draw-state* :last-event) "")
           (count (get *draw-state* :strokes))
+          (count (get *draw-state* :history))
           (draw-tool-mode *draw-state*)
           (get *draw-state* :brush-size)
           (if (get *draw-state* :debug-panel?) "on" "off")))
@@ -513,7 +536,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d tool %s size %d dbg %s"
+  (format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d undo %d tool %s size %d dbg %s"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -523,32 +546,89 @@
           (or (get state :last-key) "")
           (or (get state :last-text) "")
           (count (get state :strokes))
+          (count (get state :history))
           (draw-tool-mode state)
           (get state :brush-size)
           (if (get state :debug-panel?) "on" "off")))
 
-(defn draw-render-point!
-  "Render a small square at POINT."
+(defn draw-brush-radius
+  "Return the brush radius for SIZE."
+  [size]
+  (if (> size 0)
+    size
+    1))
+
+(defn draw-render-brush-rows!
+  "Render the filled disc rows for POINT with RADIUS."
+  [renderer x y radius dy]
+  (if (> dy radius)
+    nil
+    (let [span (math/floor (math/sqrt (- (* radius radius)
+                                         (* dy dy))))]
+      (sdl/render-line! renderer
+                        (- x span)
+                        (+ y dy)
+                        (+ x span)
+                        (+ y dy))
+      (draw-render-brush-rows! renderer x y radius (+ dy 1)))))
+
+(defn draw-render-brush!
+  "Render a circular brush at POINT."
   [renderer point size]
   (let [x (nth point 0)
         y (nth point 1)
-        pad (if (and size (> size 1)) size 2)]
-    (sdl/render-fill-rect! renderer (- x pad) (- y pad) (* pad 2) (* pad 2))))
+        radius (draw-brush-radius size)]
+    (draw-render-brush-rows! renderer x y radius (- radius))))
+
+(defn draw-render-stroke-point-step!
+  "Sample a line segment between A and B with circular brushes."
+  [renderer x1 y1 dx dy radius steps i]
+  (if (> i steps)
+    nil
+    (let [x (+ x1 (math/quotient (* dx i) steps))
+          y (+ y1 (math/quotient (* dy i) steps))]
+      (draw-render-brush! renderer [x y] radius)
+      (draw-render-stroke-point-step! renderer x1 y1 dx dy radius steps (+ i 1)))))
+
+(defn draw-render-stroke-point!
+  "Render a single stroke sample at POINT."
+  [renderer point size]
+  (draw-render-brush! renderer point size))
+
+(defn draw-render-stroke-segment!
+  "Render a line segment from A to B."
+  [renderer a b size]
+  (let [x1 (nth a 0)
+        y1 (nth a 1)
+        x2 (nth b 0)
+        y2 (nth b 1)
+        dx (- x2 x1)
+        dy (- y2 y1)
+        radius (draw-brush-radius size)
+        steps (if (> (math/abs dx) (math/abs dy))
+                (math/abs dx)
+                (math/abs dy))]
+    (if (<= steps 0)
+      (draw-render-brush! renderer a size)
+      (draw-render-stroke-point-step! renderer
+                                      x1
+                                      y1
+                                      dx
+                                      dy
+                                      radius
+                                      steps
+                                      0))))
 
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
-  [renderer points]
+  [renderer points size]
   (if (or (empty? points)
           (empty? (rest points)))
     nil
     (let [a (first points)
           b (first (rest points))]
-      (sdl/render-line! renderer
-                        (nth a 0)
-                        (nth a 1)
-                        (nth b 0)
-                        (nth b 1))
-      (draw-render-stroke-segments! renderer (rest points)))))
+      (draw-render-stroke-segment! renderer a b size)
+      (draw-render-stroke-segments! renderer (rest points) size))))
 
 (defn draw-render-stroke!
   "Render a stroke map."
@@ -564,8 +644,8 @@
                              (nth color 1)
                              (nth color 2)
                              255)
-        (draw-render-point! renderer (first points) size)
-        (draw-render-stroke-segments! renderer points)))))
+        (draw-render-stroke-point! renderer (first points) size)
+        (draw-render-stroke-segments! renderer points size)))))
 
 (defn draw-render-strokes!
   "Render all finished strokes and the active stroke."
@@ -606,20 +686,23 @@
                                     (get state :brush-size)
                                     (pr-str (draw-stroke-color state))))
     (sdl/render-debug-text! renderer 12 76
-                            (format "last key: %s" (or (get state :last-key) "")))
+                            (format "undo history: %d"
+                                    (count (get state :history))))
     (sdl/render-debug-text! renderer 12 92
-                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
+                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 108
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
     (sdl/render-debug-text! renderer 12 124
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last text: %s" (or (get state :last-text) "")))
     (sdl/render-debug-text! renderer 12 140
+                            (format "last event: %s" (or (get state :last-event) "")))
+    (sdl/render-debug-text! renderer 12 156
                             (format "last error: %s"
                                     (if *draw-last-error*
                                       (format "%s" *draw-last-error*)
                                       "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 156
+      (sdl/render-debug-text! renderer 12 172
                               (format "recent: %s"
                                       (str/join " | " recent))))
     nil))
@@ -631,7 +714,7 @@
         mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)]
     (sdl/set-draw-color! renderer 220 180 90 255)
-    (sdl/render-fill-rect! renderer (- mouse-x 3) (- mouse-y 3) 6 6)
+    (draw-render-brush! renderer [mouse-x mouse-y] 3)
     (if (get state :debug-panel?)
       (draw-render-debug-panel! renderer state)
       nil)

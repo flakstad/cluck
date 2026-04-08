@@ -24,67 +24,77 @@
       (draw-tools-pass label)
       (draw-tools-fail label expected actual)))
 
+(define (draw-tools-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-tools-pass label)
+      (draw-tools-fail label expected actual)))
+
+(define (draw-tools-base-state)
+  {:title "Cluck Draw"
+   :width 1280
+   :height 720
+   :background [24 24 28]
+   :brush-color [245 245 245]
+   :brush-size 2
+   :eraser? false
+   :running? true
+   :frame 0
+   :mouse-x 0
+   :mouse-y 0
+   :pointer-down? false
+   :debug-panel? false
+   :history []
+   :strokes [[1 2] [3 4]]
+   :active-stroke false
+   :last-key ""
+   :last-text ""
+   :last-event ""
+   :recent-events []})
+
 (draw-tools-assert-true "describe-state includes tool"
                         (str/includes? (describe-state (default-state)) "tool brush"))
-(draw-tools-assert-true "describe-state includes size"
-                        (str/includes? (describe-state (default-state)) "size 2"))
+(draw-tools-assert-true "describe-state includes undo count"
+                        (str/includes? (describe-state (default-state)) "undo 0"))
+(draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
 
-(let [state {:title "Cluck Draw"
-             :width 1280
-             :height 720
-             :background [24 24 28]
-             :brush-color [245 245 245]
-             :brush-size 2
-             :eraser? false
-             :running? true
-             :frame 0
-             :mouse-x 0
-             :mouse-y 0
-             :pointer-down? false
-             :debug-panel? false
-             :strokes [[1 2]]
-             :active-stroke {:points [[1 2]]
-                             :color [245 245 245]
-                             :size 2}
-             :last-key ""
-             :last-text ""
-             :last-event ""
-             :recent-events []}
-      finished-state (assoc (default-state)
-                            :strokes [[1 2] [3 4]]
-                            :pointer-down? false)]
-  (let [cleared (draw-clear-strokes! state)]
+(let [cleared (draw-clear-strokes! (draw-tools-base-state))]
     (draw-tools-assert-true "clear strokes"
                             (and (empty? (get cleared :strokes))
                                  (not (get cleared :active-stroke))
-                                 (not (get cleared :pointer-down?)))))
-  (let [cleared-by-key (draw-handle-tool-key! state "c")]
-    (draw-tools-assert-true "clear key dispatch"
-                            (and (empty? (get cleared-by-key :strokes))
-                                 (not (get cleared-by-key :active-stroke))
-                                 (not (get cleared-by-key :pointer-down?)))))
-  (let [undone-active (draw-undo-stroke! state)]
-    (draw-tools-assert-true "undo active clears active"
-                            (and (not (get undone-active :active-stroke))
-                                 (not (get undone-active :pointer-down?)))))
-  (let [undone (draw-undo-stroke! finished-state)]
-    (draw-tools-assert-str= "undo finished stroke count"
-                            "1"
-                            (str (count (get undone :strokes)))))
-  (let [tool-state (draw-handle-tool-key! (default-state) "e")]
-    (draw-tools-assert-true "toggle eraser"
-                            (get tool-state :eraser?))
+                                 (not (get cleared :pointer-down?))))
+    (draw-tools-assert-num= "clear adds undo history" 1 (count (get cleared :history)))
+    (let [restored (draw-undo-stroke! cleared)]
+      (draw-tools-assert-num= "undo restores strokes after clear"
+                              2
+                              (count (get restored :strokes)))))
+
+  (let [size-state (draw-set-brush-size! (default-state) 6)]
+    (draw-tools-assert-num= "brush size preset" 6 (get size-state :brush-size))
+    (draw-tools-assert-num= "brush size adds undo history" 1 (count (get size-state :history)))
+    (let [restored (draw-undo-stroke! size-state)]
+      (draw-tools-assert-num= "undo restores brush size" 2 (get restored :brush-size))))
+
+  (let [eraser-state (draw-toggle-eraser! (default-state))]
+    (draw-tools-assert-true "toggle eraser" (get eraser-state :eraser?))
+    (draw-tools-assert-num= "eraser adds undo history" 1 (count (get eraser-state :history)))
     (draw-tools-assert-str= "eraser color"
                             "[24 24 28]"
-                            (pr-str (draw-stroke-color tool-state))))
-  (let [undo-by-key (draw-handle-tool-key! (assoc (default-state)
-                                                  :strokes [[1 2] [3 4]]
-                                                  :pointer-down? false)
-                                       "u")]
-    (draw-tools-assert-str= "undo key dispatch"
-                            "1"
-                            (str (count (get undo-by-key :strokes)))))
-  (let [size-state (draw-handle-tool-key! (default-state) "3")]
-    (draw-tools-assert-str= "brush size preset"
+                            (pr-str (draw-stroke-color eraser-state)))
+    (let [restored (draw-undo-stroke! eraser-state)]
+      (draw-tools-assert-true "undo restores eraser off"
+                              (not (get restored :eraser?))))
+
+  (let [clear-by-key (draw-handle-tool-key! (draw-tools-base-state) "c")]
+    (draw-tools-assert-true "clear key dispatch"
+                            (and (empty? (get clear-by-key :strokes))
+                                 (not (get clear-by-key :active-stroke))
+                                 (not (get clear-by-key :pointer-down?))))
+    (let [undo-by-key (draw-handle-tool-key! clear-by-key "u")]
+      (draw-tools-assert-num= "undo key dispatch"
+                              2
+                              (count (get undo-by-key :strokes)))))
+
+  (let [tool-state (draw-handle-tool-key! (default-state) "3")]
+    (draw-tools-assert-str= "brush size key preset"
                             "12"
-                            (str (get size-state :brush-size)))))
+                            (str (get tool-state :brush-size)))))

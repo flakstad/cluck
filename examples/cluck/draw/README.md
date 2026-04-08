@@ -50,8 +50,8 @@ the current REPL state.
 
 While the window is live:
 - press `d` to toggle the debug panel
-- press `u` to undo the last stroke
-- press `c` to clear the canvas
+- press `u` to undo the last action, including clear or brush changes
+- press `c` to clear the canvas, which is undoable
 - press `e` to toggle eraser mode
 - press `1`, `2`, or `3` to switch brush sizes
 

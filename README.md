@@ -252,8 +252,8 @@ like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 Drag with the mouse or pen to paint strokes, and press `d` to toggle the
 debug panel on demand. The current tool shortcuts are:
 
-- `u` undo
-- `c` clear
+- `u` undo the last action
+- `c` clear the canvas
 - `e` eraser
 - `1`/`2`/`3` brush sizes
 State changes redraw the live window immediately, and the resulting release
