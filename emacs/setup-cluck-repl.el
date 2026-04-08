@@ -89,8 +89,10 @@
   (setq-local comint-scroll-to-bottom-on-output t)
   (setq-local truncate-lines t))
 
-(defun cluck--ensure-repl-buffer (&optional start)
-  "Return a live Cluck REPL buffer, starting one if needed."
+(defun cluck--ensure-repl-buffer (&optional start wait-for-prompt)
+  "Return a live Cluck REPL buffer, starting one if needed.
+When WAIT-FOR-PROMPT is non-nil, wait for the REPL prompt before
+returning."
   (let* ((root (file-name-as-directory (cluck--project-root start)))
          (default-directory root)
          (buffer (get-buffer-create cluck-repl-buffer-name)))
@@ -105,7 +107,8 @@
           (let ((process (get-buffer-process buffer)))
             (when process
               (set-process-query-on-exit-flag process nil))))))
-    (cluck--wait-for-prompt buffer)
+    (when wait-for-prompt
+      (cluck--wait-for-prompt buffer))
     buffer))
 
 (defun cluck-repl ()
