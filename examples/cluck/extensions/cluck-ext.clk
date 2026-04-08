@@ -1,10 +1,18 @@
-;; Cluck extension for the extension registry demo.
+;; Cluck override extension for the project report demo.
+;;
+;; This file is loaded directly into the app namespace and replaces the report
+;; renderer completely. It demonstrates an extension that overwrites an
+;; existing function instead of registering a hook.
 
-(ns cluck.examples.extensions.cluck-ext
-  "Cluck extension for the extension registry demo."
-  (:require [cluck.examples.extensions :as ext]))
-
-(ext/register-extension!
- "cluck"
- (fn []
-   "Cluck extension loaded"))
+(define (render-report model)
+  (println (format "# %s project report" (report-project-name model)))
+  (println (format "- Summary: %s" (report-summary-text model)))
+  (if (report-attention-note-text model)
+      (println (format "- Attention: %s" (report-attention-note-text model)))
+      #f)
+  (println (format "- Open items: %s" (report-open-items-text model)))
+  (if (string=? (report-focus-items-text model) "(none)")
+      #f
+      (println (format "- Focus items: %s" (report-focus-items-text model))))
+  (println (format "- Done items: %s" (report-done-items-text model)))
+  model)

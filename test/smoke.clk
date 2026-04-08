@@ -412,24 +412,30 @@
 
 (load-file "examples/cluck/extensions/main.clk")
 (in-ns 'cluck.examples.extensions)
-(assert-true "extensions namespace exists" (find-ns 'cluck.examples.extensions))
-(assert-str= "extensions base report"
-             "Cluck extension loader\nLoaded files: (none)\nSections: 1\n- base: base registry ready after 0 file(s)\n"
+(assert-true "project report namespace exists" (find-ns 'cluck.examples.extensions))
+(assert-str= "project report base"
+             "Flakstad Software project report\nSummary: 4 items total, 3 open, 1 doing, 1 done\nOpen items: Refresh documentation, Prototype extension SDK, Polish smoke coverage\nDone items: Stabilize loader\n"
              (capture-output (lambda () (main '()))))
-(assert-num= "extensions base section count" 1 (count (registered-extension-sections)))
-(let [sections (registered-extension-sections)]
-  (assert-str= "extensions base label" "base" (get (first sections) :label)))
-(assert-str= "extensions loaded report"
-             "Cluck extension loader\nLoaded files: scheme-ext.scm, cluck-ext.clk\nSections: 3\n- base: base registry ready after 2 file(s)\n- scheme: Scheme extension loaded\n- cluck: Cluck extension loaded\n"
+(assert-num= "project report base path count" 0 (count (loaded-extension-paths)))
+(assert-str= "project report hook"
+             "Flakstad Software project report\nSummary: 4 items total, 3 open, 1 doing, 1 done\nAttention: 2 high-priority open item(s) need attention\nOpen items: Refresh documentation, Prototype extension SDK, Polish smoke coverage\nFocus items: Refresh documentation, Prototype extension SDK\nDone items: Stabilize loader\n"
+             (capture-output
+              (lambda ()
+                (main (list "examples/cluck/extensions/scheme-ext.scm")))))
+(assert-num= "project report hook path count" 1 (count (loaded-extension-paths)))
+(assert-str= "project report override"
+             "# Flakstad Software project report\n- Summary: 4 items total, 3 open, 1 doing, 1 done\n- Open items: Refresh documentation, Prototype extension SDK, Polish smoke coverage\n- Done items: Stabilize loader\n"
+             (capture-output
+              (lambda ()
+                (main (list "examples/cluck/extensions/cluck-ext.clk")))))
+(assert-num= "project report override path count" 1 (count (loaded-extension-paths)))
+(assert-str= "project report combined"
+             "# Flakstad Software project report\n- Summary: 4 items total, 3 open, 1 doing, 1 done\n- Attention: 2 high-priority open item(s) need attention\n- Open items: Refresh documentation, Prototype extension SDK, Polish smoke coverage\n- Focus items: Refresh documentation, Prototype extension SDK\n- Done items: Stabilize loader\n"
              (capture-output
               (lambda ()
                 (main (list "examples/cluck/extensions/scheme-ext.scm"
                             "examples/cluck/extensions/cluck-ext.clk")))))
-(assert-num= "extensions loaded path count" 2 (count (loaded-extension-paths)))
-(let [sections (registered-extension-sections)]
-  (assert-num= "extensions loaded section count" 3 (count sections))
-  (assert-str= "extensions scheme label" "scheme" (get (nth sections 1) :label))
-  (assert-str= "extensions cluck label" "cluck" (get (nth sections 2) :label)))
+(assert-num= "project report combined path count" 2 (count (loaded-extension-paths)))
 (in-ns 'cluck.smoke)
 
 (assert-str= "demo load output"

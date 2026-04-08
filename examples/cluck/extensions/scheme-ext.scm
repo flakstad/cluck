@@ -1,8 +1,8 @@
-;; Plain Scheme extension for the Cluck extension registry demo.
+;; Plain Scheme extension for the Cluck project report demo.
 ;;
-;; This file is loaded with `load-file` from the Cluck example app.
+;; This file is loaded with `load-file` from the Cluck example app. It
+;; registers a hook that adds an attention note and focus items to the report
+;; model.
 
-(register-extension!
- "scheme"
- (lambda ()
-   "Scheme extension loaded"))
+(register-report-hook!
+ add-focus-items!)

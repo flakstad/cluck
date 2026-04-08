@@ -1,52 +1,67 @@
-;; Cluck extension registry experiment.
+;; Cluck project report experiment.
 ;;
-;; This app stays in Cluck syntax. It loads plain Scheme source files and
-;; Cluck source files into the same runtime and reports the registered hooks.
+;; This app keeps a small project backlog in Cluck, loads extension files, and
+;; lets them change the report data or the final formatting.
 
 (ns cluck.examples.extensions
-  "Extension registry experiment for Cluck."
+  "Project report extension experiment for Cluck."
   (:require [cluck.fs :as fs]
             [cluck.string :as str]))
 
-(def *extension-registry* [])
 (def *extension-paths* [])
+(def *report-hooks* [])
 
-(defn base-extension-message
-  []
-  (format "base registry ready after %d file(s)"
-          (count *extension-paths*)))
+(define *project-name* "Flakstad Software")
+(define *project-items*
+  [{:id "CLK-101"
+    :title "Refresh documentation"
+    :status "doing"
+    :priority "high"}
+   {:id "CLK-102"
+    :title "Stabilize loader"
+    :status "done"
+    :priority "high"}
+   {:id "CLK-103"
+    :title "Prototype extension SDK"
+    :status "todo"
+    :priority "high"}
+   {:id "CLK-104"
+    :title "Polish smoke coverage"
+    :status "todo"
+    :priority "medium"}])
 
-(defn reset-registry!
-  "Reset the registry to the built-in base section."
+(defn reset-report-state!
+  "Reset the loader state before each run."
   []
   (set! *extension-paths* [])
-  (set! *extension-registry* [])
-  (register-extension! "base" base-extension-message)
-  *extension-registry*)
+  (set! *report-hooks* [])
+  *extension-paths*)
 
-(defn register-extension!
-  "Register a report section named LABEL backed by THUNK."
-  [label thunk]
-  (set! *extension-registry*
-        (conj *extension-registry*
-              {:label (str label)
-               :thunk thunk}))
-  *extension-registry*)
+(defn register-report-hook!
+  "Register a transformer that enriches the report model."
+  [hook]
+  (set! *report-hooks* (conj *report-hooks* hook))
+  *report-hooks*)
+
+(defn apply-report-hooks
+  "Apply registered report hooks in load order."
+  [model]
+  (##core#let loop ((remaining *report-hooks*)
+                    (current model))
+    (if (empty? remaining)
+        current
+        (loop (rest remaining)
+              ((first remaining) current)))))
 
 (defn loaded-extension-paths
   "Return the extension file paths loaded by the latest run."
   []
   *extension-paths*)
 
-(defn registered-extension-sections
-  "Return the current registry entries."
-  []
-  *extension-registry*)
-
 (defn loadable-extension-file?
   "Return true when PATH points at a supported extension source file."
   [path]
-  (let [ext (str/lower-case (fs/extension path))]
+  (##core#let ((ext (str/lower-case (fs/extension path))))
     (or (string=? ext "scm")
         (string=? ext "clk"))))
 
@@ -54,13 +69,19 @@
   "Load one extension source file from PATH."
   [path]
   (if (not (fs/file? path))
-    (error (format "extension file does not exist: %s" path))
-    (if (not (loadable-extension-file? path))
-      (error (format "extension file must end in .scm or .clk: %s" path))
-      (begin
-        (load-file path)
-        (set! *extension-paths* (conj *extension-paths* path))
-        path))))
+      (error (format "extension file does not exist: %s" path))
+      (if (not (loadable-extension-file? path))
+          (error (format "extension file must end in .scm or .clk: %s" path))
+          (##core#let ((saved-ns (current-ns)))
+            (dynamic-wind
+              (lambda ()
+                (cluck-set-current-ns! 'cluck.examples.extensions))
+              (lambda ()
+                (load-file path)
+                (set! *extension-paths* (conj *extension-paths* path))
+                path)
+              (lambda ()
+                (cluck-set-current-ns! saved-ns)))))))
 
 (defn load-extension-sources!
   "Load each extension source file in PATHS."
@@ -72,51 +93,183 @@
           (load-extension-source! (first remaining))
           (loop (rest remaining))))))
 
-(defn extension-file-labels
-  "Return a printable list of loaded extension filenames."
-  []
-  (if (empty? *extension-paths*)
-      "(none)"
-      (str/join ", " (map fs/basename *extension-paths*))))
+(defn project-item-status
+  [item]
+  (get item :status))
 
-(defn extension-report-entries
-  "Return the report entries with their evaluated values."
+(defn project-item-priority
+  [item]
+  (get item :priority))
+
+(defn project-item-title
+  [item]
+  (get item :title))
+
+(defn project-item-done?
+  [item]
+  (string=? (project-item-status item) "done"))
+
+(defn project-item-open?
+  [item]
+  (not (project-item-done? item)))
+
+(defn project-item-doing?
+  [item]
+  (string=? (project-item-status item) "doing"))
+
+(defn project-item-high-priority-open?
+  [item]
+  (and (project-item-open? item)
+       (string=? (project-item-priority item) "high")))
+
+(defn project-open-items
+  [items]
+  (##core#let loop ((remaining items)
+                    (acc '()))
+    (if (empty? remaining)
+        (reverse acc)
+        (##core#let ((item (first remaining)))
+          (loop (rest remaining)
+                (if (project-item-open? item)
+                    (cons item acc)
+                    acc))))))
+
+(defn project-done-items
+  [items]
+  (##core#let loop ((remaining items)
+                    (acc '()))
+    (if (empty? remaining)
+        (reverse acc)
+        (##core#let ((item (first remaining)))
+          (loop (rest remaining)
+                (if (project-item-done? item)
+                    (cons item acc)
+                    acc))))))
+
+(defn project-high-priority-open-items
+  [items]
+  (##core#let loop ((remaining items)
+                    (acc '()))
+    (if (empty? remaining)
+        (reverse acc)
+        (##core#let ((item (first remaining)))
+          (loop (rest remaining)
+                (if (project-item-high-priority-open? item)
+                    (cons item acc)
+                    acc))))))
+
+(defn project-item-titles
+  [items]
+  (##core#let loop ((remaining items)
+                    (acc '()))
+    (if (empty? remaining)
+        (reverse acc)
+        (##core#let ((item (first remaining)))
+          (loop (rest remaining)
+                (cons (project-item-title item) acc))))))
+
+(defn report-list-string
+  [items]
+  (if (empty? items)
+      "(none)"
+      (str/join ", " items)))
+
+(defn report-summary-line
+  [items]
+  (##core#let loop ((remaining items)
+                    (total 0)
+                    (open-count 0)
+                    (doing-count 0)
+                    (done-count 0))
+    (if (empty? remaining)
+        (format "%d items total, %d open, %d doing, %d done"
+                total
+                open-count
+                doing-count
+                done-count)
+        (##core#let ((item (first remaining)))
+          (loop (rest remaining)
+                (+ total 1)
+                (if (project-item-open? item)
+                    (+ open-count 1)
+                    open-count)
+                (if (project-item-doing? item)
+                    (+ doing-count 1)
+                    doing-count)
+                (if (project-item-done? item)
+                    (+ done-count 1)
+                    done-count))))))
+
+(defn focus-note
+  [items]
+  (if (empty? (project-high-priority-open-items items))
+      #f
+      (format "%d high-priority open item(s) need attention"
+              (count (project-high-priority-open-items items)))))
+
+(defn add-focus-items!
+  [model]
+  (assoc model
+         :focus-items (project-item-titles
+                       (project-high-priority-open-items (get model :items)))
+         :attention-note (focus-note (get model :items))))
+
+(defn report-model
   []
-  (mapv (fn [entry]
-          {:label (get entry :label)
-           :value ((get entry :thunk))})
-        *extension-registry*))
+  (apply-report-hooks
+   (hash-map :project *project-name*
+             :items *project-items*
+             :summary (report-summary-line *project-items*)
+             :open-items (project-item-titles (project-open-items *project-items*))
+             :done-items (project-item-titles (project-done-items *project-items*))
+             :focus-items []
+             :attention-note #f)))
+
+(defn report-project-name
+  [model]
+  (get model :project))
+
+(defn report-summary-text
+  [model]
+  (get model :summary))
+
+(defn report-open-items-text
+  [model]
+  (report-list-string (get model :open-items)))
+
+(defn report-focus-items-text
+  [model]
+  (report-list-string (get model :focus-items)))
+
+(defn report-done-items-text
+  [model]
+  (report-list-string (get model :done-items)))
+
+(defn report-attention-note-text
+  [model]
+  (get model :attention-note))
+
+(defn render-report
+  [model]
+  (println (format "%s project report" (report-project-name model)))
+  (println (format "Summary: %s" (report-summary-text model)))
+  (if (report-attention-note-text model)
+      (println (format "Attention: %s" (report-attention-note-text model)))
+      #f)
+  (println (format "Open items: %s" (report-open-items-text model)))
+  (if (string=? (report-focus-items-text model) "(none)")
+      #f
+      (println (format "Focus items: %s" (report-focus-items-text model))))
+  (println (format "Done items: %s" (report-done-items-text model)))
+  model)
 
 (defn print-report
-  "Print the extension registry report and return the entries."
   []
-  (let [sections (extension-report-entries)]
-    (println "Cluck extension loader")
-    (println "Loaded files:" (extension-file-labels))
-    (println "Sections:" (count sections))
-    (reduce (fn [ignored entry]
-              (println (format "- %s: %s"
-                               (get entry :label)
-                               (get entry :value)))
-              ignored)
-            nil
-            sections)
-    sections))
+  (render-report (report-model)))
 
 (defn main
-  "Load extension source files from ARGS and print a report."
+  "Load extension source files from ARGS and print a project report."
   [args]
-  (let [saved-ns (current-ns)]
-    (dynamic-wind
-      (lambda ()
-        (cluck-set-current-ns! 'cluck.examples.extensions))
-      (lambda ()
-        (reset-registry!)
-        (load-extension-sources! args)
-        (print-report))
-      (lambda ()
-        (cluck-set-current-ns! saved-ns)))))
-
-(hash-table-set! *cluck-loaded-namespaces*
-                 'cluck.examples.extensions
-                 "examples/cluck/extensions/main.clk")
+  (reset-report-state!)
+  (load-extension-sources! args)
+  (print-report))
