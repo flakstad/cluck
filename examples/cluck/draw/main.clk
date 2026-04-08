@@ -46,10 +46,16 @@
    :width 1280
    :height 720
    :background [24 24 28]
+   :brush-color [245 245 245]
+   :brush-size 2
    :running? true
    :frame 0
    :mouse-x 0
    :mouse-y 0
+   :pointer-down? false
+   :debug-panel? false
+   :strokes []
+   :active-stroke false
    :last-key ""
    :last-text ""
    :last-event ""
@@ -139,6 +145,71 @@
       (vec (drop (- total limit) events))
       (vec events))))
 
+(defn draw-event-point
+  "Return the [x y] coordinate for DESC."
+  [desc]
+  [(draw-event-coordinate desc "x=")
+   (draw-event-coordinate desc "y=")])
+
+(defn draw-key-name-keyword
+  "Return the current key name as a keyword, or false when unavailable."
+  []
+  (let [name (draw-nonblank (sdl/event-key-name) nil)]
+    (if name
+      (keyword (str/lower-case name))
+      false)))
+
+(defn draw-toggle-debug-panel!
+  "Toggle the in-window debug panel."
+  [state]
+  (assoc state
+         :debug-panel? (not (get state :debug-panel?))))
+
+(defn draw-start-stroke
+  "Start a new stroke from DESC."
+  [state desc]
+  (let [point (draw-event-point desc)]
+    (assoc state
+           :pointer-down? true
+           :active-stroke {:points [point]
+                           :color (get state :brush-color)
+                           :size (get state :brush-size)}
+           :mouse-x (nth point 0)
+           :mouse-y (nth point 1))))
+
+(defn draw-extend-stroke
+  "Add the current pointer position from DESC to the active stroke."
+  [state desc]
+  (let [point (draw-event-point desc)
+        stroke (get state :active-stroke)]
+    (if stroke
+      (assoc state
+             :mouse-x (nth point 0)
+             :mouse-y (nth point 1)
+             :active-stroke (assoc stroke
+                                   :points (conj (get stroke :points) point)))
+      (draw-start-stroke state desc))))
+
+(defn draw-finish-stroke
+  "Finish the active stroke using the current pointer position from DESC."
+  [state desc]
+  (let [point (draw-event-point desc)
+        stroke (get state :active-stroke)]
+    (if stroke
+      (let [finished (assoc stroke
+                            :points (conj (get stroke :points) point))]
+        (assoc state
+               :pointer-down? false
+               :mouse-x (nth point 0)
+               :mouse-y (nth point 1)
+               :active-stroke false
+               :strokes (conj (get state :strokes) finished)))
+      (assoc state
+             :pointer-down? false
+             :mouse-x (nth point 0)
+             :mouse-y (nth point 1)
+             :active-stroke false))))
+
 (defn draw-kind=?
   "Compare two keyword event kinds by name."
   [kind expected]
@@ -189,8 +260,12 @@
     (cond
       (or (draw-kind=? kind :key-down)
           (draw-kind=? kind :key-up))
-      (assoc state
-             :last-key (draw-nonblank (sdl/event-key-name) desc))
+      (let [state (assoc state
+                         :last-key (draw-nonblank (sdl/event-key-name) desc))]
+        (if (and (draw-kind=? kind :key-down)
+                 (draw-kind=? (draw-key-name-keyword) :f1))
+          (draw-toggle-debug-panel! state)
+          state))
 
       (draw-kind=? kind :text-input)
       (assoc state
@@ -202,18 +277,41 @@
       (or (draw-kind=? kind :mouse-motion)
           (draw-kind=? kind :mouse-down)
           (draw-kind=? kind :mouse-up))
-      (assoc state
-             :mouse-x (draw-event-coordinate desc "x=")
-             :mouse-y (draw-event-coordinate desc "y="))
+      (cond
+        (draw-kind=? kind :mouse-down)
+        (draw-start-stroke state desc)
+
+        (draw-kind=? kind :mouse-up)
+        (draw-finish-stroke state desc)
+
+        (get state :pointer-down?)
+        (draw-extend-stroke state desc)
+
+        :else
+        (assoc state
+               :mouse-x (draw-event-coordinate desc "x=")
+               :mouse-y (draw-event-coordinate desc "y=")))
 
       (or (draw-kind=? kind :pen-motion)
           (draw-kind=? kind :pen-down)
           (draw-kind=? kind :pen-up)
           (draw-kind=? kind :pen-button-down)
           (draw-kind=? kind :pen-button-up))
-      (assoc state
-             :mouse-x (draw-event-coordinate desc "x=")
-             :mouse-y (draw-event-coordinate desc "y="))
+      (cond
+        (draw-kind=? kind :pen-down)
+        (draw-start-stroke state desc)
+
+        (or (draw-kind=? kind :pen-up)
+            (draw-kind=? kind :pen-button-up))
+        (draw-finish-stroke state desc)
+
+        (get state :pointer-down?)
+        (draw-extend-stroke state desc)
+
+        :else
+        (assoc state
+               :mouse-x (draw-event-coordinate desc "x=")
+               :mouse-y (draw-event-coordinate desc "y=")))
 
       (draw-kind=? kind :text-editing)
       (assoc state
@@ -247,12 +345,14 @@
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %d,%d key %s text %s event %s"
+  (format "mouse %d,%d key %s text %s event %s strokes %d dbg %s"
           (get *draw-state* :mouse-x)
           (get *draw-state* :mouse-y)
           (or (get *draw-state* :last-key) "")
           (or (get *draw-state* :last-text) "")
-          (or (get *draw-state* :last-event) "")))
+          (or (get *draw-state* :last-event) "")
+          (count (get *draw-state* :strokes))
+          (if (get *draw-state* :debug-panel?) "on" "off")))
 
 (defn sync-window-title!
   "Update the SDL window title from the current state."
@@ -289,7 +389,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %d,%d key %s text %s"
+  (format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d dbg %s"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -297,13 +397,70 @@
           (get state :mouse-x)
           (get state :mouse-y)
           (or (get state :last-key) "")
-          (or (get state :last-text) "")))
+          (or (get state :last-text) "")
+          (count (get state :strokes))
+          (if (get state :debug-panel?) "on" "off")))
 
-(defn draw-render-status!
-  "Render the text overlay and mouse marker for STATE."
+(defn draw-render-point!
+  "Render a small square at POINT."
+  [renderer point size]
+  (let [x (nth point 0)
+        y (nth point 1)
+        pad (if (and size (> size 1)) size 2)]
+    (sdl/render-fill-rect! renderer (- x pad) (- y pad) (* pad 2) (* pad 2))))
+
+(defn draw-render-stroke-segments!
+  "Render a line strip from POINTS."
+  [renderer points]
+  (if (or (empty? points)
+          (empty? (rest points)))
+    nil
+    (let [a (first points)
+          b (first (rest points))]
+      (sdl/render-line! renderer
+                        (nth a 0)
+                        (nth a 1)
+                        (nth b 0)
+                        (nth b 1))
+      (draw-render-stroke-segments! renderer (rest points)))))
+
+(defn draw-render-stroke!
+  "Render a stroke map."
+  [renderer stroke]
+  (let [points (get stroke :points)
+        color (get stroke :color)
+        size (get stroke :size)]
+    (if (empty? points)
+      nil
+      (begin
+        (sdl/set-draw-color! renderer
+                             (nth color 0)
+                             (nth color 1)
+                             (nth color 2)
+                             255)
+        (draw-render-point! renderer (first points) size)
+        (draw-render-stroke-segments! renderer points)))))
+
+(defn draw-render-strokes!
+  "Render all finished strokes and the active stroke."
   [ctx state]
   (let [renderer (get ctx :renderer)
-        mouse-x (get state :mouse-x)
+        strokes (get state :strokes)
+        active (get state :active-stroke)]
+    (reduce (fn [acc stroke]
+              (begin
+                (draw-render-stroke! renderer stroke)
+                acc))
+            nil
+            strokes)
+    (if active
+      (draw-render-stroke! renderer active)
+      nil)))
+
+(defn draw-render-debug-panel!
+  "Render the on-demand debug panel."
+  [renderer state]
+  (let [mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)
         recent (reverse (take (draw-recent-events-limit)
                               (get state :recent-events)))]
@@ -312,17 +469,34 @@
     (sdl/render-debug-text! renderer 12 28
                             (format "mouse: %d, %d" mouse-x mouse-y))
     (sdl/render-debug-text! renderer 12 44
-                            (format "last key: %s" (or (get state :last-key) "")))
+                            (format "pointer: %s active: %d"
+                                    (if (get state :pointer-down?) "down" "up")
+                                    (if (get state :active-stroke)
+                                      (count (get (get state :active-stroke) :points))
+                                      0)))
     (sdl/render-debug-text! renderer 12 60
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 76
+                            (format "last text: %s" (or (get state :last-text) "")))
+    (sdl/render-debug-text! renderer 12 92
                             (format "last event: %s" (or (get state :last-event) "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 92
+      (sdl/render-debug-text! renderer 12 108
                               (format "recent: %s"
                                       (str/join " | " recent))))
+    nil))
+
+(defn draw-render-status!
+  "Render the text overlay and mouse marker for STATE."
+  [ctx state]
+  (let [renderer (get ctx :renderer)
+        mouse-x (get state :mouse-x)
+        mouse-y (get state :mouse-y)]
     (sdl/set-draw-color! renderer 220 180 90 255)
     (sdl/render-fill-rect! renderer (- mouse-x 3) (- mouse-y 3) 6 6)
+    (if (get state :debug-panel?)
+      (draw-render-debug-panel! renderer state)
+      nil)
     nil))
 
 (defn default-render-frame
@@ -337,6 +511,7 @@
       (nth background 2)
       255)
     (sdl/render-clear! renderer)
+    (draw-render-strokes! ctx state)
     (draw-render-status! ctx state)
     (sdl/render-present! renderer)
     nil))
@@ -478,4 +653,5 @@
   (default-state)
   (describe-state (default-state))
   (start-dev!)
+  (draw-toggle-debug-panel! (current-state))
   (main ["--help"]))

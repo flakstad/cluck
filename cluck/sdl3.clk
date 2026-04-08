@@ -147,6 +147,10 @@ static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, flo
   return SDL_RenderFillRect(renderer, &rect);
 }
 
+static bool cluck_render_line(SDL_Renderer *renderer, float x1, float y1, float x2, float y2) {
+  return SDL_RenderLine(renderer, x1, y1, x2, y2);
+}
+
 static bool cluck_render_debug_text(SDL_Renderer *renderer, float x, float y, const char *text) {
   return SDL_RenderDebugText(renderer, x, y, text);
 }
@@ -257,6 +261,14 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
                          (int w)
                          (int h))
     "C_return(cluck_render_fill_rect((SDL_Renderer *)renderer, (float)x, (float)y, (float)w, (float)h));"))
+
+(define sdl-render-line!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (int x1)
+                         (int y1)
+                         (int x2)
+                         (int y2))
+    "C_return(cluck_render_line((SDL_Renderer *)renderer, (float)x1, (float)y1, (float)x2, (float)y2));"))
 
 (define sdl-render-debug-text!
   (foreign-lambda* bool ((c-pointer renderer)
@@ -372,6 +384,10 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
 (defn render-fill-rect!
   [renderer x y w h]
   (sdl-render-fill-rect! renderer x y w h))
+
+(defn render-line!
+  [renderer x1 y1 x2 y2]
+  (sdl-render-line! renderer x1 y1 x2 y2))
 
 (defn render-debug-text!
   [renderer x y text]

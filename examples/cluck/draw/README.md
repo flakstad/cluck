@@ -10,6 +10,8 @@ What is in place:
 - a first SDL3 window-open loop that clears the screen until quit
 - a REPL-first development bootstrap in `dev.clk` that loads SDL3 after the normal Cluck REPL starts; draw-buffer evals auto-load that bootstrap once, and `(start-dev!)` still opens the window explicitly
 - live mouse, pen, and keyboard-event overlays in the window
+- freehand brush strokes while dragging
+- an on-demand debug panel toggled with `F1`
 - REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
@@ -27,7 +29,7 @@ csi -q -s examples/cluck/draw/run.scm
 The intent is to build this interactively in small steps:
 1. keep the SDL3 boundary isolated in `cluck.sdl3`
 2. start a normal Cluck REPL, then evaluate `(load-file "examples/cluck/draw/dev.clk")` to load the draw definitions, then call `(start-dev!)` when you want to open the window and experiment live
-3. extend the window loop with input and drawing commands
+3. drag with the mouse or pen to paint strokes, and press `F1` to toggle the debug panel
 4. add byte-buffer and texture work as needed
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
