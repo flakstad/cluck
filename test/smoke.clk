@@ -112,7 +112,7 @@
 (assert-str= "remove" "(1 3)" (pr-str (remove even? [1 2 3 4])))
 (assert-num= "keys count" 2 (count (keys sample)))
 (assert-num= "vals count" 2 (count (vals sample)))
-(require [cluck.core])
+(require [cluck.core :as core])
 (assert-true "core namespace exists" (find-ns 'cluck.core))
 (assert-true "core publics include map" (contains? (ns-publics 'cluck.core) 'map))
 (assert-true "core publics include set" (contains? (ns-publics 'cluck.core) 'set))
@@ -315,12 +315,12 @@
   (+ a b))
 (assert-num= "defn destructuring" 5 (pair-sum [2 3]))
 (assert-num= "assoc/get" 2 (-> {:a 1} (assoc :b 2) (get :b)))
-(let [m (hash-map)
-      m2 (assoc m :a 1 :b 2 :c 3)]
-  (assert-str= "assoc original map mutated" "{:a 1 :b 2 :c 3}" (pr-str m))
-  (assert-num= "assoc multi map a" 1 (get m2 :a))
-  (assert-num= "assoc multi map b" 2 (get m2 :b))
-  (assert-num= "assoc multi map c" 3 (get m2 :c)))
+(let [m (core/hash-map)
+      m2 (core/assoc m :a 1 :b 2 :c 3)]
+  (assert-str= "assoc original map mutated" "{:a 1 :b 2 :c 3}" (core/pr-str m))
+  (assert-num= "assoc multi map a" 1 (core/get m2 :a))
+  (assert-num= "assoc multi map b" 2 (core/get m2 :b))
+  (assert-num= "assoc multi map c" 3 (core/get m2 :c)))
 (let [v [0 0 0]
       v2 (assoc v 0 1 1 2 2 3)]
   (assert-str= "assoc multi vector" "[1 2 3]" (pr-str v2))
@@ -408,6 +408,28 @@
 (assert-str= "app report"
              "{:alias-square 1 :count 3 :first-square 1 :sum 6 :sum-of-squares 14}"
              (pr-str (report [1 2 3])))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/extensions/main.clk")
+(in-ns 'cluck.examples.extensions)
+(assert-true "extensions namespace exists" (find-ns 'cluck.examples.extensions))
+(assert-str= "extensions base report"
+             "Cluck extension loader\nLoaded files: (none)\nSections: 1\n- base: base registry ready after 0 file(s)\n"
+             (capture-output (lambda () (main '()))))
+(assert-num= "extensions base section count" 1 (count (registered-extension-sections)))
+(let [sections (registered-extension-sections)]
+  (assert-str= "extensions base label" "base" (get (first sections) :label)))
+(assert-str= "extensions loaded report"
+             "Cluck extension loader\nLoaded files: scheme-ext.scm, cluck-ext.clk\nSections: 3\n- base: base registry ready after 2 file(s)\n- scheme: Scheme extension loaded\n- cluck: Cluck extension loaded\n"
+             (capture-output
+              (lambda ()
+                (main (list "examples/cluck/extensions/scheme-ext.scm"
+                            "examples/cluck/extensions/cluck-ext.clk")))))
+(assert-num= "extensions loaded path count" 2 (count (loaded-extension-paths)))
+(let [sections (registered-extension-sections)]
+  (assert-num= "extensions loaded section count" 3 (count sections))
+  (assert-str= "extensions scheme label" "scheme" (get (nth sections 1) :label))
+  (assert-str= "extensions cluck label" "cluck" (get (nth sections 2) :label)))
 (in-ns 'cluck.smoke)
 
 (assert-str= "demo load output"
@@ -566,6 +588,7 @@
 
 (ns-assert-num= "require exclude sum-of-squares" 14 (sum-of-squares [1 2 3]))
 (ns-assert-true "require exclude missing" (not (ns-resolve (current-ns) 'square)))
+(load-file "test/cluck/test/persistent.clk")
 (in-ns 'user)
 
 (println "smoke tests passed")

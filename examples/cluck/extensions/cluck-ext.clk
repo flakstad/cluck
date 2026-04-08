@@ -1,0 +1,10 @@
+;; Cluck extension for the extension registry demo.
+
+(ns cluck.examples.extensions.cluck-ext
+  "Cluck extension for the extension registry demo."
+  (:require [cluck.examples.extensions :as ext]))
+
+(ext/register-extension!
+ "cluck"
+ (fn []
+   "Cluck extension loaded"))

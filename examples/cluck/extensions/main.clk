@@ -1,0 +1,122 @@
+;; Cluck extension registry experiment.
+;;
+;; This app stays in Cluck syntax. It loads plain Scheme source files and
+;; Cluck source files into the same runtime and reports the registered hooks.
+
+(ns cluck.examples.extensions
+  "Extension registry experiment for Cluck."
+  (:require [cluck.fs :as fs]
+            [cluck.string :as str]))
+
+(def *extension-registry* [])
+(def *extension-paths* [])
+
+(defn base-extension-message
+  []
+  (format "base registry ready after %d file(s)"
+          (count *extension-paths*)))
+
+(defn reset-registry!
+  "Reset the registry to the built-in base section."
+  []
+  (set! *extension-paths* [])
+  (set! *extension-registry* [])
+  (register-extension! "base" base-extension-message)
+  *extension-registry*)
+
+(defn register-extension!
+  "Register a report section named LABEL backed by THUNK."
+  [label thunk]
+  (set! *extension-registry*
+        (conj *extension-registry*
+              {:label (str label)
+               :thunk thunk}))
+  *extension-registry*)
+
+(defn loaded-extension-paths
+  "Return the extension file paths loaded by the latest run."
+  []
+  *extension-paths*)
+
+(defn registered-extension-sections
+  "Return the current registry entries."
+  []
+  *extension-registry*)
+
+(defn loadable-extension-file?
+  "Return true when PATH points at a supported extension source file."
+  [path]
+  (let [ext (str/lower-case (fs/extension path))]
+    (or (string=? ext "scm")
+        (string=? ext "clk"))))
+
+(defn load-extension-source!
+  "Load one extension source file from PATH."
+  [path]
+  (if (not (fs/file? path))
+    (error (format "extension file does not exist: %s" path))
+    (if (not (loadable-extension-file? path))
+      (error (format "extension file must end in .scm or .clk: %s" path))
+      (begin
+        (load-file path)
+        (set! *extension-paths* (conj *extension-paths* path))
+        path))))
+
+(defn load-extension-sources!
+  "Load each extension source file in PATHS."
+  [paths]
+  (##core#let loop ((remaining paths))
+    (if (empty? remaining)
+        *extension-paths*
+        (begin
+          (load-extension-source! (first remaining))
+          (loop (rest remaining))))))
+
+(defn extension-file-labels
+  "Return a printable list of loaded extension filenames."
+  []
+  (if (empty? *extension-paths*)
+      "(none)"
+      (str/join ", " (map fs/basename *extension-paths*))))
+
+(defn extension-report-entries
+  "Return the report entries with their evaluated values."
+  []
+  (mapv (fn [entry]
+          {:label (get entry :label)
+           :value ((get entry :thunk))})
+        *extension-registry*))
+
+(defn print-report
+  "Print the extension registry report and return the entries."
+  []
+  (let [sections (extension-report-entries)]
+    (println "Cluck extension loader")
+    (println "Loaded files:" (extension-file-labels))
+    (println "Sections:" (count sections))
+    (reduce (fn [ignored entry]
+              (println (format "- %s: %s"
+                               (get entry :label)
+                               (get entry :value)))
+              ignored)
+            nil
+            sections)
+    sections))
+
+(defn main
+  "Load extension source files from ARGS and print a report."
+  [args]
+  (let [saved-ns (current-ns)]
+    (dynamic-wind
+      (lambda ()
+        (cluck-set-current-ns! 'cluck.examples.extensions))
+      (lambda ()
+        (reset-registry!)
+        (load-extension-sources! args)
+        (print-report))
+      (lambda ()
+        (cluck-set-current-ns! saved-ns)))))
+
+(hash-table-set! *cluck-loaded-namespaces*
+                 'cluck.examples.extensions
+                 "examples/cluck/extensions/main.clk")

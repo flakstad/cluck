@@ -39,7 +39,7 @@ The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 - keywords, maps, sets, and vectors with EDN-style syntax
 - core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond` with `:else`, `and`, `or`, `->`, and `->>`
 - common sequence helpers like `seq`, `first`, `rest`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, `group-by`, `count`, `map`, `filter`, and `reduce`
-- persistent maps and sets by default, with explicit mutable escape hatches when needed
+- mutable maps and sets by default, with an opt-in `cluck.persistent` namespace for persistent collections and `cluck.mutable` for host hash tables and sets
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
 - `.clk` is the preferred source extension for cluck code; `.scm` stays for Scheme glue and bootstrap files
 
@@ -59,22 +59,23 @@ The current implementation supports:
 - `cluck.edn/read-string`
 - `atom`, `atom?`, `deref`, `reset!`, `swap!`, and `compare-and-set!`
 - `cluck.mutable` for explicit mutable map/set helpers and host interop
+- `cluck.persistent` for opt-in persistent/immutable map and set helpers
 - `cluck.examples.outline`
 - `pr-str`, `str`, `format`, `println`, and `prn`
-- persistent `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce`
+- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce` in the core layer, plus a separate opt-in persistent collection namespace
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
 - Clojure-style special forms and threading macros
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
-- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
+- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, `cluck.persistent`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
 
 Notes:
 
 - vectors are still ordinary CHICKEN vectors, so the host REPL prints them as `#(...)`
 - keywords, maps, and sets use custom record types so the host REPL can print them in Clojure-style form
-- the collection layer is persistent by default; mutation is explicit
+- the collection layer is mutable by default; persistent collections live in `cluck.persistent`
 - the namespace layer is intentionally lightweight and uses separate public/import tables; it is not full Clojure namespace resolution yet
 - `seq` is intentionally cheap and unsorted; stable ordering is handled by `pr-str` instead of traversal
 
@@ -97,7 +98,7 @@ If you need exact Scheme semantics in a `.clk` file, keep that code in a `.scm` 
 
 When a `.clk` file reaches out to CHICKEN eggs, keep that work explicit by using `ns` `:require` with prefixed imports so the host interop stays visible and does not leak names into the Cluck surface.
 
-If you need mutable escape hatches, use `cluck.mutable` for host hash tables and sets, or keep the raw Scheme interop in `.scm` helpers; the ordinary Cluck collection API stays persistent by default. `set!` remains Scheme binding mutation, not a collection mutator.
+If you need mutable escape hatches, use `cluck.mutable` for host hash tables and sets, or keep the raw Scheme interop in `.scm` helpers; the ordinary Cluck collection API stays mutable by default. If you want persistent maps and sets, require `cluck.persistent` explicitly. `set!` remains Scheme binding mutation, not a collection mutator.
 
 For EDN parsing, prefer `cluck.edn/read-string` in app code. The interactive `src/cluck-init.scm` and `src/cluck-cli.scm` loaders also install a convenience top-level `read-string` alias for the REPL and command-line workflow, but the namespaced form is the stable one for libraries and standalone binaries.
 
@@ -124,7 +125,7 @@ From the repository root, in Geiser or any other REPL where you want to return t
 chicken-install hash-trie
 ```
 
-That installs the persistent collection backend used by Cluck's maps and sets.
+That installs the optional persistent collection backend used by `cluck.persistent`. You only need this if you plan to use the opt-in persistent namespace.
 
 Then load the language layer:
 
@@ -600,6 +601,7 @@ The public namespace layout mirrors Clojure's shape:
 - `cluck.process`
 - `cluck.set`
 - `cluck.mutable`
+- `cluck.persistent`
 - `cluck.edn`
 - `cluck.walk`
 - `cluck.math`
@@ -674,7 +676,7 @@ This is enough to structure source files, inspect exports, and load small module
 The next phase is about making Cluck prove itself on a real small program, not just adding syntax.
 
 - keep the runtime eager, direct, and mutable by default
-- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, and a separate opt-in namespace for persistent / immutable collections
+- continue the namespace split toward `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, and a separate opt-in `cluck.persistent` namespace for persistent / immutable collections
 - expand the core library with practical helpers such as `get-in`, `assoc-in`, `update`, `merge`, `merge-with`, `keys`, `vals`, `select-keys`, `zipmap`, `remove`, `mapcat`, `apply`, `partial`, and `comp`
 - use one real dogfood app to drive the next round of API and namespace decisions
 - prefer small native CLI or local data tools first; TODO scanning, link checking, and CSV/TSV summarization are all good candidates before larger app work
@@ -699,6 +701,42 @@ csi -q -s examples/cluck/app/run.scm
 ```
 
 The smoke tests also load `cluck.walk` and `cluck.math` through `require` to verify namespace restoration and alias lookup.
+
+## Extension Loader Experiment
+
+Another no-eggs example lives in:
+
+- [`examples/cluck/extensions/main.clk`](./examples/cluck/extensions/main.clk)
+- [`examples/cluck/extensions/scheme-ext.scm`](./examples/cluck/extensions/scheme-ext.scm)
+- [`examples/cluck/extensions/cluck-ext.clk`](./examples/cluck/extensions/cluck-ext.clk)
+
+It demonstrates loading plain Scheme source and Cluck source into the same
+compiled launcher through a small registry. The app keeps the registry in
+Cluck, then loads extra source files and prints the registered sections.
+
+Run it from source with:
+
+```bash
+csi -q -s examples/cluck/extensions/run.scm
+csi -q -s examples/cluck/extensions/run.scm examples/cluck/extensions/scheme-ext.scm examples/cluck/extensions/cluck-ext.clk
+```
+
+Build a self-contained native binary with:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/extensions-standalone examples/cluck/extensions/run-standalone.scm
+```
+
+Then run the compiled binary with either no extensions or both example
+extensions:
+
+```bash
+./build/extensions-standalone
+./build/extensions-standalone examples/cluck/extensions/scheme-ext.scm examples/cluck/extensions/cluck-ext.clk
+```
+
+The experiment is intentionally small, but it proves the launcher can load
+both plain Scheme source and Cluck source into the same native process.
 
 ## Native Build
 
