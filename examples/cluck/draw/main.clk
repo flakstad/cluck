@@ -1169,6 +1169,26 @@
                          alpha)
     (draw-render-brush! renderer point size)))
 
+(defn draw-soft-brush-stamp!
+  "Render a softer brush stamp by layering several discs."
+  [renderer point size alpha]
+  (let [layers [[1.0 1.0]
+                [0.82 0.72]
+                [0.62 0.42]
+                [0.42 0.18]
+                [0.24 0.08]]]
+    (reduce (lambda (acc layer)
+              (let [scale (nth layer 0)
+                    alpha-scale (nth layer 1)
+                    layer-size (draw-exact-int (math/ceiling (* size scale)))
+                    layer-alpha (draw-exact-int (math/ceiling (* alpha alpha-scale)))]
+                (if (> layer-size 0)
+                  (draw-soft-brush-layer! renderer point layer-size layer-alpha)
+                  nil)
+                acc))
+            nil
+            layers)))
+
 (defn draw-render-brush-rows!
   "Render the filled disc rows for POINT with RADIUS."
   [renderer x y radius dy]
@@ -1212,22 +1232,8 @@
   [renderer state point size]
   (let [screen-point (draw-world-point->screen-point state point)
         base-size (draw-point-screen-size state point size)
-        mid-size (if (> base-size 1)
-                   (draw-exact-int (math/ceiling (/ base-size 2)))
-                   base-size)
-        outer-size (if (> mid-size 1)
-                     (draw-exact-int (math/ceiling (/ mid-size 2)))
-                     mid-size)
-        alpha (draw-point-alpha point)
-        mid-alpha (draw-exact-int (math/ceiling (/ alpha 2)))
-        outer-alpha (draw-exact-int (math/ceiling (/ alpha 4)))]
-    (draw-soft-brush-layer! renderer screen-point base-size alpha)
-    (if (> mid-size 0)
-      (draw-soft-brush-layer! renderer screen-point mid-size mid-alpha)
-      nil)
-    (if (> outer-size 0)
-      (draw-soft-brush-layer! renderer screen-point outer-size outer-alpha)
-      nil)))
+        alpha (draw-point-alpha point)]
+    (draw-soft-brush-stamp! renderer screen-point base-size alpha)))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
@@ -1246,7 +1252,10 @@
         radius-a (draw-brush-radius (draw-point-size a size))
         radius-b (draw-brush-radius (draw-point-size b size))
         radius (if (< radius-a radius-b) radius-a radius-b)
-        steps (draw-exact-int (math/ceiling (/ distance radius)))
+        spacing (if (> radius 1)
+                  (draw-exact-int (math/ceiling (/ radius 2)))
+                  1)
+        steps (draw-exact-int (math/ceiling (/ distance spacing)))
         dp (- p2 p1)]
     (if (<= steps 0)
       (draw-render-stroke-brush! renderer state a size)
