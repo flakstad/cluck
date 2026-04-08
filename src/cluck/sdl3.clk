@@ -149,6 +149,40 @@ static float cluck_event_pen_pressure(void) {
   return 1.0f;
 }
 
+static float cluck_event_wheel_y(void) {
+  if (!cluck_have_last_event) {
+    return 0.0f;
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_WHEEL) {
+    return cluck_last_event.wheel.y;
+  }
+  return 0.0f;
+}
+
+static float cluck_event_wheel_mouse_x(void) {
+  if (!cluck_have_last_event) {
+    return cluck_mouse_x();
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_WHEEL) {
+    return cluck_last_event.wheel.mouse_x;
+  }
+  return cluck_mouse_x();
+}
+
+static float cluck_event_wheel_mouse_y(void) {
+  if (!cluck_have_last_event) {
+    return cluck_mouse_y();
+  }
+  if (cluck_last_event.type == SDL_EVENT_MOUSE_WHEEL) {
+    return cluck_last_event.wheel.mouse_y;
+  }
+  return cluck_mouse_y();
+}
+
+static bool cluck_mod_shift_pressed(void) {
+  return (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+}
+
 static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
   SDL_FRect rect;
   rect.x = x;
@@ -291,6 +325,18 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 
 (define sdl-event-pen-pressure
   (foreign-lambda float "cluck_event_pen_pressure"))
+
+(define sdl-event-wheel-y
+  (foreign-lambda float "cluck_event_wheel_y"))
+
+(define sdl-event-wheel-mouse-x
+  (foreign-lambda float "cluck_event_wheel_mouse_x"))
+
+(define sdl-event-wheel-mouse-y
+  (foreign-lambda float "cluck_event_wheel_mouse_y"))
+
+(define sdl-mod-shift-pressed?
+  (foreign-lambda bool "cluck_mod_shift_pressed"))
 
 (define sdl-render-fill-rect!
   (foreign-lambda* bool ((c-pointer renderer)
@@ -446,6 +492,22 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (defn event-pen-pressure
   []
   (sdl-event-pen-pressure))
+
+(defn event-wheel-y
+  []
+  (sdl-event-wheel-y))
+
+(defn event-wheel-mouse-x
+  []
+  (sdl-event-wheel-mouse-x))
+
+(defn event-wheel-mouse-y
+  []
+  (sdl-event-wheel-mouse-y))
+
+(defn mod-shift-pressed?
+  []
+  (sdl-mod-shift-pressed?))
 
 (defn render-fill-rect!
   [renderer x y w h]

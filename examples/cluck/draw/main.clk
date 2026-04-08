@@ -75,6 +75,10 @@
    :mouse-x 0
    :mouse-y 0
    :pointer-down? false
+   :panning? false
+   :pan-last-x 0
+   :pan-last-y 0
+   :canvas-dirty? false
    :debug-panel? false
    :history []
    :strokes []
@@ -100,10 +104,7 @@
 (defn draw-set-state-core!
   "Install STATE and refresh the cached canvas if needed."
   [state]
-  (set! *draw-state* state)
-  (if (draw-canvas-ready?)
-    (draw-rebuild-canvas! *draw-state*)
-    nil)
+  (set! *draw-state* (assoc state :canvas-dirty? true))
   (if *draw-running?*
     nil
     (draw-render-current!))
@@ -192,9 +193,10 @@
   "Render the current state if the draw context is live."
   []
   (if (and *draw-running?* *draw-context* *draw-state*)
-    (begin
+    (let [state (draw-sync-canvas! *draw-state*)]
+      (set! *draw-state* state)
       (sync-window-title!)
-      (render-frame *draw-context* *draw-state*)
+      (render-frame *draw-context* state)
       *draw-state*)
     nil))
 
@@ -345,6 +347,7 @@
     (str/starts-with? desc "SDL_EVENT_MOUSE_MOTION") :mouse-motion
     (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_DOWN") :mouse-down
     (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_UP") :mouse-up
+    (str/starts-with? desc "SDL_EVENT_MOUSE_WHEEL") :mouse-wheel
     (str/starts-with? desc "SDL_EVENT_PEN_MOTION") :pen-motion
     (str/starts-with? desc "SDL_EVENT_PEN_DOWN") :pen-down
     (str/starts-with? desc "SDL_EVENT_PEN_UP") :pen-up
@@ -387,6 +390,101 @@
     [(draw-event-coordinate desc "x=")
      (draw-event-coordinate desc "y=")
      (draw-event-pressure state desc)]))
+
+(defn draw-event-screen-point
+  "Return the raw [x y] screen coordinate for DESC."
+  [desc]
+  [(draw-event-coordinate desc "x=")
+   (draw-event-coordinate desc "y=")])
+
+(defn draw-wheel-zoom-factor
+  "Return the multiplicative zoom factor for a wheel delta."
+  [delta]
+  (math/pow (draw-zoom-factor) delta))
+
+(defn draw-mark-canvas-dirty!
+  "Mark the cached canvas as needing a rebuild."
+  [state]
+  (assoc state :canvas-dirty? true))
+
+(defn draw-sync-canvas!
+  "Rebuild the cached canvas when STATE says it is dirty."
+  [state]
+  (if (and (draw-canvas-ready?)
+           (get state :canvas-dirty?))
+    (begin
+      (draw-rebuild-canvas! state)
+      (assoc state :canvas-dirty? false))
+    state))
+
+(defn draw-zoom-at-core!
+  "Zoom around SCREEN-X and SCREEN-Y using DELTA."
+  [state delta screen-x screen-y]
+  (let [delta (if (> delta 0) delta delta)
+        factor (draw-wheel-zoom-factor delta)
+        zoom (draw-view-zoom state)
+        world-x (+ (draw-view-x state)
+                   (/ screen-x zoom))
+        world-y (+ (draw-view-y state)
+                   (/ screen-y zoom))
+        next-zoom (draw-clamp (* zoom factor) 0.1 16.0)]
+    (assoc state
+           :zoom next-zoom
+           :view-x (- world-x (/ screen-x next-zoom))
+           :view-y (- world-y (/ screen-y next-zoom))
+           :canvas-dirty? true)))
+
+(defn draw-start-pan-core!
+  "Begin a viewport drag at SCREEN-POINT."
+  [state screen-point]
+  (let [world-point (draw-screen-point->world-point state
+                                                    [(nth screen-point 0)
+                                                     (nth screen-point 1)
+                                                     1.0])]
+    (assoc state
+           :panning? true
+           :pan-last-x (nth screen-point 0)
+           :pan-last-y (nth screen-point 1)
+           :pointer-down? false
+           :active-stroke false
+           :mouse-x (nth world-point 0)
+           :mouse-y (nth world-point 1)
+           :pen-pressure 1.0)))
+
+(defn draw-pan-core!
+  "Update the viewport pan using SCREEN-POINT."
+  [state screen-point]
+  (if (get state :panning?)
+    (let [screen-x (nth screen-point 0)
+          screen-y (nth screen-point 1)
+          last-x (or (get state :pan-last-x) screen-x)
+          last-y (or (get state :pan-last-y) screen-y)
+          zoom (draw-view-zoom state)
+          world-point (draw-screen-point->world-point state
+                                                      [(nth screen-point 0)
+                                                       (nth screen-point 1)
+                                                       1.0])
+          dx (- screen-x last-x)
+          dy (- screen-y last-y)]
+      (assoc state
+             :view-x (- (draw-view-x state)
+                        (/ dx zoom))
+             :view-y (- (draw-view-y state)
+                        (/ dy zoom))
+             :mouse-x (nth world-point 0)
+             :mouse-y (nth world-point 1)
+             :pan-last-x screen-x
+             :pan-last-y screen-y
+             :canvas-dirty? true))
+    state))
+
+(defn draw-finish-pan-core!
+  "Finish a viewport drag."
+  [state]
+  (assoc state
+         :panning? false
+         :pointer-down? false
+         :canvas-dirty? true))
 
 (defn draw-event-key-label
   "Return the normalized key label for the current SDL key event."
@@ -602,7 +700,8 @@
   (let [state (draw-push-history! state)]
     (assoc state
            :brush-size size
-           :eraser? false)))
+           :eraser? false
+           :canvas-dirty? true)))
 
 (defn draw-set-brush-size!
   "Set the brush size and return to brush mode, recording undo history."
@@ -620,7 +719,8 @@
   [state]
   (let [state (draw-push-history! state)]
     (assoc state
-           :eraser? (not (get state :eraser?)))))
+           :eraser? (not (get state :eraser?))
+           :canvas-dirty? true)))
 
 (defn draw-toggle-eraser!
   "Toggle eraser mode for STATE and record undo history."
@@ -640,10 +740,9 @@
     (let [state (assoc state
                        :strokes []
                        :active-stroke false
-                       :pointer-down? false)]
-      (if (draw-canvas-ready?)
-        (draw-rebuild-canvas! state)
-        nil)
+                       :pointer-down? false
+                       :panning? false
+                       :canvas-dirty? true)]
       state)))
 
 (defn draw-clear-strokes!
@@ -661,10 +760,7 @@
   "Undo the most recent draw action."
   [state]
   (let [state (draw-restore-history! state)]
-    (if (draw-canvas-ready?)
-      (draw-rebuild-canvas! state)
-      nil)
-    state))
+    (assoc state :canvas-dirty? true)))
 
 (defn draw-undo-stroke!
   "Undo the most recent draw action."
@@ -708,10 +804,8 @@
                               :zoom (draw-clamp (* (draw-view-zoom state)
                                                    (draw-zoom-factor))
                                                 0.1
-                                                16.0))]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                                                16.0)
+                              :canvas-dirty? true)]
         next-state)
 
       (or (string=? key "[")
@@ -721,10 +815,8 @@
                               :zoom (draw-clamp (/ (draw-view-zoom state)
                                                    (draw-zoom-factor))
                                                 0.1
-                                                16.0))]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                                                16.0)
+                              :canvas-dirty? true)]
         next-state)
 
       (or (string=? key "0")
@@ -732,10 +824,8 @@
       (let [next-state (assoc state
                               :view-x 0.0
                               :view-y 0.0
-                              :zoom 1.0)]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                              :zoom 1.0
+                              :canvas-dirty? true)]
         next-state)
 
       (or (string=? key "h")
@@ -743,10 +833,8 @@
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-x (- (draw-view-x state)
-                                         (/ step (draw-view-zoom state))))]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                                         (/ step (draw-view-zoom state)))
+                              :canvas-dirty? true)]
         next-state)
 
       (or (string=? key "l")
@@ -754,10 +842,8 @@
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-x (+ (draw-view-x state)
-                                         (/ step (draw-view-zoom state))))]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                                         (/ step (draw-view-zoom state)))
+                              :canvas-dirty? true)]
         next-state)
 
       (or (string=? key "k")
@@ -765,10 +851,8 @@
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-y (- (draw-view-y state)
-                                         (/ step (draw-view-zoom state))))]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                                         (/ step (draw-view-zoom state)))
+                              :canvas-dirty? true)]
         next-state)
 
       (or (string=? key "j")
@@ -776,14 +860,23 @@
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-y (+ (draw-view-y state)
-                                         (/ step (draw-view-zoom state))))]
-        (if (draw-canvas-ready?)
-          (draw-rebuild-canvas! next-state)
-          nil)
+                                         (/ step (draw-view-zoom state)))
+                              :canvas-dirty? true)]
         next-state)
 
       :else
       state)))
+
+(defn draw-handle-wheel!
+  "Apply mouse-wheel zoom to STATE."
+  [state]
+  (let [delta (sdl/event-wheel-y)]
+    (if (= delta 0.0)
+      state
+      (draw-zoom-at-core! state
+                          delta
+                          (sdl/event-wheel-mouse-x)
+                          (sdl/event-wheel-mouse-y)))))
 
 (defn draw-crash!
   "Record EXN as the last draw error and stop the background loop."
@@ -800,17 +893,18 @@
   (let [state (assoc state
                      :pointer-down? false
                      :active-stroke false
-                     :pen-pressure 1.0)]
-    (if (draw-canvas-ready?)
-      (draw-rebuild-canvas! state)
-      nil)
+                     :panning? false
+                     :pen-pressure 1.0
+                     :canvas-dirty? true)]
     state))
 
 (defn draw-focus-lost-core!
   "Record that the window lost focus and cancel any active stroke."
   [state]
   (draw-cancel-active-stroke-core!
-    (assoc state :window-focused? false)))
+    (assoc state
+           :window-focused? false
+           :canvas-dirty? true)))
 
 (defn draw-focus-gained-core!
   "Record that the window regained focus."
@@ -961,6 +1055,9 @@
               state))
           state))
 
+      (draw-kind=? kind :mouse-wheel)
+      (draw-handle-wheel! state)
+
       (or (draw-kind=? kind :focus-lost)
           (draw-kind=? kind :mouse-leave))
       (draw-focus-lost-core! state)
@@ -978,8 +1075,16 @@
           (draw-kind=? kind :mouse-down)
           (draw-kind=? kind :mouse-up))
       (cond
+        (and (draw-kind=? kind :mouse-down)
+             (sdl/mod-shift-pressed?))
+        (draw-start-pan-core! state (draw-event-screen-point desc))
+
         (draw-kind=? kind :mouse-down)
         (draw-start-stroke state desc)
+
+        (and (draw-kind=? kind :mouse-up)
+             (get state :panning?))
+        (draw-finish-pan-core! state)
 
         (draw-kind=? kind :mouse-up)
         (draw-finish-stroke state desc)
@@ -999,12 +1104,24 @@
           (draw-kind=? kind :pen-button-down)
           (draw-kind=? kind :pen-button-up))
       (cond
+        (and (draw-kind=? kind :pen-down)
+             (sdl/mod-shift-pressed?))
+        (draw-start-pan-core! state (draw-event-screen-point desc))
+
         (draw-kind=? kind :pen-down)
         (draw-start-stroke state desc)
+
+        (and (or (draw-kind=? kind :pen-up)
+                 (draw-kind=? kind :pen-button-up))
+             (get state :panning?))
+        (draw-finish-pan-core! state)
 
         (or (draw-kind=? kind :pen-up)
             (draw-kind=? kind :pen-button-up))
         (draw-finish-stroke state desc)
+
+        (get state :panning?)
+        (draw-pan-core! state (draw-event-screen-point desc))
 
         (get state :pointer-down?)
         (draw-extend-stroke state desc)
@@ -1346,35 +1463,62 @@
                                       (count (get (get state :active-stroke) :points))
                                       0)))
     (sdl/render-debug-text! renderer 12 76
+                            (format "pan: %s"
+                                    (if (get state :panning?) "on" "off")))
+    (sdl/render-debug-text! renderer 12 92
                             (format "tool: %s size: %d color: %s"
                                     (draw-tool-mode state)
                                     (get state :brush-size)
                                     (pr-str (draw-stroke-color state))))
-    (sdl/render-debug-text! renderer 12 92
+    (sdl/render-debug-text! renderer 12 108
                             (format "undo history: %d"
                                     (count (get state :history))))
-    (sdl/render-debug-text! renderer 12 108
+    (sdl/render-debug-text! renderer 12 124
                             (format "focus: %s pressure: %.2f"
                                     (if (get state :window-focused?) "on" "off")
                                     (or (get state :pen-pressure) 1.0)))
-    (sdl/render-debug-text! renderer 12 124
-                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 140
-                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
+                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 156
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
     (sdl/render-debug-text! renderer 12 172
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last text: %s" (or (get state :last-text) "")))
     (sdl/render-debug-text! renderer 12 188
+                            (format "last event: %s" (or (get state :last-event) "")))
+    (sdl/render-debug-text! renderer 12 204
                             (format "last error: %s"
                                     (if *draw-last-error*
                                       (format "%s" *draw-last-error*)
                                       "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 204
+      (sdl/render-debug-text! renderer 12 220
                               (format "recent: %s"
                                       (str/join " | " recent))))
+    (draw-render-debug-lines! renderer 236 (draw-debug-control-lines))
     nil))
+
+(defn draw-debug-control-lines
+  "Return the fixed debug-panel help lines."
+  []
+  ["controls:"
+   "  wheel: zoom"
+   "  shift+drag: pan"
+   "  drag: draw"
+   "  mouse/pen: pressure-sensitive strokes"
+   "  u: undo   c: clear   e: eraser"
+   "  1/2/3: brush size"
+   "  d: debug panel   0: reset view"
+   "  repl: save-canvas!, load-canvas!, restart-dev!"])
+
+(defn draw-render-debug-lines!
+  "Render LINES in the debug overlay starting at Y."
+  [renderer y lines]
+  (reduce (lambda (next-y line)
+            (begin
+              (sdl/render-debug-text! renderer 12 next-y line)
+              (+ next-y 16)))
+          y
+          lines))
 
 (defn draw-render-status!
   "Render the text overlay and mouse marker for STATE."

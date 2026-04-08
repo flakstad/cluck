@@ -34,6 +34,12 @@
       (draw-input-pass label)
       (draw-input-fail label expected actual)))
 
+(define (draw-input-has-line? lines target)
+  (reduce (lambda (found line)
+            (or found (string=? line target)))
+          false
+          lines))
+
 (draw-input-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 (draw-input-assert-true "focus gained event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_GAINED")
@@ -44,6 +50,23 @@
 (draw-input-assert-true "pen axis event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_PEN_AXIS")
                                      :pen-axis))
+(draw-input-assert-true "mouse wheel event kind"
+                        (draw-kind=? (draw-event-kind "SDL_EVENT_MOUSE_WHEEL")
+                                     :mouse-wheel))
+
+(let [lines (draw-debug-control-lines)]
+  (draw-input-assert-true "debug panel lists wheel zoom"
+                          (draw-input-has-line? lines "  wheel: zoom"))
+  (draw-input-assert-true "debug panel lists shift pan"
+                          (draw-input-has-line? lines "  shift+drag: pan"))
+  (draw-input-assert-true "debug panel lists draw"
+                          (draw-input-has-line? lines "  drag: draw"))
+  (draw-input-assert-true "debug panel lists pressure"
+                          (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
+  (draw-input-assert-true "debug panel lists undo"
+                          (draw-input-has-line? lines "  u: undo   c: clear   e: eraser"))
+  (draw-input-assert-true "debug panel lists repl helpers"
+                          (draw-input-has-line? lines "  repl: save-canvas!, load-canvas!, restart-dev!")))
 
 (let [mouse-point (draw-event-point (default-state)
                                     "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")]
@@ -75,6 +98,10 @@
                            (get focused :active-stroke))
   (draw-input-assert-false "focus lost turns focus off"
                            (get focused :window-focused?))
+  (draw-input-assert-false "focus lost clears panning"
+                           (get focused :panning?))
+  (draw-input-assert-true "focus lost marks canvas dirty"
+                          (get focused :canvas-dirty?))
   (draw-input-assert-num= "focus lost resets pressure"
                           1.0
                           (get focused :pen-pressure)))

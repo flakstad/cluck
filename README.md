@@ -262,8 +262,10 @@ defines the draw app. Call `(start-dev!)` explicitly when you want to open the
 window and start the background render loop. From there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
-while the window stays open. Drag with the mouse or pen to paint strokes, and
-press `d` to toggle the debug panel on demand. The current tool shortcuts are:
+while the window stays open. Use the mouse wheel to zoom around the cursor,
+hold `shift` while dragging to pan, and drag with the mouse or pen to paint
+strokes. Press `d` to toggle the debug panel on demand. The current tool
+shortcuts are:
 
 - `u` undo the last action
 - `c` clear the canvas
@@ -273,6 +275,8 @@ press `d` to toggle the debug panel on demand. The current tool shortcuts are:
 - `[`/`-` zoom out
 - `h`/`j`/`k`/`l` pan left/down/up/right
 - `0` reset the viewport
+- wheel zooms around the cursor
+- `shift`+drag pans the viewport
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
 State changes redraw the live window immediately, and the resulting release

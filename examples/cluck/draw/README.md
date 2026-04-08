@@ -12,6 +12,8 @@ What is in place:
 - live mouse, pen, and keyboard-event overlays in the window
 - freehand brush strokes while dragging, with pen pressure feeding the brush size
 - an on-demand debug panel toggled with `d`
+- mouse-wheel zoom centered on the cursor
+- `shift`+drag panning for the viewport
 - tool shortcuts for `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default
@@ -41,7 +43,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live
 5. if the draw thread crashes, call `(restart-dev!)` to close and reopen the window without killing the REPL
-6. drag with the mouse or pen to paint strokes, and press `d` to toggle the debug panel
+6. use the mouse wheel to zoom, hold `shift` and drag to pan, and drag with the mouse or pen to paint strokes; press `d` to toggle the debug panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
@@ -68,9 +70,12 @@ While the window is live:
 - press `c` to clear the canvas, which is undoable
 - press `e` to toggle eraser mode
 - press `1`, `2`, or `3` to switch brush sizes
+- use the mouse wheel to zoom around the cursor
+- hold `shift` and drag to pan the viewport
 - call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state
 - pen pressure now scales the brush while drawing on tablets that expose it
 - if the window loses focus, the active stroke is canceled so recovery is cleaner
+- the debug panel lists the current bindings and REPL helpers in-window
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

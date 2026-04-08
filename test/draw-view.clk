@@ -63,3 +63,27 @@
   (draw-view-assert-num= "pan left updates view-x"
                          -22.0
                          (draw-view-x panned)))
+
+(let [state (default-state)
+      wheel-zoomed (draw-zoom-at-core! state 1.0 100.0 50.0)
+      anchor (draw-screen-point->world-point state [100.0 50.0 1.0])]
+  (draw-view-assert-true "wheel zoom changes zoom"
+                         (> (draw-view-zoom wheel-zoomed) 1.0))
+  (draw-view-assert-str= "wheel zoom keeps cursor anchored"
+                         "[100 50 1.0]"
+                         (pr-str (draw-world-point->screen-point wheel-zoomed anchor))))
+
+(let [panning (draw-pan-core! (assoc (default-state)
+                                     :panning? true
+                                     :pan-last-x 10.0
+                                     :pan-last-y 20.0
+                                     :view-x 10.0
+                                     :view-y 20.0
+                                     :zoom 2.0)
+                              [14.0 24.0])]
+  (draw-view-assert-num= "pan drag updates view-x"
+                         8.0
+                         (draw-view-x panning))
+  (draw-view-assert-num= "pan drag updates view-y"
+                         18.0
+                         (draw-view-y panning)))
