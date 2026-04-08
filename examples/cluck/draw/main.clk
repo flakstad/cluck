@@ -182,6 +182,92 @@
   (set! *draw-last-error* false)
   false)
 
+(defn draw-tool-mode
+  "Return the current tool mode label."
+  [state]
+  (if (get state :eraser?)
+    "eraser"
+    "brush"))
+
+(defn draw-stroke-color
+  "Return the active stroke color for STATE."
+  [state]
+  (if (get state :eraser?)
+    (get state :background)
+    (get state :brush-color)))
+
+(defn draw-set-brush-size!
+  "Set the brush size and return to brush mode."
+  [state size]
+  (assoc state
+         :brush-size size
+         :eraser? false))
+
+(defn draw-toggle-eraser!
+  "Toggle eraser mode for STATE."
+  [state]
+  (assoc state
+         :eraser? (not (get state :eraser?))))
+
+(defn draw-clear-strokes!
+  "Clear all finished and active strokes from STATE."
+  [state]
+  (assoc state
+         :strokes []
+         :active-stroke false
+         :pointer-down? false))
+
+(defn draw-take-strokes-step
+  "Take the first KEEP strokes from STROKES into ACC."
+  [strokes keep acc]
+  (if (or (<= keep 0)
+          (empty? strokes))
+    acc
+    (draw-take-strokes-step (rest strokes)
+                            (- keep 1)
+                            (conj acc (first strokes)))))
+
+(defn draw-take-strokes
+  "Return the first KEEP strokes from STROKES as a vector."
+  [strokes keep]
+  (draw-take-strokes-step strokes keep []))
+
+(defn draw-undo-stroke!
+  "Remove the active stroke, or the most recent finished stroke."
+  [state]
+  (let [active (get state :active-stroke)
+        strokes (get state :strokes)]
+    (if active
+      (assoc state
+             :active-stroke false
+             :pointer-down? false)
+      (if (empty? strokes)
+        (assoc state
+               :pointer-down? false)
+        (let [total (count strokes)
+              keep (if (> total 0) (- total 1) 0)]
+          (assoc state
+                 :strokes (draw-take-strokes strokes keep)
+                 :pointer-down? false))))))
+
+(defn draw-handle-tool-key!
+  "Apply draw tool shortcuts for KEY to STATE."
+  [state key]
+  (let [key (str/lower-case (or key ""))]
+    (if (string=? key "c")
+      (draw-clear-strokes! state)
+      (if (string=? key "u")
+        (draw-undo-stroke! state)
+        (if (string=? key "e")
+          (draw-toggle-eraser! state)
+          (if (string=? key "1")
+            (draw-set-brush-size! state 2)
+              (if (string=? key "2")
+                (draw-set-brush-size! state 6)
+                (if (string=? key "3")
+                  (draw-set-brush-size! state 12)
+                  state))))))))
+
 (defn draw-crash!
   "Record EXN as the last draw error and stop the background loop."
   [exn]
@@ -198,7 +284,7 @@
     (assoc state
            :pointer-down? true
            :active-stroke {:points [point]
-                           :color (get state :brush-color)
+                           :color (draw-stroke-color state)
                            :size (get state :brush-size)}
            :mouse-x (nth point 0)
            :mouse-y (nth point 1))))
@@ -298,9 +384,11 @@
             state (assoc state
                          :last-key key-label
                          :last-key-desc desc)]
-        (if (and (draw-kind=? kind :key-down)
-                 (draw-toggle-debug-panel-key? key-label))
-          (draw-toggle-debug-panel! state)
+        (if (draw-kind=? kind :key-down)
+          (let [state (draw-handle-tool-key! state key-label)]
+            (if (draw-toggle-debug-panel-key? key-label)
+              (draw-toggle-debug-panel! state)
+              state))
           state))
 
       (draw-kind=? kind :text-input)
@@ -379,13 +467,15 @@
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %d,%d key %s text %s event %s strokes %d dbg %s"
+  (format "mouse %d,%d key %s text %s event %s strokes %d tool %s size %d dbg %s"
           (get *draw-state* :mouse-x)
           (get *draw-state* :mouse-y)
           (or (get *draw-state* :last-key) "")
           (or (get *draw-state* :last-text) "")
           (or (get *draw-state* :last-event) "")
           (count (get *draw-state* :strokes))
+          (draw-tool-mode *draw-state*)
+          (get *draw-state* :brush-size)
           (if (get *draw-state* :debug-panel?) "on" "off")))
 
 (defn sync-window-title!
@@ -423,8 +513,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (get state :title)
-  #_(format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d dbg %s"
+  (format "%s %dx%d frame %d mouse %d,%d key %s text %s strokes %d tool %s size %d dbg %s"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -434,6 +523,8 @@
           (or (get state :last-key) "")
           (or (get state :last-text) "")
           (count (get state :strokes))
+          (draw-tool-mode state)
+          (get state :brush-size)
           (if (get state :debug-panel?) "on" "off")))
 
 (defn draw-render-point!
@@ -510,20 +601,25 @@
                                       (count (get (get state :active-stroke) :points))
                                       0)))
     (sdl/render-debug-text! renderer 12 60
-                            (format "last key: %s" (or (get state :last-key) "")))
+                            (format "tool: %s size: %d color: %s"
+                                    (draw-tool-mode state)
+                                    (get state :brush-size)
+                                    (pr-str (draw-stroke-color state))))
     (sdl/render-debug-text! renderer 12 76
-                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
+                            (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 92
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
     (sdl/render-debug-text! renderer 12 108
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last text: %s" (or (get state :last-text) "")))
     (sdl/render-debug-text! renderer 12 124
+                            (format "last event: %s" (or (get state :last-event) "")))
+    (sdl/render-debug-text! renderer 12 140
                             (format "last error: %s"
                                     (if *draw-last-error*
                                       (format "%s" *draw-last-error*)
                                       "")))
     (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 140
+      (sdl/render-debug-text! renderer 12 156
                               (format "recent: %s"
                                       (str/join " | " recent))))
     nil))
@@ -707,6 +803,10 @@
 (comment
   (default-state)
   (describe-state (default-state))
+  (draw-clear-strokes! (default-state))
+  (draw-undo-stroke! (default-state))
+  (draw-set-brush-size! (default-state) 6)
+  (draw-toggle-eraser! (default-state))
   (load-file "examples/cluck/draw/dev.clk")
   (start-dev!)
   (restart-dev!)

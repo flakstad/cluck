@@ -225,8 +225,8 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 ## SDL3 drawing scaffold
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
-tracks mouse, pen, and recent keyboard input, and enters a simple
-clear-and-quit loop:
+tracks mouse, pen, and recent keyboard input, and supports a basic sketchpad
+workflow:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`cluck/sdl3.clk`](./cluck/sdl3.clk)
@@ -250,7 +250,12 @@ window and start the background render loop. From there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, and `stop!` while the window stays open.
 Drag with the mouse or pen to paint strokes, and press `d` to toggle the
-debug panel on demand.
+debug panel on demand. The current tool shortcuts are:
+
+- `u` undo
+- `c` clear
+- `e` eraser
+- `1`/`2`/`3` brush sizes
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.

@@ -12,6 +12,7 @@ What is in place:
 - live mouse, pen, and keyboard-event overlays in the window
 - freehand brush strokes while dragging
 - an on-demand debug panel toggled with `d`
+- tool shortcuts for `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
@@ -35,6 +36,7 @@ The intent is to build this interactively in small steps:
 6. drag with the mouse or pen to paint strokes, and press `d` to toggle the debug panel
 7. add byte-buffer and texture work as needed
 8. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
+9. when you are working on draw tools and state mutations, run `csi -q -s test/run-draw-tools.scm` for a fast focused probe
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
@@ -45,6 +47,13 @@ Until the draw support code is loaded, evaluating the buffer directly will
 stop at the SDL FFI boundary. If the draw thread crashes, `restart-dev!`
 closes the old window, clears the recorded error, and starts a fresh one from
 the current REPL state.
+
+While the window is live:
+- press `d` to toggle the debug panel
+- press `u` to undo the last stroke
+- press `c` to clear the canvas
+- press `e` to toggle eraser mode
+- press `1`, `2`, or `3` to switch brush sizes
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

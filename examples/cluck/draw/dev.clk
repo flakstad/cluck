@@ -66,8 +66,10 @@
     (begin
       (draw-dev-ensure-directory! (fs/path root "build"))
       (draw-dev-ensure-directory! (fs/path root "build/dev"))
-      (if (not (zero? (proc/system (draw-dev-library-build-command root))))
-        (error "SDL3 dev library build failed"))
+      (if (not (fs/file? lib))
+        (if (not (zero? (proc/system (draw-dev-library-build-command root))))
+          (error "SDL3 dev library build failed"))
+        lib)
       lib)))
 
 (let [root (draw-dev-root)
