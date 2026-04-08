@@ -1,0 +1,961 @@
+;; Cluck TUI Todos
+;;
+;; A small ncurses + SQLite example app with list navigation, search, add/edit
+;; prompts, and persistent storage on disk.
+
+(ns cluck.examples.tui-todos
+  (:require [cluck.string :as str]
+            [ncurses :as nc]
+            [sqlite3 :as db]))
+
+(def app-name "Cluck TUI Todos")
+(def db-path "build/tui-todos.sqlite3")
+(def default-title "Untitled")
+(def default-kind "note")
+(def default-priority 3)
+(def open-status "open")
+(def done-status "done")
+
+(def kind-options #{"all" "idea" "task" "note" "log"})
+(def entry-kind-options #{"idea" "task" "note" "log"})
+(def kind-order (list "all" "idea" "task" "note" "log"))
+
+(def key-a (char->integer #\a))
+(def key-c (char->integer #\c))
+(def key-d (char->integer #\d))
+(def key-e (char->integer #\e))
+(def key-g (char->integer #\g))
+(def key-G (char->integer #\G))
+(def key-n (char->integer #\n))
+(def key-p (char->integer #\p))
+(def key-q (char->integer #\q))
+(def key-r (char->integer #\r))
+(def key-space (char->integer #\space))
+(def key-slash (char->integer #\/))
+(def key-x (char->integer #\x))
+(def key-1 (char->integer #\1))
+(def key-2 (char->integer #\2))
+(def key-3 (char->integer #\3))
+(def key-4 (char->integer #\4))
+(def key-5 (char->integer #\5))
+
+(defn key-code [key]
+  (cond
+    (char? key) (char->integer key)
+    :else key))
+
+(def sql-pragmas
+  (list "pragma journal_mode = wal;"
+        "pragma foreign_keys = on;"))
+
+(def sql-create-table
+  (str/join
+   ""
+   ["create table if not exists entries ("
+    " id integer primary key autoincrement,"
+    " title text not null,"
+    " kind text not null default 'note',"
+    " priority integer not null default 3,"
+    " status text not null default 'open',"
+    " pinned integer not null default 0,"
+    " body text not null default '',"
+    " created_at text not null default (strftime('%Y-%m-%d %H:%M:%S', 'now')),"
+    " updated_at text not null default (strftime('%Y-%m-%d %H:%M:%S', 'now'))"
+    ");"]))
+
+(def sql-create-index-kind
+  "create index if not exists entries_kind_idx on entries(kind, updated_at desc, id desc);")
+
+(def sql-create-index-status
+  "create index if not exists entries_status_idx on entries(status, pinned desc, priority asc, updated_at desc, id desc);")
+
+(def sql-count
+  "select count(*) from entries;")
+
+(def sql-query-notes
+  (str/join
+   ""
+   ["select id, title, kind, priority, status, pinned, body, created_at, updated_at "
+    "from entries "
+    "where (? = 'all' or kind = ?) "
+    "and (? = '' or lower(title) like ? or lower(kind) like ? or lower(body) like ?) "
+    "order by (status <> 'open') asc, pinned desc, priority asc, updated_at desc, id desc;"]))
+
+(def sql-insert-note
+  (str/join
+   ""
+   ["insert into entries "
+    "(title, kind, priority, status, pinned, body, created_at, updated_at) "
+    "values (?, ?, ?, ?, ?, ?, "
+    "strftime('%Y-%m-%d %H:%M:%S', 'now'), "
+    "strftime('%Y-%m-%d %H:%M:%S', 'now'));"]))
+
+(def sql-update-note
+  (str/join
+   ""
+   ["update entries set "
+    "title = ?, "
+    "kind = ?, "
+    "priority = ?, "
+    "body = ?, "
+    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
+    "where id = ?;"]))
+
+(def sql-delete-note
+  "delete from entries where id = ?;")
+
+(def sql-toggle-status
+  (str/join
+   ""
+   ["update entries set "
+    "status = case status when 'open' then 'done' else 'open' end, "
+    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
+    "where id = ?;"]))
+
+(def sql-toggle-pinned
+  (str/join
+   ""
+   ["update entries set "
+    "pinned = case pinned when 0 then 1 else 0 end, "
+    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
+    "where id = ?;"]))
+
+(def sql-set-priority
+  (str/join
+   ""
+   ["update entries set "
+    "priority = ?, "
+    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
+    "where id = ?;"]))
+
+(defn blank? [text]
+  (str/blank? (or text "")))
+
+(defn repeat-char [ch count]
+  (cond
+    (<= count 0) ""
+    :else (make-string count ch)))
+
+(defn clamp [value low high]
+  (max low (min high value)))
+
+(defn safe-width [width]
+  (max 0 (- width 1)))
+
+(defn truncate-text [text width]
+  (let [limit width
+        value (or text "")
+        len (string-length value)]
+    (cond
+      (<= limit 0) ""
+      (<= len limit) value
+      (<= limit 3) (substring value 0 limit)
+      :else (str/join "" [(substring value 0 (- limit 3)) "..."]))))
+
+(defn pad-right [text width]
+  (let [limit width
+        trimmed (truncate-text text limit)
+        fill (- limit (string-length trimmed))]
+    (cond
+      (> fill 0) (str/join "" [trimmed (repeat-char #\space fill)])
+      :else trimmed)))
+
+(defn known-kind? [kind]
+  (contains? entry-kind-options kind))
+
+(defn next-option [options current]
+  (cond
+    (empty? options) (first kind-order)
+    (string=? (first options) current)
+    (cond
+      (empty? (rest options)) (first kind-order)
+      :else (first (rest options)))
+    :else (next-option (rest options) current)))
+
+(defn normalize-title [value fallback]
+  (let [trimmed (str/trim (or value ""))]
+    (cond
+      (blank? trimmed) fallback
+      :else trimmed)))
+
+(defn normalize-kind [value fallback]
+  (let [trimmed (str/lower-case (str/trim (or value "")))]
+    (cond
+      (and (not (blank? trimmed))
+           (known-kind? trimmed))
+      trimmed
+      :else fallback)))
+
+(defn normalize-priority [value fallback]
+  (let [trimmed (str/trim (or value ""))
+        parsed (cond
+                 (blank? trimmed) false
+                 :else (string->number trimmed))]
+    (cond
+      (and parsed (integer? parsed)) (clamp parsed 1 5)
+      :else fallback)))
+
+(defn normalize-body [value fallback]
+  (let [trimmed (str/trim (or value ""))]
+    (cond
+      (blank? trimmed) fallback
+      :else trimmed)))
+
+(defn row->entry [id title kind priority status pinned body created-at updated-at]
+  {:id id
+   :title title
+   :kind kind
+   :priority priority
+   :status status
+   :pinned (not (zero? pinned))
+   :body body
+   :created-at created-at
+   :updated-at updated-at})
+
+(defn note-open? [note]
+  (string=? (get note :status) open-status))
+
+(defn note-done? [note]
+  (string=? (get note :status) done-status))
+
+(defn note-index-by-id-step [notes note-id index]
+  (cond
+    (empty? notes) false
+    (= (get (first notes) :id) note-id) index
+    :else (note-index-by-id-step (rest notes) note-id (+ index 1))))
+
+(defn note-index-by-id [notes note-id]
+  (note-index-by-id-step notes note-id 0))
+
+(defn note-at [notes index]
+  (cond
+    (or (negative? index)
+        (>= index (length notes)))
+    false
+    :else (list-ref notes index)))
+
+(defn wrap-text-step [source limit len start acc]
+  (cond
+    (>= start len) (reverse acc)
+    :else
+    (let [end (min len (+ start limit))
+          chunk (substring source start end)]
+      (wrap-text-step source limit len end (cons chunk acc)))))
+
+(defn wrap-text [text width]
+  (let [source (cond
+                 (blank? text) "(empty)"
+                 :else text)
+        limit width
+        len (string-length source)]
+    (cond
+      (<= limit 0) '()
+      :else (wrap-text-step source limit len 0 '()))))
+
+(defn note-detail-lines [note width]
+  (cond
+    (not note)
+    '("No entries match the current filters."
+      "Use / to search or a to add a new entry.")
+    :else
+    (append
+     (list (format "#%d  %s  %s  priority %d"
+                   (get note :id)
+                   (if (note-done? note) "done" "open")
+                   (get note :kind)
+                   (get note :priority))
+           (format "Title: %s" (get note :title))
+           (format "Pinned: %s" (if (get note :pinned) "yes" "no"))
+           (format "Created: %s" (get note :created-at))
+           (format "Updated: %s" (get note :updated-at))
+           ""
+           "Body:")
+     (wrap-text (get note :body) width))))
+
+(defn note-summary [note selected? width]
+  (let [marker (if selected? ">" " ")
+        pinned (if (get note :pinned) "*" " ")
+        status (if (note-done? note) "x" " ")
+        kind (truncate-text (get note :kind) 6)
+        title (get note :title)
+        raw (str/join ""
+                      [marker
+                       pinned
+                       status
+                       " ["
+                       (number->string (get note :priority))
+                       "] "
+                       (pad-right kind 6)
+                       " "
+                       title])]
+    (pad-right raw width)))
+
+(defn safe-cursor! [visible?]
+  (handle-exceptions exn (void)
+    (nc/curs_set (if visible? 1 0))))
+
+(defn draw-prompt-line! [prompt text cursor]
+  (call-with-values
+   (fn [] (nc/getmaxyx (nc/stdscr)))
+   (fn [rows cols]
+     (let [row (max 0 (- rows 1))
+           safe-cols (safe-width cols)
+           prompt-limit (max 0 (- safe-cols 2))
+           prompt-text (truncate-text prompt prompt-limit)
+           prompt-col (min safe-cols (+ (string-length prompt-text) 1))
+           available (max 0 (- safe-cols prompt-col))
+           start (max 0 (- cursor available))
+           end (min (string-length text) (+ start available))
+           visible (cond
+                     (<= available 0) ""
+                     :else (substring text start end))
+           line (str/join ""
+                          [prompt-text
+                           " "
+                           visible
+                           (repeat-char #\space
+                                        (max 0 (- available
+                                                  (string-length visible))))])]
+       (nc/mvaddstr row 0 (repeat-char #\space safe-cols))
+       (nc/mvaddstr row 0 line)
+       (nc/move row (min safe-cols (+ prompt-col (- cursor start))))
+       (nc/refresh)))))
+
+(defn prompt-line-loop! [prompt text cursor]
+  (draw-prompt-line! prompt (deref text) (deref cursor))
+  (let [key (key-code (nc/getch))]
+    (cond
+      (or (= key 27) (= key 3))
+      false
+      (or (= key 10) (= key 13) (= key nc/KEY_ENTER))
+      (deref text)
+      (or (= key nc/KEY_LEFT) (= key 2))
+      (begin
+        (when (> (deref cursor) 0)
+          (reset! cursor (- (deref cursor) 1)))
+        (prompt-line-loop! prompt text cursor))
+      (or (= key nc/KEY_RIGHT) (= key 6))
+      (begin
+        (when (< (deref cursor) (string-length (deref text)))
+          (reset! cursor (+ (deref cursor) 1)))
+        (prompt-line-loop! prompt text cursor))
+      (or (= key nc/KEY_HOME) (= key 1))
+      (begin
+        (reset! cursor 0)
+        (prompt-line-loop! prompt text cursor))
+      (or (= key nc/KEY_END) (= key 5))
+      (begin
+        (reset! cursor (string-length (deref text)))
+        (prompt-line-loop! prompt text cursor))
+      (or (= key nc/KEY_BACKSPACE) (= key 8) (= key 127))
+      (begin
+        (when (> (deref cursor) 0)
+          (let [current (deref cursor)
+                value (deref text)]
+            (reset! text
+                    (str/join ""
+                              [(substring value 0 (- current 1))
+                               (substring value current (string-length value))]))
+            (reset! cursor (- current 1))))
+        (prompt-line-loop! prompt text cursor))
+      (or (= key nc/KEY_DC) (= key 4))
+      (begin
+        (when (< (deref cursor) (string-length (deref text)))
+          (let [current (deref cursor)
+                value (deref text)]
+            (reset! text
+                    (str/join ""
+                              [(substring value 0 current)
+                               (substring value (+ current 1) (string-length value))]))))
+        (prompt-line-loop! prompt text cursor))
+      (and (>= key 32) (<= key 126))
+      (begin
+        (let [current (deref cursor)
+              value (deref text)
+              ch (integer->char key)]
+          (reset! text
+                  (str/join ""
+                            [(substring value 0 current)
+                             (str ch)
+                             (substring value current (string-length value))]))
+          (reset! cursor (+ current 1)))
+        (prompt-line-loop! prompt text cursor))
+      (= key nc/KEY_RESIZE)
+      (prompt-line-loop! prompt text cursor)
+      :else
+      (prompt-line-loop! prompt text cursor))))
+
+(defn prompt-line [prompt initial]
+  (let [text (atom (or initial ""))
+        cursor (atom (string-length (or initial "")))]
+    (safe-cursor! true)
+    (handle-exceptions exn
+        (begin
+          (safe-cursor! false)
+          (error "prompt failed" exn))
+      (let [result (prompt-line-loop! prompt text cursor)]
+        (safe-cursor! false)
+        result))))
+
+(defn prompt-note [title kind priority body]
+  (let [new-title (prompt-line (format "Title [%s]" title) title)
+        new-kind (cond
+                   (not new-title) false
+                   :else (prompt-line (format "Kind [%s]" kind) kind))
+        new-priority (cond
+                       (not new-kind) false
+                       :else (prompt-line (format "Priority [%s]" priority)
+                                          priority))
+        new-body (cond
+                   (not new-priority) false
+                   :else (prompt-line "Body" body))]
+    (cond
+      (not new-title) false
+      (not new-kind) false
+      (not new-priority) false
+      (not new-body) false
+      :else (list new-title new-kind new-priority new-body))))
+
+(defn confirm! [prompt]
+  (let [answer (prompt-line prompt "n")]
+    (cond
+      (not answer) false
+      :else
+      (let [clean (str/lower-case (str/trim answer))]
+        (or (string=? clean "y")
+            (string=? clean "yes"))))))
+
+(defn open-db [path]
+  (let [conn (db/open-database path)]
+    (db/set-busy-handler! conn (db/make-busy-timeout 1000))
+    conn))
+
+(defn ensure-schema! [conn]
+  (for-each
+   (fn [sql]
+     (db/execute conn sql))
+   sql-pragmas)
+  (db/execute conn sql-create-table)
+  (db/execute conn sql-create-index-kind)
+  (db/execute conn sql-create-index-status)
+  true)
+
+(def seed-records
+  (list {:title "Sketch the screen"
+         :kind "task"
+         :priority 2
+         :status open-status
+         :pinned 1
+         :body "Lay out the list pane, detail pane, and footer."}
+        {:title "Capture the first flow"
+         :kind "idea"
+         :priority 3
+         :status open-status
+         :pinned 0
+         :body "Try add, edit, search, and delete with SQLite behind it."}
+        {:title "Mark one note done"
+         :kind "note"
+         :priority 4
+         :status done-status
+         :pinned 0
+         :body "Seed a completed record so the sort order shows both states."}
+        {:title "Make priority keys useful"
+         :kind "task"
+         :priority 1
+         :status open-status
+         :pinned 1
+         :body "Press 1 through 5 to change the current note priority."}
+        {:title "Add a search prompt"
+         :kind "log"
+         :priority 2
+         :status open-status
+         :pinned 0
+         :body "Filter the note list by title, kind, or body text."}))
+
+
+(defn seed! [conn]
+  (cond
+    (not (zero? (db/first-result conn sql-count)))
+    false
+    :else
+    (db/with-transaction
+     conn
+     (fn []
+       (for-each
+        (fn [entry]
+          (db/update conn
+                     sql-insert-note
+                     (get entry :title)
+                     (get entry :kind)
+                     (get entry :priority)
+                     (get entry :status)
+                     (get entry :pinned)
+                     (get entry :body)))
+        seed-records)
+       true))))
+
+(defn fetch-notes [conn kind-filter search-text]
+  (let [needle (cond
+                 (blank? search-text) ""
+                 :else (str/join "" ["%" (str/lower-case (str/trim search-text)) "%"]))
+        kind (cond
+               (blank? kind-filter) "all"
+               :else kind-filter)]
+    (db/map-row row->entry
+                conn
+                sql-query-notes
+                kind
+                kind
+                needle
+                needle
+                needle
+                needle)))
+
+(defn insert-note! [conn title kind priority body]
+  (db/update conn
+             sql-insert-note
+             title
+             kind
+             priority
+             open-status
+             0
+             body))
+
+(defn update-note! [conn note title kind priority body]
+  (db/update conn
+             sql-update-note
+             title
+             kind
+             priority
+             body
+             (get note :id)))
+
+(defn toggle-status! [conn note]
+  (db/update conn sql-toggle-status (get note :id)))
+
+(defn toggle-pinned! [conn note]
+  (db/update conn sql-toggle-pinned (get note :id)))
+
+(defn set-priority! [conn note priority]
+  (db/update conn sql-set-priority priority (get note :id)))
+
+(defn delete-note! [conn note]
+  (db/update conn sql-delete-note (get note :id)))
+
+(defn draw-note-rows! [draw-line! notes selected-index row index body-top body-height split-col list-width]
+  (cond
+    (>= row body-height) nil
+    :else
+    (let [note (note-at notes index)
+          y (+ body-top row)]
+      (draw-line! y split-col "|")
+      (cond
+        note
+        (let [line (note-summary note (= index selected-index) list-width)]
+          (cond
+            (= index selected-index)
+            (begin
+              (nc/attron nc/A_REVERSE)
+              (draw-line! y 0 line)
+              (nc/attroff nc/A_REVERSE))
+            :else
+            (draw-line! y 0 line)))
+        :else
+        (draw-line! y 0
+                    (pad-right
+                     (cond
+                       (and (= row 0) (empty? notes)) "(no entries)"
+                       :else "")
+                     list-width)))
+      (draw-note-rows! draw-line!
+                       notes
+                       selected-index
+                       (+ row 1)
+                       (+ index 1)
+                       body-top
+                       body-height
+                       split-col
+                       list-width))))
+
+(defn draw-detail-rows! [draw-line! lines row body-top body-height detail-col detail-width]
+  (cond
+    (>= row body-height) nil
+    :else
+    (let [y (+ body-top row)]
+      (cond
+        (empty? lines)
+        (draw-line! y detail-col (pad-right "" detail-width))
+        :else
+        (draw-line! y detail-col (pad-right (first lines) detail-width)))
+      (draw-detail-rows! draw-line!
+                         (cond
+                           (empty? lines) '()
+                           :else (rest lines))
+                         (+ row 1)
+                         body-top
+                         body-height
+                         detail-col
+                         detail-width))))
+
+(defn event-loop! [render! handle-key! running?]
+  (render!)
+  (cond
+    (not (running?)) nil
+    :else
+    (let [key (key-code (nc/getch))]
+      (handle-key! key)
+      (render!)
+      (event-loop! render! handle-key! running?))))
+
+(defn main [args]
+  (let [current-db-path (cond
+                          (empty? args) db-path
+                          :else (first args))]
+    (cond
+      (> (length args) 1)
+      (error "Usage: cluck-tui-todos [database-file]")
+      :else
+      (let [conn (open-db current-db-path)]
+        (ensure-schema! conn)
+        (seed! conn)
+        (let [notes '()
+              selected-index 0
+              selected-id false
+              list-offset 0
+              viewport-size 1
+              kind-filter "all"
+              search-text ""
+              status-message "Ready"
+              running true
+              set-status! (fn [text]
+                            (set! status-message text))
+              selected-note (fn []
+                              (note-at notes selected-index))
+              ensure-scroll! (fn []
+                               (let [count (length notes)
+                                     limit (max 1 viewport-size)
+                                     max-offset (max 0 (- count limit))]
+                                 (set! list-offset (clamp list-offset 0 max-offset))
+                                 (set! list-offset
+                                       (cond
+                                         (>= selected-index (+ list-offset limit))
+                                         (clamp (- selected-index (- limit 1))
+                                                0
+                                                max-offset)
+                                         (< selected-index list-offset)
+                                         (clamp selected-index 0 max-offset)
+                                         :else list-offset))))
+              sync-selection! (fn []
+                                 (let [count (length notes)]
+                                   (cond
+                                     (zero? count)
+                                     (begin
+                                       (set! selected-index 0)
+                                       (set! selected-id false)
+                                       (set! list-offset 0))
+                                     :else
+                                     (let [found (and selected-id
+                                                      (note-index-by-id notes selected-id))]
+                                       (set! selected-index
+                                             (cond
+                                               found found
+                                               :else (clamp selected-index 0 (- count 1))))
+                                       (let [note (selected-note)]
+                                         (set! selected-id (and note (get note :id))))))
+                                   (ensure-scroll!)))
+              reload-notes! (fn [message]
+                              (set! notes (fetch-notes conn kind-filter search-text))
+                              (sync-selection!)
+                              (set-status! message))
+              reload-notes-default! (fn []
+                                      (reload-notes!
+                                       (format "Loaded %d entries" (length notes))))
+              draw-line! (fn [row col text]
+                           (nc/mvaddstr row col text))
+              draw-header! (fn [cols]
+                             (let [safe-cols (safe-width cols)
+                                   title (str/join "  " [app-name current-db-path])
+                                   open-count (count (filter note-open? notes))
+                                   done-count (count (filter note-done? notes))
+                                   search-label (cond
+                                                 (blank? search-text) "-"
+                                                 :else search-text)
+                                   summary (format "items %d  open %d  done %d  kind %s  search %s"
+                                                   (length notes)
+                                                   open-count
+                                                   done-count
+                                                   kind-filter
+                                                   search-label)
+                                   keys "j/k arrows  a add  e edit  space done  p pin  / search  c kind  d delete  r reload  1-5 priority  q quit"]
+                               (nc/attron nc/A_BOLD)
+                               (draw-line! 0 0 (truncate-text title safe-cols))
+                               (nc/attroff nc/A_BOLD)
+                               (draw-line! 1 0 (truncate-text summary safe-cols))
+                               (draw-line! 2 0 (truncate-text keys safe-cols))
+                               (draw-line! 3 0 (repeat-char #\- safe-cols))))
+              draw-list! (fn [cols rows]
+                           (let [safe-cols (safe-width cols)
+                                 body-top 4
+                                 body-height (max 1 (- rows 5))
+                                 split-col (clamp (quotient safe-cols 2) 24 46)
+                                 list-width (max 0 split-col)
+                                 detail-col (+ split-col 2)
+                                 detail-width (max 0 (- safe-cols detail-col))]
+                             (set! viewport-size body-height)
+                             (ensure-scroll!)
+                             (draw-note-rows! draw-line!
+                                              notes
+                                              selected-index
+                                              0
+                                              list-offset
+                                              body-top
+                                              body-height
+                                              split-col
+                                              list-width)
+                             (draw-detail-rows! draw-line!
+                                                (cond
+                                                  (selected-note)
+                                                  (note-detail-lines (selected-note)
+                                                                     detail-width)
+                                                  :else '())
+                                                0
+                                                body-top
+                                                body-height
+                                                detail-col
+                                                detail-width)))
+              render! (fn []
+                        (call-with-values
+                         (fn []
+                           (nc/getmaxyx (nc/stdscr)))
+                         (fn [rows cols]
+                           (nc/erase)
+                           (draw-header! cols)
+                           (draw-list! cols rows)
+                           (draw-line! (max 0 (- rows 1))
+                                       0
+                                       (truncate-text
+                                        (str/join "  |  "
+                                                  [status-message
+                                                   "Use / to search, c to cycle kinds, r to reload."])
+                                        (safe-width cols)))
+                           (nc/refresh))))
+              move-selection! (fn [delta]
+                                (let [count (length notes)]
+                                  (cond
+                                    (> count 0)
+                                    (begin
+                                      (set! selected-index
+                                            (clamp (+ selected-index delta)
+                                                   0
+                                                   (- count 1)))
+                                      (let [note (selected-note)]
+                                        (set! selected-id (and note (get note :id))))
+                                      (ensure-scroll!))
+                                    :else (void))))
+              select-first! (fn []
+                              (cond
+                                (> (length notes) 0)
+                                (begin
+                                  (set! selected-index 0)
+                                  (let [note (selected-note)]
+                                    (set! selected-id (and note (get note :id))))
+                                  (ensure-scroll!))
+                                :else (void)))
+              select-last! (fn []
+                             (let [count (length notes)]
+                               (cond
+                                 (> count 0)
+                                 (begin
+                                   (set! selected-index (- count 1))
+                                   (let [note (selected-note)]
+                                     (set! selected-id (and note (get note :id))))
+                                   (ensure-scroll!))
+                                 :else (void))))
+              add-note! (fn []
+                          (let [fields (prompt-note ""
+                                                    default-kind
+                                                    (number->string default-priority)
+                                                    "")]
+                            (cond
+                              (not fields) (set-status! "Add cancelled")
+                              :else
+                              (let [title (normalize-title (car fields)
+                                                           default-title)
+                                    kind (normalize-kind (cadr fields)
+                                                         default-kind)
+                                    priority (normalize-priority (caddr fields)
+                                                                 default-priority)
+                                    body (normalize-body (cadddr fields) "")]
+                                (insert-note! conn title kind priority body)
+                                (let [new-id (db/last-insert-rowid conn)]
+                                  (set! selected-id new-id)
+                                  (reload-notes! (format "Added #%d" new-id)))))))
+              edit-current! (fn []
+                              (let [note (selected-note)]
+                                (cond
+                                  (not note) (set-status! "No entry selected")
+                                  :else
+                                  (let [fields (prompt-note (get note :title)
+                                                            (get note :kind)
+                                                            (number->string (get note :priority))
+                                                            (get note :body))]
+                                    (cond
+                                      (not fields) (set-status! "Edit cancelled")
+                                      :else
+                                      (let [title (normalize-title (car fields)
+                                                                   (get note :title))
+                                            kind (normalize-kind (cadr fields)
+                                                                 (get note :kind))
+                                            priority (normalize-priority (caddr fields)
+                                                                         (get note :priority))
+                                            body (normalize-body (cadddr fields)
+                                                                 (get note :body))]
+                                        (update-note! conn note title kind priority body)
+                                        (reload-notes! (format "Updated #%d" (get note :id)))))))))
+              toggle-status-current! (fn []
+                                       (let [note (selected-note)]
+                                         (cond
+                                           (not note) (set-status! "No entry selected")
+                                           :else
+                                           (begin
+                                             (toggle-status! conn note)
+                                             (reload-notes!
+                                              (format "Marked #%d %s"
+                                                      (get note :id)
+                                                      (cond
+                                                        (note-done? note) "open"
+                                                        :else "done")))))))
+              toggle-pinned-current! (fn []
+                                        (let [note (selected-note)]
+                                          (cond
+                                            (not note) (set-status! "No entry selected")
+                                            :else
+                                            (begin
+                                              (toggle-pinned! conn note)
+                                              (reload-notes!
+                                               (format "%s #%d"
+                                                       (cond
+                                                         (get note :pinned) "Unpinned"
+                                                         :else "Pinned")
+                                                       (get note :id)))))))
+              set-priority-current! (fn [priority]
+                                       (let [note (selected-note)]
+                                         (cond
+                                           (not note) (set-status! "No entry selected")
+                                           :else
+                                           (begin
+                                             (set-priority! conn note priority)
+                                             (reload-notes!
+                                              (format "Priority #%d -> %d"
+                                                      (get note :id)
+                                                      priority))))))
+              delete-current! (fn []
+                                 (let [note (selected-note)]
+                                   (cond
+                                     (not note) (set-status! "No entry selected")
+                                     (confirm! (format "Delete #%d %s? [y/N]"
+                                                       (get note :id)
+                                                       (get note :title)))
+                                     (begin
+                                       (delete-note! conn note)
+                                       (reload-notes! (format "Deleted #%d" (get note :id))))
+                                     :else
+                                     (set-status! "Delete cancelled"))))
+              search-current! (fn []
+                                (let [query (prompt-line "Search" search-text)]
+                                  (cond
+                                    (not query) (set-status! "Search cancelled")
+                                    :else
+                                    (begin
+                                      (set! search-text (str/trim query))
+                                      (set! selected-id false)
+                                      (set! selected-index 0)
+                                      (set! list-offset 0)
+                                      (reload-notes!
+                                       (cond
+                                         (blank? search-text) "Search cleared"
+                                         :else (format "Search: %s" search-text)))))))
+              cycle-kind-filter! (fn []
+                                   (set! kind-filter (next-option kind-order kind-filter))
+                                   (set! selected-id false)
+                                   (set! selected-index 0)
+                                   (set! list-offset 0)
+                                   (reload-notes! (format "Filter kind: %s" kind-filter)))
+              handle-key! (fn [key]
+                            (cond
+                              (or (= key key-q)
+                                  (= key (char->integer #\Q)))
+                              (set! running false)
+                              (or (= key nc/KEY_UP)
+                                  (= key (char->integer #\k)))
+                              (move-selection! -1)
+                              (or (= key nc/KEY_DOWN)
+                                  (= key (char->integer #\j)))
+                              (move-selection! 1)
+                              (or (= key nc/KEY_HOME)
+                                  (= key key-g))
+                              (select-first!)
+                              (or (= key nc/KEY_END)
+                                  (= key key-G))
+                              (select-last!)
+                              (or (= key nc/KEY_NPAGE)
+                                  (= key nc/KEY_RIGHT))
+                              (move-selection! (max 1 viewport-size))
+                              (or (= key nc/KEY_PPAGE)
+                                  (= key nc/KEY_LEFT))
+                              (move-selection! (- (max 1 viewport-size)))
+                              (or (= key nc/KEY_ENTER)
+                                  (= key 10)
+                                  (= key 13)
+                                  (= key key-e))
+                              (edit-current!)
+                              (or (= key key-a)
+                                  (= key key-n))
+                              (add-note!)
+                              (or (= key key-space)
+                                  (= key key-d)
+                                  (= key key-x))
+                              (cond
+                                (= key key-space) (toggle-status-current!)
+                                :else (delete-current!))
+                              (= key key-p)
+                              (toggle-pinned-current!)
+                              (= key key-slash)
+                              (search-current!)
+                              (= key key-c)
+                              (cycle-kind-filter!)
+                              (= key key-r)
+                              (reload-notes! "Reloaded from disk")
+                              (= key key-1)
+                              (set-priority-current! 1)
+                              (= key key-2)
+                              (set-priority-current! 2)
+                              (= key key-3)
+                              (set-priority-current! 3)
+                              (= key key-4)
+                              (set-priority-current! 4)
+                              (= key key-5)
+                              (set-priority-current! 5)
+                              (= key nc/KEY_RESIZE)
+                              (void)
+                              :else
+                              (set-status! (format "Unhandled key: %s" (nc/keyname key)))))
+              running? (fn []
+                         running)]
+          (dynamic-wind
+            (fn []
+              (nc/initscr)
+              (nc/cbreak)
+              (nc/noecho)
+              (nc/keypad (nc/stdscr) true)
+              (safe-cursor! false)
+              (reload-notes-default!)
+              (set-status! (format "Opened %s" current-db-path)))
+            (fn []
+              (event-loop! render! handle-key! running?))
+            (fn []
+              (handle-exceptions exn (void)
+                (begin
+                  (safe-cursor! true)
+                  (nc/endwin)))
+              (db/finalize! conn))))))))

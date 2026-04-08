@@ -1,0 +1,97 @@
+;; Focused regression probe for the ncurses + SQLite example.
+
+(in-ns 'cluck.examples.tui-todos)
+
+(require [cluck.string :as str])
+(require [cluck.fs :as fs])
+
+(define (tui-test-pass label)
+  (println "ok" label)
+  true)
+
+(define (tui-test-fail label expected actual)
+  (error (str/join ""
+                   ["tui-todos test failed: "
+                    label
+                    " expected "
+                    (str expected)
+                    " got "
+                    (str actual)])))
+(define (tui-test-assert-true label value)
+  (if value
+      (tui-test-pass label)
+      (tui-test-fail label "truthy value" (pr-str value))))
+
+(define (tui-test-assert-str= label expected actual)
+  (if (string=? expected actual)
+      (tui-test-pass label)
+      (tui-test-fail label expected actual)))
+
+(define (tui-test-assert-num= label expected actual)
+  (if (= expected actual)
+      (tui-test-pass label)
+      (tui-test-fail label (str expected) (str actual))))
+
+(def tui-test-bare-string "plain string value")
+(def tui-test-docstring-value "This docstring should be ignored as a value" 42)
+
+(defn tui-test-docstring-fn
+  "Returns a constant."
+  []
+  7)
+
+(define tui-test-db-path "build/tui-todos-test.sqlite3")
+
+(tui-test-assert-str= "def bare string value"
+                      "plain string value"
+                      tui-test-bare-string)
+(tui-test-assert-num= "def with docstring value"
+                      42
+                      tui-test-docstring-value)
+(tui-test-assert-num= "defn with docstring"
+                      7
+                      (tui-test-docstring-fn))
+
+(tui-test-assert-num= "key code from char" 97 (key-code #\a))
+(tui-test-assert-num= "key code from integer" 10 (key-code 10))
+(tui-test-assert-true "blank nil" (blank? nil))
+(tui-test-assert-true "blank spaces" (blank? "   "))
+
+(let [note {:id 99
+            :title "Alpha"
+            :kind "task"
+            :priority 2
+            :status "open"
+            :pinned 1
+            :body "Body"
+            :created-at "2026-04-08 09:00:00"
+            :updated-at "2026-04-08 09:00:00"}]
+  (tui-test-assert-str= "summary output"
+                        ">*  [2] task   Alpha"
+                        (str/trim (note-summary note true 40))))
+
+(when (fs/exists? tui-test-db-path)
+  (fs/delete! tui-test-db-path))
+
+(let [conn (open-db tui-test-db-path)]
+  (handle-exceptions exn
+      (begin
+        (when (fs/exists? tui-test-db-path)
+          (fs/delete! tui-test-db-path))
+        (error "tui-todos sqlite smoke failed" exn))
+    (ensure-schema! conn)
+    (seed! conn)
+    (let [notes (fetch-notes conn "all" "")]
+      (tui-test-assert-num= "seed count" 5 (length notes))
+      (tui-test-assert-str= "seed first title"
+                            "Make priority keys useful"
+                            (get (first notes) :title))
+      (tui-test-assert-str= "seed last title"
+                            "Mark one note done"
+                            (get (last notes) :title))
+      (tui-test-assert-num= "seed task count" 2
+                            (length (fetch-notes conn "task" "")))
+      (tui-test-assert-num= "seed search count" 1
+                            (length (fetch-notes conn "all" "priority"))))
+    (when (fs/exists? tui-test-db-path)
+      (fs/delete! tui-test-db-path))))

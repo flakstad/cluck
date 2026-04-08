@@ -282,6 +282,33 @@ of `examples/cluck/draw/main.clk`, or evaluate
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.
 
+## Ncurses TUI Todos
+
+Another egg-backed example lives in:
+
+- [`examples/cluck/tui-todos/main.clk`](./examples/cluck/tui-todos/main.clk)
+- [`examples/cluck/tui-todos/run.scm`](./examples/cluck/tui-todos/run.scm)
+
+It uses `ncurses` and `sqlite3` to build a split-pane terminal app with list
+navigation, a detail pane, search, kind filtering, add/edit/delete actions,
+status toggles, priority changes, and on-disk persistence in
+`build/tui-todos.sqlite3`.
+
+Install the eggs once:
+
+```bash
+chicken-install ncurses sqlite3
+```
+
+Run it from source with:
+
+```bash
+csi -q -s examples/cluck/tui-todos/run.scm
+```
+
+The app seeds a few starter entries on first launch and keeps its data under
+`build/` so it stays local to the checkout.
+
 ## Smoke tests
 
 There is also a small smoke-test harness in:
@@ -295,6 +322,7 @@ It is loaded by:
 - [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
 - [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
 - [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
+- [`test/run-tui-todos.scm`](./test/run-tui-todos.scm)
 
 Run it with:
 
@@ -304,10 +332,12 @@ csi -q -s test/run-draw-toggle.scm
 csi -q -s test/run-draw-tools.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
+csi -q -s test/run-tui-todos.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
 The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL canvas cache path, and the running draw lifecycle path.
+The TUI Todos probe covers the SQLite-backed example helpers, seed data, and a few formatting helpers without opening the TUI.
 
 ## Weather CLI Example
 

@@ -3319,7 +3319,9 @@
       (list `(let* ,bindings ,@body))))
 
 (define (cluck-split-docstring parts)
-  (if (and (pair? parts) (string? (car parts)))
+  (if (and (pair? parts)
+           (pair? (cdr parts))
+           (string? (car parts)))
       (cons (car parts) (cdr parts))
       (cons #f parts)))
 
