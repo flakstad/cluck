@@ -128,6 +128,12 @@
          :mouse-x (sdl/mouse-x)
          :mouse-y (sdl/mouse-y)))
 
+(defn draw-bump-frame!
+  "Advance the frame counter in STATE."
+  [state]
+  (assoc state
+         :frame (+ (get state :frame) 1)))
+
 (defn draw-record-input!
   "Record the latest SDL event description in STATE."
   [state desc]
@@ -171,7 +177,7 @@
           (or (get *draw-state* :last-key) "")
           (or (get *draw-state* :last-event) "")))
 
-(defn draw-sync-title!
+(defn sync-window-title!
   "Update the SDL window title from the current state."
   []
   (if *draw-context*
@@ -179,24 +185,28 @@
                            (describe-state *draw-state*))
     nil))
 
+(defn draw-drain-input!
+  "Drain pending SDL input events into the current state."
+  [quit?]
+  (if (sdl/poll-event!)
+    (let [desc (sdl/event-description)
+          kind (draw-event-kind desc)]
+      (set! *draw-state* (draw-record-input! *draw-state* desc))
+      (if (eq? kind :quit)
+        (begin
+          (set! *draw-running?* false)
+          (draw-drain-input! true))
+        (draw-drain-input! quit?)))
+    (begin
+      (set! *draw-state* (draw-update-mouse! *draw-state*))
+      (set! *draw-state* (draw-bump-frame! *draw-state*))
+      (sync-window-title!)
+      quit?)))
+
 (defn draw-poll-input!
   "Drain pending SDL input events into the current state."
   []
-  (let [drain (fn [quit?]
-                (if (sdl/poll-event!)
-                  (let [desc (sdl/event-description)
-                        kind (draw-event-kind desc)]
-                    (set! *draw-state* (draw-record-input! *draw-state* desc))
-                    (if (eq? kind :quit)
-                      (begin
-                        (set! *draw-running?* false)
-                        (drain true))
-                      (drain quit?)))
-                  (begin
-                    (set! *draw-state* (draw-update-mouse! *draw-state*))
-                    (draw-sync-title!)
-                    quit?)))]
-    (drain false)))
+  (draw-drain-input! false))
 
 (defn describe-state
   "Return a short human-readable summary of STATE."
@@ -273,7 +283,7 @@
       (render-now!)
       (if *draw-running?*
         (begin
-          (thread-sleep! 0.016)
+          (delay-ms 16)
           (draw-loop))
         nil))
     nil))
@@ -300,7 +310,7 @@
             (set! *draw-state* state)
             (set! *draw-context* ctx)
             (set! *draw-running?* true)
-            (draw-sync-title!)
+            (sync-window-title!)
             ctx))))))
 
 (defn stop!
@@ -323,6 +333,7 @@
     (let [ctx (start!)]
       (if ctx
         (begin
+          (render-now!)
           (set! *draw-thread*
                 (make-thread
                   (lambda ()
