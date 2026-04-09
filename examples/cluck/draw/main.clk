@@ -145,8 +145,11 @@
    :canvas-dirty? false
    :debug-panel? false
    :history []
+   :elements []
+   :next-element-id 1
    :strokes []
    :active-stroke false
+   :active-box false
    :last-key ""
    :last-text ""
    :last-event ""
@@ -387,10 +390,12 @@
      :window-focused? (get state :window-focused?)
      :tool (draw-tool-mode state)
      :brush-size (get state :brush-size)
+     :elements (count (get state :elements))
      :strokes (count (get state :strokes))
      :active-points (if (get state :active-stroke)
                       (count (get (get state :active-stroke) :points))
                       0)
+     :active-box? (if (get state :active-box) true false)
      :history (count (get state :history))
      :canvas-dirty? (get state :canvas-dirty?)
      :last-key (or (get state :last-key) "")
@@ -404,8 +409,128 @@
   (let [path (draw-state-file-path)]
     (if (fs/file? path)
       (handle-exceptions _ false
-        (edn/read-string (io/slurp path)))
+        (draw-normalize-state
+          (edn/read-string (io/slurp path))))
       false)))
+
+(defn draw-element-kind
+  "Return the normalized kind keyword for ELEMENT."
+  [element]
+  (let [kind (get element :kind)]
+    (if (keyword? kind)
+      kind
+      :ink)))
+
+(defn draw-ink-element?
+  "Return true when ELEMENT is an ink stroke."
+  [element]
+  (draw-kind=? (draw-element-kind element) :ink))
+
+(defn draw-box-element?
+  "Return true when ELEMENT is a box."
+  [element]
+  (draw-kind=? (draw-element-kind element) :box))
+
+(defn draw-normalize-ink-element
+  "Return ELEMENT in canonical ink-element form."
+  [element]
+  {:id (get element :id)
+   :kind :ink
+   :points (vec (get element :points))
+   :color (get element :color)
+   :size (get element :size)})
+
+(defn draw-normalize-box-element
+  "Return ELEMENT in canonical box-element form."
+  [element]
+  {:id (get element :id)
+   :kind :box
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :width (or (get element :width) 0.0)
+   :height (or (get element :height) 0.0)
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
+(defn draw-normalize-element
+  "Return ELEMENT in canonical element form."
+  [element]
+  (if (draw-box-element? element)
+    (draw-normalize-box-element element)
+    (draw-normalize-ink-element element)))
+
+(defn draw-legacy-strokes->elements
+  "Upgrade legacy stroke maps into ink elements."
+  [strokes]
+  (let [next-id 1]
+    (reduce (lambda (result stroke)
+              (let [id (count result)]
+                (conj result
+                      {:id (+ id next-id)
+                       :kind :ink
+                       :points (vec (get stroke :points))
+                       :color (get stroke :color)
+                       :size (get stroke :size)})))
+            []
+            strokes)))
+
+(defn draw-elements->strokes
+  "Return the legacy strokes view derived from ELEMENTS."
+  [elements]
+  (reduce (lambda (strokes element)
+            (if (draw-ink-element? element)
+              (conj strokes
+                    {:points (vec (get element :points))
+                     :color (get element :color)
+                     :size (get element :size)})
+              strokes))
+          []
+          elements))
+
+(defn draw-max-element-id
+  "Return the highest element id present in ELEMENTS."
+  [elements]
+  (reduce (lambda (current element)
+            (let [id (or (get element :id) 0)]
+              (if (> id current)
+                id
+                current)))
+          0
+          elements))
+
+(defn draw-elements-with-ids
+  "Return ELEMENTS normalized and with stable ids assigned when missing."
+  [elements]
+  (vec
+    (map-indexed
+      (fn [index element]
+        (let [element (draw-normalize-element element)]
+          (if (get element :id)
+            element
+            (assoc element :id (+ index 1)))))
+      elements)))
+
+(defn draw-sync-elements
+  "Install ELEMENTS as the authoritative element set and derive legacy strokes."
+  [state elements]
+  (let [elements (draw-elements-with-ids elements)
+        strokes (vec (draw-elements->strokes elements))
+        next-id (+ 1 (draw-max-element-id elements))]
+    (assoc state
+           :elements elements
+           :strokes strokes
+           :next-element-id next-id)))
+
+(defn draw-normalize-state
+  "Upgrade STATE so element and stroke views are both populated."
+  [state]
+  (let [state (if (get state :elements)
+                state
+                (assoc state :elements (draw-legacy-strokes->elements (get state :strokes))))
+        state (if (contains? state :tool)
+                state
+                (assoc state :tool :ink))]
+    (draw-sync-elements state (get state :elements))))
 
 (defn draw-heartbeat-payload
   "Return the external heartbeat payload for STATE at PHASE."
@@ -583,7 +708,7 @@
 (defn draw-set-state-core!
   "Install STATE and refresh the cached canvas if needed."
   [state]
-  (let [next-state (assoc state :canvas-dirty? true)]
+  (let [next-state (assoc (draw-normalize-state state) :canvas-dirty? true)]
     (if (draw-supervised-mode?)
       (begin
         (set! *draw-state* next-state)
@@ -1488,6 +1613,14 @@
       (draw-render-stroke! renderer state stroke)
       nil)))
 
+(defn draw-commit-element!
+  "Render a single committed element into the cached canvas texture."
+  [state element]
+  (draw-with-canvas!
+    (lambda (renderer)
+      (draw-render-element! renderer state element)
+      nil)))
+
 (defn draw-rebuild-canvas!
   "Rebuild the cached canvas texture from STATE."
   [state]
@@ -1495,12 +1628,12 @@
     (lambda (renderer)
       (sdl/set-draw-color! renderer 0 0 0 0)
       (sdl/render-clear! renderer)
-      (reduce (lambda (acc stroke)
+      (reduce (lambda (acc element)
                 (begin
-                  (draw-render-stroke! renderer state stroke)
+                  (draw-render-element! renderer state element)
                   acc))
               nil
-              (get state :strokes))
+              (get state :elements))
       nil)))
 
 (defn draw-history-limit
@@ -1511,10 +1644,11 @@
 (defn draw-history-snapshot
   "Return a history snapshot for STATE."
   [state]
-  {:strokes (edn/read-string (pr-str (get state :strokes)))
+  {:elements (edn/read-string (pr-str (get state :elements)))
    :brush-size (get state :brush-size)
    :brush-color (edn/read-string (pr-str (get state :brush-color)))
    :background (edn/read-string (pr-str (get state :background)))
+   :tool (or (get state :tool) :ink)
    :eraser? (if (truthy? (get state :eraser?)) true false)})
 
 (defn draw-history-trim
@@ -1538,8 +1672,10 @@
   [state]
   (let [history (get state :history)]
     (if (empty? history)
-      (if (get state :active-stroke)
+      (if (or (get state :active-stroke)
+              (get state :active-box))
         (assoc state
+               :active-box false
                :active-stroke false
                :pointer-down? false)
         state)
@@ -1548,24 +1684,62 @@
             prior-history (if (> total 1)
                             (vec (take (- total 1) history))
                             [])]
-        (assoc state
-               :history prior-history
-               :strokes (vec (get snapshot :strokes))
-               :brush-size (get snapshot :brush-size)
-               :brush-color (get snapshot :brush-color)
-               :background (get snapshot :background)
-               :eraser? (if (get snapshot :eraser?) true false)
-               :active-stroke false
-               :pointer-down? false
-               :pointer-source false
-               :panning? false)))))
+        (draw-sync-elements
+          (assoc state
+                 :history prior-history
+                 :brush-size (get snapshot :brush-size)
+                 :brush-color (get snapshot :brush-color)
+                 :background (get snapshot :background)
+                 :tool (or (get snapshot :tool) :ink)
+                 :eraser? (if (get snapshot :eraser?) true false)
+                 :active-stroke false
+                 :active-box false
+                 :pointer-down? false
+                 :pointer-source false
+                 :panning? false)
+          (get snapshot :elements))))))
 
 (defn draw-tool-mode
   "Return the current tool mode label."
   [state]
   (if (get state :eraser?)
     "eraser"
-    "brush"))
+    (if (draw-kind=? (or (get state :tool) :ink) :box)
+      "box"
+      "ink")))
+
+(defn draw-next-element-id
+  "Return the next canvas element id for STATE."
+  [state]
+  (or (get state :next-element-id) 1))
+
+(defn draw-alloc-element-id
+  "Allocate the next element id and return [id next-state]."
+  [state]
+  (let [id (draw-next-element-id state)]
+    [id (assoc state :next-element-id (+ id 1))]))
+
+(defn draw-append-element
+  "Append ELEMENT to STATE and refresh the derived stroke view."
+  [state element]
+  (let [[id state] (if (get element :id)
+                     [(get element :id) state]
+                     (draw-alloc-element-id state))
+        element (assoc element :id id)]
+    (draw-sync-elements state
+                        (conj (get state :elements) element))))
+
+(defn draw-set-tool-core!
+  "Set the current primary tool without recording history."
+  [state tool]
+  (assoc state
+         :tool tool
+         :eraser? false))
+
+(defn draw-box-tool?
+  "Return true when STATE is currently in box mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :box))
 
 (defn draw-stroke-color
   "Return the active stroke color for STATE."
@@ -1602,6 +1776,7 @@
   [state]
   (let [state (draw-push-history! state)
         next-state (assoc state
+                          :tool :ink
                           :eraser? (not (get state :eraser?)))]
     (draw-log-entry! :eraser-toggle
                      {:eraser? (get next-state :eraser?)
@@ -1624,12 +1799,14 @@
   [state]
   (let [state (draw-push-history! state)]
     (draw-clear-preview!)
-    (let [next-state (assoc state
-                            :strokes []
-                            :active-stroke false
-                            :pointer-down? false
-                            :panning? false
-                            :canvas-dirty? true)]
+    (let [next-state (draw-sync-elements
+                       (assoc state
+                              :active-stroke false
+                              :active-box false
+                              :pointer-down? false
+                              :panning? false
+                              :canvas-dirty? true)
+                       [])]
       (draw-log-entry! :clear
                        {:state (draw-state-snapshot next-state)})
       next-state)))
@@ -1669,19 +1846,16 @@
   "Apply draw tool shortcuts for KEY to STATE."
   [state key]
   (let [key (str/lower-case (or key ""))]
-    (if (string=? key "c")
-      (draw-clear-strokes-core! state)
-      (if (string=? key "u")
-        (draw-undo-stroke-core! state)
-        (if (string=? key "e")
-          (draw-toggle-eraser-core! state)
-          (if (string=? key "1")
-            (draw-set-brush-size-core! state 2)
-              (if (string=? key "2")
-                (draw-set-brush-size-core! state 6)
-                (if (string=? key "3")
-                  (draw-set-brush-size-core! state 12)
-                  state))))))))
+    (cond
+      (string=? key "c") (draw-clear-strokes-core! state)
+      (string=? key "u") (draw-undo-stroke-core! state)
+      (string=? key "i") (draw-set-tool-core! state :ink)
+      (string=? key "b") (draw-set-tool-core! state :box)
+      (string=? key "e") (draw-toggle-eraser-core! state)
+      (string=? key "1") (draw-set-brush-size-core! state 2)
+      (string=? key "2") (draw-set-brush-size-core! state 6)
+      (string=? key "3") (draw-set-brush-size-core! state 12)
+      :else state)))
 
 (defn draw-handle-view-key!
   "Apply zoom and pan shortcuts for KEY to STATE."
@@ -1788,6 +1962,7 @@
                      :pointer-down? false
                      :pointer-source false
                      :active-stroke false
+                     :active-box false
                      :panning? false
                      :pen-pressure 1.0
                      :canvas-dirty? true)]
@@ -1833,6 +2008,50 @@
   {:points points
    :color color
    :size size})
+
+(defn draw-box-record
+  "Build a fresh active-box record."
+  [start end color size]
+  {:start start
+   :end end
+   :color color
+   :size size})
+
+(defn draw-box-rect
+  "Return a normalized box rectangle from START and END world points."
+  [start end]
+  (let [x0 (nth start 0)
+        y0 (nth start 1)
+        x1 (nth end 0)
+        y1 (nth end 1)]
+    {:x (if (< x0 x1) x0 x1)
+     :y (if (< y0 y1) y0 y1)
+     :width (math/abs (- x1 x0))
+     :height (math/abs (- y1 y0))}))
+
+(defn draw-box-min-size
+  "Return the minimum world-space box dimension worth committing."
+  []
+  1.0)
+
+(defn draw-box-element
+  "Build a committed box element from ACTIVE-BOX."
+  [active-box]
+  (let [rect (draw-box-rect (get active-box :start)
+                            (get active-box :end))]
+    {:kind :box
+     :x (get rect :x)
+     :y (get rect :y)
+     :width (get rect :width)
+     :height (get rect :height)
+     :color (get active-box :color)
+     :size (get active-box :size)}))
+
+(defn draw-box-visible?
+  "Return true when BOX is large enough to commit."
+  [box]
+  (and (>= (get box :width) (draw-box-min-size))
+       (>= (get box :height) (draw-box-min-size))))
 
 (defn draw-segment-stroke
   "Build a fresh temporary stroke for incremental canvas commits."
@@ -1944,10 +2163,11 @@
                            (assoc state
                                   :pointer-down? false
                                   :pointer-source false
-                                  :active-stroke false
-                                  :strokes (conj (get state :strokes) finished))
+                                  :active-stroke false)
                            point
-                           screen-point)]
+                           screen-point)
+              next-state (draw-append-element next-state
+                                              (assoc finished :kind :ink))]
           (draw-log-entry! :stroke-finish
                            {:point point
                             :points (count (get finished :points))
@@ -1970,6 +2190,71 @@
                :pointer-down? false
                :pointer-source false
                :active-stroke false)
+        point
+        screen-point))))
+
+(defn draw-start-box
+  "Start a box drag from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [state (draw-push-history! state)
+        active-box (draw-box-record point
+                                    point
+                                    (draw-stroke-color state)
+                                    (get state :brush-size))]
+    (draw-sync-pointer-state
+      (assoc state
+             :pointer-down? true
+             :pointer-source :box
+             :active-stroke false
+             :active-box active-box)
+      point
+      screen-point)))
+
+(defn draw-extend-box
+  "Update the active box drag to WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [active-box (get state :active-box)]
+    (if active-box
+      (draw-sync-pointer-state
+        (assoc state
+               :active-box (draw-box-record (get active-box :start)
+                                            point
+                                            (get active-box :color)
+                                            (get active-box :size)))
+        point
+        screen-point)
+      (draw-start-box state point screen-point))))
+
+(defn draw-finish-box
+  "Commit the active box drag when it is large enough."
+  [state point screen-point]
+  (let [active-box (get state :active-box)]
+    (if active-box
+      (let [box (draw-box-element
+                  (draw-box-record (get active-box :start)
+                                   point
+                                   (get active-box :color)
+                                   (get active-box :size)))
+            next-state (draw-sync-pointer-state
+                         (assoc state
+                                :pointer-down? false
+                                :pointer-source false
+                                :active-box false
+                                :canvas-dirty? true)
+                         point
+                         screen-point)
+            next-state (if (draw-box-visible? box)
+                         (draw-append-element next-state box)
+                         next-state)]
+        (draw-log-entry! :box-finish
+                         {:box (if (draw-box-visible? box) box false)
+                          :state (draw-state-snapshot next-state)})
+        next-state)
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-box false)
         point
         screen-point))))
 
@@ -2198,7 +2483,9 @@
             (draw-kind=? kind :mouse-down)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (draw-start-stroke state point screen-point :mouse))
+              (if (draw-box-tool? state)
+                (draw-start-box state point screen-point)
+                (draw-start-stroke state point screen-point :mouse)))
 
             (and (draw-kind=? kind :mouse-up)
                  (get state :panning?))
@@ -2207,7 +2494,9 @@
             (draw-kind=? kind :mouse-up)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (draw-finish-stroke state point screen-point))
+              (if (get state :active-box)
+                (draw-finish-box state point screen-point)
+                (draw-finish-stroke state point screen-point)))
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2215,7 +2504,9 @@
             (get state :pointer-down?)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (draw-extend-stroke state point screen-point))
+              (if (get state :active-box)
+                (draw-extend-box state point screen-point)
+                (draw-extend-stroke state point screen-point)))
 
             :else
             (let [point (draw-input-event-point state event)
@@ -2237,7 +2528,9 @@
           (draw-kind=? kind :pen-down)
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (draw-start-stroke state point screen-point :pen))
+            (if (draw-box-tool? state)
+              (draw-start-box state point screen-point)
+              (draw-start-stroke state point screen-point :pen)))
 
           (and (or (draw-kind=? kind :pen-up)
                    (draw-kind=? kind :pen-button-up))
@@ -2248,7 +2541,9 @@
               (draw-kind=? kind :pen-button-up))
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (draw-finish-stroke state point screen-point))
+            (if (get state :active-box)
+              (draw-finish-box state point screen-point)
+              (draw-finish-stroke state point screen-point)))
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2256,7 +2551,9 @@
           (get state :pointer-down?)
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (draw-extend-stroke state point screen-point))
+            (if (get state :active-box)
+              (draw-extend-box state point screen-point)
+              (draw-extend-stroke state point screen-point)))
 
           :else
           (let [point (draw-input-event-point state event)
@@ -2406,7 +2703,7 @@
   "Return a short textual summary of the current input state."
   []
   (let [state (or (current-state) (default-state))]
-    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
             (or (get state :mouse-x) 0.0)
             (or (get state :mouse-y) 0.0)
             (draw-view-x state)
@@ -2415,6 +2712,7 @@
             (or (get state :last-key) "")
             (or (get state :last-text) "")
             (or (get state :last-event) "")
+            (count (get state :elements))
             (count (get state :strokes))
             (count (get state :history))
             (draw-tool-mode state)
@@ -2506,7 +2804,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -2518,6 +2816,7 @@
           (draw-view-zoom state)
           (or (get state :last-key) "")
           (or (get state :last-text) "")
+          (count (get state :elements))
           (count (get state :strokes))
           (count (get state :history))
           (draw-tool-mode state)
@@ -2690,6 +2989,49 @@
             (draw-render-stroke-point! renderer state (first points) size)
             (draw-render-stroke-segments! renderer state points size)))))))
 
+(defn draw-render-box-edge!
+  "Render one edge of a box from A to B."
+  [renderer state color size a b]
+  (draw-with-stroke-color color
+    (lambda ()
+      (draw-render-stroke-segment! renderer
+                                   state
+                                   [(nth a 0) (nth a 1) 1.0]
+                                   [(nth b 0) (nth b 1) 1.0]
+                                   size))))
+
+(defn draw-render-box!
+  "Render a box element."
+  [renderer state box]
+  (let [x (get box :x)
+        y (get box :y)
+        width (get box :width)
+        height (get box :height)
+        color (get box :color)
+        size (get box :size)
+        a [x y]
+        b [(+ x width) y]
+        c [(+ x width) (+ y height)]
+        d [x (+ y height)]]
+    (draw-render-box-edge! renderer state color size a b)
+    (draw-render-box-edge! renderer state color size b c)
+    (draw-render-box-edge! renderer state color size c d)
+    (draw-render-box-edge! renderer state color size d a)))
+
+(defn draw-render-element!
+  "Render a committed canvas element."
+  [renderer state element]
+  (if (draw-box-element? element)
+    (draw-render-box! renderer state element)
+    (draw-render-stroke! renderer state element)))
+
+(defn draw-render-active-box!
+  "Render the current active box preview."
+  [renderer state active-box]
+  (draw-render-box! renderer
+                    state
+                    (draw-box-element active-box)))
+
 (defn draw-preview-stroke!
   "Render STROKE into the preview texture."
   [state stroke]
@@ -2780,20 +3122,24 @@
         (draw-reset-preview-sync!)
         false))))
 
-(defn draw-render-strokes!
-  "Render all finished strokes and the active stroke."
+(defn draw-render-elements!
+  "Render all committed elements plus active previews."
   [ctx state]
   (let [renderer (get ctx :renderer)
-        strokes (get state :strokes)
-        active (get state :active-stroke)]
-    (reduce (fn [acc stroke]
+        elements (get state :elements)
+        active-stroke (get state :active-stroke)
+        active-box (get state :active-box)]
+    (reduce (fn [acc element]
               (begin
-                (draw-render-stroke! renderer state stroke)
+                (draw-render-element! renderer state element)
                 acc))
             nil
-            strokes)
-    (if active
-      (draw-render-stroke! renderer state active)
+            elements)
+    (if active-stroke
+      (draw-render-stroke! renderer state active-stroke)
+      nil)
+    (if active-box
+      (draw-render-active-box! renderer state active-box)
       nil)))
 
 (defn draw-render-canvas!
@@ -2802,7 +3148,8 @@
   (let [renderer (get ctx :renderer)
         canvas (if ctx (get ctx :canvas) nil)
         preview (if ctx (get ctx :preview) nil)
-        active (get state :active-stroke)]
+        active (get state :active-stroke)
+        active-box (get state :active-box)]
     (if (draw-canvas-ready?)
       (begin
         (sdl/render-texture! renderer canvas)
@@ -2811,10 +3158,13 @@
           (if active
             (draw-render-stroke! renderer state active)
             nil))
+        (if active-box
+          (draw-render-active-box! renderer state active-box)
+          nil)
         (if (and (not active) (draw-preview-ready?))
           nil
           nil))
-      (draw-render-strokes! ctx state))))
+      (draw-render-elements! ctx state))))
 
 (defn draw-render-debug-panel!
   "Render the on-demand debug panel."
@@ -2832,19 +3182,21 @@
                                     (draw-view-y state)
                                     (draw-view-zoom state)))
     (sdl/render-debug-text! renderer 12 60
-                            (format "pointer: %s active: %d"
+                            (format "pointer: %s ink: %d box: %s"
                                     (if (get state :pointer-down?) "down" "up")
                                     (if (get state :active-stroke)
                                       (count (get (get state :active-stroke) :points))
-                                      0)))
+                                      0)
+                                    (if (get state :active-box) "active" "idle")))
     (sdl/render-debug-text! renderer 12 76
                             (format "pan: %s"
                                     (if (get state :panning?) "on" "off")))
     (sdl/render-debug-text! renderer 12 92
-                            (format "tool: %s size: %d color: %s"
+                            (format "tool: %s size: %d color: %s elements: %d"
                                     (draw-tool-mode state)
                                     (get state :brush-size)
-                                    (pr-str (draw-stroke-color state))))
+                                    (pr-str (draw-stroke-color state))
+                                    (count (get state :elements))))
     (sdl/render-debug-text! renderer 12 108
                             (format "undo history: %d"
                                     (count (get state :history))))
@@ -2887,6 +3239,7 @@
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
    "  drag: draw"
+   "  i: ink   b: box"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"

@@ -12,10 +12,12 @@ What is in place:
 - a supervised child-process dev loop by default, so the SDL window can be restarted independently of the REPL
 - live mouse, pen, and keyboard-event overlays in the window
 - freehand brush strokes while dragging, with a soft pressure-sensitive brush
+- mixed canvas elements, so ink and objects can coexist on the same canvas
+- a first structured object tool: `b` drag-to-create boxes
 - an on-demand debug panel toggled with `d`
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
-- tool shortcuts for `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
+- tool shortcuts for `i` ink, `b` box, `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default
 - viewport shortcuts for the infinite canvas:
@@ -27,7 +29,8 @@ What is in place:
 - REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
-- advanced drawing tools
+- selection and object editing
+- more structured object tools like arrows, text, and frames
 - input handling beyond quit events
 - textures, byte buffers, or asset loading
 
@@ -44,7 +47,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default
 5. if the draw child crashes or stalls, call `(restart-dev!)` to restart it without killing the REPL
-6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, and drag with the mouse or pen to paint strokes; press `d` to toggle the debug panel
+6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, and press `b` to switch into drag-to-create box mode; press `d` to toggle the debug panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
@@ -74,6 +77,8 @@ starts a fresh one from the current REPL state.
 
 While the window is live:
 - press `d` to toggle the debug panel
+- press `i` for the ink tool
+- press `b` for the box tool, then drag to create a rectangle object
 - press `u` to undo the last action, including clear or brush changes
 - press `c` to clear the canvas, which is undoable
 - press `e` to toggle eraser mode

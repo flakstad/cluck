@@ -30,16 +30,32 @@
       (draw-save-load-fail label expected actual)))
 
 (let [path (fs/path (fs/temp-dir) "cluck-draw-save-load.edn")
-      original (assoc (default-state)
-                      :title "Saved Draw"
-                      :brush-size 7
-                      :strokes [{:color [1 2 3]
-                                 :size 4
-                                 :points [[10 10 1.0] [20 20 0.5]]}]
-                      :history [(assoc (default-state)
-                                       :title "Older"
-                                       :brush-size 3)]
-                      :last-event "save test")]
+      original (draw-sync-elements
+                 (assoc (default-state)
+                        :title "Saved Draw"
+                        :brush-size 7
+                        :tool :box
+                        :history [(draw-history-snapshot
+                                    (draw-sync-elements
+                                      (assoc (default-state)
+                                             :title "Older"
+                                             :brush-size 3)
+                                      [{:kind :ink
+                                        :points [[1 1 1.0] [2 2 1.0]]
+                                        :color [9 9 9]
+                                        :size 2}]))]
+                        :last-event "save test")
+                 [{:kind :ink
+                   :points [[10 10 1.0] [20 20 0.5]]
+                   :color [1 2 3]
+                   :size 4}
+                  {:kind :box
+                   :x 30.0
+                   :y 40.0
+                   :width 50.0
+                   :height 60.0
+                   :color [4 5 6]
+                   :size 3}])]
   (dynamic-wind
     (lambda ()
       (set-state! original)
@@ -57,6 +73,12 @@
       (draw-save-load-assert-num= "load restored brush size"
                                   7
                                   (get (current-state) :brush-size))
+      (draw-save-load-assert-str= "load restored tool"
+                                  ":box"
+                                  (pr-str (get (current-state) :tool)))
+      (draw-save-load-assert-num= "load restored element count"
+                                  2
+                                  (count (get (current-state) :elements)))
       (draw-save-load-assert-num= "load restored stroke count"
                                   1
                                   (count (get (current-state) :strokes)))

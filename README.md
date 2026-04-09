@@ -240,8 +240,8 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 ## SDL3 drawing scaffold
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
- tracks mouse, pen, and recent keyboard input, and supports a basic sketchpad
- workflow with a soft pressure-sensitive brush:
+ tracks mouse, pen, and recent keyboard input, and supports a mixed ink/object
+ canvas with a soft pressure-sensitive brush and a first box tool:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
@@ -268,10 +268,13 @@ like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
 while the window stays open. Use the mouse wheel to zoom around the cursor,
 hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
-pointer, and drag with the mouse or pen to paint
-strokes. Press `d` to toggle the debug panel on demand. The current tool
+pointer, drag with the mouse or pen to paint
+ink, and switch to the box tool when you want a structured object. Press `d`
+to toggle the debug panel on demand. The current tool
 shortcuts are:
 
+- `i` ink tool
+- `b` box tool
 - `u` undo the last action
 - `c` clear the canvas
 - `e` eraser
@@ -290,6 +293,10 @@ shortcuts are:
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
+
+The current structured-object milestone is intentionally small: ink and box
+elements now coexist as first-class canvas elements, while selection and the
+rest of the object toolset are still the next steps.
 
 In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. The REPL
 starts with no window and does not load SDL automatically. When you want the
