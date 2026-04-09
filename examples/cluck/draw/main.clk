@@ -1124,6 +1124,9 @@
                      (assoc state
                             :window-focused? false
                             :canvas-dirty? true))]
+    (if *draw-context*
+      (sdl/stop-text-input! (get *draw-context* :window))
+      nil)
     (draw-log-entry! :focus-lost {:state (draw-state-snapshot next-state)})
     next-state))
 
@@ -1134,6 +1137,9 @@
                           :window-focused? true
                           :canvas-dirty? true
                           :pen-pressure 1.0)]
+    (if *draw-context*
+      (sdl/start-text-input! (get *draw-context* :window))
+      nil)
     (draw-log-entry! :focus-gained {:state (draw-state-snapshot next-state)})
     next-state))
 
@@ -1161,6 +1167,46 @@
                       (get stroke :color)
                       (get stroke :size)))
 
+(defn draw-point-screen-distance
+  "Return the screen-space distance between A and B."
+  [state a b]
+  (let [screen-a (draw-world-point->screen-point state a)
+        screen-b (draw-world-point->screen-point state b)
+        dx (- (nth screen-b 0) (nth screen-a 0))
+        dy (- (nth screen-b 1) (nth screen-a 1))]
+    (math/sqrt (+ (* dx dx) (* dy dy)))))
+
+(defn draw-min-point-spacing
+  "Return the minimum screen-space spacing between active stroke samples."
+  [state point size]
+  (let [stamp (draw-point-screen-size state point size)
+        spacing (/ stamp 3.0)]
+    (if (> spacing 1.0)
+      spacing
+      1.0)))
+
+(defn draw-replace-last
+  "Return ITEMS with the final element replaced by VALUE."
+  [items value]
+  (let [total (count items)]
+    (if (<= total 1)
+      [value]
+      (conj (vec (take (- total 1) items)) value))))
+
+(defn draw-append-stroke-point
+  "Append or replace POINT on STROKE, keeping the active sample list compact."
+  [state stroke point]
+  (let [points (get stroke :points)
+        size (get stroke :size)]
+    (if (empty? points)
+      [point]
+      (let [previous (last points)
+            distance (draw-point-screen-distance state previous point)
+            spacing (draw-min-point-spacing state point size)]
+        (if (>= distance spacing)
+          (conj points point)
+          (draw-replace-last points point))))))
+
 (defn draw-start-stroke
   "Start a new stroke from DESC."
   [state desc]
@@ -1184,9 +1230,7 @@
   (let [point (draw-event-point state desc)
         stroke (get state :active-stroke)]
     (if stroke
-        (let [points (get stroke :points)
-            previous (last points)
-            next-points (conj points point)
+        (let [next-points (draw-append-stroke-point state stroke point)
             next-stroke (draw-stroke-record next-points
                                             (get stroke :color)
                                             (get stroke :size))
@@ -1311,6 +1355,16 @@
      :wheel-mouse-x (sdl/event-wheel-mouse-x)
      :wheel-mouse-y (sdl/event-wheel-mouse-y)}))
 
+(defn draw-synthetic-pen-mouse-event?
+  "Return true when EVENT is SDL's synthetic mouse mirror of pen input."
+  [event]
+  (let [kind (get event :kind)
+        desc (or (get event :desc) "")]
+    (and (or (draw-kind=? kind :mouse-motion)
+             (draw-kind=? kind :mouse-down)
+             (draw-kind=? kind :mouse-up))
+         (str/includes? desc "which=4294967294"))))
+
 (defn draw-loggable-event?
   "Return true when EVENT is useful in the persistent draw log."
   [event]
@@ -1335,19 +1389,21 @@
 (defn draw-apply-and-log-input-event!
   "Apply EVENT to STATE and emit a diagnostic log entry when relevant."
   [state event source]
-  (let [next-state (draw-apply-input-event! state event)]
-    (if (draw-loggable-event? event)
-      (draw-log-entry! :input
-                       {:source source
-                        :kind (get event :kind)
-                        :desc (or (get event :desc) "")
-                        :key (or (get event :key) "")
-                        :text (or (get event :text) "")
-                        :pressure (or (get event :pressure) 1.0)
-                        :shift? (get event :shift?)
-                        :state (draw-state-snapshot next-state)})
-      nil)
-    next-state))
+  (if (draw-synthetic-pen-mouse-event? event)
+    state
+    (let [next-state (draw-apply-input-event! state event)]
+      (if (draw-loggable-event? event)
+        (draw-log-entry! :input
+                         {:source source
+                          :kind (get event :kind)
+                          :desc (or (get event :desc) "")
+                          :key (or (get event :key) "")
+                          :text (or (get event :text) "")
+                          :pressure (or (get event :pressure) 1.0)
+                          :shift? (get event :shift?)
+                          :state (draw-state-snapshot next-state)})
+        nil)
+      next-state)))
 
 (defn draw-handle-wheel-event!
   "Apply mouse-wheel zoom from EVENT to STATE."
@@ -1996,7 +2052,9 @@
     (lambda ()
       (draw-poll-input!)
       (if *draw-state*
-        (draw-render-current!)
+        (if (get *draw-state* :window-focused?)
+          (draw-render-current!)
+          *draw-state*)
         *draw-state*))))
 
 (defn default-render-frame

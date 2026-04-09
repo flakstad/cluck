@@ -134,6 +134,29 @@
                             3
                             (count (get resized-stroke :points))))
 
+  (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
+                                   [255 255 255]
+                                   6)
+        points (draw-append-stroke-point (default-state)
+                                         stroke
+                                         [11.0 10.0 1.0])]
+    (draw-tools-assert-num= "close active sample replaces last point"
+                            1
+                            (count points))
+    (draw-tools-assert-str= "close active sample keeps latest point"
+                            "[11.0 10.0 1.0]"
+                            (pr-str (first points))))
+
+  (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
+                                   [255 255 255]
+                                   6)
+        points (draw-append-stroke-point (default-state)
+                                         stroke
+                                         [20.0 10.0 1.0])]
+    (draw-tools-assert-num= "distant active sample appends"
+                            2
+                            (count points)))
+
   (let [original draw-render-stroke-point!
         calls []]
     (set! draw-render-stroke-point!
