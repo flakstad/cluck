@@ -51,9 +51,22 @@
                          (pr-str (draw-event-point state
                                                   "SDL_EVENT_MOUSE_MOTION x=14.0 y=24.0"))))
 
-(let [zoomed (draw-handle-view-key! (default-state) "]")]
-  (draw-view-assert-true "zoom in changes zoom"
-                         (> (draw-view-zoom zoomed) 1.0)))
+(let [state (assoc (default-state)
+                   :ctrl-down? true
+                   :mouse-screen-x 100.0
+                   :mouse-screen-y 50.0)
+      anchor (draw-screen-point->world-point state [100.0 50.0 1.0])
+      zoomed (draw-handle-view-key! state "=")]
+  (draw-view-assert-true "ctrl plus changes zoom"
+                         (> (draw-view-zoom zoomed) 1.0))
+  (draw-view-assert-str= "ctrl plus keeps pointer anchored"
+                         "[100 50 1.0]"
+                         (pr-str (draw-world-point->screen-point zoomed anchor))))
+
+(let [plain (draw-handle-view-key! (default-state) "=")]
+  (draw-view-assert-num= "plain equals does not zoom without ctrl"
+                         1.0
+                         (draw-view-zoom plain)))
 
 (let [panned (draw-handle-view-key! (assoc (default-state)
                                            :view-x 10.0
@@ -87,3 +100,21 @@
   (draw-view-assert-num= "pan drag updates view-y"
                          18.0
                          (draw-view-y panning)))
+
+(let [started (draw-start-stroke (assoc (default-state)
+                                        :view-x 100.0
+                                        :view-y 200.0
+                                        :zoom 2.0)
+                                 [150.0 240.0 1.0]
+                                 [100.0 80.0]
+                                 :mouse)
+      finished (draw-finish-stroke started
+                                   [170.0 260.0 1.0]
+                                   [140.0 120.0])
+      stroke (first (get finished :strokes))]
+  (draw-view-assert-str= "zoomed stroke keeps world start point"
+                         "[150.0 240.0 1.0]"
+                         (pr-str (first (get stroke :points))))
+  (draw-view-assert-str= "zoomed stroke keeps world end point"
+                         "[170.0 260.0 1.0]"
+                         (pr-str (last (get stroke :points)))))

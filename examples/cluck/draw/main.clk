@@ -133,11 +133,15 @@
    :frame 0
    :mouse-x 0
    :mouse-y 0
+   :mouse-screen-x 0.0
+   :mouse-screen-y 0.0
    :pointer-down? false
    :pointer-source false
    :panning? false
    :pan-last-x 0
    :pan-last-y 0
+   :space-down? false
+   :ctrl-down? false
    :canvas-dirty? false
    :debug-panel? false
    :history []
@@ -370,12 +374,16 @@
     {:frame (get state :frame)
      :mouse-x (or (get state :mouse-x) 0.0)
      :mouse-y (or (get state :mouse-y) 0.0)
+     :mouse-screen-x (or (get state :mouse-screen-x) 0.0)
+     :mouse-screen-y (or (get state :mouse-screen-y) 0.0)
      :view-x (draw-view-x state)
      :view-y (draw-view-y state)
      :zoom (draw-view-zoom state)
      :pressure (or (get state :pen-pressure) 1.0)
      :pointer-down? (get state :pointer-down?)
      :panning? (get state :panning?)
+     :space-down? (get state :space-down?)
+     :ctrl-down? (get state :ctrl-down?)
      :window-focused? (get state :window-focused?)
      :tool (draw-tool-mode state)
      :brush-size (get state :brush-size)
@@ -600,9 +608,9 @@
   "Return the current zoom factor from STATE."
   [state]
   (let [zoom (or (get state :zoom) 1.0)]
-    (if (> zoom 0.1)
+    (if (> zoom (draw-min-zoom))
       zoom
-      0.1)))
+      (draw-min-zoom))))
 
 (defn draw-view-x
   "Return the current viewport X offset from STATE."
@@ -622,6 +630,21 @@
     (> value high) high
     :else value))
 
+(defn draw-world-bound
+  "Return the viewport world bound used for navigation clamping."
+  []
+  1000000.0)
+
+(defn draw-min-zoom
+  "Return the minimum supported zoom level."
+  []
+  0.01)
+
+(defn draw-max-zoom
+  "Return the maximum supported zoom level."
+  []
+  64.0)
+
 (defn draw-zoom-factor
   "Return the zoom multiplier used by keyboard shortcuts."
   []
@@ -631,6 +654,29 @@
   "Return the keyboard pan step in screen pixels."
   []
   64)
+
+(defn draw-clamp-view-coordinate
+  "Clamp VALUE into the supported world navigation range."
+  [value]
+  (let [limit (draw-world-bound)]
+    (draw-clamp value (- limit) limit)))
+
+(defn draw-sync-pointer-state
+  "Write WORLD-POINT and SCREEN-POINT back into STATE."
+  [state world-point screen-point]
+  (assoc state
+         :mouse-x (nth world-point 0)
+         :mouse-y (nth world-point 1)
+         :mouse-screen-x (nth screen-point 0)
+         :mouse-screen-y (nth screen-point 1)))
+
+(defn draw-pointer-screen-anchor
+  "Return the current screen-space pointer anchor for keyboard zoom."
+  [state]
+  [(or (get state :mouse-screen-x)
+       (/ (or (get state :width) 0) 2.0))
+   (or (get state :mouse-screen-y)
+       (/ (or (get state :height) 0) 2.0))])
 
 (defn draw-screen-point->world-point
   "Convert a screen POINT into world coordinates using STATE's viewport."
@@ -939,19 +985,31 @@
 (defn draw-zoom-at-core!
   "Zoom around SCREEN-X and SCREEN-Y using DELTA."
   [state delta screen-x screen-y]
-  (let [delta (if (> delta 0) delta delta)
+  (let [screen-point [screen-x screen-y 1.0]
+        world-point (draw-screen-point->world-point state screen-point)
         factor (draw-wheel-zoom-factor delta)
-        zoom (draw-view-zoom state)
-        world-x (+ (draw-view-x state)
-                   (/ screen-x zoom))
-        world-y (+ (draw-view-y state)
-                   (/ screen-y zoom))
-        next-zoom (draw-clamp (* zoom factor) 0.1 16.0)]
-    (assoc state
-           :zoom next-zoom
-           :view-x (- world-x (/ screen-x next-zoom))
-           :view-y (- world-y (/ screen-y next-zoom))
-           :canvas-dirty? true)))
+        next-zoom (draw-clamp (* (draw-view-zoom state) factor)
+                              (draw-min-zoom)
+                              (draw-max-zoom))
+        next-state (assoc state
+                          :zoom next-zoom
+                          :view-x (draw-clamp-view-coordinate
+                                    (- (nth world-point 0)
+                                       (/ screen-x next-zoom)))
+                          :view-y (draw-clamp-view-coordinate
+                                    (- (nth world-point 1)
+                                       (/ screen-y next-zoom)))
+                          :canvas-dirty? true)]
+    (draw-sync-pointer-state next-state world-point screen-point)))
+
+(defn draw-zoom-at-pointer-core!
+  "Zoom around the currently tracked pointer anchor."
+  [state delta]
+  (let [anchor (draw-pointer-screen-anchor state)]
+    (draw-zoom-at-core! state
+                        delta
+                        (nth anchor 0)
+                        (nth anchor 1))))
 
 (defn draw-start-pan-core!
   "Begin a viewport drag at SCREEN-POINT."
@@ -960,16 +1018,17 @@
                                                     [(nth screen-point 0)
                                                      (nth screen-point 1)
                                                      1.0])]
-    (assoc state
-           :panning? true
-           :pan-last-x (nth screen-point 0)
-           :pan-last-y (nth screen-point 1)
-           :pointer-down? false
-           :pointer-source false
-           :active-stroke false
-           :mouse-x (nth world-point 0)
-           :mouse-y (nth world-point 1)
-           :pen-pressure 1.0)))
+    (draw-sync-pointer-state
+      (assoc state
+             :panning? true
+             :pan-last-x (nth screen-point 0)
+             :pan-last-y (nth screen-point 1)
+             :pointer-down? false
+             :pointer-source false
+             :active-stroke false
+             :pen-pressure 1.0)
+      world-point
+      screen-point)))
 
 (defn draw-pan-core!
   "Update the viewport pan using SCREEN-POINT."
@@ -980,22 +1039,23 @@
           last-x (or (get state :pan-last-x) screen-x)
           last-y (or (get state :pan-last-y) screen-y)
           zoom (draw-view-zoom state)
-          world-point (draw-screen-point->world-point state
+          dx (- screen-x last-x)
+          dy (- screen-y last-y)
+          next-state (assoc state
+                            :view-x (draw-clamp-view-coordinate
+                                      (- (draw-view-x state)
+                                         (/ dx zoom)))
+                            :view-y (draw-clamp-view-coordinate
+                                      (- (draw-view-y state)
+                                         (/ dy zoom)))
+                            :pan-last-x screen-x
+                            :pan-last-y screen-y
+                            :canvas-dirty? true)
+          world-point (draw-screen-point->world-point next-state
                                                       [(nth screen-point 0)
                                                        (nth screen-point 1)
-                                                       1.0])
-          dx (- screen-x last-x)
-          dy (- screen-y last-y)]
-      (assoc state
-             :view-x (- (draw-view-x state)
-                        (/ dx zoom))
-             :view-y (- (draw-view-y state)
-                        (/ dy zoom))
-             :mouse-x (nth world-point 0)
-             :mouse-y (nth world-point 1)
-             :pan-last-x screen-x
-             :pan-last-y screen-y
-             :canvas-dirty? true))
+                                                       1.0])]
+      (draw-sync-pointer-state next-state world-point screen-point))
     state))
 
 (defn draw-finish-pan-core!
@@ -1030,6 +1090,60 @@
         (str/includes? key "key=d")
         (str/includes? key "sdlk_d")
         (str/includes? key "scancode_d"))))
+
+(defn draw-space-key?
+  "Return true when KEY names the space bar."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "space")
+        (str/includes? key "space"))))
+
+(defn draw-control-key?
+  "Return true when KEY names a control key."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (str/includes? key "ctrl")
+        (str/includes? key "control"))))
+
+(defn draw-plus-key?
+  "Return true when KEY names a plus/equals zoom-in key."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "+")
+        (string=? key "=")
+        (str/includes? key "plus")
+        (str/includes? key "keypad +"))))
+
+(defn draw-minus-key?
+  "Return true when KEY names a minus zoom-out key."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "-")
+        (str/includes? key "minus")
+        (str/includes? key "keypad -"))))
+
+(defn draw-reset-view-key?
+  "Return true when KEY resets the viewport."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "0")
+        (str/includes? key "kp0"))))
+
+(defn draw-apply-key-modifier-state
+  "Update persistent navigation modifiers from EVENT."
+  [state event]
+  (let [kind (get event :kind)
+        key (str/lower-case (or (get event :key) ""))]
+    (let [state (if (draw-space-key? key)
+                  (assoc state :space-down? (draw-kind=? kind :key-down))
+                  state)
+          state (if (draw-control-key? key)
+                  (assoc state :ctrl-down? (draw-kind=? kind :key-down))
+                  state)]
+      (if (and (draw-kind=? kind :key-down)
+               (get event :ctrl?))
+        (assoc state :ctrl-down? true)
+        state))))
 
 (defn draw-clear-error!
   "Clear the last recorded draw error."
@@ -1574,44 +1688,34 @@
   [state key]
   (let [key (str/lower-case (or key ""))]
     (cond
-      (or (string=? key "]")
-          (string=? key "+")
-          (string=? key "=")
-          (str/includes? key "plus"))
-      (let [next-state (assoc state
-                              :zoom (draw-clamp (* (draw-view-zoom state)
-                                                   (draw-zoom-factor))
-                                                0.1
-                                                16.0)
-                              :canvas-dirty? true)]
-        next-state)
+      (and (get state :ctrl-down?)
+           (draw-plus-key? key))
+      (draw-zoom-at-pointer-core! state 1.0)
 
-      (or (string=? key "[")
-          (string=? key "-")
-          (str/includes? key "minus"))
-      (let [next-state (assoc state
-                              :zoom (draw-clamp (/ (draw-view-zoom state)
-                                                   (draw-zoom-factor))
-                                                0.1
-                                                16.0)
-                              :canvas-dirty? true)]
-        next-state)
+      (and (get state :ctrl-down?)
+           (draw-minus-key? key))
+      (draw-zoom-at-pointer-core! state -1.0)
 
-      (or (string=? key "0")
-          (str/includes? key "kp0"))
-      (let [next-state (assoc state
+      (draw-reset-view-key? key)
+      (let [screen-point (draw-pointer-screen-anchor state)
+            next-state (assoc state
                               :view-x 0.0
                               :view-y 0.0
                               :zoom 1.0
-                              :canvas-dirty? true)]
-        next-state)
+                              :canvas-dirty? true)
+            world-point (draw-screen-point->world-point next-state
+                                                        [(nth screen-point 0)
+                                                         (nth screen-point 1)
+                                                         (or (get state :pen-pressure) 1.0)])]
+        (draw-sync-pointer-state next-state world-point screen-point))
 
       (or (string=? key "h")
           (str/includes? key "left"))
       (let [step (draw-pan-step)
             next-state (assoc state
-                              :view-x (- (draw-view-x state)
-                                         (/ step (draw-view-zoom state)))
+                              :view-x (draw-clamp-view-coordinate
+                                        (- (draw-view-x state)
+                                           (/ step (draw-view-zoom state))))
                               :canvas-dirty? true)]
         next-state)
 
@@ -1619,8 +1723,9 @@
           (str/includes? key "right"))
       (let [step (draw-pan-step)
             next-state (assoc state
-                              :view-x (+ (draw-view-x state)
-                                         (/ step (draw-view-zoom state)))
+                              :view-x (draw-clamp-view-coordinate
+                                        (+ (draw-view-x state)
+                                           (/ step (draw-view-zoom state))))
                               :canvas-dirty? true)]
         next-state)
 
@@ -1628,8 +1733,9 @@
           (str/includes? key "up"))
       (let [step (draw-pan-step)
             next-state (assoc state
-                              :view-y (- (draw-view-y state)
-                                         (/ step (draw-view-zoom state)))
+                              :view-y (draw-clamp-view-coordinate
+                                        (- (draw-view-y state)
+                                           (/ step (draw-view-zoom state))))
                               :canvas-dirty? true)]
         next-state)
 
@@ -1637,8 +1743,9 @@
           (str/includes? key "down"))
       (let [step (draw-pan-step)
             next-state (assoc state
-                              :view-y (+ (draw-view-y state)
-                                         (/ step (draw-view-zoom state)))
+                              :view-y (draw-clamp-view-coordinate
+                                        (+ (draw-view-y state)
+                                           (/ step (draw-view-zoom state))))
                               :canvas-dirty? true)]
         next-state)
 
@@ -1692,6 +1799,8 @@
   (let [next-state (draw-cancel-active-stroke-core!
                      (assoc state
                             :window-focused? false
+                            :space-down? false
+                            :ctrl-down? false
                             :canvas-dirty? true))]
     (draw-log-entry! :focus-lost {:state (draw-state-snapshot next-state)})
     next-state))
@@ -1702,6 +1811,8 @@
   (let [next-state (assoc state
                           :window-focused? true
                           :canvas-dirty? true
+                          :space-down? false
+                          :ctrl-down? false
                           :pen-pressure 1.0)]
     (draw-log-entry! :focus-gained {:state (draw-state-snapshot next-state)})
     next-state))
@@ -1771,34 +1882,31 @@
           points)))))
 
 (defn draw-start-stroke
-  "Start a new stroke from DESC."
-  [state desc]
-  (let [point (draw-event-point state desc)]
-    (let [state (draw-push-history! state)
-          stroke (draw-stroke-record [point]
-                                     (draw-stroke-color state)
-                                     (get state :brush-size))
-          next-state (assoc state
+  "Start a new stroke from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point pointer-source]
+  (let [state (draw-push-history! state)
+        stroke (draw-stroke-record [point]
+                                   (draw-stroke-color state)
+                                   (get state :brush-size))
+        next-state (draw-sync-pointer-state
+                     (assoc state
                             :pointer-down? true
-                            :pointer-source (if (str/starts-with? desc "SDL_EVENT_PEN_")
-                                              :pen
-                                              :mouse)
-                            :active-stroke stroke
-                            :mouse-x (nth point 0)
-                            :mouse-y (nth point 1))]
-      (draw-reset-preview-sync!)
-      (draw-clear-preview!)
-      (draw-preview-stroke! next-state stroke)
-      (draw-log-entry! :stroke-start
-                       {:point point
-                        :state (draw-state-snapshot next-state)})
-      next-state)))
+                            :pointer-source pointer-source
+                            :active-stroke stroke)
+                     point
+                     screen-point)]
+    (draw-reset-preview-sync!)
+    (draw-clear-preview!)
+    (draw-preview-stroke! next-state stroke)
+    (draw-log-entry! :stroke-start
+                     {:point point
+                      :state (draw-state-snapshot next-state)})
+    next-state))
 
 (defn draw-extend-stroke
-  "Add the current pointer position from DESC to the active stroke."
-  [state desc]
-  (let [point (draw-event-point state desc)
-        stroke (get state :active-stroke)]
+  "Add WORLD-POINT at SCREEN-POINT to the active stroke."
+  [state point screen-point]
+  (let [stroke (get state :active-stroke)]
     (if stroke
       (let [points (get stroke :points)
             next-points (draw-append-stroke-point state stroke point)
@@ -1807,10 +1915,11 @@
             next-stroke (draw-stroke-record next-points
                                             (get stroke :color)
                                             (get stroke :size))
-            next-state (assoc state
-                              :mouse-x (nth point 0)
-                              :mouse-y (nth point 1)
-                              :active-stroke next-stroke)]
+            next-state (draw-sync-pointer-state
+                         (assoc state
+                                :active-stroke next-stroke)
+                         point
+                         screen-point)]
         (if (and appended? previous)
           (draw-preview-segment! next-state
                                  previous
@@ -1819,26 +1928,26 @@
                                  (get stroke :color))
           nil)
         next-state)
-      (draw-start-stroke state desc))))
+      (draw-start-stroke state point screen-point :mouse))))
 
 (defn draw-finish-stroke
-  "Finish the active stroke using the current pointer position from DESC."
-  [state desc]
-  (let [point (draw-event-point state desc)
-        stroke (get state :active-stroke)]
+  "Finish the active stroke using WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [stroke (get state :active-stroke)]
     (if stroke
         (let [points (get stroke :points)
               finished-points (draw-append-stroke-point state stroke point)
               finished (draw-stroke-record finished-points
                                            (get stroke :color)
                                            (get stroke :size))
-              next-state (assoc state
-                                :pointer-down? false
-                                :pointer-source false
-                                :mouse-x (nth point 0)
-                                :mouse-y (nth point 1)
-                                :active-stroke false
-                                :strokes (conj (get state :strokes) finished))]
+              next-state (draw-sync-pointer-state
+                           (assoc state
+                                  :pointer-down? false
+                                  :pointer-source false
+                                  :active-stroke false
+                                  :strokes (conj (get state :strokes) finished))
+                           point
+                           screen-point)]
           (draw-log-entry! :stroke-finish
                            {:point point
                             :points (count (get finished :points))
@@ -1856,12 +1965,13 @@
               nil))
           (draw-reset-preview-sync!)
           next-state)
-      (assoc state
-             :pointer-down? false
-             :pointer-source false
-             :mouse-x (nth point 0)
-             :mouse-y (nth point 1)
-             :active-stroke false))))
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-stroke false)
+        point
+        screen-point))))
 
 (defn draw-pen-owned-pointer?
   "Return true when STATE says the active pointer source is the pen."
@@ -1949,6 +2059,7 @@
      :mouse-y (draw-event-coordinate desc "y=")
      :pressure (draw-event-pressure state desc)
      :shift? (sdl/mod-shift-pressed?)
+     :ctrl? (sdl/mod-ctrl-pressed?)
      :wheel-y (sdl/event-wheel-y)
      :wheel-mouse-x (sdl/event-wheel-mouse-x)
      :wheel-mouse-y (sdl/event-wheel-mouse-y)}))
@@ -2040,14 +2151,18 @@
       (let [key-label (or (get event :key) "")
             state (assoc state
                          :last-key key-label
-                         :last-key-desc desc)]
-      (if (draw-kind=? kind :key-down)
+                         :last-key-desc desc)
+            state (draw-apply-key-modifier-state state event)]
+        (if (draw-kind=? kind :key-down)
           (let [state (draw-handle-view-key! state key-label)
                 state (draw-handle-tool-key! state key-label)]
             (if (draw-toggle-debug-panel-key? key-label)
               (draw-toggle-debug-panel! state)
               state))
-          state))
+          (if (and (draw-space-key? key-label)
+                   (get state :panning?))
+            (draw-finish-pan-core! state)
+            state)))
 
       (draw-kind=? kind :mouse-wheel)
       (draw-handle-wheel-event! state event)
@@ -2075,41 +2190,37 @@
       (if (draw-pen-owned-pointer? state)
         state
         (let [state (assoc state :pen-pressure 1.0)]
-        (cond
-        (and (draw-kind=? kind :mouse-down)
-             (get event :shift?))
-        (draw-start-pan-core! state (draw-input-event-screen-point event))
+          (cond
+            (and (draw-kind=? kind :mouse-down)
+                 (get state :space-down?))
+            (draw-start-pan-core! state (draw-input-event-screen-point event))
 
-        (draw-kind=? kind :mouse-down)
-        (let [point (draw-input-event-point state event)]
-          (draw-start-stroke state
-                             (format "SDL_EVENT_MOUSE_MOTION x=%.1f y=%.1f"
-                                     (nth point 0)
-                                     (nth point 1))))
+            (draw-kind=? kind :mouse-down)
+            (let [point (draw-input-event-point state event)
+                  screen-point (draw-input-event-screen-point event)]
+              (draw-start-stroke state point screen-point :mouse))
 
-        (and (draw-kind=? kind :mouse-up)
-             (get state :panning?))
-        (draw-finish-pan-core! state)
+            (and (draw-kind=? kind :mouse-up)
+                 (get state :panning?))
+            (draw-finish-pan-core! state)
 
-        (draw-kind=? kind :mouse-up)
-        (let [point (draw-input-event-point state event)]
-          (draw-finish-stroke state
-                              (format "SDL_EVENT_MOUSE_MOTION x=%.1f y=%.1f"
-                                      (nth point 0)
-                                      (nth point 1))))
+            (draw-kind=? kind :mouse-up)
+            (let [point (draw-input-event-point state event)
+                  screen-point (draw-input-event-screen-point event)]
+              (draw-finish-stroke state point screen-point))
 
-        (get state :pointer-down?)
-        (let [point (draw-input-event-point state event)]
-          (draw-extend-stroke state
-                              (format "SDL_EVENT_MOUSE_MOTION x=%.1f y=%.1f"
-                                      (nth point 0)
-                                      (nth point 1))))
+            (get state :panning?)
+            (draw-pan-core! state (draw-input-event-screen-point event))
 
-        :else
-        (let [point (draw-input-event-point state event)]
-          (assoc state
-                 :mouse-x (nth point 0)
-                 :mouse-y (nth point 1))))))
+            (get state :pointer-down?)
+            (let [point (draw-input-event-point state event)
+                  screen-point (draw-input-event-screen-point event)]
+              (draw-extend-stroke state point screen-point))
+
+            :else
+            (let [point (draw-input-event-point state event)
+                  screen-point (draw-input-event-screen-point event)]
+              (draw-sync-pointer-state state point screen-point)))))
 
       (or (draw-kind=? kind :pen-motion)
           (draw-kind=? kind :pen-down)
@@ -2119,52 +2230,47 @@
       (let [state (assoc state
                          :pen-pressure (or (get event :pressure) 1.0))]
         (cond
-        (and (draw-kind=? kind :pen-down)
-             (get event :shift?))
-        (draw-start-pan-core! state (draw-input-event-screen-point event))
+          (and (draw-kind=? kind :pen-down)
+               (get state :space-down?))
+          (draw-start-pan-core! state (draw-input-event-screen-point event))
 
-        (draw-kind=? kind :pen-down)
-        (let [point (draw-input-event-point state event)]
-          (draw-start-stroke state
-                             (format "SDL_EVENT_PEN_MOTION x=%.1f y=%.1f"
-                                     (nth point 0)
-                                     (nth point 1))))
+          (draw-kind=? kind :pen-down)
+          (let [point (draw-input-event-point state event)
+                screen-point (draw-input-event-screen-point event)]
+            (draw-start-stroke state point screen-point :pen))
 
-        (and (or (draw-kind=? kind :pen-up)
-                 (draw-kind=? kind :pen-button-up))
-             (get state :panning?))
-        (draw-finish-pan-core! state)
+          (and (or (draw-kind=? kind :pen-up)
+                   (draw-kind=? kind :pen-button-up))
+               (get state :panning?))
+          (draw-finish-pan-core! state)
 
-        (or (draw-kind=? kind :pen-up)
-            (draw-kind=? kind :pen-button-up))
-        (let [point (draw-input-event-point state event)]
-          (draw-finish-stroke state
-                              (format "SDL_EVENT_PEN_MOTION x=%.1f y=%.1f"
-                                      (nth point 0)
-                                      (nth point 1))))
+          (or (draw-kind=? kind :pen-up)
+              (draw-kind=? kind :pen-button-up))
+          (let [point (draw-input-event-point state event)
+                screen-point (draw-input-event-screen-point event)]
+            (draw-finish-stroke state point screen-point))
 
-        (get state :panning?)
-        (draw-pan-core! state (draw-input-event-screen-point event))
+          (get state :panning?)
+          (draw-pan-core! state (draw-input-event-screen-point event))
 
-        (get state :pointer-down?)
-        (let [point (draw-input-event-point state event)]
-          (draw-extend-stroke state
-                              (format "SDL_EVENT_PEN_MOTION x=%.1f y=%.1f"
-                                      (nth point 0)
-                                      (nth point 1))))
+          (get state :pointer-down?)
+          (let [point (draw-input-event-point state event)
+                screen-point (draw-input-event-screen-point event)]
+            (draw-extend-stroke state point screen-point))
 
-        :else
-        (let [point (draw-input-event-point state event)]
-          (assoc state
-                 :mouse-x (nth point 0)
-                 :mouse-y (nth point 1)))))
+          :else
+          (let [point (draw-input-event-point state event)
+                screen-point (draw-input-event-screen-point event)]
+            (draw-sync-pointer-state state point screen-point))))
 
       (draw-kind=? kind :pen-axis)
-      (let [point (draw-input-event-point state event)]
-        (assoc state
-               :pen-pressure (or (get event :pressure) 1.0)
-               :mouse-x (nth point 0)
-               :mouse-y (nth point 1)))
+      (let [point (draw-input-event-point state event)
+            screen-point (draw-input-event-screen-point event)]
+        (draw-sync-pointer-state
+          (assoc state
+                 :pen-pressure (or (get event :pressure) 1.0))
+          point
+          screen-point))
 
       (draw-kind=? kind :text-editing)
       (assoc state
@@ -2777,8 +2883,9 @@
   "Return the fixed debug-panel help lines."
   []
   ["controls:"
-   "  wheel: zoom"
-   "  shift+drag: pan"
+   "  wheel: zoom at pointer"
+   "  ctrl +/-: zoom at pointer"
+   "  space+drag: pan"
    "  drag: draw"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
