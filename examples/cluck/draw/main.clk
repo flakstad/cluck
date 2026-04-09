@@ -2898,49 +2898,63 @@
     (lambda ()
       (if (and *draw-running?* *draw-context*)
         *draw-context*
-        (if (not (init-video!))
         (begin
-          (println (format "SDL init failed: %s" (last-error)))
-          nil)
-        (let [state (if *draw-state*
-                      (assoc *draw-state*
-                             :window-focused? true
-                             :pen-pressure 1.0)
-                      (default-state))
-              ctx (sdl/open-context (get state :title)
-                                    (get state :width)
-                                    (get state :height))]
-          (if (nil? ctx)
+          (if *draw-child-mode?*
+            (draw-log-entry! :child-start-enter
+                             {:state (draw-state-snapshot *draw-state*)})
+            nil)
+          (if (not (init-video!))
             (begin
-              (println (format "SDL window failed: %s" (last-error)))
-              (shutdown!)
-              nil)
-            (begin
-              (set! *draw-state* state)
-              (set! *draw-context* ctx)
-              (set! *draw-running?* true)
-              (set! *draw-last-heartbeat-at* 0)
-              (draw-clear-watchdog-files!)
-              (draw-log-entry! :start
-                               {:state (draw-state-snapshot state)
-                                :log (draw-log-file-path)
-                                :crash (draw-crash-file-path)
-                                :heartbeat (draw-heartbeat-file-path)
-                                :stall (draw-stall-file-path)})
-              (draw-ensure-canvas! state)
-              (draw-ensure-preview! state)
-              (draw-ensure-brush-texture! state)
-              (draw-ensure-strip-texture! state)
-              (if (draw-canvas-ready?)
-                (draw-rebuild-canvas! state)
+              (if *draw-child-mode?*
+                (draw-log-entry! :child-init-video-failed {:error (last-error)})
                 nil)
-              (draw-reset-preview-sync!)
-              (draw-clear-preview!)
-              (draw-write-state-file! state true)
-              (draw-write-heartbeat! :start state)
-              (draw-start-watchdog!)
-              (sync-window-title!)
-              ctx))))))))
+              (println (format "SDL init failed: %s" (last-error)))
+              nil)
+            (let [state (if *draw-state*
+                          (assoc *draw-state*
+                                 :window-focused? true
+                                 :pen-pressure 1.0)
+                          (default-state))
+                  ctx (sdl/open-context (get state :title)
+                                        (get state :width)
+                                        (get state :height))]
+              (if (nil? ctx)
+                (begin
+                  (if *draw-child-mode?*
+                    (draw-log-entry! :child-open-context-failed {:error (last-error)})
+                    nil)
+                  (println (format "SDL window failed: %s" (last-error)))
+                  (shutdown!)
+                  nil)
+                (begin
+                  (if *draw-child-mode?*
+                    (draw-log-entry! :child-open-context-ok {:title (get state :title)})
+                    nil)
+                  (set! *draw-state* state)
+                  (set! *draw-context* ctx)
+                  (set! *draw-running?* true)
+                  (set! *draw-last-heartbeat-at* 0)
+                  (draw-clear-watchdog-files!)
+                  (draw-log-entry! :start
+                                   {:state (draw-state-snapshot state)
+                                    :log (draw-log-file-path)
+                                    :crash (draw-crash-file-path)
+                                    :heartbeat (draw-heartbeat-file-path)
+                                    :stall (draw-stall-file-path)})
+                  (draw-ensure-canvas! state)
+                  (draw-ensure-preview! state)
+                  (draw-ensure-brush-texture! state)
+                  (draw-ensure-strip-texture! state)
+                  (if (draw-canvas-ready?)
+                    (draw-rebuild-canvas! state)
+                    nil)
+                  (draw-reset-preview-sync!)
+                  (draw-clear-preview!)
+                  (draw-write-state-file! state true)
+                  (draw-write-heartbeat! :start state)
+                  (draw-start-watchdog!)
+                  (sync-window-title!)
+                  ctx)))))))))
 
 (defn draw-stop-local!
   "Stop the local draw loop and close the SDL context."
@@ -2997,7 +3011,7 @@
                          (proc/qs root)
                          (proc/qs runner)
                          (proc/qs child-log))
-        pid (cproc:process-run "/bin/sh" "-c" launcher)]
+        pid (cproc:process-run "/bin/sh" (list "-c" launcher))]
     (set! *draw-child-pid* pid)
     pid))
 
@@ -3024,6 +3038,28 @@
           (- (draw-wall-clock-ms) at)
           false))
       false)))
+
+(defn draw-wait-for-child-ready!
+  "Wait until the supervised child writes its first heartbeat, or time out."
+  [deadline-ms]
+  (cond
+    (fs/file? (draw-heartbeat-file-path))
+    true
+
+    (not *draw-running?*)
+    false
+
+    (and *draw-child-pid*
+         (not (draw-child-alive? *draw-child-pid*)))
+    false
+
+    (> (draw-wall-clock-ms) deadline-ms)
+    false
+
+    :else
+    (begin
+      (thread-sleep! 0.1)
+      (draw-wait-for-child-ready! deadline-ms))))
 
 (defn draw-start-supervisor-loop!
   "Start the parent-side thread that restarts a dead or stale child."
@@ -3101,9 +3137,20 @@
                         :control (draw-control-file-path)})
       (let [pid (draw-supervisor-launch-child!)]
         (if pid
-          (begin
-            (draw-start-supervisor-loop!)
-            {:pid pid :mode :supervised})
+          (let [deadline (+ (draw-wall-clock-ms) 15000)]
+            (begin
+              (draw-start-supervisor-loop!)
+              (if (draw-wait-for-child-ready! deadline)
+                {:pid pid :mode :supervised}
+                (begin
+                  (draw-log-entry! :supervised-start-failed
+                                   {:pid pid
+                                    :child-log (draw-child-stdout-path)
+                                    :heartbeat (draw-heartbeat-file-path)})
+                  (set! *draw-running?* false)
+                  (draw-stop-supervisor-loop!)
+                  (draw-supervisor-stop-child!)
+                  false))))
           (begin
             (set! *draw-running?* false)
             false))))))
@@ -3156,6 +3203,7 @@
   []
   (set! *draw-child-mode?* true)
   (set! *draw-supervision-enabled?* false)
+  (draw-log-entry! :child-main-enter {:cwd (current-directory)})
   (set! *draw-state* (or (draw-read-state-file)
                          *draw-state*
                          (default-state)))
@@ -3164,10 +3212,13 @@
   (let [ctx (start!)]
     (if ctx
       (begin
+        (draw-log-entry! :child-main-started {:state (draw-state-snapshot *draw-state*)})
         (render-now!)
         (run-loop ctx *draw-state*)
         (draw-stop-local!))
-      nil)))
+      (begin
+        (draw-log-entry! :child-main-start-returned-nil {:error (last-error)})
+        nil))))
 
 (defn main
   "Open a window and run the minimal SDL3 loop."
