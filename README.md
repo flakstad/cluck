@@ -542,7 +542,7 @@ csc -static -deployed -k -v -O2 -strip -o build/datastar-clock-standalone \
 The native launcher is self-contained. Build it from the repo root, then you
 can run or copy the resulting binary anywhere without the source tree.
 
-On this machine, the resulting binary is about `7.9 MB` and links only
+On this machine, the resulting binary is about `8.3 MB` and links only
 against `libSystem` on macOS.
 
 Try these requests while it is running:

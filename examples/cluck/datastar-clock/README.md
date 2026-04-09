@@ -1,11 +1,12 @@
 # Cluck Datastar Clock
 
 This example shows a minimal Datastar-style clock app built on top of the
-existing Cluck Ring layer and the Spiffy/intarweb HTTP stack.
+existing Cluck Ring layer, the Cluck-native Hiccup library, and the
+Spiffy/intarweb HTTP stack.
 
 What it does:
 
-- serves an HTML shell at `/`
+- serves an HTML shell at `/` using `hiccup.core`
 - serves the vendored official `datastar.js` client bundle from `/datastar.js`
   (pinned to Datastar `v1.0.0-RC.8`) from an embedded asset in the static
   binary
@@ -43,7 +44,7 @@ Run the native binary:
 The native launcher is self-contained. Build it from the repo root, then you
 can run or copy the resulting binary anywhere without the source tree.
 
-On this machine, the resulting binary is about `7.9 MB` and links only
+On this machine, the resulting binary is about `8.3 MB` and links only
 against `libSystem` on macOS.
 
 Then open `http://127.0.0.1:8082/` in a browser.

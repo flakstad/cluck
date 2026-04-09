@@ -19,24 +19,28 @@
              "HEAD"
              (request-method-text "head"))
 (assert-str= "datastar-clock escaped fragment"
-             "<span id=\"clock-time\">&lt;clock&gt; &amp; &#39;time&#39;</span>"
+             "<span id=\"clock-time\">&lt;clock&gt; &amp; &apos;time&apos;</span>"
              (clock-time-fragment "<clock> & 'time'"))
 
-(let [shell (clock-shell "12:34:56")
-      sse (clock-sse-message "1700000000" "12:34:56")
-      stream-headers (pr-str (clock-stream-headers))
-      home-route (route-response (request/request :get "/"))
-      home-handler (handler (request/request :get "/"))
-      health-route (route-response (request/request :get "/health"))
-      missing-route (route-response (request/request :get "/missing"))
-      method-route (route-response (request/request :post "/"))
-      script-route (route-response (request/request :get datastar-clock-script-path))]
+ (let ((shell (clock-shell "12:34:56"))
+       (sse (clock-sse-message "1700000000" "12:34:56"))
+       (stream-headers (pr-str (clock-stream-headers)))
+       (home-route (route-response (request/request :get "/")))
+       (home-handler (handler (request/request :get "/")))
+       (health-route (route-response (request/request :get "/health")))
+       (missing-route (route-response (request/request :get "/missing")))
+       (method-route (route-response (request/request :post "/")))
+       (script-route (route-response (request/request :get datastar-clock-script-path))))
   (assert-true "datastar-clock shell module script"
                (str/includes? shell
-                              "<script type=\"module\" defer src=\"/datastar.js\"></script>"))
+                              "<script defer src=\"/datastar.js\" type=\"module\"></script>"))
   (assert-true "datastar-clock shell init"
                (str/includes? shell
-                              "data-init=\"@get('/clock-stream')\""))
+                              "data-init=\"@get(&apos;/clock-stream&apos;)\""))
+  (assert-true "datastar-clock shell doctype"
+               (str/includes? shell "<!DOCTYPE html>"))
+  (assert-true "datastar-clock shell lang"
+               (str/includes? shell "<html lang=\"en\">"))
   (assert-true "datastar-clock shell clock text"
                (str/includes? shell
                               "<span id=\"clock-time\">12:34:56</span>"))
@@ -66,7 +70,7 @@
                (response/response-header home-handler "Content-Type"))
   (assert-true "datastar-clock home body script"
                (str/includes? (response/response-body home-handler)
-                              "<script type=\"module\" defer src=\"/datastar.js\"></script>"))
+                              "<script defer src=\"/datastar.js\" type=\"module\"></script>"))
   (assert-num= "datastar-clock health status"
                200
                (response/response-status health-route))

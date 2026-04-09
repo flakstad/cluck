@@ -13,14 +13,15 @@
             [ring.middleware.head :as head]
             [ring.middleware.request-id :as request-id]
             [ring.adapter.spiffy :as ring-adapter]
+            [hiccup.core :as h]
             [cluck.examples.datastar-clock.assets :as assets]
             [cluck.string :as str]
+            [spiffy :as spiffy]
             [intarweb :as http]))
 
 (import (chicken time)
         (chicken time posix)
         intarweb
-        spiffy
         srfi-18)
 
 (def datastar-clock-default-port
@@ -38,64 +39,52 @@
 (def datastar-clock-js-source
   assets/datastar-clock-js-source)
 
-(defn replace-text
-  "Replace NEEDLE in TEXT with REPLACEMENT."
-  [text needle replacement]
-  (str/join replacement (str/split (if (nil? text) "" (str text)) needle)))
-
-(defn html-escape
-  "Escape the basic HTML special characters in TEXT."
-  [text]
-  (let [text (if (nil? text) "" (str text))]
-    (replace-text
-     (replace-text
-      (replace-text
-       (replace-text
-        (replace-text text "&" "&amp;")
-        "<" "&lt;")
-       ">" "&gt;")
-      "\"" "&quot;")
-     "'" "&#39;")))
-
 (defn current-clock-text
   "Return the current clock text for the page and stream."
   []
   (seconds->string (current-seconds)))
 
+(defn clock-time-node
+  "Return the clock span node."
+  [clock-text]
+  [:span {:id "clock-time"} clock-text])
+
 (defn clock-time-fragment
   "Return the clock span fragment."
   [clock-text]
-  (str "<span id=\"clock-time\">" (html-escape clock-text) "</span>"))
+  (str (h/html (clock-time-node clock-text))))
 
 (defn clock-shell
   "Return the HTML shell for the example."
   [clock-text]
-  (str "<!doctype html>"
-       "<html lang=\"en\">"
-       "<head>"
-       "<meta charset=\"UTF-8\">"
-       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
-       "<script type=\"module\" defer src=\"/datastar.js\"></script>"
-       "<title>" (html-escape datastar-clock-title) "</title>"
-       "</head>"
-       "<body>"
-       "<main id=\"clock\" data-init=\"@get('" datastar-clock-stream-path "')\">"
-       "<h1>Cluck Datastar clock</h1>"
-       "<p>This example keeps the transport low-level and uses the vendored Datastar client bundle.</p>"
-       "<p>Current server time: "
-       (clock-time-fragment clock-text)
-       "</p>"
-       "<p>The clock updates over an SSE stream from <code>"
-       (html-escape datastar-clock-stream-path)
-       "</code>.</p>"
-       "</main>"
-       "</body>"
-       "</html>"))
+  (str 
+    (h/html5 
+      {:lang "en"}
+      [:head
+       [:meta {:charset "UTF-8"}]
+       [:meta {:name "viewport"
+               :content "width=device-width, initial-scale=1.0"}]
+       [:script {:type "module"
+                 :defer true
+                 :src "/datastar.js"}]
+       [:title datastar-clock-title]]
+      [:body
+       [:main {:id "clock"
+               :data-init (str "@get('" datastar-clock-stream-path "')")}
+        [:h1 "Cluck Datastar clock"]
+        [:p "This example keeps the transport low-level and uses the vendored Datastar client bundle."]
+        [:p "Current server time: " (clock-time-node clock-text)]
+        [:p "The clock updates over an SSE stream from "
+         [:code datastar-clock-stream-path]
+         "."]]])))
 
 (defn health-page
   "Return the health check body."
   []
-  "<h1>ok</h1><p>The Datastar clock example is alive.</p>")
+  (str 
+    (h/html 
+      [:h1 "ok"]
+      [:p "The Datastar clock example is alive."])))
 
 (defn sse-line
   "Return a single SSE line."
@@ -132,7 +121,7 @@
 (defn write-sse-message!
   "Write MESSAGE to PORT using HTTP chunked encoding."
   [port message]
-  (let [text (if (string? message) message (str message))]
+  (let ((text (if (string? message) message (str message))))
     (display (number->string (string-length text) 16) port)
     (display "\r\n" port)
     (display text port)
@@ -153,7 +142,7 @@
 (defn clock-stream-port
   "Return the active output port for the SSE response."
   []
-  (let [resp (spiffy/current-response)]
+  (let ((resp (spiffy/current-response)))
     (handle-exceptions exn
         (##sys#slot resp 1)
       (http/response-port resp))))
@@ -163,7 +152,7 @@
   []
   (handle-exceptions exn
       #f
-    (let [port (clock-stream-port)]
+    (let ((port (clock-stream-port)))
       (display "HTTP/1.1 200 OK\r\n" port)
       (for-each (lambda (entry)
                   (display (car entry) port)
@@ -178,16 +167,13 @@
 (defn route-response
   "Return a ring.response map for REQUEST."
   [request]
-  (let [method (request-method-text (request/request-method request))
-        path (request/request-uri request)]
+  (let ((method (request-method-text (request/request-method request)))
+        (path (request/request-uri request)))
     (cond
       (not (string=? method "GET"))
       (response/method-not-allowed
-       (str "<h1>Method not allowed</h1><p>No "
-            (html-escape method)
-            " route for "
-            (html-escape path)
-            ".</p>"))
+       (h/html [:h1 "Method not allowed"]
+               [:p "No " method " route for " path "."]))
 
       (string=? path "/")
       (response/ok (clock-shell (current-clock-text)))
@@ -202,11 +188,8 @@
 
       :else
       (response/not-found
-       (str "<h1>Not found</h1><p>No route for "
-            (html-escape method)
-            " "
-            (html-escape path)
-            ".</p>")))))
+       (h/html [:h1 "Not found"]
+               [:p "No route for " method " " path "."])))))
 
 (def handler
   (-> route-response
@@ -222,30 +205,26 @@
 (defn dispatch-request
   "Route the current Spiffy request through the ring adapter."
   [continue]
-  (handle-exceptions exn
-    (begin
-        (send-status 'internal-server-error "Internal Server Error"))
-    (let [raw-request (spiffy/current-request)]
-      (let [ring-request (ring-adapter/request->ring-request raw-request)
-            path (request/request-uri ring-request)]
-        (if (string=? path datastar-clock-stream-path)
-            (start-clock-stream!)
-            (let [ring-response (handler ring-request)]
-              (ring-adapter/send-response! ring-response)))))))
+  (let ((ring-request (ring-adapter/request->ring-request (spiffy/current-request)))
+        (path (request/request-uri ring-request)))
+    (if (string=? path datastar-clock-stream-path)
+        (start-clock-stream!)
+        (let ((ring-response (handler ring-request)))
+          (ring-adapter/send-response! ring-response)))))
 
 (defn start-web-server
   "Start the example server on PORT."
   [port]
-  (parameterize ((server-port port)
-                 (vhost-map `((".*" . ,dispatch-request))))
-    (start-server)))
+  (parameterize ((spiffy/server-port port)
+                 (spiffy/vhost-map `((".*" . ,dispatch-request))))
+    (spiffy/start-server)))
 
 (defn main
   "Start the example web server on PORT."
   [args]
-  (let [port (if (empty? args)
-               datastar-clock-default-port
-               (parse-long (first args)))]
+  (let ((port (if (empty? args)
+                  datastar-clock-default-port
+                  (parse-long (first args)))))
     (println (format "Cluck Datastar clock listening on http://127.0.0.1:%d"
                      port))
     (start-web-server port)))

@@ -9,13 +9,14 @@
   (include "src/syntax-bootstrap.scm")
   (include "src/cluck-standalone-prelude.scm"))
 
-;; Bundle the runtime, Ring tree, and Datastar app source into one compilation
-;; unit so the resulting binary is self-contained.
+;; Bundle the runtime, Ring tree, Hiccup library, and Datastar app source into
+;; one compilation unit so the resulting binary is self-contained.
 (include "src/cluck.scm")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.io #t)
+(hash-table-set! *cluck-loaded-namespaces* 'hiccup.core #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.datastar-clock.assets #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.datastar-clock #t)
 (hash-table-set! *cluck-loaded-namespaces* 'ring.util #t)
@@ -32,6 +33,7 @@
 (include "src/cluck/string.clk")
 (include "src/cluck/fs.clk")
 (include "src/cluck/io.clk")
+(include "hiccup/core.clk")
 (include "ring/util.clk")
 (include "ring/util/random.clk")
 (include "ring/request.clk")
