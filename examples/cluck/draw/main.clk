@@ -882,20 +882,6 @@
   [text]
   (draw-truncate-text text 88))
 
-(defn draw-truncate-text
-  "Clamp TEXT to at most LIMIT characters for live debug rendering."
-  [text limit]
-  (let [text (or text "")
-        limit (if (and limit (> limit 4)) limit 4)]
-    (if (> (count text) limit)
-      (str (substring text 0 (- limit 3)) "...")
-      text)))
-
-(defn draw-compact-event-text
-  "Return a shorter event description suitable for the debug panel."
-  [text]
-  (draw-truncate-text text 88))
-
 (defn draw-mark-canvas-dirty!
   "Mark the cached canvas as needing a rebuild."
   [state]
