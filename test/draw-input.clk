@@ -78,6 +78,8 @@
                           (draw-input-has-line? lines "  ctrl +/-: zoom at pointer"))
   (draw-input-assert-true "debug panel lists space pan"
                           (draw-input-has-line? lines "  space+drag: pan"))
+  (draw-input-assert-true "debug panel lists cursors"
+                          (draw-input-has-line? lines "  cursors: crosshair draw, move select, resize handles, text tool"))
   (draw-input-assert-true "debug panel lists draw"
                           (draw-input-has-line? lines "  drag: draw / move selection"))
   (draw-input-assert-true "debug panel lists rectangle resize"
@@ -254,6 +256,60 @@
   (draw-input-assert-str= "ctrl load restores saved title"
                           "Panel Save"
                           (get loaded :title)))
+
+(let [cursor (draw-desired-cursor-kind (default-state))]
+  (draw-input-assert-str= "ink tool uses crosshair cursor"
+                          "crosshair"
+                          (name cursor)))
+
+(let [base (assoc (default-state) :tool-panel? true)
+      button (nth (draw-tool-panel-buttons base) 2)
+      hovered (draw-sync-pointer-state base
+                                       [(+ (get button :x) 4) (+ (get button :y) 4) 1.0]
+                                       [(+ (get button :x) 4) (+ (get button :y) 4)])]
+  (draw-input-assert-str= "tool panel button uses pointer cursor"
+                          "pointer"
+                          (name (draw-desired-cursor-kind hovered))))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
+               :color [255 255 255]
+               :size 2}])
+      selected (assoc base :selection [1])
+      hovered (draw-sync-pointer-state selected [10.0 20.0 1.0] [10.0 20.0])]
+  (draw-input-assert-str= "selection handle uses diagonal resize cursor"
+                          "nwse-resize"
+                          (name (draw-desired-cursor-kind hovered))))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
+               :color [255 255 255]
+               :size 2}])
+      selected (assoc base :selection [1])
+      hovered (draw-sync-pointer-state selected [24.0 36.0 1.0] [24.0 36.0])]
+  (draw-input-assert-str= "selection hover uses move cursor"
+                          "move"
+                          (name (draw-desired-cursor-kind hovered))))
+
+(let [text-state (draw-set-tool-core! (default-state) :text)]
+  (draw-input-assert-str= "text tool uses text cursor"
+                          "text"
+                          (name (draw-desired-cursor-kind text-state))))
+
+(let [panning (assoc (default-state) :space-down? true)]
+  (draw-input-assert-str= "space pan uses move cursor"
+                          "move"
+                          (name (draw-desired-cursor-kind panning))))
 
 (let [base (draw-sync-elements
              (draw-set-tool-core! (default-state) :select)

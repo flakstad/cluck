@@ -22,6 +22,7 @@ What is in place:
 - a toggleable in-window tool panel with clickable buttons, toggled with `tab`
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
+- tool-aware cursors: crosshair for draw tools, move for selection drag/pan, resize on rectangle handles, text cursor for the text tool, pointer over clickable tool-panel buttons
 - tool shortcuts for `i` ink, `t` text, `r` rectangle, `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
@@ -100,6 +101,7 @@ While the window is live:
 - press `ctrl+s` to save and `ctrl+o` to load from the default save path
 - hold `space` and drag to pan the viewport
 - zoomed drawing keeps brush width visually stable on screen, so zooming in lets you place finer world-space detail
+- cursor shape now reflects the current interaction mode, including selection move/resize and tool-panel button hover
 - call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state
 - draw session logging now writes to `build/cluck-draw.log`
 - crashes now write a snapshot to `build/cluck-draw-crash.edn`

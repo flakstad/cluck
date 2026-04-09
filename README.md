@@ -275,7 +275,10 @@ pointer, drag with the mouse or pen to paint
 ink, switch to the rectangle tool when you want a structured object, and switch to
 selection mode when you want to move existing elements. Press `d` to toggle
 the debug panel on demand, or `tab` to toggle the in-window tool panel with
-clickable buttons and a selection summary. The current tool
+clickable buttons and a selection summary. Cursor shape follows the current
+interaction mode: crosshair for drawing, move while panning or dragging
+selection, resize over rectangle handles, text for the text tool, and pointer
+over clickable tool-panel buttons. The current tool
 shortcuts are:
 
 - `i` ink tool

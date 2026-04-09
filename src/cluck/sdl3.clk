@@ -188,6 +188,20 @@ static bool cluck_mod_ctrl_pressed(void) {
   return (SDL_GetModState() & SDL_KMOD_CTRL) != 0;
 }
 
+static SDL_Cursor *cluck_create_system_cursor(int id) {
+  return SDL_CreateSystemCursor((SDL_SystemCursor)id);
+}
+
+static bool cluck_set_cursor(SDL_Cursor *cursor) {
+  return SDL_SetCursor(cursor);
+}
+
+static void cluck_destroy_cursor(SDL_Cursor *cursor) {
+  if (cursor) {
+    SDL_DestroyCursor(cursor);
+  }
+}
+
 static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
   SDL_FRect rect;
   rect.x = x;
@@ -540,6 +554,42 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (define sdl-mod-ctrl-pressed?
   (foreign-lambda bool "cluck_mod_ctrl_pressed"))
 
+(define sdl-create-system-cursor
+  (foreign-lambda* scheme-object ((int id))
+    "SDL_Cursor *cursor = cluck_create_system_cursor(id);
+     if (cursor) {
+       C_return(cursor);
+     }
+     C_return(C_SCHEME_FALSE);"))
+
+(define sdl-set-cursor!
+  (foreign-lambda* bool ((c-pointer cursor))
+    "C_return(cluck_set_cursor((SDL_Cursor *)cursor));"))
+
+(define sdl-destroy-cursor!
+  (foreign-lambda void "cluck_destroy_cursor" c-pointer))
+
+(define sdl-system-cursor-default
+  (foreign-value "SDL_SYSTEM_CURSOR_DEFAULT" int))
+
+(define sdl-system-cursor-text
+  (foreign-value "SDL_SYSTEM_CURSOR_TEXT" int))
+
+(define sdl-system-cursor-crosshair
+  (foreign-value "SDL_SYSTEM_CURSOR_CROSSHAIR" int))
+
+(define sdl-system-cursor-nwse-resize
+  (foreign-value "SDL_SYSTEM_CURSOR_NWSE_RESIZE" int))
+
+(define sdl-system-cursor-nesw-resize
+  (foreign-value "SDL_SYSTEM_CURSOR_NESW_RESIZE" int))
+
+(define sdl-system-cursor-move
+  (foreign-value "SDL_SYSTEM_CURSOR_MOVE" int))
+
+(define sdl-system-cursor-pointer
+  (foreign-value "SDL_SYSTEM_CURSOR_POINTER" int))
+
 (define sdl-render-fill-rect!
   (foreign-lambda* bool ((c-pointer renderer)
                          (int x)
@@ -758,6 +808,29 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (defn mod-ctrl-pressed?
   []
   (sdl-mod-ctrl-pressed?))
+
+(defn system-cursor-id
+  [kind]
+  (cond
+    (equal? kind :text) sdl-system-cursor-text
+    (equal? kind :crosshair) sdl-system-cursor-crosshair
+    (equal? kind :nwse-resize) sdl-system-cursor-nwse-resize
+    (equal? kind :nesw-resize) sdl-system-cursor-nesw-resize
+    (equal? kind :move) sdl-system-cursor-move
+    (equal? kind :pointer) sdl-system-cursor-pointer
+    :else sdl-system-cursor-default))
+
+(defn create-system-cursor
+  [kind]
+  (sdl-create-system-cursor (system-cursor-id kind)))
+
+(defn set-cursor!
+  [cursor]
+  (sdl-set-cursor! cursor))
+
+(defn destroy-cursor!
+  [cursor]
+  (sdl-destroy-cursor! cursor))
 
 (defn render-fill-rect!
   [renderer x y w h]

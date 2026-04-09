@@ -1007,6 +1007,7 @@
     (let [state (draw-sync-canvas! *draw-state*)]
       (set! *draw-state* state)
       (draw-ensure-preview! state)
+      (draw-sync-cursor! state)
       (sync-window-title!)
       (render-frame *draw-context* state)
       *draw-state*)
@@ -1674,6 +1675,25 @@
                     :strip-texture-width
                     :strip-texture-height)))
     (set! *draw-strip-ready?* false)
+    nil))
+
+(defn draw-release-cursors!
+  "Destroy cached system cursors and clear them from the draw context."
+  []
+  (let [cache (if *draw-context*
+                (or (get *draw-context* :cursor-cache) {})
+                {})]
+    (reduce (fn [acc entry]
+              (let [cursor (nth entry 1)]
+                (if cursor
+                  (sdl/destroy-cursor! cursor)
+                  nil)
+                acc))
+            nil
+            cache)
+    (if *draw-context*
+      (set! *draw-context* (dissoc *draw-context* :cursor-cache :cursor-kind))
+      nil)
     nil))
 
 (defn draw-ensure-canvas!
@@ -2778,6 +2798,19 @@
        (draw-screen-point-in-rect? screen-point
                                    (draw-tool-panel-rect state))))
 
+(defn draw-pointer-world-point
+  "Return the current pointer world point from STATE."
+  [state]
+  [(or (get state :mouse-x) 0.0)
+   (or (get state :mouse-y) 0.0)
+   (or (get state :pen-pressure) 1.0)])
+
+(defn draw-pointer-screen-point
+  "Return the current pointer screen point from STATE."
+  [state]
+  [(or (get state :mouse-screen-x) 0.0)
+   (or (get state :mouse-screen-y) 0.0)])
+
 (defn draw-find-tool-panel-button
   "Return the clicked tool-panel button for SCREEN-POINT, or false."
   [state screen-point]
@@ -2790,6 +2823,100 @@
             button
             (loop (rest buttons))))))
     false))
+
+(defn draw-selection-handle-cursor-kind
+  "Return the appropriate resize cursor for HANDLE."
+  [handle]
+  (if (or (draw-kind=? handle :nw)
+          (draw-kind=? handle :se))
+    :nwse-resize
+    (if (or (draw-kind=? handle :ne)
+            (draw-kind=? handle :sw))
+      :nesw-resize
+      :default)))
+
+(defn draw-desired-cursor-kind
+  "Return the desired system cursor for STATE."
+  [state]
+  (let [screen-point (draw-pointer-screen-point state)
+        world-point (draw-pointer-world-point state)]
+    (cond
+      (or (get state :panning?)
+          (get state :space-down?))
+      :move
+
+      (and (draw-selection-tool? state)
+           (get state :active-selection-resize))
+      (draw-selection-handle-cursor-kind
+        (get (get state :active-selection-resize) :handle))
+
+      (and (draw-selection-tool? state)
+           (get state :active-selection-drag))
+      :move
+
+      (draw-find-tool-panel-button state screen-point)
+      :pointer
+
+      (draw-tool-panel-hit? state screen-point)
+      :default
+
+      (and (draw-selection-tool? state)
+           (draw-find-selection-handle state screen-point))
+      (draw-selection-handle-cursor-kind
+        (draw-find-selection-handle state screen-point))
+
+      (and (draw-selection-tool? state)
+           (draw-find-hit-element state world-point))
+      :move
+
+      (draw-text-tool? state)
+      :text
+
+      (or (draw-box-tool? state)
+          (draw-arrow-tool? state)
+          (draw-frame-tool? state)
+          (draw-text-tool? state)
+          (draw-kind=? (or (get state :tool) :ink) :ink)
+          (get state :eraser?))
+      :crosshair
+
+      :else
+      :default)))
+
+(defn draw-ensure-system-cursor!
+  "Return a cached system cursor pointer for KIND, creating it when needed."
+  [kind]
+  (if (not *draw-context*)
+    false
+    (let [cache (or (get *draw-context* :cursor-cache) {})
+          current (get cache kind)]
+      (if current
+        current
+        (let [cursor (sdl/create-system-cursor kind)]
+          (if cursor
+            (begin
+              (set! *draw-context*
+                    (assoc *draw-context*
+                           :cursor-cache (assoc cache kind cursor)))
+              cursor)
+            false))))))
+
+(defn draw-sync-cursor!
+  "Apply the desired cursor for STATE when the live context is available."
+  [state]
+  (if (not *draw-context*)
+    false
+    (let [kind (draw-desired-cursor-kind state)
+          current-kind (get *draw-context* :cursor-kind)]
+      (if (equal? kind current-kind)
+        kind
+        (let [cursor (draw-ensure-system-cursor! kind)]
+          (if cursor
+            (begin
+              (sdl/set-cursor! cursor)
+              (set! *draw-context* (assoc *draw-context* :cursor-kind kind))
+              kind)
+            current-kind))))))
 
 (defn draw-clear-active-interactions
   "Clear transient pointer interaction state from STATE."
@@ -4887,8 +5014,9 @@
                                     (if (get state :active-arrow) "active" "idle")
                                     (if (get state :active-text) "active" "idle")))
     (sdl/render-debug-text! renderer 12 76
-                            (format "pan: %s"
-                                    (if (get state :panning?) "on" "off")))
+                            (format "pan: %s cursor: %s"
+                                    (if (get state :panning?) "on" "off")
+                                    (name (draw-desired-cursor-kind state))))
     (sdl/render-debug-text! renderer 12 92
                             (format "tool: %s size: %d color: %s elements: %d selection: %d"
                                     (draw-tool-mode state)
@@ -4937,6 +5065,7 @@
    "  wheel: zoom at pointer"
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
+   "  cursors: crosshair draw, move select, resize handles, text tool"
    "  drag: draw / move selection"
    "  rectangle handles: resize selected rectangle"
    "  shift+click: add to selection"
@@ -5096,7 +5225,7 @@
                     (draw-log-entry! :child-open-context-ok {:title (get state :title)})
                     nil)
                   (set! *draw-state* state)
-                  (set! *draw-context* ctx)
+                  (set! *draw-context* (assoc ctx :cursor-cache {} :cursor-kind false))
                   (set! *draw-running?* true)
                   (set! *draw-last-heartbeat-at* 0)
                   (draw-clear-watchdog-files!)
@@ -5135,6 +5264,7 @@
       (draw-release-preview!)
       (draw-release-brush-texture!)
       (draw-release-strip-texture!)
+      (draw-release-cursors!)
       (if *draw-context*
         (begin
           (sdl/close-context! *draw-context*)
