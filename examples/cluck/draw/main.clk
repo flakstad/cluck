@@ -12,6 +12,7 @@
             [cluck.examples.draw.panel :as draw-panel]
             [cluck.examples.draw.geometry :as draw-geometry]
             [cluck.examples.draw.selection :as draw-selection]
+            [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
             [cluck.io :as io]
@@ -197,6 +198,19 @@
 (def draw-selection-handle-cursor-kind draw-selection/draw-selection-handle-cursor-kind)
 (def draw-desired-cursor-kind draw-selection/draw-desired-cursor-kind)
 (def draw-clear-active-interactions draw-selection/draw-clear-active-interactions)
+
+(def draw-start-selection-interaction draw-edit/draw-start-selection-interaction)
+(def draw-extend-selection-marquee draw-edit/draw-extend-selection-marquee)
+(def draw-finish-selection-marquee draw-edit/draw-finish-selection-marquee)
+(def draw-start-selection-rotate draw-edit/draw-start-selection-rotate)
+(def draw-start-selection-resize draw-edit/draw-start-selection-resize)
+(def draw-start-selection-drag draw-edit/draw-start-selection-drag)
+(def draw-extend-selection-drag draw-edit/draw-extend-selection-drag)
+(def draw-extend-selection-resize draw-edit/draw-extend-selection-resize)
+(def draw-extend-selection-rotate draw-edit/draw-extend-selection-rotate)
+(def draw-finish-selection-drag draw-edit/draw-finish-selection-drag)
+(def draw-finish-selection-rotate draw-edit/draw-finish-selection-rotate)
+(def draw-finish-selection-resize draw-edit/draw-finish-selection-resize)
 
 (def draw-history-limit draw-history/draw-history-limit)
 (def draw-history-snapshot draw-history/draw-history-snapshot)
@@ -1616,318 +1630,6 @@
         screen-point)
 
       :else base-state)))
-
-(defn draw-start-selection-interaction
-  "Update selection from POINT and begin a drag when an element was hit."
-  [state point screen-point pointer-source extend-selection?]
-  (let [element (draw-find-hit-element state point)
-        ids (draw-selection-next-ids state element extend-selection?)]
-    (if element
-      (draw-sync-pointer-state
-        (assoc state
-               :selection ids
-               :pointer-down? true
-               :pointer-source pointer-source
-               :active-stroke false
-               :active-selection-resize false
-               :active-selection-rotate false
-               :active-selection-marquee false
-               :active-box false
-               :active-arrow false
-               :active-frame false
-               :active-text false
-               :active-selection-drag {:ids ids
-                                       :anchor point
-                                       :original-elements (edn/read-string
-                                                            (pr-str (get state :elements)))
-                                       :moved? false})
-        point
-        screen-point)
-      (draw-sync-pointer-state
-        (assoc state
-               :selection (if extend-selection?
-                            (draw-selected-element-ids state)
-                            [])
-               :pointer-down? true
-               :pointer-source pointer-source
-               :active-stroke false
-               :active-selection-drag false
-               :active-selection-resize false
-               :active-selection-rotate false
-               :active-box false
-               :active-arrow false
-               :active-frame false
-               :active-text false
-               :active-selection-marquee {:anchor point
-                                          :point point
-                                          :extend-selection? (if extend-selection? true false)
-                                          :original-selection (vec (draw-selected-element-ids state))})
-        point
-        screen-point))))
-
-(defn draw-extend-selection-marquee
-  "Update the active marquee selection rectangle."
-  [state point screen-point]
-  (let [marquee (get state :active-selection-marquee)]
-    (if marquee
-      (draw-sync-pointer-state
-        (assoc state
-               :active-selection-marquee (assoc marquee :point point))
-        point
-        screen-point)
-      (draw-sync-pointer-state state point screen-point))))
-
-(defn draw-finish-selection-marquee
-  "Finish the active marquee selection rectangle and update selection."
-  [state point screen-point]
-  (let [marquee (get state :active-selection-marquee)]
-    (if marquee
-      (let [bounds (draw-selection-rect (get marquee :anchor) point)
-            ids (draw-marquee-selection-ids state
-                                            bounds
-                                            (get marquee :extend-selection?)
-                                            (get marquee :original-selection))]
-        (draw-sync-pointer-state
-          (assoc state
-                 :selection ids
-                 :pointer-down? false
-                 :pointer-source false
-                 :active-selection-marquee false)
-          point
-          screen-point))
-      (draw-sync-pointer-state
-        (assoc state
-               :pointer-down? false
-               :pointer-source false
-               :active-selection-marquee false)
-        point
-        screen-point))))
-
-(defn draw-start-selection-rotate
-  "Begin rotating the currently selected rectangle."
-  [state point screen-point pointer-source]
-  (let [box (draw-single-selected-rectangle state)]
-    (if box
-      (let [center (draw-box-center box)
-            angle (draw-point-angle center point)]
-        (draw-sync-pointer-state
-          (assoc state
-                 :pointer-down? true
-                 :pointer-source pointer-source
-                 :active-selection-drag false
-                 :active-selection-resize false
-                 :active-selection-rotate {:id (get box :id)
-                                           :anchor-angle angle
-                                           :original-rotation (draw-box-rotation box)
-                                           :original-elements (edn/read-string
-                                                                (pr-str (get state :elements)))
-                                           :moved? false})
-          point
-          screen-point))
-      state)))
-
-(defn draw-start-selection-resize
-  "Begin resizing the currently selected rectangle from HANDLE."
-  [state point screen-point pointer-source handle]
-  (let [element (draw-single-selected-element state)]
-    (if (or (draw-single-selected-rectangle state)
-            (draw-single-selected-arrow state))
-      (draw-sync-pointer-state
-        (assoc state
-               :pointer-down? true
-               :pointer-source pointer-source
-               :active-selection-drag false
-               :active-selection-rotate false
-               :active-selection-resize {:id (get element :id)
-                                         :element-kind (get element :kind)
-                                         :handle handle
-                                         :original-elements (edn/read-string
-                                                              (pr-str (get state :elements)))
-                                         :moved? false})
-        point
-        screen-point)
-      state)))
-
-(defn draw-start-selection-drag
-  "Select the topmost element under POINT and begin a drag when present."
-  [state point screen-point pointer-source]
-  (draw-start-selection-interaction state
-                                    point
-                                    screen-point
-                                    pointer-source
-                                    false))
-
-(defn draw-extend-selection-drag
-  "Move the current selection by the drag delta from its anchor."
-  [state point screen-point]
-  (let [drag (get state :active-selection-drag)]
-    (if drag
-      (let [anchor (get drag :anchor)
-            dx (- (nth point 0) (nth anchor 0))
-            dy (- (nth point 1) (nth anchor 1))
-            moved? (or (get drag :moved?)
-                       (not (= dx 0.0))
-                       (not (= dy 0.0)))
-            state (if (and moved?
-                           (not (get drag :moved?)))
-                    (draw-push-history! state)
-                    state)
-            next-elements (if moved?
-                            (draw-translate-selected-elements
-                              (get drag :original-elements)
-                              (get drag :ids)
-                              dx
-                              dy)
-                            (get drag :original-elements))
-            next-drag (assoc drag :moved? moved?)
-            next-state (draw-sync-pointer-state
-                         (draw-sync-elements
-                           (assoc state
-                                  :active-selection-drag next-drag
-                                  :canvas-dirty? moved?)
-                           next-elements)
-                         point
-                         screen-point)]
-        next-state)
-      (draw-sync-pointer-state state point screen-point))))
-
-(defn draw-extend-selection-resize
-  "Resize the selected rectangle from the active resize handle."
-  [state point screen-point]
-  (let [resize (get state :active-selection-resize)]
-    (if resize
-      (let [original-elements (get resize :original-elements)
-            element-id (get resize :id)
-            original-element (draw-find-element-by-id original-elements element-id)
-            element-kind (or (get resize :element-kind)
-                             (if original-element (get original-element :kind) false))]
-        (if (and original-element (draw-kind=? element-kind :box))
-          (let [fixed (draw-rectangle-opposite-corner original-element (get resize :handle))
-                moved? (or (get resize :moved?)
-                           (not (= (nth point 0) (nth fixed 0)))
-                           (not (= (nth point 1) (nth fixed 1))))
-                state (if (and moved?
-                               (not (get resize :moved?)))
-                        (draw-push-history! state)
-                        state)
-                local-point (draw-unrotate-point-around point
-                                                        (draw-box-center original-element)
-                                                        (draw-box-rotation original-element))
-                next-box (draw-box-with-rect original-element
-                                             (draw-box-rect fixed local-point))
-                next-elements (draw-replace-element-by-id original-elements
-                                                          element-id
-                                                          next-box)
-                next-state (draw-sync-pointer-state
-                             (draw-sync-elements
-                               (assoc state
-                                      :active-selection-resize (assoc resize :moved? moved?)
-                                      :canvas-dirty? moved?)
-                               next-elements)
-                             point
-                             screen-point)]
-            next-state)
-          (if (and original-element (draw-kind=? element-kind :arrow))
-            (let [handle (get resize :handle)
-                  original-point (get original-element handle)
-                  moved? (or (get resize :moved?)
-                             (not (and (= (nth point 0) (nth original-point 0))
-                                       (= (nth point 1) (nth original-point 1))
-                                       (= (nth point 2) (nth original-point 2)))))
-                  state (if (and moved?
-                                 (not (get resize :moved?)))
-                          (draw-push-history! state)
-                          state)
-                  next-arrow (assoc original-element handle point)
-                  next-elements (draw-replace-element-by-id original-elements
-                                                            element-id
-                                                            next-arrow)
-                  next-state (draw-sync-pointer-state
-                               (draw-sync-elements
-                                 (assoc state
-                                        :active-selection-resize (assoc resize :moved? moved?)
-                                        :canvas-dirty? moved?)
-                                 next-elements)
-                               point
-                               screen-point)]
-              next-state)
-            (draw-sync-pointer-state
-              (assoc state :active-selection-resize false)
-              point
-              screen-point))))
-      (draw-sync-pointer-state state point screen-point))))
-
-(defn draw-extend-selection-rotate
-  "Rotate the selected rectangle from the active rotate handle."
-  [state point screen-point]
-  (let [rotate (get state :active-selection-rotate)]
-    (if rotate
-      (let [original-elements (get rotate :original-elements)
-            element-id (get rotate :id)
-            original-box (draw-find-element-by-id original-elements element-id)]
-        (if (and original-box (draw-box-element? original-box))
-          (let [center (draw-box-center original-box)
-                angle (draw-point-angle center point)
-                delta (draw-normalize-angle
-                        (- angle (get rotate :anchor-angle)))
-                next-rotation (+ (get rotate :original-rotation) delta)
-                moved? (or (get rotate :moved?)
-                           (> (math/abs delta) 0.001))
-                state (if (and moved?
-                               (not (get rotate :moved?)))
-                        (draw-push-history! state)
-                        state)
-                next-box (assoc original-box :rotation next-rotation)
-                next-elements (draw-replace-element-by-id original-elements
-                                                          element-id
-                                                          next-box)
-                next-state (draw-sync-pointer-state
-                             (draw-sync-elements
-                               (assoc state
-                                      :active-selection-rotate (assoc rotate :moved? moved?)
-                                      :canvas-dirty? moved?)
-                               next-elements)
-                             point
-                             screen-point)]
-            next-state)
-          (draw-sync-pointer-state
-            (assoc state :active-selection-rotate false)
-            point
-            screen-point)))
-      (draw-sync-pointer-state state point screen-point))))
-
-(defn draw-finish-selection-drag
-  "Finish the current selection drag and leave the selection active."
-  [state point screen-point]
-  (draw-sync-pointer-state
-    (assoc state
-           :pointer-down? false
-           :pointer-source false
-           :active-selection-drag false)
-    point
-    screen-point))
-
-(defn draw-finish-selection-rotate
-  "Finish the current selection rotate and leave the selection active."
-  [state point screen-point]
-  (draw-sync-pointer-state
-    (assoc state
-           :pointer-down? false
-           :pointer-source false
-           :active-selection-rotate false)
-    point
-    screen-point))
-
-(defn draw-finish-selection-resize
-  "Finish the current selection resize and leave the selection active."
-  [state point screen-point]
-  (draw-sync-pointer-state
-    (assoc state
-           :pointer-down? false
-           :pointer-source false
-           :active-selection-resize false)
-    point
-    screen-point))
 
 (defn draw-segment-stroke
   "Build a fresh temporary stroke for incremental canvas commits."
