@@ -1,0 +1,58 @@
+;; Crypto helpers for the separate Ring library tree.
+
+(ns ring.util.crypto
+  "Crypto helpers for the separate Ring library tree."
+  (:require [cluck.string :as str]))
+
+(import (chicken bitwise)
+        hmac
+        sha2
+        message-digest-utils)
+
+(def crypto-hex-result-form 'hex-string)
+
+(defn crypto-text
+  "Normalize VALUE to the text input expected by the digest eggs."
+  [value]
+  (if (nil? value)
+    ""
+    (str value)))
+
+(defn sha256-hex
+  "Return the SHA-256 digest for VALUE as lowercase hex text."
+  [value]
+  (message-digest-string (sha256-primitive)
+                         (crypto-text value)
+                         crypto-hex-result-form))
+
+(defn hmac-sha256-hex
+  "Return the HMAC-SHA256 signature for VALUE using KEY as lowercase hex text."
+  [key value]
+  ((hmac (crypto-text key)
+         (sha256-primitive)
+         crypto-hex-result-form)
+   (crypto-text value)))
+
+(defn constant-time-string=?
+  "Return true when LEFT and RIGHT contain the same text."
+  [left right]
+  (let [left (crypto-text left)
+        right (crypto-text right)
+        left-length (string-length left)
+        right-length (string-length right)
+        limit (max left-length right-length)]
+    (let [diff
+          (##core#let loop ((index 0)
+                            (diff (bitwise-xor left-length right-length)))
+            (if (= index limit)
+              diff
+              (let [left-code (if (< index left-length)
+                                (char->integer (string-ref left index))
+                                0)
+                    right-code (if (< index right-length)
+                                 (char->integer (string-ref right index))
+                                 0)]
+                (loop (+ index 1)
+                      (bitwise-ior diff
+                                   (bitwise-xor left-code right-code))))))]
+      (= diff 0))))

@@ -1,0 +1,587 @@
+;; Default middleware stack for the separate Ring library tree.
+
+(ns ring.middleware.defaults
+  "Default middleware stack for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.middleware.anti-forgery :as anti-forgery]
+            [ring.middleware.content-length :as content-length]
+            [ring.middleware.cookies :as cookies]
+            [ring.middleware.head :as head]
+            [ring.middleware.keyword-params :as keyword-params]
+            [ring.middleware.multipart-params :as multipart-params]
+            [ring.middleware.nested-params :as nested-params]
+            [ring.middleware.not-modified :as not-modified]
+            [ring.middleware.params :as params]
+            [ring.middleware.resource :as resource]
+            [ring.middleware.session :as session]
+            [ring.request :as request]
+            [ring.response :as response]))
+
+(define site-default-charset
+  "utf-8")
+
+(define site-frame-options-default
+  :sameorigin)
+
+(define site-defaults
+  (hash-map :cookies #t
+            :params (hash-map :urlencoded #t
+                              :multipart #t
+                              :nested #t
+                              :keywordize #f)
+            :responses (hash-map :absolute-redirects #f
+                                 :default-charset site-default-charset
+                                 :not-modified-responses #t)
+            :security (hash-map :anti-forgery #t
+                                :content-type-options #t
+                                :frame-options site-frame-options-default
+                                :hsts #f
+                                :ssl-redirect #f)
+            :session (hash-map :path "/"
+                               :same-site :lax
+                               :http-only #t)
+            :static (hash-map :resources "public")))
+
+(define secure-site-defaults
+  (hash-map :cookies #t
+            :params (hash-map :urlencoded #t
+                              :multipart #t
+                              :nested #t
+                              :keywordize #f)
+            :responses (hash-map :absolute-redirects #f
+                                 :default-charset site-default-charset
+                                 :not-modified-responses #t)
+            :security (hash-map :anti-forgery #t
+                                :content-type-options #t
+                                :frame-options site-frame-options-default
+                                :hsts #t
+                                :ssl-redirect #t)
+            :session (hash-map :path "/"
+                               :same-site :lax
+                               :http-only #t
+                               :secure #t)
+            :static (hash-map :resources "public")))
+
+(define api-defaults
+  (hash-map :cookies #f
+            :params (hash-map :urlencoded #t
+                              :multipart #f
+                              :nested #f
+                              :keywordize #f)
+            :responses (hash-map :absolute-redirects #f
+                                 :default-charset site-default-charset
+                                 :not-modified-responses #f)
+            :security (hash-map :anti-forgery #f
+                                :content-type-options #t
+                                :frame-options #f
+                                :hsts #f
+                                :ssl-redirect #f)
+            :session #f
+            :static #f))
+
+(define secure-api-defaults
+  (hash-map :cookies #f
+            :params (hash-map :urlencoded #t
+                              :multipart #f
+                              :nested #f
+                              :keywordize #f)
+            :responses (hash-map :absolute-redirects #f
+                                 :default-charset site-default-charset
+                                 :not-modified-responses #f)
+            :security (hash-map :anti-forgery #f
+                                :content-type-options #t
+                                :frame-options #f
+                                :hsts #t
+                                :ssl-redirect #t)
+            :session #f
+            :static #f))
+
+(defn defaults-options
+  "Return a normalized defaults configuration map."
+  [options]
+  (or options site-defaults))
+
+(defn defaults-bool?
+  "Return true when VALUE should enable middleware."
+  [value]
+  (and value (not (equal? value #f))))
+
+(defn defaults-map-option
+  "Return OPTION when it is a map, otherwise #f."
+  [option]
+  (if (map? option)
+      option
+      #f))
+
+(defn defaults-session-options
+  "Return a session options map or #f."
+  [options]
+  (let [session-option (get options :session)]
+    (cond
+      (not session-option) #f
+      (map? session-option)
+      session-option
+      :else (hash-map :path "/"
+                      :same-site :lax
+                      :http-only #t))))
+
+(defn defaults-cookies?
+  "Return true when cookie parsing/serialization should be enabled."
+  [options session-options]
+  (or (defaults-bool? (get options :cookies))
+      session-options))
+
+(defn defaults-request-secure?
+  "Return true when REQUEST should be treated as secure."
+  [request options]
+  (let [scheme (request/request-scheme request)
+        forwarded-proto (request/request-header request "X-Forwarded-Proto")
+        forwarded-ssl (request/request-header request "X-Forwarded-Ssl")]
+    (or (equal? scheme :https)
+        (and (defaults-request-from-trusted-proxy? request options)
+             forwarded-proto
+             (string=? (str/lower-case (str/trim forwarded-proto))
+                       "https"))
+        (and (defaults-request-from-trusted-proxy? request options)
+             forwarded-ssl
+             (string=? (str/lower-case (str/trim forwarded-ssl))
+                       "on")))))
+
+(defn defaults-trusted-proxies
+  "Return the trusted proxy list for OPTIONS."
+  [options]
+  (let [trusted-proxies (get options :trusted-proxies)]
+    (cond
+      (string? trusted-proxies) (list trusted-proxies)
+      (vector? trusted-proxies) (vector->list trusted-proxies)
+      (pair? trusted-proxies) trusted-proxies
+      :else '())))
+
+(defn defaults-trusted-hosts
+  "Return the trusted host list for OPTIONS."
+  [options]
+  (let [trusted-hosts (get options :trusted-hosts)]
+    (cond
+      (string? trusted-hosts) (list trusted-hosts)
+      (vector? trusted-hosts) (vector->list trusted-hosts)
+      (pair? trusted-hosts) trusted-hosts
+      :else '())))
+
+(defn defaults-request-from-trusted-proxy?
+  "Return true when REQUEST came from a configured trusted proxy."
+  [request options]
+  (let [remote-addr (request/request-remote-addr request)]
+    (and remote-addr
+         (##core#let loop ((proxies (defaults-trusted-proxies options)))
+           (if (empty? proxies)
+               #f
+               (if (string=? remote-addr (str (first proxies)))
+                   #t
+                   (loop (rest proxies))))))))
+
+(defn defaults-first-host-value
+  "Return the first host value from HOST-TEXT, or #f when none is present."
+  [host-text]
+  (let [text (if host-text (str/trim (str host-text)) "")]
+    (if (string=? text "")
+        #f
+        (let [values (str/split text ",")
+              first-value (if (empty? values)
+                            text
+                            (str/trim (first values)))]
+          (if (string=? first-value "")
+              #f
+              first-value)))))
+
+(defn defaults-host-parts
+  "Return the normalized host parts for HOST-TEXT."
+  [host-text]
+  (let [value (defaults-first-host-value host-text)]
+        (if (not value)
+        #f
+        (if (str/starts-with? value "[")
+            (let [end (str/cluck-string-index-of value "]" 0)]
+              (if end
+                  (let [host (str/lower-case (substring value 0 (+ end 1)))
+                        remainder (substring value (+ end 1) (string-length value))
+                        port (if (str/starts-with? remainder ":")
+                               (substring remainder 1 (string-length remainder))
+                               #f)]
+                    (hash-map :host host
+                              :port (if (and port (not (string=? port "")))
+                                      port
+                                      #f)))
+                  (hash-map :host (str/lower-case value)
+                            :port #f)))
+            (let [parts (str/split value ":")
+                  host (if (empty? parts) "" (str/lower-case (first parts)))
+                  port (if (= (count parts) 2)
+                         (nth parts 1)
+                         #f)]
+              (if (string=? host "")
+                  #f
+                  (hash-map :host host
+                            :port (if (and port (not (string=? port "")))
+                                    port
+                                    #f))))))))
+
+(defn defaults-host-display
+  "Return a display host from PARTS using FALLBACK-PORT when needed."
+  [parts fallback-port]
+  (if (not parts)
+      #f
+      (let [host (get parts :host)
+            port (or (get parts :port)
+                     (if (or (equal? fallback-port 80)
+                             (equal? fallback-port 443))
+                         #f
+                         (number->string fallback-port)))]
+        (if (and port (not (string=? port "")))
+            (string-append host ":" port)
+            host))))
+
+(defn defaults-host-allowed?
+  "Return true when PARTS are allowed by TRUSTED-HOSTS."
+  [parts trusted-hosts]
+  (and parts
+       (##core#let loop ((hosts trusted-hosts))
+         (if (empty? hosts)
+             #f
+             (let [trusted-parts (defaults-host-parts (first hosts))]
+               (if (and trusted-parts
+                        (string=? (get parts :host)
+                                  (get trusted-parts :host))
+                        (or (not (get trusted-parts :port))
+                            (and (get parts :port)
+                                 (string=? (get parts :port)
+                                           (get trusted-parts :port)))))
+                   #t
+                   (loop (rest hosts))))))))
+
+(defn defaults-server-host
+  "Return the server-configured host display for REQUEST."
+  [request]
+  (defaults-host-display
+   (defaults-host-parts (request/request-server-name request))
+   (request/request-server-port request)))
+
+(defn defaults-request-host
+  "Return the visible host for REQUEST."
+  [request options]
+  (let [forwarded-host (if (defaults-request-from-trusted-proxy? request options)
+                         (request/request-header request "X-Forwarded-Host")
+                         #f)
+        trusted-hosts (defaults-trusted-hosts options)
+        server-host (defaults-server-host request)
+        forwarded-parts (defaults-host-parts forwarded-host)
+        direct-parts (defaults-host-parts (request/request-header request "Host"))
+        direct-host (if (defaults-host-allowed? direct-parts trusted-hosts)
+                      (defaults-host-display direct-parts
+                                             (request/request-server-port request))
+                      #f)
+        forwarded-display (if (and forwarded-parts
+                                   (or (empty? trusted-hosts)
+                                       (defaults-host-allowed? forwarded-parts
+                                                               trusted-hosts)))
+                              (defaults-host-display forwarded-parts
+                                                     (request/request-server-port request))
+                              #f)]
+    (or forwarded-display
+        direct-host
+        server-host
+        "")))
+
+(defn defaults-request-scheme
+  "Return the visible URL scheme for REQUEST."
+  [request options]
+  (if (defaults-request-secure? request options)
+      "https"
+      "http"))
+
+(defn defaults-request-absolute-url
+  "Return an absolute URL for PATH on REQUEST."
+  [request options path]
+  (let [query-string (request/request-query-string request)
+        host (defaults-request-host request options)
+        base (if (or (not host) (string=? host ""))
+               path
+               (string-append (defaults-request-scheme request options)
+                              "://"
+                              host
+                              path))]
+    (if (and query-string (not (string=? query-string "")))
+        (string-append base "?" query-string)
+        base)))
+
+(defn default-charset-content-type
+  "Return CONTENT-TYPE with a default CHARSET appended when needed."
+  [content-type charset]
+  (let [text (if (string? content-type)
+               content-type
+               (str content-type))
+        lower (str/lower-case text)]
+    (if (and (or (str/starts-with? lower "text/")
+                 (string=? lower "application/xml")
+                 (string=? lower "application/xhtml+xml"))
+             (not (str/includes? lower "charset=")))
+        (string-append text "; charset=" charset)
+        text)))
+
+(defn wrap-default-charset
+  "Return a handler that adds a default charset to text responses."
+  [handler charset]
+  (let [charset (or charset site-default-charset)]
+    (fn [request]
+      (let [response-map (handler request)
+            content-type (response/response-header response-map "Content-Type")]
+        (if content-type
+            (response/content-type response-map
+                                   (default-charset-content-type content-type
+                                                                 charset))
+            response-map)))))
+
+(defn frame-options-value
+  "Return the frame-options header value for OPTION."
+  [option]
+  (cond
+    (keyword? option) (str/upper-case (name option))
+    (symbol? option) (str/upper-case (symbol->string option))
+    (string? option) (str/upper-case option)
+    (equal? option #t) "SAMEORIGIN"
+    :else #f))
+
+(defn wrap-content-type-options
+  "Return a handler that adds X-Content-Type-Options."
+  [handler option]
+  (let [enabled? (defaults-bool? option)]
+    (fn [request]
+      (let [response-map (handler request)]
+        (if enabled?
+            (response/header response-map
+                             "X-Content-Type-Options"
+                             "nosniff")
+            response-map)))))
+
+(defn wrap-frame-options
+  "Return a handler that adds X-Frame-Options."
+  [handler option]
+  (let [value (frame-options-value option)]
+    (fn [request]
+      (let [response-map (handler request)]
+        (if value
+            (response/header response-map "X-Frame-Options" value)
+            response-map)))))
+
+(defn hsts-value
+  "Return a Strict-Transport-Security header string."
+  [option]
+  (cond
+    (string? option) option
+    (map? option)
+    (let [max-age (or (get option :max-age) 31536000)
+          include-subdomains? (if (contains? option :include-subdomains?)
+                                 (get option :include-subdomains?)
+                                 #t)
+          preload? (defaults-bool? (get option :preload?))
+          parts (list (string-append "max-age=" (number->string max-age)))]
+      (let [parts (if include-subdomains?
+                    (cons "includeSubDomains" parts)
+                    parts)]
+        (let [parts (if preload?
+                      (cons "preload" parts)
+                      parts)]
+          (str/join "; " (reverse parts)))))
+    (equal? option #t) "max-age=31536000; includeSubDomains"
+    :else #f))
+
+(defn wrap-hsts
+  "Return a handler that adds Strict-Transport-Security on secure requests."
+  [handler option options]
+  (let [value (hsts-value option)
+        options (or options (hash-map))]
+    (fn [request]
+      (let [response-map (handler request)]
+        (if (and value (defaults-request-secure? request options))
+            (response/header response-map
+                             "Strict-Transport-Security"
+                             value)
+            response-map)))))
+
+(defn ssl-redirect-target
+  "Return the HTTPS target URL for REQUEST."
+  [request options]
+  (let [ssl-port (or (get options :ssl-port) 443)
+        host (defaults-request-host request options)
+        host-parts (defaults-host-parts host)
+        host-base (if host-parts (get host-parts :host) "")
+        path (or (request/request-uri request) "/")
+        query-string (request/request-query-string request)
+        host (if (string=? host-base "")
+               ""
+               (if (equal? ssl-port 443)
+                   host-base
+                   (string-append host-base ":" (number->string ssl-port))))
+        base (if (string=? host "")
+               path
+               (string-append "https://" host path))]
+    (if (and query-string (not (string=? query-string "")))
+        (string-append base "?" query-string)
+        base)))
+
+(defn wrap-ssl-redirect
+  "Return a handler that redirects insecure requests to HTTPS."
+  [handler options]
+  (let [options (if (map? options) options (hash-map))
+        status (or (get options :status) 302)]
+    (fn [request]
+      (if (defaults-request-secure? request options)
+          (handler request)
+          (response/status
+           (response/redirect (ssl-redirect-target request options))
+           status)))))
+
+(defn absolute-redirect-location
+  "Return an absolute redirect target for REQUEST when LOCATION is relative."
+  [request options location]
+  (if (or (not location)
+          (string=? location "")
+          (str/starts-with? location "http://")
+          (str/starts-with? location "https://"))
+      location
+      (defaults-request-absolute-url request options location)))
+
+(defn wrap-absolute-redirects
+  "Return a handler that expands relative redirect locations."
+  [handler options]
+  (let [options (or options (hash-map))]
+    (fn [request]
+      (let [response-map (handler request)
+            location (response/response-header response-map "Location")]
+        (if location
+            (response/location response-map
+                               (absolute-redirect-location request options location))
+            response-map)))))
+
+(defn defaults-resource-options
+  "Return a static resource options map or #f."
+  [options]
+  (let [static-option (get options :static)]
+    (cond
+      (string? static-option) (hash-map :root static-option)
+      (map? static-option)
+      (let [resources (or (get static-option :resources)
+                          (get static-option :files))]
+        (cond
+          (string? resources) (hash-map :root resources)
+          (map? resources) resources
+          :else #f))
+      :else #f)))
+
+(defn defaults-params-enabled?
+  "Return true when urlencoded params should be enabled."
+  [params-options]
+  (and params-options
+       (defaults-bool? (get params-options :urlencoded))))
+
+(defn defaults-multipart-options
+  "Return multipart options when multipart parsing is enabled."
+  [params-options]
+  (let [multipart-option (get params-options :multipart)]
+    (cond
+      (equal? multipart-option #f) #f
+      (equal? multipart-option #t) (hash-map)
+      (map? multipart-option) multipart-option
+      :else #f)))
+
+(defn defaults-nested-enabled?
+  "Return true when nested params should be enabled."
+  [params-options]
+  (and params-options
+       (defaults-bool? (get params-options :nested))))
+
+(defn defaults-keyword-enabled?
+  "Return true when keyword params should be enabled."
+  [params-options]
+  (and params-options
+       (defaults-bool? (get params-options :keywordize))))
+
+(defn defaults-security-options
+  "Return a normalized security options map."
+  [options]
+  (let [security-option (get options :security)]
+    (if (map? security-option)
+        security-option
+        (hash-map))))
+
+(defn wrap-defaults
+  "Wrap HANDLER in the standard Ring-style defaults from OPTIONS."
+  [handler options]
+  (let* ((options (defaults-options options))
+         (params-options (or (get options :params) (hash-map)))
+         (security-options (defaults-security-options options))
+         (responses-options (or (get options :responses) (hash-map)))
+         (session-options (defaults-session-options options))
+         (anti-forgery-option (get security-options :anti-forgery))
+         (session-options (if (and anti-forgery-option (not session-options))
+                            (hash-map :path "/"
+                                      :same-site :lax
+                                      :http-only #t)
+                            session-options))
+         (cookies-enabled? (defaults-cookies? options session-options))
+         (multipart-options (defaults-multipart-options params-options))
+         (resource-options (defaults-resource-options options))
+         (default-charset (get responses-options :default-charset))
+         (absolute-redirects? (defaults-bool? (get responses-options :absolute-redirects)))
+         (not-modified? (defaults-bool? (get responses-options :not-modified-responses)))
+         (content-type-options (get security-options :content-type-options))
+         (frame-options (get security-options :frame-options))
+         (hsts-option (get security-options :hsts))
+         (ssl-redirect-option (get security-options :ssl-redirect)))
+    (let [handler (if anti-forgery-option
+                    (anti-forgery/wrap-anti-forgery handler anti-forgery-option)
+                    handler)
+          handler (if session-options
+                    (session/wrap-session handler session-options)
+                    handler)
+          handler (if cookies-enabled?
+                    (cookies/wrap-cookies handler)
+                    handler)
+          handler (if (defaults-keyword-enabled? params-options)
+                    (keyword-params/wrap-keyword-params handler)
+                    handler)
+          handler (if (defaults-nested-enabled? params-options)
+                    (nested-params/wrap-nested-params handler)
+                    handler)
+          handler (if multipart-options
+                    (multipart-params/wrap-multipart-params handler multipart-options)
+                    handler)
+          handler (if (defaults-params-enabled? params-options)
+                    (params/wrap-params handler params-options)
+                    handler)
+          handler (if resource-options
+                    (resource/wrap-resource handler resource-options)
+                    handler)
+          handler (content-length/wrap-content-length handler)
+          handler (head/wrap-head handler)
+          handler (if not-modified?
+                    (not-modified/wrap-not-modified handler)
+                    handler)
+          handler (if default-charset
+                    (wrap-default-charset handler default-charset)
+                    handler)
+          handler (if content-type-options
+                    (wrap-content-type-options handler content-type-options)
+                    handler)
+          handler (if frame-options
+                    (wrap-frame-options handler frame-options)
+                    handler)
+          handler (if hsts-option
+                    (wrap-hsts handler hsts-option options)
+                    handler)
+          handler (if absolute-redirects?
+                    (wrap-absolute-redirects handler options)
+                    handler)
+          handler (if ssl-redirect-option
+                    (wrap-ssl-redirect handler ssl-redirect-option)
+                    handler)]
+      handler)))

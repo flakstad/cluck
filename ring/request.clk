@@ -1,0 +1,138 @@
+;; Pure request helpers in the separate Ring library tree.
+
+(ns ring.request
+  "Pure request helpers in the separate Ring library tree."
+  (:require [ring.util :as util]))
+
+(defn request
+  "Create a minimal Ring request map with the required HTTP keys."
+  [method uri]
+  {:request-method method
+   :uri uri
+   :scheme :http
+   :protocol "HTTP/1.1"
+   :server-name ""
+   :server-port 80
+   :remote-addr ""
+   :headers (hash-map)})
+
+(defn request-method
+  "Return the request method."
+  [request]
+  (get request :request-method))
+
+(defn request-uri
+  "Return the request URI path."
+  [request]
+  (get request :uri))
+
+(defn request-query-string
+  "Return the optional query string."
+  [request]
+  (get request :query-string))
+
+(defn request-scheme
+  "Return the request scheme keyword."
+  [request]
+  (get request :scheme))
+
+(defn request-protocol
+  "Return the HTTP protocol string."
+  [request]
+  (get request :protocol))
+
+(defn request-server-name
+  "Return the resolved server name."
+  [request]
+  (get request :server-name))
+
+(defn request-server-port
+  "Return the server port."
+  [request]
+  (get request :server-port))
+
+(defn request-remote-addr
+  "Return the remote address."
+  [request]
+  (get request :remote-addr))
+
+(defn request-character-encoding
+  "Return the request character encoding."
+  [request]
+  (get request :character-encoding))
+
+(defn request-content-type
+  "Return the request content type."
+  [request]
+  (get request :content-type))
+
+(defn request-content-length
+  "Return the request content length."
+  [request]
+  (get request :content-length))
+
+(defn request-body
+  "Return the request body port, if present."
+  [request]
+  (get request :body))
+
+(defn request-headers
+  "Return the request headers map."
+  [request]
+  (or (get request :headers) (hash-map)))
+
+(defn request-query-params
+  "Return the parsed query params map."
+  [request]
+  (or (get request :query-params) (hash-map)))
+
+(defn request-form-params
+  "Return the parsed form params map."
+  [request]
+  (or (get request :form-params) (hash-map)))
+
+(defn request-params
+  "Return the merged params map."
+  [request]
+  (or (get request :params) (hash-map)))
+
+(defn request-cookies
+  "Return the request cookie map."
+  [request]
+  (or (get request :cookies) (hash-map)))
+
+(defn request-cookie
+  "Return the cookie entry for COOKIE-NAME."
+  [request cookie-name]
+  (get (request-cookies request) cookie-name))
+
+(defn request-session
+  "Return the request session map."
+  [request]
+  (or (get request :session) (hash-map)))
+
+(defn request-id
+  "Return the request id, if present."
+  [request]
+  (get request :request-id))
+
+(defn request-json-body
+  "Return the parsed JSON body, if present."
+  [request]
+  (get request :json-body))
+
+(defn request-multipart-params
+  "Return the parsed multipart params map."
+  [request]
+  (or (get request :multipart-params) (hash-map)))
+
+(defn request-anti-forgery-token
+  "Return the anti-forgery token associated with REQUEST."
+  [request]
+  (get request :anti-forgery-token))
+
+(defn request-header
+  "Look up HEADER-NAME in REQUEST headers."
+  [request header-name]
+  (get (request-headers request)
+       (util/lower-header-name-text header-name)))

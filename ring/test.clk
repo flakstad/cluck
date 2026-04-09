@@ -1,0 +1,1196 @@
+;; Source-local test runner for the separate Ring library tree.
+
+(ns ring.test
+  "Source-local test runner for the separate Ring library tree."
+  (:require [cluck.edn :as edn]
+            [cluck.fs :as fs]
+            [cluck.io :as io]
+            [cluck.string :as str]
+            [intarweb :as http]
+            [uri-common :as uri]))
+
+(import (prefix (chicken file posix) posix:))
+
+(define (smoke-pass label)
+  (println "ok" label)
+  true)
+
+(define (smoke-fail label expected actual)
+  (error (string-append "ring test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (assert-true label value)
+  (if value
+      (smoke-pass label)
+      (smoke-fail label "truthy value" (pr-str value))))
+
+(define (assert-str= label expected actual)
+  (if (string=? expected actual)
+      (smoke-pass label)
+      (smoke-fail label expected actual)))
+
+(define (assert-num= label expected actual)
+  (if (= expected actual)
+      (smoke-pass label)
+      (smoke-fail label (str expected) (str actual))))
+
+(define (capture-output thunk)
+  (let [port (open-output-string)]
+    (parameterize ((current-output-port port))
+      (thunk))
+    (get-output-string port)))
+
+(define (string-prefix? prefix s)
+  (let [plen (string-length prefix)
+        slen (string-length s)]
+    (and (<= plen slen)
+         (string=? prefix (substring s 0 plen)))))
+
+(define (set-cookie->cookie-header set-cookie)
+  (if (or (not set-cookie) (not (str/includes? set-cookie ";")))
+      set-cookie
+      (first (str/split set-cookie ";"))))
+
+(def sample
+  (edn/read-string "{:a [1 2] :b #{3}}"))
+
+(defn add2 "Add 2 to X." [x]
+  (+ x 2))
+
+(assert-str= "keyword printer" ":foo" (pr-str :foo))
+(assert-str= "vector printer" "[1 2 3]" (pr-str [1 2 3]))
+(assert-str= "map printer" "{:a [1 2] :b #{3}}" (pr-str sample))
+(assert-str= "println" "hello world\n"
+             (capture-output (lambda () (println "hello" "world"))))
+(assert-str= "println nil" "nil\n"
+             (capture-output (lambda () (println nil))))
+(assert-str= "format basic" "hello world 3"
+             (format "hello %s %d" "world" 3))
+(assert-true "format %d rejects 3.0"
+             (handle-exceptions exn
+                 #t
+               (begin
+                 (format "%d" 3.0)
+                 #f)))
+(assert-str= "format decimals" "3.14"
+             (format "%.2f" 3.14159))
+(assert-str= "format nil" "nil"
+             (format "%s" nil))
+(assert-num= "parse-long" 42 (parse-long "42"))
+(assert-num= "parse-double" 42.5 (parse-double "42.5"))
+(assert-str= "type vector" "vector" (pr-str (type [1 2 3])))
+(assert-str= "type map" "cluck.map" (pr-str (type {:a 1})))
+(assert-str= "type atom" "cluck.atom" (pr-str (type (atom 1))))
+(assert-str= "type list" "list" (pr-str (type (rest [1 2 3]))))
+(assert-str= "vec" "[1 2 3]" (pr-str (vec '(1 2 3))))
+(assert-str= "vec nil" "[]" (pr-str (vec nil)))
+(let [a (atom 1)]
+  (assert-num= "atom deref" 1 (deref a))
+  (assert-num= "swap!" 3 (swap! a + 2))
+  (assert-num= "reset!" 7 (reset! a 7))
+  (assert-true "compare-and-set! success" (compare-and-set! a 7 8))
+  (assert-true "compare-and-set! fail" (not (compare-and-set! a 7 9))))
+(assert-true "unspecified?" (unspecified? (void)))
+(assert-num= "and" 3 (and true 3))
+(assert-str= "and false" "false" (pr-str (and true false 3)))
+(assert-num= "or" 3 (or false nil 3))
+(assert-str= "if nil result" "nil" (pr-str (if false 1 nil)))
+(assert-str= "cond nil result" "nil" (pr-str (cond false 1 :else nil)))
+(assert-num= "defn" 5 (add2 3))
+(assert-num= "let" 3 (let [x 1 y 2] (+ x y)))
+(assert-num= "let vector destructuring" 3 (let [[a b] [1 2]] (+ a b)))
+(assert-str= "let vector rest" "(2 3)" (pr-str (let [[a & rest] [1 2 3]] rest)))
+(assert-num= "let map destructuring" 3 (let [{:keys [a b]} {:a 1 :b 2}] (+ a b)))
+(assert-num= "let map as" 1 (count (let [{:as m :keys [a]} {:a 1}] m)))
+(assert-str= "mapv" "[2 3 4]" (pr-str (mapv inc [1 2 3])))
+(assert-str= "filterv" "[2 4]" (pr-str (filterv even? [1 2 3 4])))
+(assert-str= "keep" "(2 4)" (pr-str (keep (fn [x] (if (even? x) x nil)) [1 2 3 4])))
+(assert-str= "map-indexed" "([0 1] [1 2] [2 3])" (pr-str (map-indexed (fn [i x] [i x]) [1 2 3])))
+(assert-str= "mapcat" "(1 1 2 2)" (pr-str (mapcat (fn [x] [x x]) [1 2])))
+(assert-str= "merge" "{:a 1 :b 2}" (pr-str (merge {:a 1} {:b 2})))
+(assert-str= "merge-with" "{:a 3 :b 2}" (pr-str (merge-with + {:a 1} {:a 2 :b 2})))
+(assert-num= "get-in" 3 (get-in {:a {:b 3}} [:a :b]))
+(assert-str= "assoc-in" "{:a {:b 2}}" (pr-str (assoc-in {} [:a :b] 2)))
+(assert-str= "update" "{:a 2}" (pr-str (update {:a 1} :a inc)))
+(assert-str= "select-keys" "{:a 1 :c 3}" (pr-str (select-keys {:a 1 :b 2 :c 3} [:a :c])))
+(assert-str= "zipmap" "{:a 1 :b 2}" (pr-str (zipmap [:a :b] [1 2])))
+(assert-str= "apply" "10" (pr-str (apply + 1 2 [3 4])))
+(assert-num= "partial" 6 ((partial + 1 2) 3))
+(assert-num= "comp" 9 ((comp inc inc inc) 6))
+(assert-str= "remove" "(1 3)" (pr-str (remove even? [1 2 3 4])))
+(assert-num= "keys count" 2 (count (keys sample)))
+(assert-num= "vals count" 2 (count (vals sample)))
+
+(load-file "ring/util.clk")
+(load-file "ring/util/anti-forgery.clk")
+(load-file "ring/util/body.clk")
+(load-file "ring/util/cookie.clk")
+(load-file "ring/util/crypto.clk")
+(load-file "ring/util/json.clk")
+(load-file "ring/util/multipart.clk")
+(load-file "ring/util/params.clk")
+(load-file "ring/util/random.clk")
+(load-file "ring/request.clk")
+(load-file "ring/response.clk")
+(load-file "ring/middleware.clk")
+(load-file "ring/middleware/anti-forgery.clk")
+(load-file "ring/middleware/content-length.clk")
+(load-file "ring/middleware/cookies.clk")
+(load-file "ring/middleware/cors.clk")
+(load-file "ring/middleware/defaults.clk")
+(load-file "ring/middleware/exceptions.clk")
+(load-file "ring/middleware/head.clk")
+(load-file "ring/middleware/json.clk")
+(load-file "ring/middleware/keyword-params.clk")
+(load-file "ring/middleware/multipart-params.clk")
+(load-file "ring/middleware/nested-params.clk")
+(load-file "ring/middleware/not-modified.clk")
+(load-file "ring/middleware/params.clk")
+(load-file "ring/middleware/request-id.clk")
+(load-file "ring/middleware/resource.clk")
+(load-file "ring/middleware/session/cookie.clk")
+(load-file "ring/middleware/session.clk")
+(load-file "ring/adapter/spiffy.clk")
+
+(in-ns 'ring.test)
+(require [ring.request :as request]
+         [ring.response :as response]
+         [ring.middleware :as middleware]
+         [ring.middleware.anti-forgery :as anti-forgery]
+         [ring.middleware.content-length :as content-length]
+         [ring.middleware.cors :as cors]
+         [ring.middleware.cookies :as cookies]
+         [ring.middleware.defaults :as defaults]
+         [ring.middleware.exceptions :as exceptions]
+         [ring.middleware.head :as head]
+         [ring.middleware.json :as json-middleware]
+         [ring.middleware.keyword-params :as keyword-params]
+         [ring.middleware.multipart-params :as multipart-params]
+         [ring.middleware.nested-params :as nested-params]
+         [ring.middleware.not-modified :as not-modified]
+         [ring.middleware.params :as params-middleware]
+         [ring.middleware.request-id :as request-id]
+         [ring.middleware.resource :as resource]
+         [ring.middleware.session :as session]
+         [ring.middleware.session.cookie :as session-cookie]
+         [ring.util.crypto :as crypto]
+         [ring.util.anti-forgery :as anti-forgery-util]
+         [ring.util.body :as body-util]
+         [ring.util.cookie :as cookie-util]
+         [ring.util.json :as json-util]
+         [ring.util.multipart :as multipart-util]
+         [ring.util.params :as params-util]
+         [ring.util.random :as random]
+         [ring.adapter.spiffy :as ring-adapter])
+(require [cluck.fs :as fs])
+(require [cluck.process :as proc])
+(require [cluck.string :as str])
+
+(assert-num= "ring request default headers" 0
+             (count (request/request-headers (request/request :get "/ring"))))
+(let [ring-request (assoc (request/request :get "/ring")
+                          :query-string "q=1"
+                          :scheme :https
+                          :protocol "HTTP/2.0"
+                          :server-name "example.com"
+                          :server-port 443
+                          :remote-addr "127.0.0.1"
+                          :body "body"
+                          :character-encoding "utf-8"
+                          :content-type "text/plain"
+                          :content-length "4"
+                          :headers {"content-type" "text/plain"
+                                    "content-length" "4"
+                                    "x-test" "1"})]
+  (assert-str= "ring request method" ":get"
+               (pr-str (request/request-method ring-request)))
+  (assert-str= "ring request uri" "/ring"
+               (request/request-uri ring-request))
+  (assert-str= "ring request query-string" "q=1"
+               (request/request-query-string ring-request))
+  (assert-str= "ring request scheme" ":https"
+               (pr-str (request/request-scheme ring-request)))
+  (assert-str= "ring request protocol" "HTTP/2.0"
+               (request/request-protocol ring-request))
+  (assert-str= "ring request server-name" "example.com"
+               (request/request-server-name ring-request))
+  (assert-num= "ring request server-port" 443
+               (request/request-server-port ring-request))
+  (assert-str= "ring request remote-addr" "127.0.0.1"
+               (request/request-remote-addr ring-request))
+  (assert-str= "ring request character-encoding" "utf-8"
+               (request/request-character-encoding ring-request))
+  (assert-str= "ring request content-type" "text/plain"
+               (request/request-content-type ring-request))
+  (assert-str= "ring request content-length" "4"
+               (request/request-content-length ring-request))
+  (assert-str= "ring request body" "body"
+               (request/request-body ring-request))
+  (assert-str= "ring request header lookup" "text/plain"
+               (request/request-header ring-request "Content-Type"))
+  (assert-str= "ring request anti-forgery token getter" "tok"
+               (request/request-anti-forgery-token
+                (assoc ring-request :anti-forgery-token "tok")))
+  (assert-num= "ring request multipart params getter" 1
+               (get (request/request-multipart-params
+                     (assoc ring-request :multipart-params (hash-map :x 1)))
+                    :x)))
+(let [base-response (response/response "body")
+      response-map (response/location
+                    (response/content-type
+                     (response/header base-response "X-Test" "1")
+                     "text/plain")
+                    "/next")]
+  (assert-num= "ring response status" 200
+               (response/response-status response-map))
+  (assert-str= "ring response body" "body"
+               (response/response-body response-map))
+  (assert-str= "ring response header" "1"
+               (response/response-header response-map "X-Test"))
+  (assert-str= "ring response content-type" "text/plain"
+               (response/response-header response-map "Content-Type"))
+  (assert-str= "ring response location" "/next"
+               (response/response-header response-map "Location")))
+(assert-num= "ring ok status" 200 (response/response-status (response/ok "ok")))
+(assert-num= "ring created status" 201 (response/response-status (response/created "created")))
+(assert-num= "ring accepted status" 202 (response/response-status (response/accepted "accepted")))
+(assert-num= "ring no-content status" 204 (response/response-status (response/no-content)))
+(assert-num= "ring bad-request status" 400 (response/response-status (response/bad-request "bad")))
+(assert-num= "ring unauthorized status" 401 (response/response-status (response/unauthorized "nope")))
+(assert-num= "ring forbidden status" 403 (response/response-status (response/forbidden "nope")))
+(assert-num= "ring not-found status" 404 (response/response-status (response/not-found "missing")))
+(assert-num= "ring method-not-allowed status" 405
+             (response/response-status (response/method-not-allowed "nope")))
+(assert-num= "ring internal-server-error status" 500
+             (response/response-status (response/internal-server-error "boom")))
+(assert-num= "ring payload too large status" 413
+             (response/response-status (response/payload-too-large "too big")))
+(assert-num= "ring redirect status" 302
+             (response/response-status (response/redirect "/next")))
+(assert-str= "ring redirect location" "/next"
+             (response/response-header (response/redirect "/next") "Location"))
+(assert-num= "ring permanent redirect status" 301
+             (response/response-status (response/permanent-redirect "/next")))
+
+(let [handler (middleware/wrap-request
+               (fn [request]
+                 (response/ok (request/request-uri request)))
+               (fn [request]
+                 (assoc request :uri "/wrapped")))]
+  (assert-str= "middleware wrap-request" "/wrapped"
+               (response/response-body (handler (request/request :get "/original")))))
+(let [handler (middleware/wrap-response
+               (fn [_]
+                 (response/ok "body"))
+               (fn [response-map]
+                 (response/status
+                  (response/content-type response-map "text/plain")
+                  201)))]
+  (assert-num= "middleware wrap-response status" 201
+               (response/response-status (handler (request/request :get "/"))))
+  (assert-str= "middleware wrap-response content-type" "text/plain"
+               (response/response-header (handler (request/request :get "/"))
+                                         "Content-Type")))
+(let [handler (middleware/wrap-header
+               (fn [_]
+                 (response/ok "body"))
+               "X-Test"
+               "1")]
+  (assert-str= "middleware wrap-header" "1"
+               (response/response-header (handler (request/request :get "/"))
+                                         "X-Test")))
+(let [handler (middleware/wrap-content-type
+               (fn [_]
+                 (response/ok "body"))
+               "text/html; charset=utf-8")]
+  (assert-str= "middleware wrap-content-type" "text/html; charset=utf-8"
+               (response/response-header (handler (request/request :get "/"))
+                                         "Content-Type")))
+(let [handler (middleware/wrap-status
+               (fn [_]
+                 (response/ok "body"))
+               204)]
+  (assert-num= "middleware wrap-status" 204
+               (response/response-status (handler (request/request :get "/")))))
+
+(assert-str= "ring adapter path->text" "/echo/cluck"
+             (ring-adapter/path->text '(/ "echo" "cluck")))
+(assert-str= "ring adapter status reason" "Not Found"
+             (ring-adapter/status-reason 404))
+(assert-str= "ring adapter status reason 304" "Not Modified"
+             (ring-adapter/status-reason 304))
+(assert-str= "ring adapter response body string" "body"
+             (ring-adapter/response-body->text (response/response "body")))
+(assert-str= "ring adapter response body port" "abc"
+             (ring-adapter/response-body->text
+              {:body (open-input-string "abc")}))
+(let [adapter-request
+      (ring-adapter/request->ring-request
+       (http/make-request major: 1
+                          minor: 1
+                          method: 'GET
+                          uri: (uri/uri-reference "http://example.com/health")
+                          headers: (http/headers
+                                    '((if-none-match ("\"cluck-health-v1\""))))
+                          port: (open-input-string "")))]
+  (assert-str= "ring adapter request if-none-match"
+               "\"cluck-health-v1\""
+               (request/request-header adapter-request "If-None-Match")))
+
+(let [cookie-map (cookie-util/cookie-header->map "a=1; b=2")]
+  (assert-str= "ring util cookie header text"
+               "a=1; b=2"
+               (cookie-util/cookie-header-text '("a=1" "b=2")))
+  (assert-str= "ring util cookie a" "1" (get cookie-map "a"))
+  (assert-str= "ring util cookie b" "2" (get cookie-map "b"))
+  (assert-str= "ring util cookie set-cookie text"
+               "demo=cluck; Path=/; SameSite=Lax; HttpOnly"
+               (cookie-util/cookie-entry->set-cookie-text
+                "demo"
+                (hash-map :value "cluck"
+                          :path "/"
+                          :same-site :lax
+                          :http-only #t)))
+  (assert-num= "ring util cookies->set-cookie-texts count" 2
+               (count (cookie-util/cookies->set-cookie-texts
+                       (hash-map "one" (hash-map :value "1")
+                                 "two" (hash-map :value "2"))))))
+
+(assert-str= "ring util params name"
+             "[\"cluck\" \"egg\"]"
+             (pr-str (get (params-util/parse-param-string
+                           "name=cluck&name=egg&theme=dark")
+                          "name")))
+(assert-str= "ring util params theme"
+             "dark"
+             (get (params-util/parse-param-string
+                   "name=cluck&name=egg&theme=dark")
+                  "theme"))
+(assert-true "ring util form content type"
+             (params-util/form-content-type?
+              "application/x-www-form-urlencoded; charset=utf-8"))
+
+(let [response-with-headers (response/add-header
+                             (response/add-header (response/ok "body")
+                                                  "X-Test"
+                                                  "1")
+                             "X-Test"
+                             "2")
+      response-with-cookie (response/set-cookie
+                            (response/ok "body")
+                            "demo"
+                            (hash-map :value "cluck"
+                                      :path "/"
+                                      :http-only #t))
+      response-with-session (response/set-session (response/ok "body")
+                                                  (hash-map :visits 1))
+      deleted-cookie-response (response/delete-cookie (response/ok "body")
+                                                      "demo")]
+  (assert-str= "ring response add-header"
+               "(\"1\" \"2\")"
+               (pr-str (get (response/response-headers response-with-headers)
+                            "X-Test")))
+  (assert-str= "ring response cookie value"
+               "cluck"
+               (get (response/response-cookie response-with-cookie "demo")
+                    :value))
+  (assert-num= "ring response delete-cookie max-age" 0
+               (get (response/response-cookie deleted-cookie-response "demo")
+                    :max-age))
+  (assert-num= "ring response session visits" 1
+               (get (response/response-session response-with-session)
+                    :visits)))
+
+(let [response-with-removed-header (response/remove-header
+                                    (response/add-header (response/ok "body")
+                                                         "X-Test"
+                                                         "1")
+                                    "X-Test")]
+  (assert-true "ring response remove-header"
+               (not (response/response-header response-with-removed-header
+                                              "X-Test"))))
+
+(let [parsed-request (cookies/wrap-cookies
+                      (fn [request]
+                        (assert-str= "ring cookies request cookie a"
+                                     "1"
+                                     (request/request-cookie request "a"))
+                        (response/set-cookie
+                         (response/ok "cookie-body")
+                         "demo"
+                         (hash-map :value "cluck"
+                                   :path "/"
+                                   :same-site :lax
+                                   :http-only #t))))
+      response-map (parsed-request
+                    (assoc (request/request :get "/")
+                           :headers {"cookie" "a=1; b=2"}))]
+  (assert-str= "ring cookies set-cookie header"
+               "demo=cluck; Path=/; SameSite=Lax; HttpOnly"
+               (response/response-header response-map "Set-Cookie")))
+
+(let [session-app
+      (session/wrap-session
+       (fn [request]
+         (let [session-map (request/request-session request)
+               visits (let [value (get session-map :visits)]
+                        (if (number? value) value 0))
+               next-visits (+ visits 1)]
+           (response/set-session
+            (response/ok (format "visit %d" next-visits))
+            (assoc session-map :visits next-visits))))
+       "secret"
+       (hash-map :cookie-name "demo"
+                 :path "/"
+                 :same-site :lax
+                 :http-only #t))
+      first-session-response (session-app (request/request :get "/"))
+      first-session-cookie (response/response-cookie first-session-response
+                                                     "demo")
+      first-session-cookie-header
+      (set-cookie->cookie-header
+       (cookie/cookie-entry->set-cookie-text "demo" first-session-cookie))
+      second-session-response
+      (session-app
+       (assoc (request/request :get "/")
+              :headers {"cookie" first-session-cookie-header}))]
+  (assert-num= "ring session first cookie visits"
+               1
+               (get (session-cookie/decode-session-cookie
+                     "secret"
+                     (get first-session-cookie :value))
+                    :visits))
+  (assert-str= "ring session cookie round-trip token"
+               "a|b"
+               (get (session-cookie/decode-session-cookie
+                     "secret"
+                     (session-cookie/encode-session-cookie
+                      "secret"
+                      (hash-map :visits 1 :user "cluck" :token "a|b")))
+                    :token))
+  (assert-str= "ring session first body"
+               "visit 1"
+               (response/response-body first-session-response))
+  (assert-str= "ring session second body"
+               "visit 2"
+               (response/response-body second-session-response)))
+(assert-true "ring session secret required"
+             (handle-exceptions exn
+                 #t
+               (begin
+                 (session/wrap-session
+                  (fn [request]
+                    (response/ok "ok"))
+                  (hash-map :path "/"))
+                 #f)))
+
+(let [params-request
+      (assoc (request/request :post "/params")
+             :query-string "name=cluck&name=egg&user[name]=Ada"
+             :content-type "application/x-www-form-urlencoded"
+             :body (open-input-string "theme=dark&theme=light"))
+      params-app
+      (params-middleware/wrap-params
+       (keyword-params/wrap-keyword-params
+        (nested-params/wrap-nested-params
+         (fn [request]
+           (response/ok
+            (pr-str [(request/request-query-params request)
+                     (request/request-form-params request)
+                     (request/request-params request)]))))))
+      params-response (params-app params-request)
+      params-body (response/response-body params-response)]
+  (assert-true "ring params response query"
+               (str/includes? params-body "{:name [\"cluck\" \"egg\"] :user {:name \"Ada\"}}"))
+  (assert-true "ring params response form"
+               (str/includes? params-body "{:theme [\"dark\" \"light\"]}"))
+  (assert-true "ring params response nested"
+               (str/includes? params-body ":user {:name \"Ada\"}"))
+  (assert-true "ring params response merged"
+               (str/includes? params-body "{:name [\"cluck\" \"egg\"] :theme [\"dark\" \"light\"] :user {:name \"Ada\"}}")))
+
+(let [multipart-body (string-append
+                      "--AaB03x\n"
+                      "Content-Disposition: form-data; name=\"title\"\n"
+                      "\n"
+                      "cluck\n"
+                      "--AaB03x\n"
+                      "Content-Disposition: form-data; name=\"upload\"; filename=\"hello.txt\"\n"
+                      "Content-Type: text/plain\n"
+                      "\n"
+                      "file body\n"
+                      "--AaB03x--\n")
+      parsed-multipart
+      (multipart-util/parse-multipart-text
+       "multipart/form-data; boundary=AaB03x"
+       multipart-body)
+      multipart-app
+      (multipart-params/wrap-multipart-params
+       (fn [request]
+         (response/ok
+          (pr-str [(request/request-multipart-params request)
+                   (request/request-params request)])))
+       (hash-map))
+      multipart-response
+      (multipart-app
+       (assoc (request/request :post "/upload")
+              :content-type "multipart/form-data; boundary=AaB03x"
+              :body (open-input-string multipart-body)))]
+  (assert-str= "ring multipart util field"
+               "cluck"
+               (get parsed-multipart "title"))
+  (assert-str= "ring multipart util filename"
+               "hello.txt"
+               (get (get parsed-multipart "upload") :filename))
+  (assert-str= "ring multipart util file body"
+               "file body"
+               (get (get parsed-multipart "upload") :content))
+  (assert-true "ring multipart middleware field"
+               (str/includes? (response/response-body multipart-response)
+                              "{\"title\" \"cluck\""))
+  (assert-true "ring multipart middleware file"
+               (str/includes? (response/response-body multipart-response)
+                              ":filename \"hello.txt\"")))
+
+(let [nested-app
+      (params-middleware/wrap-params
+       (keyword-params/wrap-keyword-params
+        (nested-params/wrap-nested-params
+         (fn [request]
+           (response/ok
+            (pr-str (request/request-params request)))))))
+      nested-response
+      (nested-app
+       (assoc (request/request :get "/nested")
+              :query-string "user[name]=cluck&user[roles][]=dev&user[roles][]=ops&theme=dark"))]
+  (assert-true "ring nested params"
+               (str/includes? (response/response-body nested-response)
+                              "{:theme \"dark\" :user {:name \"cluck\" :roles [\"dev\" \"ops\"]}}")))
+
+(let [http-app
+      (not-modified/wrap-not-modified
+       (head/wrap-head
+        (content-length/wrap-content-length
+         (fn [request]
+           (response/header
+            (response/header (response/ok "hello")
+                             "X-Method"
+                             (pr-str (request/request-method request)))
+            "ETag"
+            "\"abc\"")))))
+      get-response (http-app (request/request :get "/"))
+      head-response (http-app (request/request :head "/"))
+      not-modified-response
+      (http-app (assoc (request/request :get "/")
+                       :headers {"if-none-match" "\"abc\""}))]
+  (assert-str= "ring head converts request method"
+               ":get"
+               (response/response-header head-response "X-Method"))
+  (assert-str= "ring head strips body"
+               ""
+               (response/response-body head-response))
+  (assert-str= "ring content-length get"
+               "5"
+               (response/response-header get-response "Content-Length"))
+  (assert-str= "ring content-length head"
+               "5"
+               (response/response-header head-response "Content-Length"))
+  (assert-num= "ring not-modified status"
+               304
+               (response/response-status not-modified-response))
+  (assert-str= "ring not-modified body"
+               ""
+               (response/response-body not-modified-response))
+  (assert-true "ring not-modified removes content-length"
+               (not (response/response-header not-modified-response
+                                              "Content-Length"))))
+
+(let [params-limit-app
+      (params-middleware/wrap-params
+       (fn [_]
+         (response/ok "unexpected"))
+       (hash-map :max-body-bytes 3))
+      params-limit-response
+      (params-limit-app
+       (assoc (request/request :post "/params")
+              :content-type "application/x-www-form-urlencoded"
+              :body (open-input-string "name=cluck")))]
+  (assert-num= "ring params body too large status" 413
+               (response/response-status params-limit-response))
+  (assert-str= "ring params body too large body" "Request body too large"
+               (response/response-body params-limit-response)))
+
+(let [json-limit-app
+      (json-middleware/wrap-json-body
+       (fn [_]
+         (response/ok "unexpected"))
+       (hash-map :max-body-bytes 3
+                 :keywordize? #t
+                 :body-key :payload))
+      json-limit-response
+      (json-limit-app
+       (assoc (request/request :post "/json")
+              :content-type "application/json"
+              :body (open-input-string "{\"name\":\"cluck\"}")))]
+  (assert-num= "ring json body too large status" 413
+               (response/response-status json-limit-response))
+  (assert-str= "ring json body too large body" "Request body too large"
+               (response/response-body json-limit-response)))
+
+(let [multipart-limit-app
+      (multipart-params/wrap-multipart-params
+       (fn [_]
+         (response/ok "unexpected"))
+       (hash-map :max-body-bytes 3))
+      multipart-limit-response
+      (multipart-limit-app
+       (assoc (request/request :post "/upload")
+              :content-type "multipart/form-data; boundary=AaB03x"
+              :body (open-input-string
+                     (string-append
+                      "--AaB03x\n"
+                      "Content-Disposition: form-data; name=\"title\"\n"
+                      "\n"
+                      "cluck\n"
+                      "--AaB03x--\n"))))]
+  (assert-num= "ring multipart body too large status" 413
+               (response/response-status multipart-limit-response))
+  (assert-str= "ring multipart body too large body" "Request body too large"
+               (response/response-body multipart-limit-response)))
+
+(let [resource-suffix (random/random-token "ring-resource-" 8)
+      resource-file (fs/path "build" (string-append resource-suffix ".txt"))
+      resource-link (fs/path "build" (string-append resource-suffix "-link.txt"))
+      resource-path (string-append "/" resource-suffix ".txt")
+      resource-link-path (string-append "/" resource-suffix "-link.txt")]
+  (proc/system (string-append "rm -f "
+                              (proc/qs resource-link)
+                              " "
+                              (proc/qs resource-file)))
+  (fs/spit resource-file "static body")
+  (posix:create-symbolic-link (fs/basename resource-file) resource-link)
+  (let [resource-app
+        (resource/wrap-resource
+         (fn [_]
+           (response/not-found "missing"))
+         (hash-map :root "build"))
+        resource-response
+        (resource-app (request/request :get resource-path))
+        resource-link-response
+        (resource-app (request/request :get resource-link-path))
+        resource-limit-app
+        (resource/wrap-resource
+         (fn [_]
+           (response/not-found "missing"))
+         (hash-map :root "build"
+                   :max-body-bytes 4))
+        resource-limit-response
+        (resource-limit-app (request/request :get resource-path))]
+    (assert-str= "ring resource body" "static body"
+                 (response/response-body resource-response))
+    (assert-str= "ring resource content-type" "text/plain; charset=utf-8"
+                 (response/response-header resource-response "Content-Type"))
+    (assert-str= "ring resource content-length" "11"
+                 (response/response-header resource-response "Content-Length"))
+    (assert-num= "ring resource symlink rejected" 404
+                 (response/response-status resource-link-response))
+    (assert-str= "ring resource symlink body" "missing"
+                 (response/response-body resource-link-response))
+    (assert-num= "ring resource too large status" 413
+                 (response/response-status resource-limit-response))
+    (assert-str= "ring resource too large body" "Static resource too large"
+                 (response/response-body resource-limit-response)))
+  (proc/system (string-append "rm -f "
+                              (proc/qs resource-link)
+                              " "
+                              (proc/qs resource-file))))
+
+(let [request-id-app
+      (request-id/wrap-request-id
+       (fn [request]
+         (response/ok
+          (or (request/request-id request)
+              "")))
+       (hash-map))
+      request-id-response
+      (request-id-app
+       (assoc (request/request :get "/")
+              :headers {"x-request-id" "req-123"}))
+      malicious-request-id-response
+      (request-id-app
+       (assoc (request/request :get "/")
+              :headers {"x-request-id" "req-123\r\nX-Evil: 1"}))
+      generated-request-id-response
+      (request-id-app (request/request :get "/"))]
+  (assert-str= "ring request-id echoes request header"
+               "req-123"
+               (response/response-body request-id-response))
+  (assert-str= "ring request-id response header"
+               "req-123"
+               (response/response-header request-id-response "x-request-id"))
+  (assert-true "ring request-id clean rejects control chars"
+               (not (request-id/clean-request-id "req-123\r\nX-Evil: 1")))
+  (assert-true "ring request-id generated for unsafe header"
+               (string-prefix? "req-"
+                               (response/response-body malicious-request-id-response)))
+  (assert-true "ring request-id generated prefix"
+               (string-prefix? "req-"
+                               (response/response-body generated-request-id-response))))
+
+(let [exception-app
+      (exceptions/wrap-exceptions
+       (fn [_]
+         (error "boom"))
+       (hash-map :status 503
+                 :body "oops"
+                 :content-type "text/plain; charset=utf-8"
+                 :headers {"x-error" "1"}))
+      exception-response (exception-app (request/request :get "/"))
+      request-id-exception-app
+      (request-id/wrap-request-id
+       (exceptions/wrap-exceptions
+        (fn [_]
+          (error "boom"))
+        (hash-map :body "oops"))
+       (hash-map))
+      request-id-exception-response
+      (request-id-exception-app (request/request :get "/"))]
+  (assert-num= "ring exceptions status" 503
+               (response/response-status exception-response))
+  (assert-str= "ring exceptions body" "oops"
+               (response/response-body exception-response))
+  (assert-str= "ring exceptions header" "1"
+               (response/response-header exception-response "x-error"))
+  (assert-str= "ring exceptions content-type" "text/plain; charset=utf-8"
+               (response/response-header exception-response "Content-Type"))
+  (assert-str= "ring request-id wraps exception response"
+               "oops"
+               (response/response-body request-id-exception-response))
+  (assert-true "ring request-id added to exception response"
+               (string-prefix? "req-"
+                               (response/response-header request-id-exception-response
+                                                         "x-request-id"))))
+
+(let [json-body-app
+      (json-middleware/wrap-json-body
+       (fn [request]
+         (response/ok (pr-str (get request :payload))))
+       (hash-map :keywordize? #t
+                 :body-key :payload))
+      json-body-response
+      (json-body-app
+       (assoc (request/request :post "/json")
+              :content-type "application/merge-patch+json"
+              :body (open-input-string "{\"name\":\"cluck\"}")))
+      json-response-app
+      (json-middleware/wrap-json-response
+       (fn [_]
+         (-> (response/header (response/ok (hash-map :name "cluck"))
+                               "X-Test"
+                               "1")
+             (response/header "Content-Length" "999")
+             (response/header "ETag" "\"abc\"")))
+       (hash-map))
+      json-response (json-response-app (request/request :get "/"))]
+  (assert-str= "ring json body"
+               "{:name \"cluck\"}"
+               (response/response-body json-body-response))
+  (assert-str= "ring json response body"
+               "{\"name\": \"cluck\"}"
+               (response/response-body json-response))
+  (assert-str= "ring json response content-type"
+               "application/json; charset=utf-8"
+               (response/response-header json-response "Content-Type"))
+  (assert-str= "ring json response header preserved"
+               "1"
+               (response/response-header json-response "X-Test"))
+  (assert-true "ring json response removes content-length"
+               (not (response/response-header json-response "Content-Length")))
+  (assert-true "ring json response removes etag"
+               (not (response/response-header json-response "ETag"))))
+
+(let [cors-app
+      (cors/wrap-cors
+       (fn [_]
+         (response/ok "body"))
+       (hash-map :allow-origin :origin
+                 :allow-methods '("GET" "POST")
+                 :allow-headers '("Content-Type")
+                 :allow-credentials? #t
+                 :max-age 60))
+      cors-response
+      (cors-app
+       (assoc (request/request :options "/cors")
+              :headers {"origin" "https://example.com"
+                        "access-control-request-method" "POST"}))]
+  (assert-num= "ring cors preflight status" 204
+               (response/response-status cors-response))
+  (assert-str= "ring cors allow-origin" "https://example.com"
+               (response/response-header cors-response
+                                         "Access-Control-Allow-Origin"))
+  (assert-str= "ring cors allow-methods" "GET, POST"
+               (response/response-header cors-response
+                                         "Access-Control-Allow-Methods"))
+  (assert-str= "ring cors allow-headers" "Content-Type"
+               (response/response-header cors-response
+                                         "Access-Control-Allow-Headers"))
+  (assert-str= "ring cors allow-credentials" "true"
+               (response/response-header cors-response
+                                         "Access-Control-Allow-Credentials"))
+  (assert-str= "ring cors max-age" "60"
+               (response/response-header cors-response
+                                         "Access-Control-Max-Age"))
+  (assert-str= "ring cors vary" "Origin"
+               (response/response-header cors-response "Vary")))
+
+(assert-str= "ring util body request-body-text"
+             "abc"
+             (body-util/request-body-text (hash-map :body (open-input-string "abc"))))
+(assert-str= "ring util body request-body-text-limited exact"
+             "abc"
+             (body-util/request-body-text-limited
+              (hash-map :body (open-input-string "abc"))
+              3))
+(assert-true "ring util body request-body-text-limited string over limit"
+             (not (body-util/request-body-text-limited (hash-map :body "abcd")
+                                                       3)))
+(assert-true "ring util body request-body-text-limited port over limit"
+             (not (body-util/request-body-text-limited
+                   (hash-map :body (open-input-string "abcd"))
+                   3)))
+(let [body-port (open-input-string "abcdef")
+      body-request (hash-map :body body-port
+                             :content-length 3)]
+  (assert-str= "ring util body request-body-text-limited bounded"
+               "abc"
+               (body-util/request-body-text-limited body-request 10))
+  (assert-str= "ring util body request-body-text-limited remainder"
+               "def"
+               (io/port->string body-port)))
+(let [body-port (open-input-string "abcdef")
+      body-request (assoc (request/request :post "/")
+                          :content-length 3
+                          :body body-port)]
+  (assert-str= "ring util body request-body-text bounded"
+               "abc"
+               (body-util/request-body-text body-request))
+  (assert-str= "ring util body request-body-text remainder"
+               "def"
+               (io/port->string body-port)))
+(assert-str= "ring util json parse keywordized"
+             "cluck"
+             (get (json-util/parse-json-text "{\"name\":\"cluck\"}" #t)
+                  :name))
+(assert-str= "ring util json render"
+             "{\"name\": \"cluck\"}"
+             (json-util/cluck-value->json-text (hash-map :name "cluck")))
+(assert-str= "ring util crypto sha256"
+             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+             (crypto/sha256-hex "abc"))
+(assert-str= "ring util crypto hmac"
+             "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+             (crypto/hmac-sha256-hex
+              "key"
+              "The quick brown fox jumps over the lazy dog"))
+(assert-true "ring util crypto constant-time equal"
+             (crypto/constant-time-string=? "cluck" "cluck"))
+(assert-true "ring util crypto constant-time mismatch"
+             (not (crypto/constant-time-string=? "cluck" "clock")))
+(assert-str= "ring util anti-forgery field"
+             "<input type=\"hidden\" name=\"__anti-forgery-token\" value=\"tok\" />"
+             (anti-forgery-util/anti-forgery-field "tok"))
+
+(let [request-id-app
+      (request-id/wrap-request-id
+       (fn [request]
+         (response/ok
+          (or (request/request-id request)
+              "")))
+       (hash-map))
+      request-id-response
+      (request-id-app
+       (assoc (request/request :get "/")
+              :headers {"x-request-id" "req-123"}))
+      generated-request-id-response
+      (request-id-app (request/request :get "/"))]
+  (assert-str= "ring request-id echoes request header"
+               "req-123"
+               (response/response-body request-id-response))
+  (assert-str= "ring request-id response header"
+               "req-123"
+               (response/response-header request-id-response "x-request-id"))
+  (assert-true "ring request-id generated prefix"
+               (string-prefix? "req-"
+                               (response/response-body generated-request-id-response))))
+
+(let [site-defaults-test
+      (hash-map :cookies #t
+                :params (hash-map :urlencoded #t
+                                  :multipart #t
+                                  :nested #t
+                                  :keywordize #f)
+                :responses (hash-map :absolute-redirects #f
+                                     :default-charset "utf-8"
+                                     :not-modified-responses #t)
+                :security (hash-map :anti-forgery #t
+                                    :content-type-options #t
+                                    :frame-options :sameorigin
+                                    :hsts #f
+                                    :ssl-redirect #f)
+                :session (hash-map :secret "test-session-secret"
+                                   :path "/"
+                                   :same-site :lax
+                                   :http-only #t)
+                :static (hash-map :resources "public"))
+      secure-site-defaults-test
+      (hash-map :cookies #t
+                :params (hash-map :urlencoded #t
+                                  :multipart #t
+                                  :nested #t
+                                  :keywordize #f)
+                :responses (hash-map :absolute-redirects #f
+                                     :default-charset "utf-8"
+                                     :not-modified-responses #t)
+                :security (hash-map :anti-forgery #t
+                                    :content-type-options #t
+                                    :frame-options :sameorigin
+                                    :hsts #t
+                                    :ssl-redirect #t)
+                :session (hash-map :secret "test-session-secret"
+                                   :path "/"
+                                   :same-site :lax
+                                   :http-only #t
+                                   :secure #t)
+                :static (hash-map :resources "public"))
+      defaults-app
+      (defaults/wrap-defaults
+       (fn [request]
+         (response/content-type
+          (response/ok
+           (or (request/request-anti-forgery-token request)
+               ""))
+          "text/plain"))
+       site-defaults-test)
+      defaults-response (defaults-app (request/request :get "/defaults"))
+      defaults-token (response/response-body defaults-response)
+      defaults-cookie (response/response-header defaults-response "Set-Cookie")
+      defaults-cookie-header
+      (set-cookie->cookie-header defaults-cookie)
+      defaults-post-app
+      (defaults/wrap-defaults
+       (fn [request]
+         (response/ok
+          (pr-str [(request/request-query-params request)
+                   (request/request-form-params request)
+                   (request/request-params request)])))
+       site-defaults-test)
+      defaults-post-response
+      (defaults-post-app
+       (assoc (request/request :post "/defaults")
+              :query-string "name=cluck&name=egg&user[name]=Ada"
+              :content-type "application/x-www-form-urlencoded"
+              :body (open-input-string
+                     (string-append "__anti-forgery-token="
+                                    defaults-token
+                                    "&theme=dark&theme=light"))
+              :headers {"cookie" defaults-cookie-header}))
+      defaults-redirect-app
+      (defaults/wrap-defaults
+       (fn [_]
+         (response/redirect "/defaults"))
+       site-defaults-test)
+      defaults-redirect-response
+      (defaults-redirect-app (request/request :get "/defaults"))
+      trusted-proxy-app
+      (defaults/wrap-defaults
+       (fn [_]
+         (response/redirect "/secure"))
+       (hash-map :responses (hash-map :absolute-redirects #t
+                                      :default-charset "utf-8"
+                                      :not-modified-responses #t)
+                 :trusted-proxies '("10.0.0.1")))
+      trusted-proxy-response
+      (trusted-proxy-app
+       (assoc (request/request :get "/")
+              :server-name "internal.example.com"
+              :remote-addr "10.0.0.1"
+              :headers {"host" "internal.example.com"
+                        "x-forwarded-host" "public.example.com"
+                        "x-forwarded-proto" "https"}))
+      untrusted-proxy-response
+      (trusted-proxy-app
+       (assoc (request/request :get "/")
+              :server-name "internal.example.com"
+              :remote-addr "203.0.113.5"
+              :headers {"host" "internal.example.com"
+                        "x-forwarded-host" "public.example.com"
+                        "x-forwarded-proto" "https"}))
+      direct-host-app
+      (defaults/wrap-defaults
+       (fn [_]
+         (response/redirect "/trusted"))
+       (hash-map :responses (hash-map :absolute-redirects #t)
+                 :trusted-hosts '("app.example.com")))
+      direct-host-response
+      (direct-host-app
+       (assoc (request/request :get "/")
+              :server-name "internal.example.com"
+              :headers {"host" "app.example.com"}))
+      malicious-host-response
+      (direct-host-app
+       (assoc (request/request :get "/")
+              :server-name "internal.example.com"
+              :headers {"host" "evil.example"}))
+      secure-hsts-app
+      (defaults/wrap-defaults
+       (fn [_]
+         (response/ok "secure"))
+       secure-site-defaults-test)
+      secure-redirect-response
+      (secure-hsts-app
+       (assoc (request/request :get "/secure")
+              :server-name "example.com"
+              :headers {"host" "evil.example"}))
+      secure-hsts-response
+      (secure-hsts-app
+       (assoc (request/request :get "/secure")
+              :scheme :https
+              :server-name "example.com"
+              :headers {"host" "example.com"}))]
+  (assert-true "ring defaults token body"
+               (not (string=? defaults-token "")))
+  (assert-str= "ring defaults content-type charset"
+               "text/plain; charset=utf-8"
+               (response/response-header defaults-response "Content-Type"))
+  (assert-str= "ring defaults content-type options"
+               "nosniff"
+               (response/response-header defaults-response
+                                         "X-Content-Type-Options"))
+  (assert-str= "ring defaults frame options"
+               "SAMEORIGIN"
+               (response/response-header defaults-response "X-Frame-Options"))
+  (assert-true "ring defaults session cookie present"
+               defaults-cookie)
+  (assert-true "ring defaults params query string keys"
+               (str/includes? (response/response-body defaults-post-response)
+                              "\"name\" [\"cluck\" \"egg\"]"))
+  (assert-true "ring defaults params nested string keys"
+               (str/includes? (response/response-body defaults-post-response)
+                              "\"user\" {\"name\" \"Ada\"}"))
+  (assert-true "ring defaults params form string keys"
+               (str/includes? (response/response-body defaults-post-response)
+                              "\"theme\" [\"dark\" \"light\"]"))
+  (assert-num= "ring defaults redirect status" 302
+               (response/response-status defaults-redirect-response))
+  (assert-str= "ring defaults redirect location"
+               "/defaults"
+               (response/response-header defaults-redirect-response "Location"))
+  (assert-str= "ring trusted proxy redirect location"
+               "https://public.example.com/secure"
+               (response/response-header trusted-proxy-response "Location"))
+  (assert-str= "ring untrusted proxy redirect location"
+               "http://internal.example.com/secure"
+               (response/response-header untrusted-proxy-response "Location"))
+  (assert-str= "ring trusted host redirect location"
+               "http://app.example.com/trusted"
+               (response/response-header direct-host-response "Location"))
+  (assert-str= "ring malicious host redirect blocked"
+               "http://internal.example.com/trusted"
+               (response/response-header malicious-host-response "Location"))
+  (assert-str= "ring secure redirect ignores untrusted host"
+               "https://example.com/secure"
+               (response/response-header secure-redirect-response "Location"))
+  (assert-true "ring secure defaults cookie secure flag"
+               (str/includes? (response/response-header secure-hsts-response
+                                                         "Set-Cookie")
+                              "Secure"))
+  (assert-str= "ring defaults hsts"
+               "max-age=31536000; includeSubDomains"
+               (response/response-header secure-hsts-response
+                                         "Strict-Transport-Security")))
+(assert-true "ring defaults site defaults require session secret"
+             (handle-exceptions exn
+                 #t
+               (begin
+                 (defaults/wrap-defaults
+                  (fn [_]
+                    (response/ok "ok"))
+                  defaults/site-defaults)
+                 #f)))
+
+(let [anti-forgery-app
+      (params-middleware/wrap-params
+       (session/wrap-session
+        (anti-forgery/wrap-anti-forgery
+         (fn [request]
+           (response/ok (or (request/request-anti-forgery-token request)
+                            "")))
+         (hash-map))
+        "secret"
+        (hash-map :path "/")))
+      first-response (anti-forgery-app (request/request :get "/"))
+      token (response/response-body first-response)
+      session-cookie
+      (response/response-cookie first-response "ring-session")
+      session-cookie-header
+      (set-cookie->cookie-header
+       (cookie/cookie-entry->set-cookie-text "ring-session" session-cookie))
+      second-response
+      (anti-forgery-app
+       (assoc (request/request :post "/")
+              :content-type "application/x-www-form-urlencoded"
+              :body (open-input-string
+                     (string-append
+                      "__anti-forgery-token"
+                                    "="
+                                    token))
+              :headers {"cookie" session-cookie-header
+                        "host" "example.com"
+                        "origin" "https://example.com"}))
+      cross-origin-response
+      (anti-forgery-app
+       (assoc (request/request :post "/")
+              :content-type "application/x-www-form-urlencoded"
+              :body (open-input-string
+                     (string-append
+                      "__anti-forgery-token"
+                      "="
+                      token))
+              :headers {"cookie" session-cookie-header
+                        "host" "example.com"
+                        "origin" "https://evil.example"}))]
+  (assert-true "ring anti-forgery token seeded" (not (string=? token "")))
+  (assert-true "ring anti-forgery unsafe method detected"
+               (anti-forgery/request-unsafe-method?
+                (request/request :post "/")
+                (hash-map)))
+  (assert-true "ring anti-forgery safe method skipped"
+               (not (anti-forgery/request-unsafe-method?
+                     (request/request :get "/")
+                     (hash-map))))
+  (assert-str= "ring anti-forgery token persists"
+               token
+               (get (session-cookie/decode-session-cookie
+                     "secret"
+                     (get session-cookie :value))
+                    :anti-forgery-token))
+  (assert-str= "ring anti-forgery post body"
+               token
+               (response/response-body second-response))
+  (assert-num= "ring anti-forgery cross-origin status" 403
+               (response/response-status cross-origin-response))
+  (assert-str= "ring anti-forgery cross-origin reason"
+               "origin"
+               (response/response-header cross-origin-response
+                                         "X-CSRF-Reason"))
+  (assert-num= "ring anti-forgery missing token status" 403
+               (response/response-status
+                (anti-forgery-app
+                 (assoc (request/request :post "/")
+                        :content-type "application/x-www-form-urlencoded"
+                        :body (open-input-string "theme=dark")
+                        :headers {"cookie" session-cookie-header})))))

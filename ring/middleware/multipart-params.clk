@@ -1,0 +1,60 @@
+;; Multipart parameter middleware for the separate Ring library tree.
+
+(ns ring.middleware.multipart-params
+  "Multipart parameter middleware for the separate Ring library tree."
+  (:require [ring.request :as request]
+            [ring.util.body :as body]
+            [ring.util.multipart :as multipart]
+            [ring.util.params :as params]
+            [ring.response :as response]))
+
+(define multipart-max-body-bytes-default
+  10485760)
+
+(defn multipart-options
+  "Return a normalized options map for multipart middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn multipart-max-body-bytes
+  "Return the request-body limit for multipart parsing."
+  [options]
+  (if (contains? options :max-body-bytes)
+      (get options :max-body-bytes)
+      multipart-max-body-bytes-default))
+
+(defn multipart-request?
+  "Return true when REQUEST should be parsed as multipart."
+  [request]
+  (multipart/multipart-content-type?
+   (request/request-content-type request)))
+
+(defn multipart-request-map
+  "Return REQUEST with parsed multipart params attached."
+  [request options]
+  (let [content-type (request/request-content-type request)
+        body-text (body/request-body-text-limited request
+                                                  (multipart-max-body-bytes options))
+        parsed (multipart/parse-multipart-text content-type body-text)
+        request (assoc request :body (open-input-string (or body-text "")))
+        merged-params (params/merge-param-maps (request/request-params request)
+                                                parsed)]
+    (if (not body-text)
+        #f
+        (assoc request
+               :multipart-params parsed
+               :params merged-params))))
+
+(defn wrap-multipart-params
+  "Return a handler that parses multipart/form-data request bodies."
+  ([handler options]
+   (let [options (multipart-options options)]
+     (fn [request]
+       (if (multipart-request? request)
+           (let [multipart-request (multipart-request-map request options)]
+             (if (not multipart-request)
+                 (response/payload-too-large "Request body too large")
+                 (handler multipart-request)))
+           (handler request)))))
+  ([handler]
+   (wrap-multipart-params handler (hash-map))))

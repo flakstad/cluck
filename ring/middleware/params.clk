@@ -1,0 +1,46 @@
+;; Request parameter middleware for the separate Ring library tree.
+
+(ns ring.middleware.params
+  "Request parameter middleware for the separate Ring library tree."
+  (:require [ring.request :as request]
+            [ring.util.body :as body]
+            [ring.util.params :as params]
+            [ring.response :as response]))
+
+(define params-max-body-bytes-default
+  1048576)
+
+(defn params-max-body-bytes
+  "Return the configured request-body limit for parameter parsing."
+  [options]
+  (if (contains? options :max-body-bytes)
+      (get options :max-body-bytes)
+      params-max-body-bytes-default))
+
+(defn wrap-params
+  "Return a handler that populates :query-params, :form-params, and :params."
+  ([handler]
+   (wrap-params handler (hash-map)))
+  ([handler options]
+   (let [options (if (map? options) options (hash-map))]
+     (fn [request]
+       (let [query-params (params/parse-param-string (request/request-query-string request))
+             content-type (request/request-content-type request)
+             max-body-bytes (params-max-body-bytes options)
+             form-body (if (params/form-content-type? content-type)
+                         (body/request-body-text-limited request max-body-bytes)
+                         "")
+             form-params (if (and (params/form-content-type? content-type)
+                                  (not form-body))
+                           #f
+                           (if (params/form-content-type? content-type)
+                               (params/parse-param-string form-body)
+                               (hash-map)))]
+         (if (and (params/form-content-type? content-type)
+                  (not form-body))
+             (response/payload-too-large "Request body too large")
+             (let [merged-params (params/merge-param-maps query-params form-params)]
+               (handler (assoc request
+                               :query-params query-params
+                               :form-params form-params
+                               :params merged-params)))))))))

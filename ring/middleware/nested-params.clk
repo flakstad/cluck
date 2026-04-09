@@ -1,0 +1,88 @@
+;; Nested parameter middleware for the separate Ring library tree.
+
+(ns ring.middleware.nested-params
+  "Nested parameter middleware for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.request :as request]
+            [ring.util.params :as params]))
+
+(defn nested-key-text
+  "Normalize KEY to text for nested parameter parsing."
+  [key]
+  (cond
+    (string? key) key
+    (or (keyword? key) (symbol? key)) (name key)
+    :else (str key)))
+
+(defn nested-key-parts
+  "Split a nested parameter key into path segments."
+  [key]
+  (map (lambda (part)
+         (str/join "" (str/split part "]")))
+       (str/split (nested-key-text key) "[")))
+
+(defn nested-key-builder
+  "Return a function that rebuilds nested keys using KEY's type."
+  [key]
+  (cond
+    (keyword? key) keyword
+    (symbol? key) string->symbol
+    :else (lambda (part) part)))
+
+(defn nested-entry->map
+  "Convert PARTS and VALUE into a nested map."
+  [parts value key-builder]
+  (if (empty? parts)
+      value
+      (let [key (first parts)
+            nested (nested-entry->map (rest parts) value key-builder)]
+        (if (string=? key "")
+            nested
+            (hash-map (key-builder key) nested)))))
+
+(defn nested-entry-value->map
+  "Convert a flat nested param entry into a nested map."
+  [key value]
+  (let [parts (nested-key-parts key)
+        key-builder (nested-key-builder key)]
+    (if (vector? value)
+        (##core#let loop ((items (vector->list value))
+                          (acc (hash-map)))
+          (if (empty? items)
+              acc
+              (loop (rest items)
+                    (params/merge-param-maps-recursive
+                     acc
+                     (nested-entry->map parts (first items) key-builder)))))
+        (nested-entry->map parts value key-builder))))
+
+(defn nested-params-map
+  "Return a deeply nested version of PARAMS-MAP."
+  [params-map]
+  (##core#let loop ((entries (seq params-map))
+                    (acc (hash-map)))
+    (if (empty? entries)
+        acc
+        (let [entry (first entries)
+              key (first entry)
+              value (nth entry 1)]
+          (loop (rest entries)
+                (params/merge-param-maps-recursive
+                 acc
+                 (nested-entry-value->map key value)))))))
+
+(defn wrap-nested-params
+  "Return a handler that converts bracketed parameter keys into nested maps."
+  [handler]
+  (fn [request]
+    (let [query-params (nested-params-map (request/request-query-params request))
+          form-params (nested-params-map (request/request-form-params request))
+          multipart-params (nested-params-map (request/request-multipart-params request))
+          merged-params (params/merge-param-maps-recursive
+                         (params/merge-param-maps-recursive query-params form-params)
+                         multipart-params)]
+      (handler (assoc request
+                      :query-params query-params
+                      :form-params form-params
+                      :multipart-params multipart-params
+                      :params merged-params)))))

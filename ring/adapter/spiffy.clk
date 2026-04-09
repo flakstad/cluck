@@ -1,0 +1,304 @@
+;; Spiffy adapter for Ring-style handlers in the separate Ring library tree.
+
+(ns ring.adapter.spiffy
+  "Spiffy adapter for Ring-style handlers in the separate Ring library tree."
+  (:require [ring.request :as request]
+            [ring.response :as response]
+            [ring.util :as util]
+            [cluck.io :as io]
+            [cluck.string :as str]
+            [intarweb :as http]
+            [spiffy :as spiffy]
+            [uri-common :as uri]))
+
+(defn request-method->keyword
+  "Convert a Spiffy request method to a lowercase Ring keyword."
+  [request]
+  (let [method (http/request-method request)]
+    (cond
+      (keyword? method) (keyword (str/lower-case (name method)))
+      (symbol? method) (keyword (str/lower-case (symbol->string method)))
+      (string? method) (keyword (str/lower-case method))
+      :else (keyword (str/lower-case (str method))))))
+
+(defn path->text
+  "Convert a `uri-path` list into a slash-prefixed path string."
+  [path]
+  (let [segments (rest path)]
+    (if (empty? segments)
+        "/"
+        (str "/" (str/join "/" segments)))))
+
+(defn scheme->keyword
+  "Convert a URI scheme into a Ring keyword."
+  [scheme]
+  (cond
+    (keyword? scheme) scheme
+    (symbol? scheme) (keyword (str/lower-case (symbol->string scheme)))
+    (string? scheme) (keyword (str/lower-case scheme))
+    (spiffy/secure-connection?) :https
+    :else :http))
+
+(defn uri-query-string->text
+  "Convert a URI query list into the raw Ring query-string text."
+  [request-uri]
+  (let [query (uri/uri-query request-uri)]
+    (if (or (not query) (empty? query))
+        #f
+        (uri/form-urlencode query separator: "&"))))
+
+(defn raw-header-item?
+  "Return true when VALUE is an Intarweb raw header tuple."
+  [value]
+  (or (and (vector? value)
+           (= (vector-length value) 2)
+           (eq? (vector-ref value 1) 'raw))
+      (and (pair? value)
+           (pair? (cdr value))
+           (null? (cddr value))
+           (eq? (cadr value) 'raw))))
+
+(defn improper-header-pair->text
+  "Convert an Intarweb improper pair VALUE for HEADER-NAME into text."
+  [header-name value]
+  (let [header-name (util/lower-header-name-text header-name)
+        left (car value)
+        right (cdr value)]
+    (cond
+      (and (string=? header-name "host")
+           (string? left))
+      (string-append left ":" (str right))
+
+      (or (string=? header-name "etag")
+          (string=? header-name "if-none-match"))
+      (cond
+        (eq? left 'strong) (string-append "\"" (str right) "\"")
+        (eq? left 'weak) (string-append "W/\"" (str right) "\"")
+        :else (str right))
+
+      :else
+      (str value))))
+
+(defn header-items->ring-values
+  "Flatten HEADER-NAME VALUE into plain Ring header items."
+  [header-name value]
+  (cond
+    (or (not value) (null? value)) '()
+    (string? value) (list value)
+    (raw-header-item? value)
+    (list (if (vector? value)
+            (vector-ref value 0)
+            (car value)))
+    (and (pair? value) (not (list? value)))
+    (list (improper-header-pair->text header-name value))
+    (vector? value)
+    (apply append (map (lambda (item)
+                         (header-items->ring-values header-name item))
+                       (vector->list value)))
+    (pair? value)
+    (if (or (pair? (car value))
+            (vector? (car value)))
+        (apply append (map (lambda (item)
+                             (header-items->ring-values header-name item))
+                           value))
+        value)
+    :else
+    (list value)))
+
+(defn header-values->ring-text
+  "Convert Intarweb header output into a Ring request-header string."
+  [header-name values]
+  (let [parts (map (lambda (value)
+                     (if (string? value)
+                         value
+                         (str value)))
+                   (remove null?
+                           (header-items->ring-values header-name
+                                                      values)))]
+    (if (empty? parts)
+        ""
+        (str/join ", " parts))))
+
+(defn cookie-header-value->ring-text
+  "Convert a parsed Cookie header VALUE into `name=value` text."
+  [value]
+  (let [entries (cond
+                  (vector? value) (vector->list value)
+                  (pair? value) value
+                  :else (list value))]
+    (str/join
+     "; "
+     (map (lambda (entry)
+            (cond
+              (pair? entry)
+              (string-append (str (car entry))
+                             "="
+                             (str (cdr entry)))
+              (vector? entry)
+              (string-append (str (first entry))
+                             "="
+                             (str (nth entry 1)))
+              :else
+              (str entry)))
+          entries))))
+
+(defn header-value->ring-text
+  "Convert a raw Intarweb header VALUE into a Ring request-header string."
+  [header-name value]
+  (if (string=? (util/lower-header-name-text header-name) "cookie")
+      (cookie-header-value->ring-text value)
+      (handle-exceptions exn
+          (header-values->ring-text header-name value)
+        (header-values->ring-text header-name
+         (http/unparse-header header-name value)))))
+
+(defn request-headers->ring-map
+  "Convert Intarweb request headers into a Ring request header map."
+  [headers]
+  (##core#let loop ((entries (seq (http/headers->list headers)))
+                    (acc (hash-map)))
+    (if (empty? entries)
+        acc
+        (let* ((entry (first entries))
+               (name (first entry))
+               (value (nth entry 1)))
+          (loop (rest entries)
+                (assoc acc
+                       (util/lower-header-name-text name)
+                       (header-value->ring-text name value)))))))
+
+(defn request-protocol-text
+  "Return the HTTP protocol string for REQUEST."
+  [request]
+  (format "HTTP/%d.%d"
+          (http/request-major request)
+          (http/request-minor request)))
+
+(defn content-length->number
+  "Convert a Content-Length header to a number when possible."
+  [content-length]
+  (if (or (not content-length) (string=? content-length ""))
+      #f
+      (handle-exceptions exn
+          #f
+        (parse-long content-length))))
+
+(defn request->ring-request
+  "Convert a Spiffy request object into a full Ring request map."
+  [request]
+  (let [request-uri (http/request-uri request)
+        base-request (assoc (request/request (request-method->keyword request)
+                                             (path->text (uri/uri-path request-uri)))
+                            :scheme (scheme->keyword (uri/uri-scheme request-uri))
+                            :protocol (request-protocol-text request)
+                            :server-name (or (uri/uri-host request-uri)
+                                             (spiffy/default-host))
+                            :server-port (or (uri/uri-port request-uri)
+                                             (spiffy/server-port))
+                            :remote-addr (or (spiffy/remote-address) "")
+                            :body (http/request-port request)
+                            :headers (request-headers->ring-map (http/request-headers request)))
+        query-string (uri-query-string->text request-uri)
+        content-type (request/request-header base-request "Content-Type")
+        content-length (request/request-header base-request "Content-Length")]
+    (let [ring-request (if query-string
+                         (assoc base-request :query-string query-string)
+                         base-request)]
+        (let [ring-request (if content-type
+                             (assoc ring-request :content-type content-type)
+                             ring-request)]
+        (let [ring-request (if content-length
+                             (assoc ring-request
+                                    :content-length
+                                    (content-length->number content-length))
+                             ring-request)]
+          ring-request)))))
+
+(defn status-reason
+  "Return the HTTP reason phrase for STATUS."
+  [status]
+  (cond
+    (= status 200) "OK"
+    (= status 201) "Created"
+    (= status 202) "Accepted"
+    (= status 204) "No Content"
+    (= status 301) "Moved Permanently"
+    (= status 302) "Found"
+    (= status 304) "Not Modified"
+    (= status 400) "Bad Request"
+    (= status 401) "Unauthorized"
+    (= status 403) "Forbidden"
+    (= status 404) "Not Found"
+    (= status 405) "Method Not Allowed"
+    (= status 413) "Payload Too Large"
+    (= status 500) "Internal Server Error"
+    :else (format "Status %d" status)))
+
+(defn response-header-values->spiffy-entries
+  "Convert a Ring response header VALUE into one or more Spiffy entries."
+  [header-name value]
+  (let [items (cond
+                (vector? value) (vector->list value)
+                (pair? value) value
+                (not value) '()
+                :else (list value))]
+  (##core#let loop ((xs items)
+                      (acc '()))
+      (if (null? xs)
+          (reverse acc)
+          (let [entry (list (string->symbol
+                             (util/lower-header-name-text header-name))
+                            (vector (if (string? (car xs))
+                                      (car xs)
+                                      (str (car xs)))
+                                    'raw))]
+            (loop (cdr xs)
+                  (cons entry acc)))))))
+
+(defn response-headers->spiffy
+  "Convert Ring response headers into Spiffy header entries."
+  [headers]
+  (##core#let loop ((entries (seq headers))
+                    (acc '()))
+    (if (empty? entries)
+        acc
+        (let* ((entry (first entries))
+               (name (first entry))
+               (value (nth entry 1)))
+          (loop (rest entries)
+                (append acc
+                        (response-header-values->spiffy-entries name value)))))))
+
+(defn response-body->text
+  "Convert a Ring response body into text for Spiffy."
+  [response]
+  (let [body (response/response-body response)]
+    (cond
+      (not body) #f
+      (null? body) ""
+      (string? body) body
+      (input-port? body) (io/port->string body)
+      :else (str body))))
+
+(defn send-response!
+  "Send a Ring response through Spiffy."
+  [response]
+  (let [status (response/response-status response)
+        headers (response-headers->spiffy (response/response-headers response))
+        body (response-body->text response)]
+    (spiffy/send-response
+      code: status
+      reason: (status-reason status)
+      body: body
+      headers: headers)))
+
+(defn handler->vhost-handler
+  "Adapt a Ring handler to a Spiffy vhost handler."
+  [handler]
+  (fn [continue]
+    (let [request (request->ring-request (spiffy/current-request))
+          response (handler request)]
+      (if response
+          (send-response! response)
+          (spiffy/send-status 'internal-server-error
+                              "Ring handler returned no response")))))

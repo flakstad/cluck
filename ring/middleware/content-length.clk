@@ -1,0 +1,28 @@
+;; Content-Length middleware for the separate Ring library tree.
+
+(ns ring.middleware.content-length
+  "Content-Length middleware for the separate Ring library tree."
+  (:require [ring.response :as response]))
+
+(defn response-body-length
+  "Return the response body length when it can be computed cheaply."
+  [body]
+  (cond
+    (not body) 0
+    (null? body) 0
+    (string? body) (string-length body)
+    :else #f))
+
+(defn wrap-content-length
+  "Return a handler that adds Content-Length for string bodies."
+  [handler]
+  (fn [request]
+    (let [response-map (handler request)
+          existing (response/response-header response-map "Content-Length")
+          body (response/response-body response-map)
+          length (response-body-length body)]
+      (if (or existing (not length))
+          response-map
+          (response/header response-map
+                           "Content-Length"
+                           (number->string length))))))

@@ -1,0 +1,41 @@
+;; Exception middleware for the separate Ring library tree.
+
+(ns ring.middleware.exceptions
+  "Exception middleware for the separate Ring library tree."
+  (:require [ring.response :as response]))
+
+(defn exception-options
+  "Return a normalized options map for exception middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn exception-response
+  "Build the fallback response for an exception."
+  [options]
+  (let [status (or (get options :status) 500)
+        body (or (get options :body) "Internal Server Error")
+        content-type (or (get options :content-type)
+                         "text/plain; charset=utf-8")
+        headers (or (get options :headers) (hash-map))
+        response-map (response/status (response/response body) status)
+        response-map (if content-type
+                       (response/content-type response-map content-type)
+                       response-map)]
+    (##core#let loop ((entries (seq headers))
+                      (resp response-map))
+      (if (empty? entries)
+          resp
+          (let [entry (first entries)]
+            (loop (rest entries)
+                  (response/header resp
+                                   (first entry)
+                                   (nth entry 1))))))))
+
+(defn wrap-exceptions
+  "Return a handler that converts thrown exceptions into a fallback response."
+  [handler options]
+  (let [options (exception-options options)]
+    (fn [request]
+      (handle-exceptions exn
+          (exception-response options)
+        (handler request)))))

@@ -1,0 +1,179 @@
+;; Pure response helpers in the separate Ring library tree.
+
+(ns ring.response
+  "Pure response helpers in the separate Ring library tree."
+  (:require [ring.util :as util]))
+
+(defn response
+  "Create a Ring response map with BODY and a 200 status."
+  [body]
+  {:status 200
+   :headers (hash-map)
+   :body body})
+
+(defn response-status
+  "Return the response status."
+  [response]
+  (get response :status))
+
+(defn response-headers
+  "Return the response headers map."
+  [response]
+  (or (get response :headers) (hash-map)))
+
+(defn response-header
+  "Return the value of HEADER-NAME from RESPONSE."
+  [response header-name]
+  (get (response-headers response)
+       (util/header-name-text header-name)))
+
+(defn response-body
+  "Return the response body."
+  [response]
+  (get response :body))
+
+(defn response-cookies
+  "Return the response cookie map."
+  [response]
+  (or (get response :cookies) (hash-map)))
+
+(defn response-cookie
+  "Return the cookie entry for COOKIE-NAME."
+  [response cookie-name]
+  (get (response-cookies response) cookie-name))
+
+(defn response-session
+  "Return the response session map, if any."
+  [response]
+  (get response :session))
+
+(defn status
+  "Return RESPONSE with STATUS set to CODE."
+  [response code]
+  (assoc response :status code))
+
+(defn header
+  "Return RESPONSE with HEADER-NAME set to VALUE."
+  [response header-name value]
+  (assoc response
+         :headers
+         (assoc (response-headers response)
+                (util/header-name-text header-name)
+                value)))
+
+(defn add-header
+  "Return RESPONSE with HEADER-NAME extended by VALUE."
+  [response header-name value]
+  (let [header-key (util/header-name-text header-name)
+        existing (get (response-headers response) header-key)
+        values (append (util/header-value->list existing)
+                       (util/header-value->list value))
+        normalized (cond
+                     (null? values) '()
+                     (null? (cdr values)) (car values)
+                     :else values)]
+    (assoc response
+           :headers
+           (assoc (response-headers response)
+                  header-key
+                  normalized))))
+
+(defn remove-header
+  "Return RESPONSE without HEADER-NAME."
+  [response header-name]
+  (let [header-key (util/header-name-text header-name)]
+    (assoc response
+           :headers
+           (dissoc (response-headers response) header-key))))
+
+(defn set-cookie
+  "Return RESPONSE with COOKIE-NAME set to COOKIE-MAP."
+  [response cookie-name cookie-map]
+  (assoc response
+         :cookies
+         (assoc (response-cookies response) cookie-name cookie-map)))
+
+(defn delete-cookie
+  "Return RESPONSE with COOKIE-NAME marked for deletion."
+  [response cookie-name]
+  (set-cookie response cookie-name {:value "" :max-age 0}))
+
+(defn set-session
+  "Return RESPONSE with SESSION associated."
+  [response session]
+  (assoc response :session session))
+
+(defn content-type
+  "Return RESPONSE with a Content-Type header."
+  [response value]
+  (header response "Content-Type" value))
+
+(defn location
+  "Return RESPONSE with a Location header."
+  [response value]
+  (header response "Location" value))
+
+(defn ok
+  "Return a 200 response with BODY."
+  [body]
+  (response body))
+
+(defn created
+  "Return a 201 response with BODY."
+  [body]
+  (status (response body) 201))
+
+(defn accepted
+  "Return a 202 response with BODY."
+  [body]
+  (status (response body) 202))
+
+(defn no-content
+  "Return a 204 response with an empty body."
+  []
+  (status (response "") 204))
+
+(defn bad-request
+  "Return a 400 response with BODY."
+  [body]
+  (status (response body) 400))
+
+(defn unauthorized
+  "Return a 401 response with BODY."
+  [body]
+  (status (response body) 401))
+
+(defn forbidden
+  "Return a 403 response with BODY."
+  [body]
+  (status (response body) 403))
+
+(defn not-found
+  "Return a 404 response with BODY."
+  [body]
+  (status (response body) 404))
+
+(defn method-not-allowed
+  "Return a 405 response with BODY."
+  [body]
+  (status (response body) 405))
+
+(defn internal-server-error
+  "Return a 500 response with BODY."
+  [body]
+  (status (response body) 500))
+
+(defn payload-too-large
+  "Return a 413 response with BODY."
+  [body]
+  (status (response body) 413))
+
+(defn redirect
+  "Return a 302 response that points to TARGET."
+  [target]
+  (location (status (response "") 302) target))
+
+(defn permanent-redirect
+  "Return a 301 response that points to TARGET."
+  [target]
+  (location (status (response "") 301) target))

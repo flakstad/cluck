@@ -1,0 +1,20 @@
+;; Keyword parameter middleware for the separate Ring library tree.
+
+(ns ring.middleware.keyword-params
+  "Keyword parameter middleware for the separate Ring library tree."
+  (:require [cluck.walk :as walk]
+            [ring.request :as request]))
+
+(defn keywordize-params-map
+  "Keywordize a params map."
+  [params-map]
+  (walk/keywordize-keys params-map))
+
+(defn wrap-keyword-params
+  "Return a handler that keywordizes request params maps."
+  [handler]
+  (fn [request]
+    (handler (assoc request
+                    :query-params (keywordize-params-map (request/request-query-params request))
+                    :form-params (keywordize-params-map (request/request-form-params request))
+                    :params (keywordize-params-map (request/request-params request))))))

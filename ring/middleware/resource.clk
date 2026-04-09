@@ -1,0 +1,154 @@
+;; Static resource middleware for the separate Ring library tree.
+
+(ns ring.middleware.resource
+  "Static resource middleware for the separate Ring library tree."
+  (:require [cluck.fs :as fs]
+            [cluck.string :as str]
+            [ring.request :as request]
+            [ring.response :as response]))
+
+(import (prefix (chicken file posix) posix:))
+
+(define resource-index-file
+  "index.html")
+
+(define resource-max-body-bytes-default
+  8388608)
+
+(defn resource-symbolic-link?
+  "Return true when PATH is a symbolic link."
+  [path]
+  (handle-exceptions exn
+      #f
+    (posix:symbolic-link? path)))
+
+(defn resource-normalize-segments
+  "Return normalized path segments for URI-PATH or #f when it escapes ROOT."
+  [uri-path]
+  (let [text (if (not uri-path) "" (str uri-path))]
+    (if (string=? text "")
+        #f
+        (##core#let loop ((segments (str/split text "/"))
+                          (stack '()))
+          (if (empty? segments)
+              (let [normalized (reverse stack)]
+                (if (str/ends-with? text "/")
+                    (append normalized (list resource-index-file))
+                    (if (empty? normalized)
+                        (list resource-index-file)
+                        normalized)))
+              (let [segment (str/trim (first segments))]
+                (cond
+                  (or (string=? segment "") (string=? segment "."))
+                  (loop (rest segments) stack)
+
+                  (string=? segment "..")
+                  (if (empty? stack)
+                      #f
+                      (loop (rest segments) (rest stack)))
+
+                  :else
+                  (loop (rest segments) (cons segment stack)))))))))
+
+(defn resource-options
+  "Return a normalized options map for resource middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn resource-root
+  "Return the configured static resource root."
+  [options]
+  (or (get options :root)
+      (get options :path)
+      "public"))
+
+(defn resource-max-body-bytes
+  "Return the maximum static resource size for OPTIONS."
+  [options]
+  (if (contains? options :max-body-bytes)
+      (get options :max-body-bytes)
+      resource-max-body-bytes-default))
+
+(defn resource-file-size
+  "Return the on-disk size for PATH, or #f when it cannot be read."
+  [path]
+  (handle-exceptions exn
+      #f
+    (posix:file-size path)))
+
+(defn resource-path
+  "Return the on-disk path for URI-PATH under ROOT."
+  [root uri-path]
+  (let [text (if (not uri-path) "" (str uri-path))]
+    (if (or (string=? text "")
+            (str/includes? text "\\"))
+        #f
+        (let [segments (resource-normalize-segments text)]
+          (if (not segments)
+              #f
+              (##core#let loop ((parts segments)
+                                (current root))
+                (if (empty? parts)
+                    current
+                    (let [next-path (fs/path current (first parts))]
+                      (if (resource-symbolic-link? next-path)
+                          #f
+                          (loop (rest parts) next-path))))))))))
+
+(defn resource-content-type
+  "Return a best-effort content type for PATH."
+  [path]
+  (let [ext (fs/extension path)]
+    (cond
+      (string=? ext "html") "text/html; charset=utf-8"
+      (string=? ext "htm") "text/html; charset=utf-8"
+      (string=? ext "css") "text/css; charset=utf-8"
+      (string=? ext "js") "application/javascript; charset=utf-8"
+      (string=? ext "mjs") "application/javascript; charset=utf-8"
+      (string=? ext "json") "application/json; charset=utf-8"
+      (string=? ext "txt") "text/plain; charset=utf-8"
+      (string=? ext "md") "text/markdown; charset=utf-8"
+      (string=? ext "svg") "image/svg+xml"
+      (string=? ext "xml") "application/xml; charset=utf-8"
+      (string=? ext "ico") "image/x-icon"
+      (string=? ext "png") "image/png"
+      (string=? ext "jpg") "image/jpeg"
+      (string=? ext "jpeg") "image/jpeg"
+      (string=? ext "gif") "image/gif"
+      (string=? ext "webp") "image/webp"
+      (string=? ext "wasm") "application/wasm"
+      :else "application/octet-stream")))
+
+(defn resource-response
+  "Return a static file response for REQUEST under ROOT when present."
+  [request root options]
+  (let [uri-path (or (request/request-uri request) "")]
+    (if (or (string=? uri-path "")
+            (str/includes? uri-path "\\"))
+        #f
+        (let [file-path (resource-path root uri-path)]
+          (if (and file-path (fs/file? file-path))
+              (let [size (resource-file-size file-path)
+                    max-body-bytes (resource-max-body-bytes options)]
+                (if (and size
+                         (number? max-body-bytes)
+                         (> size max-body-bytes))
+                    (response/payload-too-large "Static resource too large")
+                    (response/header
+                     (response/content-type
+                      (response/ok (fs/slurp file-path))
+                      (resource-content-type file-path))
+                     "Content-Length"
+                     (if size
+                         (number->string size)
+                         (number->string (string-length (fs/slurp file-path)))))))
+              #f)))))
+
+(defn wrap-resource
+  "Return a handler that serves static files from ROOT before HANDLER."
+  [handler options]
+  (let [options (resource-options options)
+        root (resource-root options)]
+    (fn [request]
+      (or (resource-response request root options)
+          (handler request)))))

@@ -1,0 +1,276 @@
+;; Cluck web server example.
+;;
+;; The request routing stays in pure Cluck. The reusable request/response/
+;; middleware helpers live in the separate ring/ library tree, while
+;; ring.adapter.spiffy keeps Spiffy at the boundary.
+
+(ns cluck.examples.web-server
+  (:require [ring.request :as request]
+            [ring.response :as response]
+            [ring.middleware :as middleware]
+            [ring.middleware.exceptions :as exceptions]
+            [ring.middleware.content-length :as content-length]
+            [ring.middleware.cookies :as cookies]
+            [ring.middleware.head :as head]
+            [ring.middleware.keyword-params :as keyword-params]
+            [ring.middleware.request-id :as request-id]
+            [ring.middleware.not-modified :as not-modified]
+            [ring.middleware.params :as params]
+            [ring.middleware.session :as session]
+            [ring.adapter.spiffy :as ring-adapter]
+            [cluck.string :as str]
+            [ring.util.random :as random]
+            [spiffy :as spiffy]))
+
+(def web-server-default-port
+  8080)
+
+(def web-session-cookie-name
+  (string-append "cluck-" "session"))
+
+(def demo-cookie-name
+  (string-append "cluck-" "demo"))
+
+(def web-home-etag
+  (string-append "\"" "cluck-home-v1" "\""))
+
+(def web-health-etag
+  (string-append "\"" "cluck-health-v1" "\""))
+
+(def web-session-secret
+  (let [secret (get-environment-variable "CLUCK_WEB_SESSION_SECRET")]
+    (if (and (string? secret)
+             (not (string=? secret "")))
+        secret
+        (random/random-hex-string 32))))
+
+(def web-session-options
+  (hash-map :cookie-name web-session-cookie-name
+            :path "/"
+            :same-site :lax
+            :http-only #t))
+
+(def demo-cookie-options
+  (hash-map :path "/"
+            :same-site :lax
+            :http-only #t))
+
+(defn replace-text
+  "Replace NEEDLE in TEXT with REPLACEMENT."
+  [text needle replacement]
+  (str/join replacement (str/split (if (nil? text) "" (str text)) needle)))
+
+(defn html-escape
+  "Escape the basic HTML special characters in TEXT."
+  [text]
+  (let [text (if (nil? text) "" (str text))]
+    (replace-text
+     (replace-text
+      (replace-text
+       (replace-text
+        (replace-text text "&" "&amp;")
+        "<" "&lt;")
+       ">" "&gt;")
+      "\"" "&quot;")
+     "'" "&#39;")))
+
+(defn request-method-text
+  "Return METHOD as upper-case text."
+  [method]
+  (cond
+    (keyword? method) (str/upper-case (name method))
+    (symbol? method) (str/upper-case (symbol->string method))
+    (string? method) (str/upper-case method)
+    :else "UNKNOWN"))
+
+(defn echo-tail
+  "Return the path tail after `/echo/`."
+  [path]
+  (if (str/starts-with? path "/echo/")
+      (substring path 6)
+      ""))
+
+(defn home-page-fragment
+  "Return the landing page fragment."
+  [method path]
+  (str "<h1>Cluck web server</h1>"
+       "<p>This example keeps routing in pure Cluck and uses Ring-style middleware"
+       " for cookies, params, sessions, and HTTP helpers.</p>"
+       "<ul>"
+       "<li><a href=\"/health\">/health</a> is a simple health check with ETag support.</li>"
+       "<li><a href=\"/echo/cluck\">/echo/cluck</a> echoes the path tail.</li>"
+       "<li><a href=\"/cookie\">/cookie</a> sets and reads a browser cookie.</li>"
+       "<li><a href=\"/visit\">/visit</a> increments a signed session counter.</li>"
+       "<li><a href=\"/params?name=cluck&amp;name=egg\">/params</a> shows query and form params.</li>"
+       "</ul>"
+       "<p>Method: " (html-escape method) "</p>"
+       "<p>Path: " (html-escape path) "</p>"))
+
+(defn method-not-allowed-page-fragment
+  "Return the fragment used for unsupported methods."
+  [method path]
+  (str "<h1>Method not allowed</h1>"
+       "<p>No " (html-escape method) " route for " (html-escape path) ".</p>"))
+
+(defn health-page-fragment
+  "Return the health-check fragment."
+  []
+  "<h1>ok</h1><p>The server is alive.</p>")
+
+(defn echo-page-fragment
+  "Return the echo fragment."
+  [method path]
+  (let [tail (echo-tail path)]
+    (str "<h1>Echo</h1>"
+         "<p>Method: " (html-escape method) "</p>"
+         "<p>Path: " (html-escape path) "</p>"
+         "<p>Tail: <code>" (html-escape tail) "</code></p>")))
+
+(defn cookie-page-fragment
+  "Return the cookie fragment."
+  [cookie-value]
+  (str "<h1>Cookie</h1>"
+       "<p>Demo cookie: <code>" (html-escape cookie-value) "</code></p>"
+       "<p>Reload with the same browser cookie jar to see it persist.</p>"))
+
+(defn visit-page-fragment
+  "Return the session fragment."
+  [visits]
+  (str "<h1>Visit</h1>"
+       "<p>Session visits: <strong>" visits "</strong></p>"
+       "<p>Reload with the same cookie jar to increment the counter.</p>"))
+
+(defn params-page-fragment
+  "Return the params fragment."
+  [request]
+  (str "<h1>Params</h1>"
+       "<p>Query: <code>"
+       (html-escape (pr-str (request/request-query-params request)))
+       "</code></p>"
+       "<p>Form: <code>"
+       (html-escape (pr-str (request/request-form-params request)))
+       "</code></p>"
+       "<p>Merged: <code>"
+       (html-escape (pr-str (request/request-params request)))
+       "</code></p>"
+       "<p>Cookies: <code>"
+       (html-escape (pr-str (request/request-cookies request)))
+       "</code></p>"
+       "<p>Session: <code>"
+       (html-escape (pr-str (request/request-session request)))
+       "</code></p>"))
+
+(defn not-found-page-fragment
+  "Return the fragment used for unknown routes."
+  [method path]
+  (str "<h1>Not found</h1>"
+       "<p>No route for " (html-escape method) " " (html-escape path) ".</p>"))
+
+(defn with-etag
+  "Return RESPONSE with an ETag header."
+  [response etag]
+  (response/header response "ETag" etag))
+
+(defn cookie-response
+  "Return the demo cookie response for REQUEST."
+  [request]
+  (let [cookie-value (request/request-cookie request demo-cookie-name)
+        body (cookie-page-fragment (or cookie-value "cluck"))
+        response (response/ok body)]
+    (if cookie-value
+        response
+        (response/set-cookie response
+                             demo-cookie-name
+                             (assoc demo-cookie-options :value "cluck")))))
+
+(defn visit-response
+  "Return the visit counter response for REQUEST."
+  [request]
+  (let [session-map (request/request-session request)
+        current-visits (let [visits (get session-map :visits)]
+                         (if (number? visits) visits 0))
+        next-visits (+ current-visits 1)
+        body (visit-page-fragment next-visits)
+        response (response/ok body)]
+    (response/set-session response
+                          (assoc session-map :visits next-visits))))
+
+(defn route-response
+  "Return a ring.response map for REQUEST."
+  [request]
+  (let [method (request-method-text (request/request-method request))
+        path (request/request-uri request)]
+    (cond
+      (string=? path "/params")
+      (if (or (string=? method "GET")
+              (string=? method "POST"))
+          (response/ok (params-page-fragment request))
+          (response/method-not-allowed
+           (method-not-allowed-page-fragment method path)))
+
+      (string=? path "/visit")
+      (if (string=? method "GET")
+          (visit-response request)
+          (response/method-not-allowed
+           (method-not-allowed-page-fragment method path)))
+
+      (string=? path "/cookie")
+      (if (string=? method "GET")
+          (cookie-response request)
+          (response/method-not-allowed
+           (method-not-allowed-page-fragment method path)))
+
+      (not (string=? method "GET"))
+      (response/method-not-allowed
+       (method-not-allowed-page-fragment method path))
+
+      (string=? path "/")
+      (with-etag (response/ok (home-page-fragment method path)) web-home-etag)
+
+      (string=? path "/health")
+      (with-etag (response/ok (health-page-fragment)) web-health-etag)
+
+      (str/starts-with? path "/echo/")
+      (response/ok (echo-page-fragment method path))
+
+      :else
+      (response/not-found (not-found-page-fragment method path)))))
+
+(def handler
+  (-> route-response
+      (keyword-params/wrap-keyword-params)
+      (params/wrap-params)
+      (session/wrap-session web-session-secret web-session-options)
+      (cookies/wrap-cookies)
+      (content-length/wrap-content-length)
+      (head/wrap-head)
+      (not-modified/wrap-not-modified)
+      (middleware/wrap-content-type
+       "text/html; charset=utf-8")
+      (exceptions/wrap-exceptions
+       (hash-map :content-type "text/plain; charset=utf-8"))
+      (request-id/wrap-request-id
+       (hash-map))))
+
+(defn dispatch-request
+  "Route the current Spiffy request through the ring adapter."
+  [continue]
+  (let [ring-request (ring-adapter/request->ring-request (spiffy/current-request))
+        ring-response (handler ring-request)]
+    (ring-adapter/send-response! ring-response)))
+
+(defn start-web-server
+  "Start the example server on PORT."
+  [port]
+  (parameterize ((spiffy/server-port port)
+                 (spiffy/vhost-map `((".*" . ,dispatch-request))))
+    (spiffy/start-server)))
+
+(defn main
+  "Start the example web server on PORT."
+  [args]
+  (let [port (if (empty? args)
+               web-server-default-port
+               (parse-long (first args)))]
+    (println (format "Cluck web server listening on http://127.0.0.1:%d" port))
+    (start-web-server port)))

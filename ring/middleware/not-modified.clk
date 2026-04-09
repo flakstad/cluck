@@ -1,0 +1,44 @@
+;; Not-Modified middleware for the separate Ring library tree.
+
+(ns ring.middleware.not-modified
+  "Not-Modified middleware for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.request :as request]
+            [ring.response :as response]))
+
+(defn etag-list
+  "Return a list of candidate ETag values from a header string."
+  [etag-header]
+  (let [text (if (string? etag-header)
+               etag-header
+               (str etag-header))]
+    (map str/trim (str/split text ","))))
+
+(defn etag-matches?
+  "Return true when REQUEST-ETAG matches RESPONSE-ETAG."
+  [request-etag response-etag]
+  (##core#let loop ((tokens (etag-list request-etag)))
+    (if (empty? tokens)
+        #f
+        (let [token (first tokens)]
+          (if (or (string=? token "*")
+                  (string=? token response-etag))
+              #t
+              (loop (rest tokens)))))))
+
+(defn wrap-not-modified
+  "Return a handler that turns matching GET and HEAD responses into 304s."
+  [handler]
+  (fn [request]
+    (let [response-map (handler request)
+          response-etag (response/response-header response-map "ETag")
+          request-etag (request/request-header request "If-None-Match")
+          method (request/request-method request)]
+      (if (and response-etag
+               request-etag
+               (or (equal? method :get) (equal? method :head))
+               (etag-matches? request-etag response-etag))
+          (response/remove-header
+           (response/status (assoc response-map :body "") 304)
+           "Content-Length")
+          response-map))))

@@ -1,0 +1,75 @@
+;; Request ID middleware for the separate Ring library tree.
+
+(ns ring.middleware.request-id
+  "Request ID middleware for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.request :as request]
+            [ring.response :as response]
+            [ring.util.random :as random]))
+
+(define request-id-header-default
+  "x-request-id")
+
+(define request-id-request-key-default
+  :request-id)
+
+(defn request-id-options
+  "Return a normalized options map for request-id middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn request-id-header-name
+  "Return the configured request-id header name."
+  [options]
+  (or (get options :header-name)
+      request-id-header-default))
+
+(defn request-id-request-key
+  "Return the request map key used to store the request id."
+  [options]
+  (or (get options :request-key)
+      request-id-request-key-default))
+
+(defn clean-request-id
+  "Return REQUEST-ID when it is usable, otherwise #f."
+  [request-id]
+  (let [text (if (not request-id)
+               ""
+               (str request-id))
+        trimmed (str/trim text)]
+    (if (or (string=? trimmed "")
+            (> (string-length trimmed) 200))
+        #f
+        (##core#let loop ((index 0))
+          (if (>= index (string-length trimmed))
+              trimmed
+              (let [ch (string-ref trimmed index)
+                    code (char->integer ch)]
+                (if (or (< code 32)
+                        (= code 127))
+                    #f
+                    (loop (+ index 1)))))))))
+
+(defn generate-request-id
+  "Generate a lightweight request id string."
+  []
+  (random/random-token "req-" 16))
+
+(defn request-id-value
+  "Return the request id for REQUEST."
+  [request options]
+  (let [header-name (request-id-header-name options)
+        existing (clean-request-id (request/request-header request header-name))]
+    (or existing
+        (generate-request-id))))
+
+(defn wrap-request-id
+  "Return a handler that assigns a request id to each request and response."
+  [handler options]
+  (let [options (request-id-options options)]
+    (fn [request]
+      (let [header-name (request-id-header-name options)
+            request-key (request-id-request-key options)
+            request-id (request-id-value request options)
+            response-map (handler (assoc request request-key request-id))]
+        (response/header response-map header-name request-id)))))

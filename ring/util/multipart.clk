@@ -1,0 +1,186 @@
+;; Multipart parsing helpers for the separate Ring library tree.
+
+(ns ring.util.multipart
+  "Multipart parsing helpers for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.util.params :as params]))
+
+(defn replace-all
+  "Replace every occurrence of NEEDLE in TEXT with REPLACEMENT."
+  [text needle replacement]
+  (str/join replacement
+            (str/split (if (not text) "" (str text))
+                       needle)))
+
+(defn normalize-line-endings
+  "Normalize CRLF line endings to LF."
+  [text]
+  (replace-all text "\r\n" "\n"))
+
+(defn strip-leading-line-breaks
+  "Remove leading CR and LF characters from TEXT."
+  [text]
+  (let [text (if (not text) "" (str text))]
+    (##core#let loop ((index 0))
+      (if (or (>= index (string-length text))
+              (let [ch (string-ref text index)]
+                (not (or (char=? ch #\return)
+                         (char=? ch #\newline)))))
+          (substring text index (string-length text))
+          (loop (+ index 1))))))
+
+(defn strip-trailing-line-breaks
+  "Remove trailing CR and LF characters from TEXT."
+  [text]
+  (let [text (if (not text) "" (str text))]
+    (##core#let loop ((index (- (string-length text) 1)))
+      (if (< index 0)
+          ""
+          (let [ch (string-ref text index)]
+            (if (or (char=? ch #\return)
+                    (char=? ch #\newline))
+                (loop (- index 1))
+                (substring text 0 (+ index 1))))))))
+
+(defn quoted-text?
+  "Return true when TEXT is wrapped in double quotes."
+  [text]
+  (let [text (if (not text) "" (str text))
+        length (string-length text)]
+    (and (> length 1)
+         (string=? (substring text 0 1) "\"")
+         (string=? (substring text (- length 1) length) "\""))))
+
+(defn strip-quoted-text
+  "Remove a single pair of surrounding double quotes from TEXT."
+  [text]
+  (let [text (if (not text) "" (str text))]
+    (if (quoted-text? text)
+        (substring text 1 (- (string-length text) 1))
+        text)))
+
+(defn multipart-content-type?
+  "Return true when CONTENT-TYPE is multipart/form-data."
+  [content-type]
+  (let [text (if (string? content-type)
+               content-type
+               (str content-type))]
+    (str/starts-with? (str/lower-case text)
+                      "multipart/form-data")))
+
+(defn multipart-boundary
+  "Return the multipart boundary token from CONTENT-TYPE."
+  [content-type]
+  (let [text (if (string? content-type)
+               content-type
+               (str content-type))]
+    (##core#let loop ((tokens (str/split text ";")))
+      (if (empty? tokens)
+          #f
+        (let [token (str/trim (first tokens))
+                lower (str/lower-case token)]
+            (if (str/starts-with? lower "boundary=")
+                (let [boundary (substring token
+                                          (string-length "boundary=")
+                                          (string-length token))]
+                  (strip-quoted-text boundary))
+                (loop (rest tokens))))))))
+
+(defn header-line->entry
+  "Convert a single header line into a lower-cased alist entry."
+  [line]
+  (let [parts (str/split line ":")]
+    (if (empty? (rest parts))
+        #f
+        (cons (str/lower-case (str/trim (first parts)))
+              (str/trim (str/join ":" (rest parts)))))))
+
+(defn header-lines->map
+  "Convert HEADER-TEXT to a simple lower-cased header map."
+  [header-text]
+  (##core#let loop ((lines (str/split-lines header-text))
+                    (acc (hash-map)))
+    (if (empty? lines)
+        acc
+        (let [entry (header-line->entry (first lines))]
+          (if entry
+              (loop (rest lines)
+                    (assoc acc (car entry) (cdr entry)))
+              (loop (rest lines) acc))))))
+
+(defn disposition-token->entry
+  "Convert a Content-Disposition token into a lower-cased entry."
+  [token]
+  (let [parts (str/split token "=")]
+    (if (empty? (rest parts))
+        #f
+        (let [name (str/lower-case (str/trim (first parts)))
+              value (str/trim (str/join "=" (rest parts)))
+              value (strip-quoted-text value)]
+          (cons name value)))))
+
+(defn disposition-header->map
+  "Parse the Content-Disposition header into a simple map."
+  [header-text]
+  (##core#let loop ((tokens (str/split header-text ";"))
+                    (acc (hash-map)))
+    (if (empty? tokens)
+        acc
+        (let [entry (disposition-token->entry (first tokens))]
+          (if entry
+              (loop (rest tokens)
+                    (assoc acc (car entry) (cdr entry)))
+              (loop (rest tokens) acc))))))
+
+(defn multipart-part->entry
+  "Convert a multipart section into a single parameter entry."
+  [section]
+  (let [section (strip-trailing-line-breaks
+                 (strip-leading-line-breaks section))]
+    (if (or (string=? section "")
+            (str/starts-with? section "--"))
+        #f
+        (let [parts (str/split section "\n\n")
+              header-text (first parts)
+              body-text (if (empty? (rest parts))
+                          ""
+                          (str/join "\n\n" (rest parts)))
+              body-text (strip-trailing-line-breaks body-text)
+              headers (header-lines->map header-text)
+              disposition (get headers "content-disposition")
+              disposition-map (if disposition
+                                (disposition-header->map disposition)
+                                (hash-map))
+              name (get disposition-map "name")
+              filename (get disposition-map "filename")
+              content-type (or (get headers "content-type")
+                               "application/octet-stream")]
+          (if (not name)
+              #f
+              (cons name
+                    (if filename
+                        (hash-map :name name
+                                  :filename filename
+                                  :content-type content-type
+                                  :content body-text)
+                        body-text)))))))
+
+(defn parse-multipart-text
+  "Parse TEXT using CONTENT-TYPE and return a multipart params map."
+  [content-type text]
+  (let [boundary (multipart-boundary content-type)
+        body-text (normalize-line-endings (if text (str text) ""))]
+    (if (or (not boundary) (string=? boundary ""))
+        (hash-map)
+        (let [delimiter (string-append "--" boundary)]
+          (##core#let loop ((sections (str/split body-text delimiter))
+                            (acc (hash-map)))
+            (if (empty? sections)
+                acc
+                (let [section (first sections)
+                      entry (multipart-part->entry section)]
+                  (loop (rest sections)
+                        (if entry
+                            (params/param-map-add acc (list (car entry)
+                                                            (cdr entry)))
+                            acc)))))))))

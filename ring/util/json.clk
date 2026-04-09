@@ -1,0 +1,93 @@
+;; JSON helpers for the separate Ring library tree.
+
+(ns ring.util.json
+  "JSON helpers for the separate Ring library tree."
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [cluck.walk :as walk]))
+
+(import (prefix json json:))
+
+(defn json-key->text
+  "Normalize a JSON object key to text."
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-key->symbol
+  "Normalize a JSON object key to a symbol for medea."
+  [key]
+  (string->symbol (json-key->text key)))
+
+(defn cluck-value->json
+  "Convert a Cluck value into a json module compatible datum."
+  [value]
+  (cond
+    (map? value)
+    (list->vector
+     (map (lambda (entry)
+            (cons (json-key->symbol (first entry))
+                  (cluck-value->json (nth entry 1))))
+          (seq (walk/stringify-keys value))))
+
+    (vector? value)
+    (map cluck-value->json value)
+
+    (set? value)
+    (map cluck-value->json (seq value))
+
+    (or (pair? value) (null? value))
+    (map cluck-value->json (seq value))
+
+    (keyword? value)
+    (name value)
+
+    (symbol? value)
+    (if (string=? (symbol->string value) "null")
+        'null
+        (symbol->string value))
+
+    :else value))
+
+(defn json->cluck-value
+  "Convert a medea JSON datum into a Cluck value."
+  [value]
+  (cond
+    (vector? value)
+    (##core#let loop ((entries (vector->list value))
+                      (acc (hash-map)))
+      (if (empty? entries)
+          acc
+          (let* ((entry (first entries))
+                 (key (first entry))
+                 (item (cdr entry))
+                 (key-text (json-key->text key)))
+            (loop (rest entries)
+                  (assoc acc key-text (json->cluck-value item))))))
+
+    (or (pair? value) (null? value))
+    (mapv json->cluck-value (seq value))
+
+    (and (symbol? value)
+         (string=? (symbol->string value) "null"))
+    #f
+
+    :else value))
+
+(defn parse-json-text
+  "Parse TEXT as JSON and optionally keywordize keys."
+  [text keywordize?]
+  (let [parsed (json->cluck-value (json:json-read (open-input-string text)))]
+    (if keywordize?
+        (walk/keywordize-keys parsed)
+        parsed)))
+
+(defn cluck-value->json-text
+  "Serialize VALUE to JSON text."
+  [value]
+  (io/with-output-string
+   (lambda (port)
+     (json:json-write (cluck-value->json value) port))))

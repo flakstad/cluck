@@ -1,0 +1,128 @@
+;; JSON middleware for the separate Ring library tree.
+
+(ns ring.middleware.json
+  "JSON middleware for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [cluck.walk :as walk]
+            [ring.request :as request]
+            [ring.response :as response]
+            [ring.util.body :as body]
+            [ring.util.json :as json]))
+
+(define json-content-type-default
+  "application/json")
+
+(define json-response-content-type
+  "application/json; charset=utf-8")
+
+(define json-max-body-bytes-default
+  1048576)
+
+(defn json-options
+  "Return a normalized options map for JSON middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn json-max-body-bytes
+  "Return the request-body limit for JSON parsing."
+  [options]
+  (if (contains? options :max-body-bytes)
+      (get options :max-body-bytes)
+      json-max-body-bytes-default))
+
+(defn json-content-type?
+  "Return true when CONTENT-TYPE is JSON."
+  [content-type]
+  (let [text (if (string? content-type)
+               content-type
+               (str content-type))
+        lower (str/lower-case text)]
+    (or (string=? lower json-content-type-default)
+        (str/starts-with? lower
+                          (string-append json-content-type-default ";"))
+        (and (str/starts-with? lower "application/")
+             (str/includes? lower "+json")))))
+
+(defn json-request?
+  "Return true when REQUEST should have its body parsed as JSON."
+  [request]
+  (let [method (request/request-method request)
+        content-type (request/request-content-type request)]
+    (and (or (equal? method :post)
+             (equal? method :put)
+             (equal? method :patch))
+         (json-content-type? content-type))))
+
+(defn parse-json-body
+  "Parse REQUEST's JSON body using OPTIONS."
+  [request options]
+  (let [body-text (body/request-body-text-limited request
+                                                  (json-max-body-bytes options))
+        keywordize? (if (contains? options :keywordize?)
+                      (get options :keywordize?)
+                      #f)
+        parsed (if (or (not body-text)
+                       (string=? (str/trim body-text) ""))
+                 (hash-map)
+                 (json/parse-json-text (str/trim body-text) keywordize?))]
+    (if (not body-text)
+        #f
+    (if (contains? options :body-key)
+        (assoc request
+               (get options :body-key)
+               parsed)
+        (assoc request :json-body parsed)))))
+
+(defn wrap-json-body
+  "Return a handler that parses request bodies with JSON content types."
+  ([handler options]
+   (let [options (json-options options)]
+     (fn [request]
+       (if (json-request? request)
+           (let [parsed-request (parse-json-body request options)]
+             (if (not parsed-request)
+                 (response/payload-too-large "Request body too large")
+                 (handler parsed-request)))
+           (handler request)))))
+  ([handler]
+   (wrap-json-body handler (hash-map))))
+
+(defn json-response-body?
+  "Return true when BODY should be JSON-encoded."
+  [body]
+  (or (map? body)
+      (vector? body)
+      (set? body)
+      (pair? body)
+      (null? body)
+      (number? body)
+      (boolean? body)
+      (keyword? body)
+      (symbol? body)))
+
+(defn json-response-body
+  "Return BODY encoded as JSON text when appropriate."
+  [body]
+  (if (json-response-body? body)
+      (json/cluck-value->json-text body)
+      body))
+
+(defn wrap-json-response
+  "Return a handler that JSON-encodes structured response bodies."
+  [handler options]
+  (let [options (json-options options)]
+    (fn [request]
+      (let [response-map (handler request)
+            body (response/response-body response-map)]
+        (if (json-response-body? body)
+            (let [json-response (assoc response-map
+                                       :body
+                                       (json-response-body body))
+                  json-response (response/remove-header json-response
+                                                        "Content-Length")
+                  json-response (response/remove-header json-response
+                                                        "ETag")
+                  json-response (response/content-type json-response
+                                                       json-response-content-type)]
+              json-response)
+            response-map)))))

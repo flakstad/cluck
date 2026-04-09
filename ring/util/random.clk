@@ -1,0 +1,37 @@
+;; Random helper utilities for the separate Ring library tree.
+
+(ns ring.util.random
+  "Random helper utilities for the separate Ring library tree."
+  (:require [cluck.string :as str]))
+
+(define random-hex-digits
+  "0123456789abcdef")
+
+(defn hex-digit
+  "Return the hex digit character for N."
+  [n]
+  (string-ref random-hex-digits n))
+
+(defn random-hex-string
+  "Return a hex string built from BYTES of /dev/urandom."
+  [bytes]
+  (call-with-input-file "/dev/urandom"
+    (lambda (port)
+      (##core#let loop ((remaining bytes)
+                        (chars '()))
+        (if (<= remaining 0)
+            (list->string (reverse chars))
+            (let [ch (read-char port)]
+              (if (eof-object? ch)
+                  (list->string (reverse chars))
+                  (let* ((value (char->integer ch))
+                         (hi (quotient value 16))
+                         (lo (modulo value 16)))
+                    (loop (- remaining 1)
+                          (cons (hex-digit lo)
+                                (cons (hex-digit hi) chars)))))))))))
+
+(defn random-token
+  "Return PREFIX followed by a random hex string with BYTES bytes."
+  [prefix bytes]
+  (string-append (str prefix) (random-hex-string bytes)))

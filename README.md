@@ -57,6 +57,7 @@ The current implementation supports:
 - `type` for runtime type hints and `vec` for turning collections into vectors
 - `slurp`, `spit`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, and `group-by` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.edn/read-string`
+- the separate top-level `ring/` library tree for Ring-style request/response/middleware helpers, including signed-cookie sessions, params, request IDs, exception handling, JSON body/response helpers, CORS, static resources, HEAD handling, content length, conditional GET, trusted proxy/host handling for redirects, and `ring.adapter.spiffy` for the Spiffy bridge
 - `atom`, `atom?`, `deref`, `reset!`, `swap!`, and `compare-and-set!`
 - `cluck.mutable` for explicit mutable map/set helpers and host interop
 - `cluck.persistent` for opt-in persistent/immutable map and set helpers
@@ -69,7 +70,7 @@ The current implementation supports:
 - Clojure-style special forms and threading macros, including `case`, `cond->`, `cond->>`, `some->`, and `some->>`
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
-- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, `cluck.persistent`, and `cluck.edn`, with `cluck.core` installed at bootstrap time
+- the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, `cluck.persistent`, and `cluck.edn`, plus the separate top-level `ring.request`, `ring.response`, `ring.middleware`, and `ring.adapter.spiffy` libraries, with `cluck.core` installed at bootstrap time
 
 Notes:
 
@@ -441,6 +442,57 @@ Size notes:
 The weather app is intentionally small, but it is important because it proves
 the current Cluck shape works for a real networked tool while keeping the egg
 boundary explicit in the namespace form.
+
+## Web Server Example
+
+A small web server example lives in:
+
+- [`examples/cluck/web-server/main.clk`](./examples/cluck/web-server/main.clk)
+- [`examples/cluck/web-server/README.md`](./examples/cluck/web-server/README.md)
+
+It keeps the request routing in pure Cluck, uses the separate top-level
+`ring.*` libraries for request/response/middleware helpers, and uses the
+`spiffy` egg only through `ring.adapter.spiffy` for the server loop and
+transport adapter.
+
+The Ring library tree is documented in [`ring/README.md`](./ring/README.md).
+The demo routes now include `/cookie`, `/visit`, and `/params`, and the
+handler stack demonstrates cookie serialization, signed sessions, params
+parsing, HEAD handling, and conditional GET with `ETag` support.
+
+Install the eggs once in your CHICKEN environment:
+
+```bash
+chicken-install spiffy hmac sha2 message-digest message-digest-utils
+```
+
+If you want stable signed sessions across restarts, set
+`CLUCK_WEB_SESSION_SECRET` before starting the server. The Ring library itself
+expects an explicit secret; the example app generates a fresh random
+per-process secret when that env var is unset so the demo still works without
+extra configuration.
+
+Run the server from source with:
+
+```bash
+csi -q -s examples/cluck/web-server/run.scm 8081
+```
+
+Try these requests while it is running:
+
+```bash
+curl -i http://127.0.0.1:8081/
+curl -i http://127.0.0.1:8081/health
+curl -i http://127.0.0.1:8081/echo/cluck
+curl -i -c /tmp/cluck.cookies -b /tmp/cluck.cookies http://127.0.0.1:8081/cookie
+curl -i -c /tmp/cluck.cookies -b /tmp/cluck.cookies http://127.0.0.1:8081/visit
+curl -i -b /tmp/cluck.cookies http://127.0.0.1:8081/visit
+curl -i 'http://127.0.0.1:8081/params?name=cluck&name=egg'
+curl -i -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data 'name=cluck&theme=dark' http://127.0.0.1:8081/params
+curl -I http://127.0.0.1:8081/health
+curl -i -H 'If-None-Match: "cluck-health-v1"' http://127.0.0.1:8081/health
+curl -i http://127.0.0.1:8081/missing
+```
 
 ## TODO Scanner Utility
 

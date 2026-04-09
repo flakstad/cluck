@@ -1,0 +1,127 @@
+;; Cookie helpers for the separate Ring library tree.
+
+(ns ring.util.cookie
+  "Cookie helpers for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.util :as util]
+            [uri-common :as uri]))
+
+(defn cookie-header-text
+  "Normalize COOKIE-HEADER to text."
+  [cookie-header]
+  (cond
+    (not cookie-header) ""
+    (string? cookie-header) cookie-header
+    :else (util/header-values->text "Cookie" cookie-header)))
+
+(defn cookie-pair->entry
+  "Convert a single NAME=VALUE cookie pair into an alist entry."
+  [pair-text]
+  (let [parts (str/split pair-text "=")]
+    (if (empty? (rest parts))
+        #f
+        (cons (str/trim (first parts))
+              (uri/uri-decode-string (str/join "=" (rest parts)))))))
+
+(defn cookie-header->alist
+  "Parse COOKIE-HEADER into an alist of cookie pairs."
+  [cookie-header]
+  (let [text (str/trim (cookie-header-text cookie-header))]
+    (if (or (string=? text "") (not (str/includes? text "=")))
+        '()
+        (##core#let loop ((parts (str/split text ";"))
+                          (acc '()))
+          (if (empty? parts)
+              (reverse acc)
+              (let [part (str/trim (first parts))]
+                (if (or (string=? part "")
+                        (not (str/includes? part "=")))
+                    (loop (rest parts) acc)
+                    (let [entry (cookie-pair->entry part)]
+                      (if entry
+                          (loop (rest parts) (cons entry acc))
+                          (loop (rest parts) acc))))))))))
+
+(defn cookie-header->map
+  "Parse COOKIE-HEADER into a request cookie map."
+  [cookie-header]
+  (##core#let loop ((entries (cookie-header->alist cookie-header))
+                    (acc (hash-map)))
+    (if (empty? entries)
+        acc
+        (let [entry (first entries)]
+          (loop (rest entries)
+                (assoc acc (car entry) (cdr entry)))))))
+
+(defn cookie-value-text
+  "Normalize COOKIE-VALUE to text."
+  [cookie-value]
+  (cond
+    (not cookie-value) ""
+    (string? cookie-value) cookie-value
+    :else (str cookie-value)))
+
+(defn cookie-entry-value-text
+  "Return the text value from a cookie entry or raw value."
+  [cookie-entry]
+  (if (string? cookie-entry)
+      cookie-entry
+      (cookie-value-text (get cookie-entry :value))))
+
+(defn cookie-same-site-text
+  "Normalize SAME-SITE to the canonical attribute text."
+  [same-site]
+  (let [text (cond
+               (keyword? same-site) (name same-site)
+               (symbol? same-site) (symbol->string same-site)
+               (string? same-site) same-site
+               :else (str same-site))]
+    (str/capitalize (str/lower-case text))))
+
+(defn cookie-entry->set-cookie-text
+  "Serialize a cookie map into a Set-Cookie header string."
+  [cookie-name cookie]
+  (let [cookie-map (if (string? cookie)
+                     (hash-map :value cookie)
+                     cookie)
+        value (cookie-value-text (get cookie-map :value))
+        parts (list (string-append (util/header-name-text cookie-name)
+                                   "="
+                                   (uri/uri-encode-string value)))]
+    (let [parts (if (get cookie-map :path)
+                  (cons (string-append "Path=" (str (get cookie-map :path))) parts)
+                  parts)]
+      (let [parts (if (get cookie-map :domain)
+                    (cons (string-append "Domain=" (str (get cookie-map :domain))) parts)
+                    parts)]
+        (let [parts (if (get cookie-map :max-age)
+                      (cons (string-append "Max-Age=" (str (get cookie-map :max-age))) parts)
+                      parts)]
+          (let [parts (if (get cookie-map :expires)
+                        (cons (string-append "Expires=" (str (get cookie-map :expires))) parts)
+                        parts)]
+            (let [parts (if (get cookie-map :same-site)
+                          (cons (string-append "SameSite="
+                                               (cookie-same-site-text (get cookie-map :same-site)))
+                                parts)
+                          parts)]
+              (let [parts (if (get cookie-map :secure)
+                            (cons "Secure" parts)
+                            parts)]
+                (let [parts (if (get cookie-map :http-only)
+                              (cons "HttpOnly" parts)
+                              parts)]
+                  (str/join "; " (reverse parts)))))))))))
+
+(defn cookies->set-cookie-texts
+  "Serialize a cookie map into one or more Set-Cookie header strings."
+  [cookies]
+  (##core#let loop ((entries (seq cookies))
+                    (acc '()))
+    (if (empty? entries)
+        (reverse acc)
+        (let [entry (first entries)]
+          (loop (rest entries)
+                (cons (cookie-entry->set-cookie-text (first entry)
+                                                     (nth entry 1))
+                      acc))))))

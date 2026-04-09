@@ -1,0 +1,36 @@
+;; Pure middleware helpers in the separate Ring library tree.
+
+(ns ring.middleware
+  "Pure middleware helpers in the separate Ring library tree."
+  (:require [ring.response :as response]))
+
+(defn wrap-request
+  "Return a handler that transforms REQUEST before calling HANDLER."
+  [handler request-fn]
+  (fn [request]
+    (handler (request-fn request))))
+
+(defn wrap-response
+  "Return a handler that transforms the response from HANDLER."
+  [handler response-fn]
+  (fn [request]
+    (response-fn (handler request))))
+
+(defn wrap-header
+  "Return a handler that adds HEADER-NAME with VALUE to every response."
+  [handler header-name value]
+  (wrap-response handler
+                 (fn [resp]
+                   (response/header resp header-name value))))
+
+(defn wrap-content-type
+  "Return a handler that adds a Content-Type header to every response."
+  [handler value]
+  (wrap-header handler "Content-Type" value))
+
+(defn wrap-status
+  "Return a handler that forces every response to use CODE."
+  [handler code]
+  (wrap-response handler
+                 (fn [resp]
+                   (response/status resp code))))

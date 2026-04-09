@@ -1,0 +1,47 @@
+;; Cookie middleware for the separate Ring library tree.
+
+(ns ring.middleware.cookies
+  "Cookie middleware for the separate Ring library tree."
+  (:require [ring.request :as request]
+            [ring.response :as response]
+            [ring.util :as util]
+            [ring.util.cookie :as cookie]))
+
+(defn request->cookies
+  "Return the request cookies map for REQUEST."
+  [request]
+  (let [parsed (cookie/cookie-header->map (request/request-header request "Cookie"))]
+    (merge parsed (request/request-cookies request))))
+
+(defn response-cookies->response
+  "Convert response cookies to Set-Cookie headers."
+  [response]
+  (let [cookies (response/response-cookies response)]
+    (if (empty? cookies)
+        (dissoc response :cookies)
+        (##core#let loop ((entries (seq cookies))
+                          (resp (dissoc response :cookies)))
+          (if (empty? entries)
+              resp
+              (let [entry (first entries)
+                    cookie-name (first entry)
+                    cookie-value (nth entry 1)
+                    cookie-map (if (string? cookie-value)
+                                 (hash-map :value cookie-value)
+                                 cookie-value)]
+                (loop (rest entries)
+                      (response/add-header resp
+                                           "Set-Cookie"
+                                           (cookie/cookie-entry->set-cookie-text
+                                            cookie-name
+                                            cookie-map)))))))))
+
+(defn wrap-cookies
+  "Return a handler that populates request cookies and serializes response cookies."
+  [handler]
+  (fn [request]
+    (let [request-with-cookies (assoc request
+                                      :cookies
+                                      (request->cookies request))
+          response (handler request-with-cookies)]
+      (response-cookies->response response))))

@@ -1,0 +1,196 @@
+;; Anti-forgery middleware for the separate Ring library tree.
+
+(ns ring.middleware.anti-forgery
+  "Anti-forgery middleware for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.request :as request]
+            [ring.response :as response]
+            [ring.util.crypto :as crypto]
+            [ring.util.random :as random]))
+
+(def anti-forgery-token-key-default :anti-forgery-token)
+(def anti-forgery-field-name-default (str "__anti-forgery-token"))
+(def anti-forgery-header-name-default (str "x-csrf-token"))
+(def anti-forgery-request-methods-default (list :post :put :patch :delete))
+(def anti-forgery-failure-body-default (str "Invalid anti-forgery token"))
+(def anti-forgery-failure-reason-header (str "X-CSRF-Reason"))
+
+(defn anti-forgery-options
+  "Return a normalized options map for anti-forgery middleware."
+  [options]
+  (if (map? options)
+    options
+    (hash-map)))
+
+(defn anti-forgery-token-key
+  "Return the session/request key used to store the token."
+  [options]
+  (or (get options :token-key)
+      anti-forgery-token-key-default))
+
+(defn anti-forgery-field-name
+  "Return the request parameter field name used for the token."
+  [options]
+  (or (get options :field-name)
+      anti-forgery-field-name-default))
+
+(defn anti-forgery-header-name
+  "Return the header name used for the token."
+  [options]
+  (or (get options :header-name)
+      anti-forgery-header-name-default))
+
+(defn anti-forgery-request-methods
+  "Return the list of request methods that must carry a token."
+  [options]
+  (or (get options :methods)
+      anti-forgery-request-methods-default))
+
+(defn anti-forgery-failure-body
+  "Return the failure body text."
+  [options]
+  (or (get options :failure-body)
+      anti-forgery-failure-body-default))
+
+(defn anti-forgery-origin-check?
+  "Return true when unsafe requests should be checked for same-origin headers."
+  [options]
+  (if (contains? options :origin-check?)
+    (get options :origin-check?)
+    true))
+
+(defn generate-anti-forgery-token
+  "Generate a new anti-forgery token."
+  []
+  (random/random-token "csrf-" 16))
+
+(defn request-param-value
+  "Return VALUE for KEY from the request params map."
+  [request key]
+  (let [params-map (request/request-params request)
+        key-text (cond
+                   (string? key) key
+                   (or (keyword? key) (symbol? key)) (name key)
+                   :else (str key))
+        key-keyword (cond
+                      (keyword? key) key
+                      (string? key) (keyword key)
+                      :else nil)]
+    (or (get params-map key)
+        (get params-map key-text)
+        (and key-keyword (get params-map key-keyword)))))
+
+(defn request-token
+  "Return the anti-forgery token supplied by REQUEST."
+  [request options]
+  (let [header-name (anti-forgery-header-name options)
+        field-name (anti-forgery-field-name options)]
+    (or (request/request-header request header-name)
+        (request-param-value request field-name))))
+
+(defn request-unsafe-method?
+  "Return true when REQUEST should be checked for a token."
+  [request options]
+  (if (some (fn [method]
+              (equal? method (request/request-method request)))
+            (anti-forgery-request-methods options))
+    true
+    false))
+
+(defn session-with-token
+  "Return REQUEST with TOKEN stored in the session."
+  [request options token]
+  (let [token-key (anti-forgery-token-key options)
+        session (request/request-session request)]
+    (assoc request
+           :session (assoc session token-key token)
+           :anti-forgery-token token)))
+
+(defn response-with-token
+  "Ensure RESPONSE keeps TOKEN in its session map when one is present."
+  [response options token]
+  (let [token-key (anti-forgery-token-key options)]
+    (if (contains? response :session)
+      (let [session (get response :session)]
+        (if session
+          (response/set-session response (assoc session token-key token))
+          response))
+      (response/set-session response (hash-map token-key token)))))
+
+(defn token-valid?
+  "Return true when REQUEST supplies the expected token."
+  [request options token]
+  (let [supplied (request-token request options)]
+    (and supplied
+         token
+         (crypto/constant-time-string=? (str supplied)
+                                        (str token)))))
+
+(defn request-origin-host
+  "Return the normalized host text from ORIGIN."
+  [origin]
+  (let [text (if origin (str/trim (str origin)) "")]
+    (cond
+      (string=? text "") nil
+      (str/starts-with? text "http://")
+      (request-origin-host (substring text 7 (string-length text)))
+      (str/starts-with? text "https://")
+      (request-origin-host (substring text 8 (string-length text)))
+      :else
+      (let [host (first (str/split text "/"))]
+        (if (string=? host "")
+          nil
+          (str/lower-case host))))))
+
+(defn request-same-origin?
+  "Return true when REQUEST matches its Origin or Referer host."
+  [request]
+  (let [request-host (request-origin-host
+                      (or (request/request-header request "Host")
+                          (request/request-server-name request)))
+        origin-host (request-origin-host (request/request-header request "Origin"))
+        referer-host (request-origin-host (request/request-header request "Referer"))]
+    (cond
+      (and request-host origin-host)
+      (crypto/constant-time-string=? request-host origin-host)
+
+      (and request-host referer-host)
+      (crypto/constant-time-string=? request-host referer-host)
+
+      :else
+      true)))
+
+(defn anti-forgery-failure-response
+  "Return a 403 anti-forgery failure response with REASON."
+  [options reason]
+  (response/header
+   (response/forbidden (anti-forgery-failure-body options))
+   anti-forgery-failure-reason-header
+   reason))
+
+(defn wrap-anti-forgery
+  "Return a handler that seeds and validates an anti-forgery token."
+  [handler options]
+  (let [options (anti-forgery-options options)]
+    (fn [request]
+      (let [token-key (anti-forgery-token-key options)
+            session-token (get (request/request-session request) token-key)
+            token (if session-token
+                    (str session-token)
+                    (generate-anti-forgery-token))
+            request (session-with-token request options token)
+            origin-mismatch? (and (anti-forgery-origin-check? options)
+                                  (not (request-same-origin? request)))
+            token-mismatch? (not (token-valid? request options token))]
+        (if (and (request-unsafe-method? request options)
+                 (or origin-mismatch? token-mismatch?))
+          (response-with-token
+           (anti-forgery-failure-response
+            options
+            (if origin-mismatch? "origin" "token"))
+           options
+           token)
+          (response-with-token
+           (handler request)
+           options
+           token))))))

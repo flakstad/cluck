@@ -1,0 +1,105 @@
+;; Parameter helpers for the separate Ring library tree.
+
+(ns ring.util.params
+  "Parameter helpers for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [cluck.walk :as walk]
+            [uri-common :as uri]))
+
+(defn param-map-add
+  "Add ENTRY to ACC, preserving repeated keys as vectors."
+  [acc entry]
+  (let* ((name (str/trim (first entry)))
+         (value (nth entry 1))
+         (existing (get acc name)))
+    (assoc acc
+           name
+           (cond
+             (not existing) value
+             (vector? existing)
+             (list->vector (append (vector->list existing)
+                                   (list value)))
+             :else
+             (vector existing value)))))
+
+(defn param-value-add
+  "Add VALUE to an existing parameter value."
+  [existing value]
+  (cond
+    (not existing) value
+    (vector? existing)
+    (list->vector (append (vector->list existing) (list value)))
+    :else
+    (vector existing value)))
+
+(defn param-alist->map
+  "Convert an alist of parameters into a Ring-style map."
+  [entries]
+  (##core#let loop ((xs entries)
+                    (acc (hash-map)))
+    (if (empty? xs)
+        acc
+        (let* ((entry (first xs))
+               (name (str/trim (car entry)))
+               (value (cdr entry))
+               (existing (get acc name)))
+          (loop (rest xs)
+                (assoc acc
+                       name
+                       (cond
+                         (not existing) value
+                         (vector? existing)
+                         (list->vector (append (vector->list existing)
+                                               (list value)))
+                         :else
+                         (vector existing value))))))))
+
+(defn merge-param-maps
+  "Merge QUERY-PARAMS and FORM-PARAMS into a fresh params map."
+  [query-params form-params]
+  (merge (walk/cluck-walk-map identity query-params)
+         form-params))
+
+(defn merge-param-values
+  "Merge VALUE into EXISTING, preserving nested maps and repeated values."
+  [existing value]
+  (cond
+    (and (map? existing) (map? value))
+    (merge-param-maps-recursive existing value)
+
+    :else
+    (param-value-add existing value)))
+
+(defn merge-param-maps-recursive
+  "Deep-merge nested parameter maps."
+  [left right]
+  (##core#let loop ((entries (seq right))
+                    (acc (walk/cluck-walk-map identity left)))
+    (if (empty? entries)
+        acc
+        (let* ((entry (first entries))
+               (name (first entry))
+               (value (nth entry 1))
+               (existing (get acc name)))
+          (loop (rest entries)
+                (assoc acc
+                       name
+                       (merge-param-values existing value)))))))
+
+(defn parse-param-string
+  "Parse a URL-encoded parameter string into a map."
+  [text]
+  (if (or (not text) (string=? text ""))
+      (hash-map)
+      (param-alist->map (uri/form-urldecode text separator: "&"))))
+
+(defn form-content-type?
+  "Return true when CONTENT-TYPE is a urlencoded form type."
+  [content-type]
+  (let [text (if (string? content-type)
+               content-type
+               (str content-type))]
+    (or (string=? (str/lower-case text)
+                  "application/x-www-form-urlencoded")
+        (str/starts-with? (str/lower-case text)
+                          "application/x-www-form-urlencoded;"))))

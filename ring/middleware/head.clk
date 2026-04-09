@@ -1,0 +1,17 @@
+;; Head middleware for the separate Ring library tree.
+
+(ns ring.middleware.head
+  "Head middleware for the separate Ring library tree."
+  (:require [ring.request :as request]))
+
+(defn wrap-head
+  "Return a handler that treats HEAD as GET and strips the body."
+  [handler]
+  (fn [request]
+    (let [head-request? (equal? (request/request-method request) :head)
+          response (handler (if head-request?
+                              (assoc request :request-method :get)
+                              request))]
+      (if head-request?
+          (assoc response :body "")
+          response))))

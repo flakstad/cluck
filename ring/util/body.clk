@@ -1,0 +1,96 @@
+;; Shared body helpers for the separate Ring library tree.
+
+(ns ring.util.body
+  "Shared body helpers for the separate Ring library tree."
+  (:require [cluck.io :as io]
+            [ring.request :as request]))
+
+(define (request-body-port->string port content-length)
+  (##core#let loop ((remaining content-length)
+                    (chars '()))
+    (if (or (<= remaining 0)
+            (eof-object? (peek-char port)))
+        (list->string (reverse chars))
+        (let [ch (read-char port)]
+          (if (eof-object? ch)
+              (list->string (reverse chars))
+              (loop (- remaining 1) (cons ch chars)))))))
+
+(define (request-body-port->limited-string port max-bytes)
+  (##core#let loop ((remaining max-bytes)
+                    (chars '()))
+    (if (eof-object? (peek-char port))
+        (list->string (reverse chars))
+        (if (<= remaining 0)
+            #f
+            (let [ch (read-char port)]
+              (if (eof-object? ch)
+                  (list->string (reverse chars))
+                  (loop (- remaining 1) (cons ch chars))))))))
+
+(define (request-body-content-length request)
+  (let [content-length (request/request-content-length request)]
+    (cond
+      (number? content-length) content-length
+      (string? content-length)
+      (handle-exceptions exn
+          #f
+        (parse-long content-length))
+      :else #f)))
+
+(defn body->text
+  "Normalize BODY to text."
+  [body]
+  (cond
+    (not body) ""
+    (string? body) body
+    (input-port? body) (io/port->string body)
+    :else (str body)))
+
+(defn request-body-text
+  "Return the request body as text."
+  [request]
+  (let [body (get request :body)]
+    (cond
+      (not body) ""
+      (string? body) body
+      (input-port? body)
+      (let [content-length (request-body-content-length request)]
+        (if content-length
+            (request-body-port->string body content-length)
+            (io/port->string body)))
+      :else (body->text body))))
+
+(defn request-body-text-limited
+  "Return the request body as text, or #f when it exceeds MAX-BYTES."
+  [request max-bytes]
+  (let [body (get request :body)]
+    (cond
+      (not body) ""
+      (string? body)
+      (if (and (number? max-bytes)
+               (> (string-length body) max-bytes))
+          #f
+          body)
+      (input-port? body)
+      (let [content-length (request-body-content-length request)]
+        (cond
+          (and (number? max-bytes)
+               content-length
+               (> content-length max-bytes))
+          #f
+
+          content-length
+          (request-body-port->string body content-length)
+
+          (number? max-bytes)
+          (request-body-port->limited-string body max-bytes)
+
+          :else
+          (io/port->string body)))
+      :else
+      (let [text (body->text body)]
+        (if (and (number? max-bytes)
+                 (> (string-length text) max-bytes))
+            #f
+            text)))))

@@ -1,0 +1,51 @@
+;; Shared helper utilities for the separate Ring library tree.
+
+(ns ring.util
+  "Shared helper utilities for the separate Ring library tree."
+  (:require [cluck.string :as str]))
+
+(defn header-name-text
+  "Normalize HEADER-NAME to text."
+  [header-name]
+  (cond
+    (string? header-name) header-name
+    (or (keyword? header-name) (symbol? header-name)) (name header-name)
+    :else (str header-name)))
+
+(defn lower-header-name-text
+  "Normalize HEADER-NAME to lower-case text."
+  [header-name]
+  (str/lower-case (header-name-text header-name)))
+
+(defn header-value->list
+  "Normalize a header VALUE to a list of values."
+  [value]
+  (cond
+    (or (not value) (null? value)) '()
+    (vector? value) (vector->list value)
+    (pair? value) value
+    :else (list value)))
+
+(defn header-values->text
+  "Join a list of Intarweb header value lists into a Ring header string."
+  [header-name values]
+  (let [items (if (empty? values)
+                '()
+                (cond
+                  (string? values) (list values)
+                  (vector? values) (vector->list values)
+                  (and (pair? values)
+                       (or (pair? (car values))
+                           (vector? (car values)))) (apply append values)
+                  :else values))
+        delimiter (if (string=? (lower-header-name-text header-name) "cookie")
+                    "; "
+                    ", ")]
+    (if (empty? items)
+        ""
+        (str/join delimiter
+                  (map (lambda (value)
+                         (if (string? value)
+                             value
+                             (str value)))
+                       items)))))

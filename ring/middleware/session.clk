@@ -1,0 +1,125 @@
+;; Session middleware for the separate Ring library tree.
+
+(ns ring.middleware.session
+  "Session middleware for the separate Ring library tree."
+  (:require [ring.request :as request]
+            [ring.response :as response]
+            [ring.middleware.session.cookie :as session-cookie]
+            [ring.util.cookie :as cookie]
+            [ring.util.crypto :as crypto]))
+
+(def session-cookie-name-default (str "ring-session"))
+
+(defn session-options [options]
+  (or options (hash-map)))
+
+(defn session-cookie-name [options]
+  (or (get (session-options options) :cookie-name)
+      session-cookie-name-default))
+
+(defn session-cookie-path [options]
+  (or (get (session-options options) :path)
+      "/"))
+
+(defn session-cookie-attributes [cookie-map options]
+  (let [options (session-options options)
+        cookie-map (if (get options :domain)
+                     (assoc cookie-map :domain (get options :domain))
+                     cookie-map)
+        cookie-map (if (get options :secure)
+                     (assoc cookie-map :secure true)
+                     cookie-map)
+        cookie-map (if (contains? options :http-only)
+                     (if (get options :http-only)
+                       (assoc cookie-map :http-only true)
+                       cookie-map)
+                     (assoc cookie-map :http-only true))
+        cookie-map (if (get options :same-site)
+                     (assoc cookie-map :same-site (get options :same-site))
+                     cookie-map)
+        cookie-map (if (get options :max-age)
+                     (assoc cookie-map :max-age (get options :max-age))
+                     cookie-map)]
+    cookie-map))
+
+(defn session-cookie-map [secret session options]
+  (session-cookie-attributes
+   (hash-map :value (session-cookie/encode-session-cookie secret session)
+             :path (session-cookie-path options))
+   options))
+
+(defn session-secret-value [secret]
+  (if (and secret (not (string=? (str secret) "")))
+    (str secret)
+    (error "ring session secret is required")))
+
+(defn delete-session-cookie-map [options]
+  (session-cookie-attributes
+   (hash-map :value ""
+             :path (session-cookie-path options)
+             :max-age 0)
+   options))
+
+(defn request-session-cookie-value [request cookie-name]
+  (let [request-cookies (request/request-cookies request)
+        cookie-entry (if (contains? request-cookies cookie-name)
+                       (request/request-cookie request cookie-name)
+                       (get (cookie/cookie-header->map
+                             (request/request-header request "Cookie"))
+                            cookie-name))]
+    (cookie/cookie-entry-value-text cookie-entry)))
+
+(defn request-session-map [request secret options]
+  (let [cookie-name (session-cookie-name options)
+        cookie-value (request-session-cookie-value request cookie-name)
+        session (session-cookie/decode-session-cookie secret cookie-value)]
+    (or session (hash-map))))
+
+(defn response-copy [response]
+  (let [copied (hash-map :status (response/response-status response)
+                         :headers (response/response-headers response)
+                         :body (response/response-body response))
+        cookies (response/response-cookies response)]
+    (if (empty? cookies)
+      copied
+      (assoc copied :cookies cookies))))
+
+(defn response-with-session-cookie [response secret options session]
+  (response/set-cookie (response-copy response)
+                       (session-cookie-name options)
+                       (session-cookie-map secret session options)))
+
+(defn wrap-session
+  "Return a handler that reads and writes a signed cookie session."
+  ([handler secret options]
+   (let [secret (session-secret-value secret)
+         options (session-options options)]
+     (fn [request]
+       (let [request-session (request-session-map request secret options)
+             request-session-cookie
+             (session-cookie/encode-session-cookie secret request-session)
+             request-with-session (assoc request :session request-session)
+             response (handler request-with-session)
+             response-session (response/response-session response)]
+         (cond
+           (not response-session)
+           (response-copy response)
+
+           (crypto/constant-time-string=?
+            (session-cookie/encode-session-cookie secret response-session)
+            request-session-cookie)
+           (response-copy response)
+
+           response-session
+           (response-with-session-cookie response
+                                         secret
+                                         options
+                                         response-session)
+
+           :else
+           (response-copy response))))))
+  ([handler options]
+   (let [options (session-options options)
+         secret (or (get options :secret)
+                    (get options :session-secret))]
+     (wrap-session handler secret options))))

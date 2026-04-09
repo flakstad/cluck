@@ -1,0 +1,90 @@
+;; CORS middleware for the separate Ring library tree.
+
+(ns ring.middleware.cors
+  "CORS middleware for the separate Ring library tree."
+  (:require [cluck.string :as str]
+            [ring.request :as request]
+            [ring.response :as response]
+            [ring.util :as util]))
+
+(define cors-default-methods
+  '("GET" "HEAD" "POST" "PUT" "PATCH" "DELETE" "OPTIONS"))
+
+(defn cors-options
+  "Return a normalized options map for CORS middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn cors-header-text
+  "Return a comma-separated header string for VALUES."
+  [values]
+  (util/header-values->text "X-CORS" values))
+
+(defn cors-allow-origin
+  "Return the allow-origin value for REQUEST."
+  [request options]
+  (let [origin (request/request-header request "Origin")
+        allow-origin (or (get options :allow-origin) "*")]
+    (cond
+      (string? allow-origin) allow-origin
+      (equal? allow-origin :origin) (or origin "")
+      :else (if origin origin "*"))))
+
+(defn cors-response
+  "Return RESPONSE decorated with CORS headers."
+  [request response-map options]
+  (let [allow-origin (cors-allow-origin request options)
+        allow-methods (or (get options :allow-methods)
+                          cors-default-methods)
+        allow-headers (get options :allow-headers)
+        expose-headers (get options :expose-headers)
+        allow-credentials? (if (contains? options :allow-credentials?)
+                             (get options :allow-credentials?)
+                             #f)
+        max-age (get options :max-age)
+        response-map (response/header response-map "Access-Control-Allow-Origin" allow-origin)
+        response-map (response/add-header response-map "Vary" "Origin")
+        response-map (response/header response-map
+                                      "Access-Control-Allow-Methods"
+                                      (cors-header-text allow-methods))
+        response-map (if allow-headers
+                     (response/header response-map
+                                      "Access-Control-Allow-Headers"
+                                      (cors-header-text allow-headers))
+                     response-map)
+        response-map (if expose-headers
+                     (response/header response-map
+                                      "Access-Control-Expose-Headers"
+                                      (cors-header-text expose-headers))
+                     response-map)
+        response-map (if allow-credentials?
+                     (response/header response-map
+                                      "Access-Control-Allow-Credentials"
+                                      "true")
+                     response-map)
+        response-map (if max-age
+                     (response/header response-map
+                                      "Access-Control-Max-Age"
+                                      (number->string max-age))
+                     response-map)]
+    response-map))
+
+(defn cors-preflight?
+  "Return true when REQUEST is an OPTIONS preflight request."
+  [request]
+  (and (equal? (request/request-method request) :options)
+       (request/request-header request "Origin")
+       (request/request-header request "Access-Control-Request-Method")))
+
+(defn wrap-cors
+  "Return a handler that adds CORS headers and answers preflight requests."
+  [handler options]
+  (let [options (cors-options options)]
+    (fn [request]
+      (if (cors-preflight? request)
+          (cors-response request
+                         (response/no-content)
+                         options)
+          (cors-response request
+                         (handler request)
+                         options)))))

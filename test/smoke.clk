@@ -140,6 +140,12 @@
 (assert-str= "remove" "(1 3)" (pr-str (remove even? [1 2 3 4])))
 (assert-num= "keys count" 2 (count (keys sample)))
 (assert-num= "vals count" 2 (count (vals sample)))
+(load-file "ring/test.clk")
+(in-ns 'cluck.smoke)
+(require [ring.adapter.spiffy :as ring-adapter]
+         [ring.request :as request]
+         [ring.response :as response]
+         [ring.test :as ring-test])
 (require [cluck.core :as core])
 (assert-true "core namespace exists" (find-ns 'cluck.core))
 (assert-true "core publics include map" (contains? (ns-publics 'cluck.core) 'map))
@@ -479,6 +485,120 @@
                 (main (list "examples/cluck/extensions/scheme-ext.scm"
                             "examples/cluck/extensions/cluck-ext.clk")))))
 (assert-num= "project report combined path count" 2 (count (loaded-extension-paths)))
+(in-ns 'cluck.smoke)
+
+(load-file "examples/cluck/web-server/main.clk")
+(in-ns 'cluck.examples.web-server)
+(assert-true "web-server namespace exists" (find-ns 'cluck.examples.web-server))
+(assert-str= "web-server path->text" "/echo/cluck"
+             (ring-adapter/path->text '(/ "echo" "cluck")))
+(assert-str= "web-server echo-tail" "cluck"
+             (echo-tail "/echo/cluck"))
+(let [home-route (route-response (request/request :get "/"))
+      health-route (route-response (request/request :get "/health"))
+      missing-route (route-response (request/request :get "/missing"))
+      method-route (route-response (request/request :post "/"))
+      cookie-route (route-response (request/request :get "/cookie"))
+      visit-route (route-response (request/request :get "/visit"))
+      home (handler (request/request :get "/"))
+      health (handler (request/request :get "/health"))
+      head-health (handler (request/request :head "/health"))
+      not-modified-health
+      (handler (assoc (request/request :get "/health")
+                      :headers {"if-none-match" web-health-etag}))
+      cookie-first (handler (request/request :get "/cookie"))
+      cookie-second
+      (handler (assoc (request/request :get "/cookie")
+                      :headers {"cookie"
+                                (ring-test/set-cookie->cookie-header
+                                 (response/response-header cookie-first
+                                                           "Set-Cookie"))}))
+      visit-first (handler (request/request :get "/visit"))
+      visit-second
+      (handler (assoc (request/request :get "/visit")
+                      :headers {"cookie"
+                                (ring-test/set-cookie->cookie-header
+                                 (response/response-header visit-first
+                                                           "Set-Cookie"))}))
+      params-get (handler (assoc (request/request :get "/params")
+                                 :query-string "name=cluck&name=egg"))
+      params-post
+      (handler (assoc (request/request :post "/params")
+                      :query-string "name=cluck&name=egg"
+                      :content-type "application/x-www-form-urlencoded"
+                      :body (open-input-string "theme=dark&theme=light")))]
+  (assert-num= "web-server home status" 200 (response/response-status home-route))
+  (assert-true "web-server home body"
+               (str/includes? (response/response-body home-route) "Cluck web server"))
+  (assert-str= "web-server home etag"
+               web-home-etag
+               (response/response-header home-route "ETag"))
+  (assert-str= "web-server home content-type"
+               "text/html; charset=utf-8"
+               (response/response-header home "Content-Type"))
+  (assert-str= "web-server health body"
+               "<h1>ok</h1><p>The server is alive.</p>"
+               (response/response-body health-route))
+  (assert-str= "web-server health etag"
+               web-health-etag
+               (response/response-header health-route "ETag"))
+  (assert-num= "web-server missing status" 404 (response/response-status missing-route))
+  (assert-true "web-server missing body"
+               (str/includes? (response/response-body missing-route) "/missing"))
+  (assert-num= "web-server method status" 405 (response/response-status method-route))
+  (assert-str= "web-server method body"
+               "<h1>Method not allowed</h1><p>No POST route for /.</p>"
+               (response/response-body method-route))
+  (assert-str= "web-server cookie route value"
+               "cluck"
+               (get (response/response-cookie cookie-route demo-cookie-name)
+                    :value))
+  (assert-num= "web-server visit route session" 1
+               (get (response/response-session visit-route) :visits))
+  (assert-str= "web-server cookie content-type"
+               "text/html; charset=utf-8"
+               (response/response-header cookie-first "Content-Type"))
+  (assert-str= "web-server cookie header"
+               "cluck-demo=cluck; Path=/; SameSite=Lax; HttpOnly"
+               (response/response-header cookie-first "Set-Cookie"))
+  (assert-true "web-server cookie persisted"
+               (not (response/response-header cookie-second "Set-Cookie")))
+  (assert-str= "web-server visit first body"
+               "<h1>Visit</h1><p>Session visits: <strong>1</strong></p><p>Reload with the same cookie jar to increment the counter.</p>"
+               (response/response-body visit-first))
+  (assert-true "web-server visit first cookie"
+               (str/includes? (response/response-header visit-first "Set-Cookie")
+                              "cluck-session="))
+  (assert-str= "web-server visit second body"
+               "<h1>Visit</h1><p>Session visits: <strong>2</strong></p><p>Reload with the same cookie jar to increment the counter.</p>"
+               (response/response-body visit-second))
+  (assert-true "web-server params get body"
+               (str/includes? (response/response-body params-get)
+                              "{:name [&quot;cluck&quot; &quot;egg&quot;]}"))
+  (assert-true "web-server params post body"
+               (str/includes? (response/response-body params-post)
+                              "{:theme [&quot;dark&quot; &quot;light&quot;]}"))
+  (assert-true "web-server params merged body name"
+               (str/includes? (response/response-body params-post)
+                              "{:name [&quot;cluck&quot; &quot;egg&quot;]"))
+  (assert-true "web-server params merged body theme"
+               (str/includes? (response/response-body params-post)
+                              "{:theme [&quot;dark&quot; &quot;light&quot;]"))
+  (assert-str= "web-server head body"
+               ""
+               (response/response-body head-health))
+  (assert-str= "web-server head content-length"
+               (response/response-header health "Content-Length")
+               (response/response-header head-health "Content-Length"))
+  (assert-num= "web-server not-modified status"
+               304
+               (response/response-status not-modified-health))
+  (assert-str= "web-server not-modified body"
+               ""
+               (response/response-body not-modified-health))
+  (assert-true "web-server not-modified content-length removed"
+               (not (response/response-header not-modified-health
+                                              "Content-Length"))))
 (in-ns 'cluck.smoke)
 
 (assert-str= "demo load output"

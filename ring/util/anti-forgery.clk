@@ -1,0 +1,39 @@
+;; Anti-forgery helper utilities for the separate Ring library tree.
+
+(ns ring.util.anti-forgery
+  "Anti-forgery helper utilities for the separate Ring library tree."
+  (:require [cluck.string :as str]))
+
+(define anti-forgery-field-name-text
+  "__anti-forgery-token")
+
+(defn replace-all
+  "Replace every occurrence of NEEDLE in TEXT with REPLACEMENT."
+  [text needle replacement]
+  (str/join replacement
+            (str/split (if (not text) "" (str text))
+                       needle)))
+
+(defn html-escape
+  "Escape TEXT for use in a HTML attribute."
+  [text]
+  (let [text (if (not text) "" (str text))]
+    (replace-all
+     (replace-all
+      (replace-all
+       (replace-all
+        (replace-all text "&" "&amp;")
+        "<" "&lt;")
+       ">" "&gt;")
+      "\"" "&quot;")
+     "'" "&#39;")))
+
+(defn anti-forgery-field
+  "Return a hidden HTML field for TOKEN."
+  [token]
+  (let [value (if token (str token) "")]
+    (string-append "<input type=\"hidden\" name=\""
+                   anti-forgery-field-name-text
+                   "\" value=\""
+                   (html-escape value)
+                   "\" />")))

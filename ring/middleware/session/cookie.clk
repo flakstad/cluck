@@ -1,0 +1,47 @@
+;; Signed cookie session helpers for the separate Ring library tree.
+
+(ns ring.middleware.session.cookie
+  "Signed cookie session helpers for the separate Ring library tree."
+  (:require [cluck.edn :as edn]
+            [cluck.string :as str]
+            [ring.util.crypto :as crypto]
+            [uri-common :as uri]))
+
+(defn session-signature
+  "Return a signature for PAYLOAD using SECRET."
+  [secret payload]
+  (crypto/hmac-sha256-hex secret payload))
+
+(defn encode-session-cookie
+  "Serialize SESSION into a signed cookie payload using SECRET."
+  [secret session]
+  (let [payload (uri/uri-encode-string (pr-str session))]
+    (let [signature (session-signature secret payload)]
+      (if signature
+          (string-append payload
+                         "|"
+                         signature)
+          (error "unable to sign session cookie")))))
+
+(defn decode-session-cookie
+  "Decode COOKIE-VALUE using SECRET and return the stored session map."
+  [secret cookie-value]
+  (if (or (not cookie-value) (string=? cookie-value ""))
+    nil
+    (handle-exceptions exn
+        nil
+      (let [parts (str/split cookie-value "|")]
+        (if (not (= (count parts) 2))
+          nil
+          (let [payload-encoded (first parts)
+                payload (uri/uri-decode-string payload-encoded)
+                signature (nth parts 1)
+                expected-signature (session-signature secret payload-encoded)]
+            (if (and expected-signature
+                     (crypto/constant-time-string=? signature
+                                                    expected-signature))
+              (let [session (edn/read-string payload)]
+                (if (map? session)
+                  session
+                  nil))
+              nil)))))))
