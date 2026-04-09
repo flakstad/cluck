@@ -7,6 +7,7 @@
 (ns cluck.examples.draw
   (:require [cluck.examples.draw.sdl3 :as sdl]
             [cluck.examples.draw.state :as draw-state]
+            [cluck.examples.draw.history :as draw-history]
             [cluck.examples.draw.view :as draw-view]
             [cluck.examples.draw.panel :as draw-panel]
             [cluck.examples.draw.geometry :as draw-geometry]
@@ -190,6 +191,13 @@
 (def draw-selection-handle-cursor-kind draw-selection/draw-selection-handle-cursor-kind)
 (def draw-desired-cursor-kind draw-selection/draw-desired-cursor-kind)
 (def draw-clear-active-interactions draw-selection/draw-clear-active-interactions)
+
+(def draw-history-limit draw-history/draw-history-limit)
+(def draw-history-snapshot draw-history/draw-history-snapshot)
+(def draw-history-trim draw-history/draw-history-trim)
+(def draw-push-history! draw-history/draw-push-history!)
+(def draw-restore-history! draw-history/draw-restore-history!)
+(def draw-stroke-color draw-history/draw-stroke-color)
 
 (def draw-recent-events-limit draw-input/draw-recent-events-limit)
 (def draw-input-batch-limit draw-input/draw-input-batch-limit)
@@ -1371,95 +1379,6 @@
               nil
               (get state :elements))
       nil)))
-
-(defn draw-history-limit
-  "Return the maximum number of undo snapshots to keep."
-  []
-  32)
-
-(defn draw-history-snapshot
-  "Return a history snapshot for STATE."
-  [state]
-  {:elements (edn/read-string (pr-str (get state :elements)))
-   :brush-size (get state :brush-size)
-   :brush-color (edn/read-string (pr-str (get state :brush-color)))
-   :background (edn/read-string (pr-str (get state :background)))
-   :tool (or (get state :tool) :ink)
-   :eraser? (if (truthy? (get state :eraser?)) true false)})
-
-(defn draw-history-trim
-  "Trim HISTORY to the configured size."
-  [history]
-  (let [limit (draw-history-limit)
-        total (count history)]
-    (if (> total limit)
-      (vec (drop (- total limit) history))
-      (vec history))))
-
-(defn draw-push-history!
-  "Push the current STATE onto the undo history."
-  [state]
-  (let [history (conj (get state :history)
-                      (draw-history-snapshot state))]
-    (assoc state :history (draw-history-trim history))))
-
-(defn draw-restore-history!
-  "Restore the most recent undo snapshot."
-  [state]
-  (let [history (get state :history)]
-    (if (empty? history)
-      (if (or (get state :active-stroke)
-             (get state :active-box)
-             (get state :active-arrow)
-             (get state :active-frame)
-             (get state :active-text)
-             (get state :active-selection-marquee)
-              (get state :active-selection-rotate))
-        (assoc state
-               :active-box false
-               :active-arrow false
-               :active-frame false
-               :active-text false
-               :active-selection-marquee false
-               :active-stroke false
-               :active-selection-resize false
-               :active-selection-rotate false
-               :pointer-down? false)
-        state)
-      (let [total (count history)
-            snapshot (nth history (- total 1))
-            prior-history (if (> total 1)
-                            (vec (take (- total 1) history))
-                            [])]
-        (draw-sync-elements
-          (assoc state
-                 :history prior-history
-                 :brush-size (get snapshot :brush-size)
-                 :brush-color (get snapshot :brush-color)
-                 :background (get snapshot :background)
-                 :tool (or (get snapshot :tool) :ink)
-                 :eraser? (if (get snapshot :eraser?) true false)
-                 :selection []
-                 :active-selection-drag false
-                 :active-selection-resize false
-                 :active-selection-rotate false
-                 :active-selection-marquee false
-                 :active-stroke false
-                 :active-box false
-                 :active-arrow false
-                 :active-frame false
-                 :active-text false
-                 :pointer-down? false
-                 :pointer-source false
-                 :panning? false)
-          (get snapshot :elements))))))
-
-(defn draw-stroke-color
-  "Return the active stroke color for STATE."
-  [state]
-  (if (get state :eraser?)
-    (get state :background)
-    (get state :brush-color)))
 
 (defn draw-set-brush-size-core!
   "Set the brush size and return to brush mode, recording undo history."
