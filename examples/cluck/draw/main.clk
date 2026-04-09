@@ -27,6 +27,7 @@
 (def *draw-canvas-ready?* false)
 (def *draw-preview-ready?* false)
 (def *draw-brush-ready?* false)
+(def *draw-strip-ready?* false)
 (def *draw-preview-point-count* 0)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
 (def *draw-current-stroke-color* false)
@@ -722,6 +723,19 @@
   (and *draw-brush-ready?*
        (sdl/pointer-ready? (draw-brush-texture))))
 
+(defn draw-strip-texture
+  "Return the cached strip texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :strip-texture)
+    false))
+
+(defn draw-strip-texture-ready?
+  "Return true when the cached strip texture is available."
+  []
+  (and *draw-strip-ready?*
+       (sdl/pointer-ready? (draw-strip-texture))))
+
 (defn draw-brush-texture-diameter
   "Return the canonical brush stamp diameter."
   []
@@ -731,6 +745,21 @@
   "Return the default brush hardness used by the stamp texture."
   []
   0.65)
+
+(defn draw-strip-texture-width
+  "Return the canonical width for the soft strip texture."
+  []
+  64)
+
+(defn draw-strip-texture-height
+  "Return the canonical height for the soft strip texture."
+  []
+  64)
+
+(defn draw-strip-hardness
+  "Return the default strip hardness used by the segment body texture."
+  []
+  0.75)
 
 (defn draw-ensure-brush-texture!
   "Create or refresh the brush stamp texture."
@@ -775,6 +804,63 @@
     (if *draw-context*
       (set! *draw-context* (dissoc *draw-context* :brush-texture :brush-texture-diameter)))
     (set! *draw-brush-ready?* false)
+    nil))
+
+(defn draw-ensure-strip-texture!
+  "Create or refresh the strip texture used for stroke bodies."
+  [state]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        width (draw-strip-texture-width)
+        height (draw-strip-texture-height)
+        current (draw-strip-texture)
+        current-width (if *draw-context* (get *draw-context* :strip-texture-width) nil)
+        current-height (if *draw-context* (get *draw-context* :strip-texture-height) nil)]
+    (if (and (draw-strip-texture-ready?)
+             (= current-width width)
+             (= current-height height))
+      *draw-context*
+      (begin
+        (if (draw-strip-texture-ready?)
+          (begin
+            (sdl/destroy-texture! current)
+            (set! *draw-context*
+                  (dissoc *draw-context*
+                          :strip-texture
+                          :strip-texture-width
+                          :strip-texture-height))
+            (set! *draw-strip-ready?* false))
+          nil)
+        (if renderer
+          (let [texture (sdl/create-soft-strip-texture renderer
+                                                       width
+                                                       height
+                                                       (draw-strip-hardness))]
+            (if texture
+              (let [ctx (assoc *draw-context*
+                               :strip-texture texture
+                               :strip-texture-width width
+                               :strip-texture-height height)]
+                (set! *draw-context* ctx)
+                (set! *draw-strip-ready?* true)
+                ctx)
+              (begin
+                (set! *draw-strip-ready?* false)
+                *draw-context*)))
+          *draw-context*)))))
+
+(defn draw-release-strip-texture!
+  "Destroy the cached strip texture and clear it from the draw context."
+  []
+  (let [strip (draw-strip-texture)]
+    (if (draw-strip-texture-ready?)
+      (sdl/destroy-texture! strip))
+    (if *draw-context*
+      (set! *draw-context*
+            (dissoc *draw-context*
+                    :strip-texture
+                    :strip-texture-width
+                    :strip-texture-height)))
+    (set! *draw-strip-ready?* false)
     nil))
 
 (defn draw-ensure-canvas!
@@ -1914,28 +2000,6 @@
                          (nth color 2)
                          alpha)))
 
-(defn draw-soft-brush-step-count
-  "Return the number of soft brush stamps for a segment."
-  [state a b size]
-  (let [screen-a (draw-world-point->screen-point state a)
-        screen-b (draw-world-point->screen-point state b)
-        dx (- (nth screen-b 0) (nth screen-a 0))
-        dy (- (nth screen-b 1) (nth screen-a 1))
-        distance (math/sqrt (+ (* dx dx) (* dy dy)))
-        stamp-a (draw-point-screen-size state a size)
-        stamp-b (draw-point-screen-size state b size)
-        stamp (if (< stamp-a stamp-b) stamp-a stamp-b)
-        spacing (if (> stamp 1)
-                  (/ stamp 3.0)
-                  1.0)
-        raw-steps (draw-exact-int (math/ceiling (/ distance spacing)))
-        steps (if (> raw-steps 48)
-                48
-                raw-steps)]
-    (if (> steps 0)
-      steps
-      1)))
-
 (defn draw-render-soft-brush!
   "Render the soft brush texture at POINT with SIZE."
   [renderer state point size]
@@ -1972,33 +2036,49 @@
   [renderer state point size]
   (draw-render-soft-brush! renderer state point size))
 
-(defn draw-render-stroke-segment-step!
-  "Render interpolated samples between A and B."
-  [renderer state a b size steps i]
-  (if (> i steps)
-    nil
-    (let [t (/ i steps)
-          x (+ (nth a 0)
-               (* (- (nth b 0) (nth a 0)) t))
-          y (+ (nth a 1)
-               (* (- (nth b 1) (nth a 1)) t))
-          pressure (+ (draw-point-pressure a)
-                      (* (- (draw-point-pressure b)
-                            (draw-point-pressure a))
-                         t))]
-      (draw-render-stroke-point! renderer state [x y pressure] size)
-      (draw-render-stroke-segment-step! renderer state a b size steps (+ i 1)))))
+(defn draw-render-soft-segment!
+  "Render a smooth segment from A to B using the compiled SDL helper."
+  [renderer state a b size]
+  (let [brush (draw-brush-texture)
+        strip (draw-strip-texture)
+        color (draw-stroke-color-value)
+        screen-a (draw-world-point->screen-point state a)
+        screen-b (draw-world-point->screen-point state b)
+        size-a (draw-point-screen-size state a size)
+        size-b (draw-point-screen-size state b size)
+        alpha-a (draw-point-alpha a)
+        alpha-b (draw-point-alpha b)]
+    (if (and (draw-brush-texture-ready?)
+             (draw-strip-texture-ready?))
+      (sdl/render-soft-segment! renderer
+                                strip
+                                brush
+                                (nth screen-a 0)
+                                (nth screen-a 1)
+                                size-a
+                                alpha-a
+                                (nth screen-b 0)
+                                (nth screen-b 1)
+                                size-b
+                                alpha-b
+                                (nth color 0)
+                                (nth color 1)
+                                (nth color 2))
+      (begin
+        (draw-set-stroke-color! renderer (if (> alpha-a alpha-b) alpha-a alpha-b))
+        (sdl/render-line! renderer
+                          (nth screen-a 0)
+                          (nth screen-a 1)
+                          (nth screen-b 0)
+                          (nth screen-b 1))
+        (draw-render-soft-brush! renderer state a size)
+        (draw-render-soft-brush! renderer state b size)
+        true))))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
   [renderer state a b size]
-  (draw-render-stroke-segment-step! renderer
-                                    state
-                                    a
-                                    b
-                                    size
-                                    (draw-soft-brush-step-count state a b size)
-                                    0))
+  (draw-render-soft-segment! renderer state a b size))
 
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
@@ -2331,6 +2411,7 @@
               (draw-ensure-canvas! state)
               (draw-ensure-preview! state)
               (draw-ensure-brush-texture! state)
+              (draw-ensure-strip-texture! state)
               (if (draw-canvas-ready?)
                 (draw-rebuild-canvas! state)
                 nil)
@@ -2349,6 +2430,7 @@
       (draw-release-canvas!)
       (draw-release-preview!)
       (draw-release-brush-texture!)
+      (draw-release-strip-texture!)
       (if *draw-context*
         (begin
           (sdl/close-context! *draw-context*)

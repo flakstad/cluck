@@ -157,22 +157,46 @@
                             2
                             (count points)))
 
-  (let [original draw-render-stroke-point!
+  (let [original-segment sdl/render-soft-segment!
+        original-brush-ready draw-brush-texture-ready?
+        original-strip-ready draw-strip-texture-ready?
+        original-brush draw-brush-texture
+        original-strip draw-strip-texture
         calls []]
-    (set! draw-render-stroke-point!
-          (fn [renderer state point size]
-            (set! calls (conj calls [point size]))
-            nil))
+    (set! draw-brush-texture-ready?
+          (fn []
+            true))
+    (set! draw-strip-texture-ready?
+          (fn []
+            true))
+    (set! draw-brush-texture
+          (fn []
+            'brush))
+    (set! draw-strip-texture
+          (fn []
+            'strip))
+    (set! sdl/render-soft-segment!
+          (fn [renderer strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]
+            (set! calls (conj calls [strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]))
+            true))
     (draw-render-stroke-segments! 'renderer
                                   (default-state)
                                   [[10 10 0.25] [20 20 0.75] [30 30 1.0]]
                                   2)
-    (draw-tools-assert-true "stroke segment walker stamps multiple points"
-                            (> (count calls) 2))
-    (draw-tools-assert-true "stroke segment walker interpolates pressure"
-                            (< (draw-point-pressure (nth (first calls) 0))
-                               (draw-point-pressure (nth (last calls) 0))))
-    (set! draw-render-stroke-point! original)))
+    (draw-tools-assert-num= "stroke segment renderer call count"
+                            2
+                            (count calls))
+    (draw-tools-assert-str= "stroke segment renderer uses cached strip"
+                            "strip"
+                            (str (nth (first calls) 0)))
+    (draw-tools-assert-true "stroke segment renderer reflects growing pressure"
+                            (< (nth (first calls) 5)
+                               (nth (last calls) 9)))
+    (set! sdl/render-soft-segment! original-segment)
+    (set! draw-brush-texture-ready? original-brush-ready)
+    (set! draw-strip-texture-ready? original-strip-ready)
+    (set! draw-brush-texture original-brush)
+    (set! draw-strip-texture original-strip)))
 
 (let [original-ready draw-brush-texture-ready?
       original-brush draw-brush-texture
