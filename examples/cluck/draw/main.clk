@@ -1044,7 +1044,11 @@
 (defn draw-history-snapshot
   "Return a history snapshot for STATE."
   [state]
-  (edn/read-string (pr-str (dissoc state :history))))
+  {:strokes (edn/read-string (pr-str (get state :strokes)))
+   :brush-size (get state :brush-size)
+   :brush-color (edn/read-string (pr-str (get state :brush-color)))
+   :background (edn/read-string (pr-str (get state :background)))
+   :eraser? (if (truthy? (get state :eraser?)) true false)})
 
 (defn draw-history-trim
   "Trim HISTORY to the configured size."
@@ -1077,9 +1081,17 @@
             prior-history (if (> total 1)
                             (vec (take (- total 1) history))
                             [])]
-        (assoc snapshot
+        (assoc state
                :history prior-history
-               :strokes (vec (get snapshot :strokes)))))))
+               :strokes (vec (get snapshot :strokes))
+               :brush-size (get snapshot :brush-size)
+               :brush-color (get snapshot :brush-color)
+               :background (get snapshot :background)
+               :eraser? (if (get snapshot :eraser?) true false)
+               :active-stroke false
+               :pointer-down? false
+               :pointer-source false
+               :panning? false)))))
 
 (defn draw-tool-mode
   "Return the current tool mode label."
@@ -2014,7 +2026,7 @@
   "Map raw pen pressure into a more useful visual range for drawing."
   [pressure]
   (let [raw (draw-clamp (or pressure 1.0) 0.0 1.0)
-        scaled (draw-clamp (/ raw 0.72) 0.0 1.0)]
+        scaled (draw-clamp (/ raw 0.68) 0.0 1.0)]
     (math/sqrt scaled)))
 
 (defn draw-point-size
