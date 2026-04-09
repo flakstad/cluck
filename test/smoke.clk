@@ -43,6 +43,11 @@
     (and (<= plen slen)
          (string=? prefix (substring s 0 plen)))))
 
+(define (set-cookie->cookie-header set-cookie)
+  (if (or (not set-cookie) (not (str/includes? set-cookie ";")))
+      set-cookie
+      (first (str/split set-cookie ";"))))
+
 (def sample
   (edn/read-string "{:a [1 2] :b #{3}}"))
 
@@ -144,8 +149,7 @@
 (in-ns 'cluck.smoke)
 (require [ring.adapter.spiffy :as ring-adapter]
          [ring.request :as request]
-         [ring.response :as response]
-         [ring.test :as ring-test])
+         [ring.response :as response])
 (require [cluck.core :as core])
 (assert-true "core namespace exists" (find-ns 'cluck.core))
 (assert-true "core publics include map" (contains? (ns-publics 'cluck.core) 'map))
@@ -510,14 +514,14 @@
       cookie-second
       (handler (assoc (request/request :get "/cookie")
                       :headers {"cookie"
-                                (ring-test/set-cookie->cookie-header
+                                (set-cookie->cookie-header
                                  (response/response-header cookie-first
                                                            "Set-Cookie"))}))
       visit-first (handler (request/request :get "/visit"))
       visit-second
       (handler (assoc (request/request :get "/visit")
                       :headers {"cookie"
-                                (ring-test/set-cookie->cookie-header
+                                (set-cookie->cookie-header
                                  (response/response-header visit-first
                                                            "Set-Cookie"))}))
       params-get (handler (assoc (request/request :get "/params")
