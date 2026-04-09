@@ -879,7 +879,7 @@
       (let [total (count history)
             snapshot (nth history (- total 1))
             prior-history (if (> total 1)
-                            (vec (drop (- total 1) history))
+                            (vec (take (- total 1) history))
                             [])]
         (assoc snapshot
                :history prior-history
@@ -905,8 +905,7 @@
   (let [state (draw-push-history! state)
         next-state (assoc state
                           :brush-size size
-                          :eraser? false
-                          :canvas-dirty? true)]
+                          :eraser? false)]
     (draw-log-entry! :brush-size
                      {:size size
                       :state (draw-state-snapshot next-state)})
@@ -928,8 +927,7 @@
   [state]
   (let [state (draw-push-history! state)
         next-state (assoc state
-                          :eraser? (not (get state :eraser?))
-                          :canvas-dirty? true)]
+                          :eraser? (not (get state :eraser?)))]
     (draw-log-entry! :eraser-toggle
                      {:eraser? (get next-state :eraser?)
                       :state (draw-state-snapshot next-state)})

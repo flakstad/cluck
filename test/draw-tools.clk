@@ -101,6 +101,23 @@
                             "12"
                             (str (get tool-state :brush-size))))
 
+  (let [base (default-state)
+        one (draw-start-stroke base
+                               "SDL_EVENT_MOUSE_MOTION x=10.0 y=10.0")
+        one (draw-finish-stroke one
+                                "SDL_EVENT_MOUSE_MOTION x=20.0 y=20.0")
+        two (draw-start-stroke one
+                               "SDL_EVENT_MOUSE_MOTION x=30.0 y=30.0")
+        two (draw-finish-stroke two
+                                "SDL_EVENT_MOUSE_MOTION x=40.0 y=40.0")
+        undone (draw-undo-stroke! two)]
+    (draw-tools-assert-num= "undo removes most recent stroke"
+                            1
+                            (count (get undone :strokes)))
+    (draw-tools-assert-num= "undo keeps prior history chain"
+                            1
+                            (count (get undone :history))))
+
   (let [started (draw-start-stroke (default-state)
                                    "SDL_EVENT_MOUSE_MOTION x=10.0 y=10.0")
         extended (draw-extend-stroke started
