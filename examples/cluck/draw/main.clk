@@ -13,7 +13,9 @@
             [cluck.string :as str]))
 
 (import srfi-18
+        (prefix (chicken file) cfile:)
         (chicken time)
+        (prefix (chicken process) cproc:)
         (prefix (chicken process-context posix) posix:))
 
 (def *draw-state* nil)
@@ -31,6 +33,13 @@
 (def *draw-watchdog-enabled?* true)
 (def *draw-watchdog-pid* false)
 (def *draw-last-heartbeat-at* 0)
+(def *draw-last-state-sync-at* 0)
+(def *draw-child-mode?* false)
+(def *draw-supervision-enabled?* true)
+(def *draw-supervisor-thread* nil)
+(def *draw-child-pid* false)
+(def *draw-control-seq* 0)
+(def *draw-last-control-seq* 0)
 (def *draw-canvas-ready?* false)
 (def *draw-preview-ready?* false)
 (def *draw-brush-ready?* false)
@@ -66,6 +75,16 @@
   "Return how often the external stall watcher checks the heartbeat."
   []
   500)
+
+(defn draw-state-sync-interval-ms
+  "Return the minimum spacing between full state-file writes."
+  []
+  250)
+
+(defn draw-supervisor-poll-ms
+  "Return how often the parent supervisor checks the child."
+  []
+  1000)
 
 (defn init-video!
   []
@@ -169,10 +188,30 @@
   []
   (fs/path (current-directory) "examples" "cluck" "draw" "watchdog.sh"))
 
+(defn draw-child-runner-path
+  "Return the child-runner script used by the supervisor process."
+  []
+  (fs/path (current-directory) "examples" "cluck" "draw" "run-dev-child.scm"))
+
+(defn draw-control-file-path
+  "Return the control file used by the supervised child."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-control.edn"))
+
+(defn draw-child-stdout-path
+  "Return the file used for child stdout/stderr capture."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-child.log"))
+
 (defn draw-process-id
   "Return the current process id."
   []
   (posix:current-process-id))
+
+(defn draw-wall-clock-ms
+  "Return the current wall clock in milliseconds."
+  []
+  (* (current-seconds) 1000))
 
 (defn draw-ensure-parent-directory!
   "Ensure PATH's parent directory exists before writing a save file."
@@ -181,6 +220,16 @@
     (if (and dir (not (fs/directory? dir)))
       (create-directory dir)
       dir)))
+
+(defn draw-write-file-atomic!
+  "Write TEXT to PATH using a temporary file and rename."
+  [path text]
+  (let [target (fs/path path)
+        temp (str target ".tmp")]
+    (draw-ensure-parent-directory! target)
+    (io/spit temp text)
+    (cfile:rename-file temp target true)
+    target))
 
 (defn draw-enable-logging!
   "Enable draw session logging."
@@ -228,6 +277,36 @@
    :stale-ms (draw-watchdog-stale-ms)
    :poll-ms (draw-watchdog-poll-ms)})
 
+(defn draw-enable-supervision!
+  "Enable the supervised child-process development mode."
+  []
+  (set! *draw-supervision-enabled?* true))
+
+(defn draw-disable-supervision!
+  "Disable the supervised child-process development mode."
+  []
+  (set! *draw-supervision-enabled?* false))
+
+(defn draw-supervised-mode?
+  "Return true when the current process should supervise a child draw window."
+  []
+  (and *draw-supervision-enabled?*
+       (not *draw-child-mode?*)))
+
+(defn draw-supervisor-status
+  "Return the current supervised-child status."
+  []
+  {:enabled? (draw-supervised-mode?)
+   :child-mode? *draw-child-mode?*
+   :child-pid *draw-child-pid*
+   :supervisor-thread? (if *draw-supervisor-thread* true false)
+   :control-seq *draw-control-seq*
+   :last-control-seq *draw-last-control-seq*
+   :state-path (draw-state-file-path)
+   :control-path (draw-control-file-path)
+   :child-log (draw-child-stdout-path)
+   :heartbeat (draw-heartbeat-file-path)})
+
 (defn draw-clear-log!
   "Delete the current draw log file when it exists."
   []
@@ -256,6 +335,15 @@
         (fs/delete! sample)
         false))
     paths))
+
+(defn draw-clear-control-file!
+  "Delete any prior supervised-child control file."
+  []
+  (let [path (draw-control-file-path)]
+    (if (fs/file? path)
+      (fs/delete! path)
+      false)
+    path))
 
 (defn draw-log-lines
   "Return all current draw log lines."
@@ -302,10 +390,19 @@
      :last-event (or (get state :last-event) "")}
     nil))
 
+(defn draw-read-state-file
+  "Read the latest full draw state from disk when available."
+  []
+  (let [path (draw-state-file-path)]
+    (if (fs/file? path)
+      (handle-exceptions _ false
+        (edn/read-string (io/slurp path)))
+      false)))
+
 (defn draw-heartbeat-payload
   "Return the external heartbeat payload for STATE at PHASE."
   [phase state]
-  {:at (current-process-milliseconds)
+  {:at (draw-wall-clock-ms)
    :phase phase
    :pid (draw-process-id)
    :running? *draw-running?*
@@ -315,7 +412,7 @@
 (defn draw-write-heartbeat!
   "Write a heartbeat for PHASE and STATE when enough time has elapsed."
   [phase state]
-  (let [now (current-process-milliseconds)
+  (let [now (draw-wall-clock-ms)
         force? (or (equal? phase :start)
                    (equal? phase :stop)
                    (equal? phase :crash))
@@ -326,10 +423,24 @@
     (if due?
       (let [path (draw-heartbeat-file-path)
             payload (draw-heartbeat-payload phase state)]
-        (draw-ensure-parent-directory! path)
-        (io/spit path (pr-str payload))
+        (draw-write-file-atomic! path (pr-str payload))
         (set! *draw-last-heartbeat-at* now)
         payload)
+      false)))
+
+(defn draw-write-state-file!
+  "Write STATE to the shared state file when enough time has elapsed."
+  [state force?]
+  (let [now (draw-wall-clock-ms)
+        due? (or force?
+                 (= *draw-last-state-sync-at* 0)
+                 (>= (- now *draw-last-state-sync-at*)
+                     (draw-state-sync-interval-ms)))]
+    (if due?
+      (let [path (draw-state-file-path)]
+        (draw-write-file-atomic! path (pr-str state))
+        (set! *draw-last-state-sync-at* now)
+        path)
       false)))
 
 (defn draw-log-entry!
@@ -359,8 +470,7 @@
                 :last-error (if *draw-last-error*
                               (format "%s" *draw-last-error*)
                               "")}]
-    (draw-ensure-parent-directory! path)
-    (io/spit path (pr-str report))
+    (draw-write-file-atomic! path (pr-str report))
     path))
 
 (defn draw-stop-watchdog!
@@ -374,6 +484,46 @@
                 (proc/qs (str pid))))
       0)
     nil))
+
+(defn draw-child-alive?
+  "Return true when PID still exists."
+  [pid]
+  (and pid
+       (zero? (proc/system
+                (format "kill -0 %s >/dev/null 2>&1"
+                        (proc/qs (str pid)))))))
+
+(defn draw-write-control-command!
+  "Write an OP/PAYLOAD command for the supervised child."
+  [op payload]
+    (let [seq (+ *draw-control-seq* 1)
+        command {:seq seq
+                 :op op
+                 :payload payload}
+        path (draw-control-file-path)]
+    (set! *draw-control-seq* seq)
+    (draw-write-file-atomic! path (pr-str command))
+    command))
+
+(defn draw-read-control-command
+  "Read the latest supervised-child control command when present."
+  []
+  (let [path (draw-control-file-path)]
+    (if (fs/file? path)
+      (handle-exceptions _ false
+        (edn/read-string (io/slurp path)))
+      false)))
+
+(defn draw-control-command-pending
+  "Return the next unprocessed control command when present."
+  []
+  (let [command (draw-read-control-command)]
+    (if command
+      (let [seq (or (get command :seq) 0)]
+        (if (> seq *draw-last-control-seq*)
+          command
+          false))
+      false)))
 
 (defn draw-start-watchdog!
   "Start the external draw watchdog if it is enabled."
@@ -414,8 +564,7 @@
   (let [target (if path
                  (fs/path path)
                  (draw-state-file-path))]
-    (draw-ensure-parent-directory! target)
-    (io/spit target (pr-str *draw-state*))
+    (draw-write-file-atomic! target (pr-str (current-state)))
     target))
 
 (defn dump-current-state!
@@ -426,14 +575,21 @@
 (defn draw-set-state-core!
   "Install STATE and refresh the cached canvas if needed."
   [state]
-  (set! *draw-state* (assoc state :canvas-dirty? true))
-  (draw-reset-preview-sync!)
-  (draw-clear-preview!)
-  (draw-log-entry! :set-state {:state (draw-state-snapshot *draw-state*)})
-  (if *draw-running?*
-    nil
-    (draw-render-current!))
-  *draw-state*)
+  (let [next-state (assoc state :canvas-dirty? true)]
+    (if (draw-supervised-mode?)
+      (begin
+        (set! *draw-state* next-state)
+        (draw-write-control-command! :set-state next-state)
+        next-state)
+      (begin
+        (set! *draw-state* next-state)
+        (draw-reset-preview-sync!)
+        (draw-clear-preview!)
+        (draw-log-entry! :set-state {:state (draw-state-snapshot *draw-state*)})
+        (if *draw-running?*
+          nil
+          (draw-render-current!))
+        *draw-state*))))
 
 (defn draw-load-state-core!
   "Install STATE after loading it from disk."
@@ -512,7 +668,9 @@
   []
   (draw-with-lock
     (lambda ()
-      (draw-render-current!))))
+      (if (draw-supervised-mode?)
+        (draw-write-control-command! :redraw {:reason :repl})
+        (draw-render-current!)))))
 
 (defn draw-render-current!
   "Render the current state if the draw context is live."
@@ -529,7 +687,10 @@
 (defn current-state
   "Return the current draw state."
   []
-  *draw-state*)
+  (if (draw-supervised-mode?)
+    (or (draw-read-state-file)
+        *draw-state*)
+    *draw-state*))
 
 (defn reset-state!
   "Reset the current draw state to the default."
@@ -552,7 +713,7 @@
     (lambda ()
       (let [save-path (fs/path path)]
         (draw-ensure-parent-directory! save-path)
-        (io/spit save-path (pr-str *draw-state*))
+        (io/spit save-path (pr-str (current-state)))
         save-path))))
 
 (defn save-canvas!
@@ -590,7 +751,7 @@
   (draw-with-lock
     (lambda ()
       (draw-ensure-parent-directory! path)
-      (io/spit path (pr-str *draw-state*))
+      (io/spit path (pr-str (current-state)))
       path)))
 
 (defn save-canvas!
@@ -627,22 +788,16 @@
   [title]
   (draw-with-lock
     (lambda ()
-      (set! *draw-state* (assoc *draw-state* :title title))
-      (if *draw-running?*
-        nil
-        (draw-render-current!))
-      *draw-state*)))
+      (draw-set-state-core! (assoc (or (current-state) (default-state))
+                                   :title title)))))
 
 (defn set-background!
   "Update the current background color to a [R G B] vector."
   [color]
   (draw-with-lock
     (lambda ()
-      (set! *draw-state* (assoc *draw-state* :background color))
-      (if *draw-running?*
-        nil
-        (draw-render-current!))
-      *draw-state*)))
+      (draw-set-state-core! (assoc (or (current-state) (default-state))
+                                   :background color)))))
 
 (defn set-render-fn!
   "Install a custom render function of (lambda [ctx state] ...)."
@@ -1507,6 +1662,7 @@
   (set! *draw-last-error* exn)
   (set! *draw-running?* false)
   (set! *draw-thread* nil)
+  (draw-write-state-file! *draw-state* true)
   (draw-write-heartbeat! :crash *draw-state*)
   (draw-stop-watchdog!)
   (draw-log-entry! :crash
@@ -2121,43 +2277,45 @@
 (defn mouse-position
   "Return the current mouse position from the draw state."
   []
-  {:x (get *draw-state* :mouse-x)
-   :y (get *draw-state* :mouse-y)})
+  (let [state (or (current-state) (default-state))]
+    {:x (get state :mouse-x)
+     :y (get state :mouse-y)}))
 
 (defn recent-events
   "Return the recent SDL event log."
   []
-  (get *draw-state* :recent-events))
+  (get (or (current-state) (default-state)) :recent-events))
 
 (defn last-key-event
   "Return the last key event description."
   []
-  (get *draw-state* :last-key))
+  (get (or (current-state) (default-state)) :last-key))
 
 (defn last-input-event
   "Return the last SDL event description."
   []
-  (get *draw-state* :last-event))
+  (get (or (current-state) (default-state)) :last-event))
 
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
-          (or (get *draw-state* :mouse-x) 0.0)
-          (or (get *draw-state* :mouse-y) 0.0)
-          (draw-view-x *draw-state*)
-          (draw-view-y *draw-state*)
-          (draw-view-zoom *draw-state*)
-          (or (get *draw-state* :last-key) "")
-          (or (get *draw-state* :last-text) "")
-          (or (get *draw-state* :last-event) "")
-          (count (get *draw-state* :strokes))
-          (count (get *draw-state* :history))
-          (draw-tool-mode *draw-state*)
-          (get *draw-state* :brush-size)
-          (if (get *draw-state* :debug-panel?) "on" "off")
-          (if (get *draw-state* :window-focused?) "on" "off")
-          (or (get *draw-state* :pen-pressure) 1.0)))
+  (let [state (or (current-state) (default-state))]
+    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+            (or (get state :mouse-x) 0.0)
+            (or (get state :mouse-y) 0.0)
+            (draw-view-x state)
+            (draw-view-y state)
+            (draw-view-zoom state)
+            (or (get state :last-key) "")
+            (or (get state :last-text) "")
+            (or (get state :last-event) "")
+            (count (get state :strokes))
+            (count (get state :history))
+            (draw-tool-mode state)
+            (get state :brush-size)
+            (if (get state :debug-panel?) "on" "off")
+            (if (get state :window-focused?) "on" "off")
+            (or (get state :pen-pressure) 1.0))))
 
 (defn sync-window-title!
   "Update the SDL window title from the current state."
@@ -2200,6 +2358,44 @@
     (set! *draw-state* (draw-bump-frame! *draw-state*))
     (sync-window-title!)
     quit?))
+
+(defn draw-apply-control-command!
+  "Apply a supervisor control COMMAND to STATE inside the child process."
+  [state command]
+  (let [op (get command :op)
+        payload (get command :payload)
+        next-state
+          (cond
+            (equal? op :set-state)
+            (assoc payload :canvas-dirty? true)
+
+            (equal? op :redraw)
+            (assoc state :canvas-dirty? true)
+
+            (equal? op :stop)
+            (begin
+              (set! *draw-running?* false)
+              state)
+
+            :else
+            state)]
+    (draw-log-entry! :control
+                     {:op op
+                      :state (draw-state-snapshot next-state)})
+    next-state))
+
+(defn draw-poll-control!
+  "Apply the latest pending supervisor control command in child mode."
+  []
+  (if *draw-child-mode?*
+    (let [command (draw-control-command-pending)]
+      (if command
+        (begin
+          (set! *draw-last-control-seq* (or (get command :seq) *draw-last-control-seq*))
+          (set! *draw-state* (draw-apply-control-command! *draw-state* command))
+          command)
+        false))
+    false))
 
 (defn describe-state
   "Return a short human-readable summary of STATE."
@@ -2635,10 +2831,12 @@
   (draw-with-lock
     (lambda ()
       (draw-write-heartbeat! :poll *draw-state*)
+      (draw-poll-control!)
       (draw-poll-input!)
       (draw-write-heartbeat! :render *draw-state*)
       (if *draw-state*
         (let [state (draw-render-current!)]
+          (draw-write-state-file! state false)
           (draw-write-heartbeat! :idle state)
           state)
         *draw-state*))))
@@ -2672,8 +2870,11 @@
   []
   (draw-with-lock
     (lambda ()
-      (draw-poll-input!)
-      (draw-render-current!))))
+      (if (draw-supervised-mode?)
+        (draw-write-control-command! :redraw {:reason :manual})
+        (begin
+          (draw-poll-input!)
+          (draw-render-current!))))))
 
 (defn draw-loop
   "Render until the window is closed or the loop is stopped."
@@ -2735,16 +2936,18 @@
                 nil)
               (draw-reset-preview-sync!)
               (draw-clear-preview!)
+              (draw-write-state-file! state true)
               (draw-write-heartbeat! :start state)
               (draw-start-watchdog!)
               (sync-window-title!)
               ctx))))))))
 
-(defn stop!
-  "Stop the draw loop and close the SDL context."
+(defn draw-stop-local!
+  "Stop the local draw loop and close the SDL context."
   []
   (draw-with-lock
     (lambda ()
+      (draw-write-state-file! *draw-state* true)
       (draw-write-heartbeat! :stop *draw-state*)
       (draw-log-entry! :stop {:state (draw-state-snapshot *draw-state*)})
       (set! *draw-running?* false)
@@ -2762,14 +2965,14 @@
       (shutdown!)
       nil)))
 
-(defn start-dev!
-  "Start the SDL window and background loop for REPL-driven development."
+(defn draw-start-local-dev!
+  "Start the SDL window and background loop in the current process."
   []
   (if (and *draw-running?* *draw-context*)
     *draw-context*
     (begin
       (when *draw-context*
-        (stop!))
+        (draw-stop-local!))
       (draw-clear-error!)
       (let [ctx (start!)]
       (if ctx
@@ -2783,6 +2986,148 @@
           (thread-start! *draw-thread*)
           ctx)
         nil)))))
+
+(defn draw-supervisor-launch-child!
+  "Start the child draw process and return its pid."
+  []
+  (let [root (current-directory)
+        runner (draw-child-runner-path)
+        child-log (draw-child-stdout-path)
+        launcher (format "cd %s && exec csi -q -s %s > %s 2>&1"
+                         (proc/qs root)
+                         (proc/qs runner)
+                         (proc/qs child-log))
+        pid (cproc:process-run "/bin/sh" "-c" launcher)]
+    (set! *draw-child-pid* pid)
+    pid))
+
+(defn draw-supervisor-stop-child!
+  "Stop the supervised child process when it is running."
+  []
+  (let [pid *draw-child-pid*]
+    (set! *draw-child-pid* false)
+    (if pid
+      (proc/system
+        (format "kill %s >/dev/null 2>&1 || true"
+                (proc/qs (str pid))))
+      0)
+    nil))
+
+(defn draw-heartbeat-age-ms
+  "Return the age of the child heartbeat in milliseconds, or false."
+  []
+  (let [path (draw-heartbeat-file-path)]
+    (if (fs/file? path)
+      (let [heartbeat (edn/read-string (io/slurp path))
+            at (or (get heartbeat :at) 0)]
+        (if (> at 0)
+          (- (draw-wall-clock-ms) at)
+          false))
+      false)))
+
+(defn draw-start-supervisor-loop!
+  "Start the parent-side thread that restarts a dead or stale child."
+  []
+  (set! *draw-thread* nil)
+  (set! *draw-supervisor-thread*
+        (make-thread
+          (lambda ()
+            (handle-exceptions exn
+              (draw-log-entry! :supervisor-crash
+                               {:error (format "%s" exn)
+                                :state (draw-state-snapshot *draw-state*)})
+              (let loop ()
+                (if (draw-supervised-mode?)
+                  (begin
+                    (let [pid *draw-child-pid*
+                          age (draw-heartbeat-age-ms)]
+                      (cond
+                        (not pid)
+                        (begin
+                          (draw-log-entry! :supervisor-restart {:reason :missing-pid})
+                          (draw-supervisor-launch-child!))
+
+                        (not (draw-child-alive? pid))
+                        (begin
+                          (draw-log-entry! :supervisor-restart {:reason :child-exit :pid pid})
+                          (draw-supervisor-launch-child!))
+
+                        (and age (> age (draw-watchdog-stale-ms)))
+                        (begin
+                          (draw-log-entry! :supervisor-restart
+                                           {:reason :stale-heartbeat
+                                            :pid pid
+                                            :age-ms age})
+                          (draw-supervisor-stop-child!)
+                          (draw-supervisor-launch-child!))
+
+                        :else
+                        nil))
+                    (thread-sleep! (/ (draw-supervisor-poll-ms) 1000.0))
+                    (loop))
+                  nil))))
+          "cluck-draw-supervisor"))
+  (thread-start! *draw-supervisor-thread*)
+  *draw-supervisor-thread*)
+
+(defn draw-stop-supervisor-loop!
+  "Stop the parent-side supervisor thread."
+  []
+  (let [thread *draw-supervisor-thread*]
+    (set! *draw-supervisor-thread* nil)
+    (if thread
+      (thread-terminate! thread)
+      false)
+    nil))
+
+(defn draw-start-supervised-dev!
+  "Start the draw child process and the parent supervisor thread."
+  []
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state* (or *draw-state* (default-state)))
+      (set! *draw-running?* true)
+      (set! *draw-control-seq* 0)
+      (set! *draw-last-control-seq* 0)
+      (set! *draw-last-heartbeat-at* 0)
+      (set! *draw-last-state-sync-at* 0)
+      (draw-clear-error!)
+      (draw-clear-control-file!)
+      (draw-clear-watchdog-files!)
+      (draw-write-state-file! *draw-state* true)
+      (draw-log-entry! :supervised-start
+                       {:state (draw-state-snapshot *draw-state*)
+                        :child-log (draw-child-stdout-path)
+                        :control (draw-control-file-path)})
+      (let [pid (draw-supervisor-launch-child!)]
+        (if pid
+          (begin
+            (draw-start-supervisor-loop!)
+            {:pid pid :mode :supervised})
+          (begin
+            (set! *draw-running?* false)
+            false))))))
+
+(defn stop!
+  "Stop the supervised child or the local draw loop."
+  []
+  (if (draw-supervised-mode?)
+    (draw-with-lock
+      (lambda ()
+        (draw-log-entry! :supervised-stop {:state (draw-state-snapshot (current-state))})
+        (set! *draw-running?* false)
+        (draw-write-control-command! :stop {})
+        (draw-stop-supervisor-loop!)
+        (draw-supervisor-stop-child!)
+        nil))
+    (draw-stop-local!)))
+
+(defn start-dev!
+  "Start the draw app in supervised mode, or locally when supervision is disabled."
+  []
+  (if (draw-supervised-mode?)
+    (draw-start-supervised-dev!)
+    (draw-start-local-dev!)))
 
 (defn restart-dev!
   "Restart the development window after a crash or reset."
@@ -2805,6 +3150,24 @@
           (run-loop ctx state))
         nil))
     nil))
+
+(defn draw-child-main
+  "Run the draw window in child-process mode."
+  []
+  (set! *draw-child-mode?* true)
+  (set! *draw-supervision-enabled?* false)
+  (set! *draw-state* (or (draw-read-state-file)
+                         *draw-state*
+                         (default-state)))
+  (set! *draw-last-control-seq* 0)
+  (draw-clear-error!)
+  (let [ctx (start!)]
+    (if ctx
+      (begin
+        (render-now!)
+        (run-loop ctx *draw-state*)
+        (draw-stop-local!))
+      nil)))
 
 (defn main
   "Open a window and run the minimal SDL3 loop."

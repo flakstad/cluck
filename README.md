@@ -259,7 +259,9 @@ startup forms in the comment block at the end of
 [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk). That loads
 `examples/cluck/draw/dev.clk`, compiles the SDL3 support library on demand, and
 defines the draw app. Call `(start-dev!)` explicitly when you want to open the
-window and start the background render loop. From there you can call functions
+window. In the current draw setup, that starts a supervised child draw process
+by default so the SDL window can be restarted independently of the REPL. From
+there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
 while the window stays open. Use the mouse wheel to zoom around the cursor,
@@ -281,6 +283,7 @@ shortcuts are:
   `build/cluck-draw-state.edn` by default
 - draw session logging writes to `build/cluck-draw.log`
 - crashes write a snapshot to `build/cluck-draw-crash.edn`
+- `draw-supervisor-status` reports the current child/supervisor state
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
@@ -290,7 +293,8 @@ starts with no window and does not load SDL automatically. When you want the
 draw app, evaluate the explicit startup forms in the comment block at the end
 of `examples/cluck/draw/main.clk`, or evaluate
 `(load-file "examples/cluck/draw/dev.clk")` yourself and then call
-`(start-dev!)`.
+`(start-dev!)`. If you need the older same-process loop for a focused repro or
+test, call `(draw-disable-supervision!)` before `(start-dev!)`.
 
 The current goal is to keep the SDL3 boundary isolated while extending the
 interactive drawing loop one step at a time.

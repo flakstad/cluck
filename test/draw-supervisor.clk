@@ -1,0 +1,50 @@
+;; Focused supervised-child probe for the SDL3 draw example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-super-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-super-fail label expected actual)
+  (error (string-append "draw supervisor test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (pr-str actual))))
+
+(define (draw-super-assert-true label value)
+  (if value
+      (draw-super-pass label)
+      (draw-super-fail label "truthy value" value)))
+
+(define (draw-super-assert-num-pos label value)
+  (if (and value (> value 0))
+      (draw-super-pass label)
+      (draw-super-fail label "positive number" value)))
+
+(define (draw-super-wait-for predicate rounds)
+  (if (<= rounds 0)
+      false
+      (if (predicate)
+          true
+          (begin
+            (thread-sleep! 1)
+            (draw-super-wait-for predicate (- rounds 1))))))
+
+(set! *draw-supervision-enabled?* true)
+(draw-clear-log!)
+(draw-clear-watchdog-files!)
+(draw-clear-control-file!)
+
+(let [result (start-dev!)]
+  (draw-super-wait-for (lambda () (fs/file? (draw-heartbeat-file-path))) 15)
+  (let [status (draw-supervisor-status)
+        state (current-state)]
+    (draw-super-assert-true "start-dev! returns truthy" result)
+    (draw-super-assert-num-pos "child pid exists" (get status :child-pid))
+    (draw-super-assert-true "state file readable" state)
+    (draw-super-assert-true "watchdog heartbeat exists"
+                            (fs/file? (draw-heartbeat-file-path))))
+  (stop!))

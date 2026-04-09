@@ -16,7 +16,9 @@
 
 (import (chicken file))
 
-(def *draw-dev-build-dir* (create-temporary-directory))
+(defn draw-dev-build-dir
+  [root]
+  (fs/path root "build" "dev"))
 
 (defn draw-dev-root
   []
@@ -32,7 +34,11 @@
 
 (defn draw-dev-library-path
   [root]
-  (fs/path *draw-dev-build-dir* "cluck-sdl3.so"))
+  (fs/path (draw-dev-build-dir root) "cluck-sdl3.so"))
+
+(defn draw-dev-build-lock-path
+  [root]
+  (fs/path (draw-dev-build-dir root) ".build-lock"))
 
 (defn draw-dev-source-path
   [root]
@@ -92,15 +98,43 @@
     (create-directory path)
     path))
 
+(defn draw-dev-acquire-build-lock-loop!
+  [lock]
+  (handle-exceptions _
+    (begin
+      (proc/system "sleep 0.1")
+      (draw-dev-acquire-build-lock-loop! lock))
+    (begin
+      (create-directory lock)
+      lock)))
+
+(defn draw-dev-acquire-build-lock!
+  [root]
+  (draw-dev-acquire-build-lock-loop! (draw-dev-build-lock-path root)))
+
+(defn draw-dev-release-build-lock!
+  [root]
+  (let [lock (draw-dev-build-lock-path root)]
+    (if (fs/directory? lock)
+      (delete-directory lock)
+      false)))
+
 (defn draw-dev-ensure-library!
   [root]
   (let [lib (draw-dev-library-path root)]
     (begin
-      (draw-dev-ensure-directory! *draw-dev-build-dir*)
-      (if (draw-dev-library-stale? root)
-        (if (not (zero? (proc/system (draw-dev-library-build-command root))))
-          (error "SDL3 dev library build failed"))
-        lib)
+      (draw-dev-ensure-directory! (draw-dev-build-dir root))
+      (draw-dev-acquire-build-lock! root)
+      (handle-exceptions exn
+        (begin
+          (draw-dev-release-build-lock! root)
+          (abort exn))
+        (begin
+          (if (draw-dev-library-stale? root)
+            (if (not (zero? (proc/system (draw-dev-library-build-command root))))
+              (error "SDL3 dev library build failed"))
+            lib)
+          (draw-dev-release-build-lock! root)))
       lib)))
 
 (let [root (draw-dev-root)
