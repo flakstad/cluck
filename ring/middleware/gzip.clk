@@ -1,0 +1,136 @@
+;; Gzip response compression middleware for the separate Ring library tree.
+
+(ns ring.middleware.gzip
+  "Gzip response compression middleware for the separate Ring library tree."
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [ring.request :as request]
+            [ring.response :as response]))
+
+(import zlib)
+
+(define gzip-content-encoding
+  "gzip")
+
+(define gzip-default-level
+  6)
+
+(define gzip-default-window-bits
+  31)
+
+(defn gzip-options
+  "Return a normalized options map for gzip middleware."
+  [options]
+  (or options (hash-map)))
+
+(defn gzip-option-value
+  "Return OPTION from OPTIONS when present, otherwise DEFAULT-VALUE."
+  [options option default-value]
+  (if (contains? options option)
+      (get options option)
+      default-value))
+
+(defn accept-encoding-token-q
+  "Return the q-value for a single Accept-Encoding token."
+  [parts]
+  (##core#let loop ((params (rest parts)))
+    (if (empty? params)
+        1
+        (let [param (str/lower-case (str/trim (first params)))]
+          (if (str/starts-with? param "q=")
+              (handle-exceptions exn
+                  0
+                (parse-double (substring param 2 (string-length param))))
+              (loop (rest params)))))))
+
+(defn request-accepts-gzip?
+  "Return true when REQUEST advertises gzip support."
+  [request]
+  (let [header (request/request-header request "Accept-Encoding")]
+    (if (not header)
+        #f
+        (let [tokens (map str/trim (str/split (str header) ","))]
+          (##core#let loop ((tokens tokens)
+                            (gzip-q #f)
+                            (wildcard-q #f))
+            (if (empty? tokens)
+                (cond
+                  (not (equal? gzip-q #f)) (> gzip-q 0)
+                  (not (equal? wildcard-q #f)) (> wildcard-q 0)
+                  :else #f)
+                (let* ((token (first tokens))
+                       (parts (str/split token ";"))
+                       (encoding (str/lower-case (str/trim (first parts))))
+                       (q (accept-encoding-token-q parts)))
+                  (cond
+                    (string=? encoding "gzip")
+                    (loop (rest tokens) q wildcard-q)
+                    (string=? encoding "*")
+                    (loop (rest tokens) gzip-q q)
+                    :else
+                    (loop (rest tokens) gzip-q wildcard-q)))))))))
+
+(defn gzip-response-body
+  "Return BODY as text when it can be gzipped."
+  [body]
+  (cond
+    (string? body) body
+    (input-port? body) (io/port->string body)
+    :else #f))
+
+(defn gzip-compress-text
+  "Return TEXT compressed as a gzip stream."
+  [text options]
+  (let [level (gzip-option-value options :level gzip-default-level)
+        window-bits (gzip-option-value options :window-bits
+                                       gzip-default-window-bits)
+        out (open-output-string)
+        compressed-port (zlib-compressing-output-port out
+                                                      window-bits: window-bits
+                                                      level: level)]
+    (display text compressed-port)
+    (close-output-port compressed-port)
+    (get-output-string out)))
+
+(defn gzip-response?
+  "Return true when RESPONSE should be gzip-compressed for REQUEST."
+  [request response]
+  (let [status (response/response-status response)
+        body (response/response-body response)
+        content-encoding (response/response-header response "Content-Encoding")]
+    (and (not (equal? status 204))
+         (not (equal? status 304))
+         (not content-encoding)
+         (request-accepts-gzip? request)
+         (or (input-port? body)
+             (and (string? body)
+                  (not (string=? body "")))))))
+
+(defn gzip-response
+  "Return RESPONSE compressed when the request supports gzip."
+  [request response options]
+  (if (gzip-response? request response)
+      (let [body (response/response-body response)
+            text (gzip-response-body body)]
+        (if (not text)
+            response
+            (let [compressed (gzip-compress-text text options)
+                  response (assoc response :body compressed)
+                  response (response/remove-header response "Content-Length")
+                  response (response/remove-header response "ETag")
+                  response (response/header response
+                                            "Content-Encoding"
+                                            gzip-content-encoding)]
+              (response/add-header response
+                                   "Vary"
+                                   "Accept-Encoding"))))
+      response))
+
+(defn wrap-gzip
+  "Return a handler that gzips eligible responses when requested."
+  ([handler options]
+   (let [options (gzip-options options)]
+     (fn [request]
+       (gzip-response request (handler request) options))))
+  ([handler]
+   (wrap-gzip handler (hash-map))))

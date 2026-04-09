@@ -13,8 +13,8 @@ server loop to the `spiffy` egg through `ring.adapter.spiffy`.
 - `ring/README.md` documents the split in one place
 - `ring.middleware.cookies`, `ring.middleware.session`,
   `ring.middleware.params`, `ring.middleware.keyword-params`,
-  `ring.middleware.head`, `ring.middleware.content-length`, and
-  `ring.middleware.not-modified` are the helper layers used by the example
+  `ring.middleware.gzip`, `ring.middleware.head`, `ring.middleware.content-length`,
+  and `ring.middleware.not-modified` are the helper layers used by the example
 
 ## Layout
 
@@ -30,13 +30,14 @@ examples/cluck/web-server/
 Install the eggs once in your CHICKEN environment:
 
 ```bash
-chicken-install spiffy hmac sha2 message-digest message-digest-utils
+chicken-install spiffy zlib hmac sha2 message-digest message-digest-utils
 ```
 
 `spiffy` pulls in the `intarweb` and `uri-common` dependencies used by the
 adapter in `ring.adapter.spiffy`. The Ring session and anti-forgery helpers use
 the CHICKEN `hmac`, `sha2`, `message-digest`, and `message-digest-utils` eggs
-for HMAC-SHA256 and SHA-256 hashing.
+for HMAC-SHA256 and SHA-256 hashing. `ring.middleware.gzip` uses the CHICKEN
+`zlib` egg for gzip response compression.
 
 ## Run
 
@@ -67,6 +68,9 @@ explicit value in production if you want stable sessions across restarts.
 The handler also supports `HEAD /health` and conditional `GET /health` with an
 `If-None-Match` header.
 
+When the client sends `Accept-Encoding: gzip`, the example compresses the HTML
+responses with gzip and adds `Content-Encoding: gzip`.
+
 ## Manual Test
 
 While the server is running, try these requests from another terminal:
@@ -82,12 +86,16 @@ curl -i 'http://127.0.0.1:8081/params?name=cluck&name=egg'
 curl -i -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data 'name=cluck&theme=dark' http://127.0.0.1:8081/params
 curl -I http://127.0.0.1:8081/health
 curl -i -H 'If-None-Match: "cluck-health-v1"' http://127.0.0.1:8081/health
+curl -i -H 'Accept-Encoding: gzip' --compressed http://127.0.0.1:8081/
 curl -i http://127.0.0.1:8081/missing
 curl -i -X POST http://127.0.0.1:8081/
 ```
 
 The responses should include `Content-Type: text/html; charset=utf-8`, which
 comes from `ring.middleware/wrap-content-type` around the handler.
+
+The gzip request should include `Content-Encoding: gzip`; `curl --compressed`
+will transparently decompress it for display.
 
 The cookie and session requests should reuse the same cookie jar so the
 counter increments on repeated `visit` calls.

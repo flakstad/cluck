@@ -18,11 +18,20 @@
   [handler]
   (fn [request]
     (let [response-map (handler request)
+          status (response/response-status response-map)
           existing (response/response-header response-map "Content-Length")
           body (response/response-body response-map)
           length (response-body-length body)]
-      (if (or existing (not length))
+      (cond
+        (or (equal? status 204)
+            (equal? status 304))
+        (if existing
+            (response/remove-header response-map "Content-Length")
+            response-map)
+
+        (or existing (not length))
           response-map
-          (response/header response-map
-                           "Content-Length"
-                           (number->string length))))))
+        :else
+        (response/header response-map
+                         "Content-Length"
+                         (number->string length))))))

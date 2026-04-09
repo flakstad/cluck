@@ -11,6 +11,7 @@
             [ring.middleware.exceptions :as exceptions]
             [ring.middleware.content-length :as content-length]
             [ring.middleware.cookies :as cookies]
+            [ring.middleware.gzip :as gzip]
             [ring.middleware.head :as head]
             [ring.middleware.keyword-params :as keyword-params]
             [ring.middleware.request-id :as request-id]
@@ -242,9 +243,10 @@
       (params/wrap-params)
       (session/wrap-session web-session-secret web-session-options)
       (cookies/wrap-cookies)
+      (not-modified/wrap-not-modified)
+      (gzip/wrap-gzip)
       (content-length/wrap-content-length)
       (head/wrap-head)
-      (not-modified/wrap-not-modified)
       (middleware/wrap-content-type
        "text/html; charset=utf-8")
       (exceptions/wrap-exceptions

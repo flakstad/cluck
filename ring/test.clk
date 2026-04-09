@@ -10,6 +10,7 @@
             [uri-common :as uri]))
 
 (import (prefix (chicken file posix) posix:))
+(import zlib)
 
 (define (smoke-pass label)
   (println "ok" label)
@@ -54,6 +55,12 @@
   (if (or (not set-cookie) (not (str/includes? set-cookie ";")))
       set-cookie
       (first (str/split set-cookie ";"))))
+
+(define (gunzip-string text)
+  (io/port->string
+   (zlib-decompressing-input-port
+    (open-input-string text)
+    window-bits: 47)))
 
 (def sample
   (edn/read-string "{:a [1 2] :b #{3}}"))
@@ -144,6 +151,7 @@
 (load-file "ring/middleware/defaults.clk")
 (load-file "ring/middleware/exceptions.clk")
 (load-file "ring/middleware/head.clk")
+(load-file "ring/middleware/gzip.clk")
 (load-file "ring/middleware/json.clk")
 (load-file "ring/middleware/keyword-params.clk")
 (load-file "ring/middleware/multipart-params.clk")
@@ -167,6 +175,7 @@
          [ring.middleware.defaults :as defaults]
          [ring.middleware.exceptions :as exceptions]
          [ring.middleware.head :as head]
+         [ring.middleware.gzip :as gzip]
          [ring.middleware.json :as json-middleware]
          [ring.middleware.keyword-params :as keyword-params]
          [ring.middleware.multipart-params :as multipart-params]
@@ -325,6 +334,70 @@
                204)]
   (assert-num= "middleware wrap-status" 204
                (response/response-status (handler (request/request :get "/")))))
+
+(let [handler (gzip/wrap-gzip
+               (fn [_]
+                 (response/ok "hello hello hello hello hello")))]
+  (let [gzip-response (handler
+                       (assoc (request/request :get "/")
+                              :headers (hash-map "accept-encoding" "gzip")))]
+    (assert-str= "middleware wrap-gzip content-encoding" "gzip"
+                 (response/response-header gzip-response "Content-Encoding"))
+    (assert-str= "middleware wrap-gzip vary" "Accept-Encoding"
+                 (response/response-header gzip-response "Vary"))
+    (assert-str= "middleware wrap-gzip decompresses"
+                 "hello hello hello hello hello"
+                 (gunzip-string (response/response-body gzip-response)))))
+
+(let [handler (gzip/wrap-gzip
+               (fn [_]
+                 (-> (response/ok (open-input-string "streaming body"))
+                     (response/header "Content-Length" "14")
+                     (response/header "ETag" "\"abc\""))))]
+  (let [gzip-response (handler
+                       (assoc (request/request :get "/")
+                              :headers (hash-map "accept-encoding" "gzip")))]
+    (assert-true "middleware wrap-gzip removes content-length"
+                 (not (response/response-header gzip-response "Content-Length")))
+    (assert-true "middleware wrap-gzip removes etag"
+                 (not (response/response-header gzip-response "ETag")))
+    (assert-str= "middleware wrap-gzip decompresses input port"
+                 "streaming body"
+                 (gunzip-string (response/response-body gzip-response)))))
+
+(let [handler (gzip/wrap-gzip
+               (fn [_]
+                 (response/ok "plain")))]
+  (let [gzip-response (handler (request/request :get "/"))]
+    (assert-str= "middleware wrap-gzip skips without accept-encoding"
+                 "plain"
+                 (response/response-body gzip-response))
+    (assert-true "middleware wrap-gzip no content-encoding without accept-encoding"
+                 (not (response/response-header gzip-response "Content-Encoding")))))
+
+(let [handler (gzip/wrap-gzip
+               (fn [_]
+                 (response/ok "plain")))]
+  (let [gzip-response (handler
+                       (assoc (request/request :get "/")
+                              :headers (hash-map "accept-encoding" "gzip;q=0, br;q=1")))]
+    (assert-str= "middleware wrap-gzip skips gzip q=0"
+                 "plain"
+                 (response/response-body gzip-response))
+    (assert-true "middleware wrap-gzip no content-encoding with gzip q=0"
+                 (not (response/response-header gzip-response "Content-Encoding")))))
+
+(let [handler (gzip/wrap-gzip
+               (fn [_]
+                 (response/ok "wildcard")))]
+  (let [gzip-response (handler
+                       (assoc (request/request :get "/")
+                              :headers (hash-map "accept-encoding" "*;q=1")))]
+    (assert-str= "middleware wrap-gzip wildcard content-encoding" "gzip"
+                 (response/response-header gzip-response "Content-Encoding"))
+    (assert-str= "middleware wrap-gzip wildcard decompresses"
+                 "wildcard"
+                 (gunzip-string (response/response-body gzip-response)))))
 
 (assert-str= "ring adapter path->text" "/echo/cluck"
              (ring-adapter/path->text '(/ "echo" "cluck")))

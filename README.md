@@ -59,7 +59,7 @@ The current implementation supports:
 - `cluck.edn/read-string`
 - the separate top-level `hiccup/` library tree for Hiccup 2-style HTML
   rendering helpers, with `hiccup.core` as the single API
-- the separate top-level `ring/` library tree for Ring-style request/response/middleware helpers, including signed-cookie sessions, params, request IDs, exception handling, JSON body/response helpers, CORS, static resources, HEAD handling, content length, conditional GET, trusted proxy/host handling for redirects, and `ring.adapter.spiffy` for the Spiffy bridge
+- the separate top-level `ring/` library tree for Ring-style request/response/middleware helpers, including signed-cookie sessions, params, request IDs, exception handling, JSON body/response helpers, CORS, gzip compression, static resources, HEAD handling, content length, conditional GET, trusted proxy/host handling for redirects, and `ring.adapter.spiffy` for the Spiffy bridge
 - `atom`, `atom?`, `deref`, `reset!`, `swap!`, and `compare-and-set!`
 - `cluck.mutable` for explicit mutable map/set helpers and host interop
 - `cluck.persistent` for opt-in persistent/immutable map and set helpers
@@ -467,12 +467,13 @@ transport adapter.
 The Ring library tree is documented in [`ring/README.md`](./ring/README.md).
 The demo routes now include `/cookie`, `/visit`, and `/params`, and the
 handler stack demonstrates cookie serialization, signed sessions, params
-parsing, HEAD handling, and conditional GET with `ETag` support.
+parsing, gzip compression, HEAD handling, and conditional GET with `ETag`
+support.
 
 Install the eggs once in your CHICKEN environment:
 
 ```bash
-chicken-install spiffy hmac sha2 message-digest message-digest-utils
+chicken-install spiffy zlib hmac sha2 message-digest message-digest-utils
 ```
 
 If you want stable signed sessions across restarts, set

@@ -25,6 +25,7 @@ ring/
     exceptions.clk
     cookies.clk
     content-length.clk
+    gzip.clk
     head.clk
     json.clk
     keyword-params.clk
@@ -50,6 +51,7 @@ ring/
 - `ring.middleware.request-id`, `ring.middleware.exceptions`, and `ring.middleware.json` for common app and API seams
 - `ring.middleware.defaults` and `ring.middleware.anti-forgery` for the standard browser-app security stack
 - `ring.middleware.cors` and `ring.middleware.resource` for production web app boundaries
+- `ring.middleware.gzip` for gzip response compression
 - `ring.middleware.session` and `ring.middleware.session.cookie` for signed cookie sessions
 - `ring.middleware.head`, `ring.middleware.content-length`, and `ring.middleware.not-modified` for common HTTP response behavior
 - `ring.adapter.spiffy` for the mixed Cluck/Scheme HTTP adapter
@@ -75,12 +77,12 @@ Install the crypto and server eggs once in your CHICKEN environment before
 using the full Ring stack:
 
 ```bash
-chicken-install spiffy hmac sha2 message-digest message-digest-utils
+chicken-install spiffy zlib hmac sha2 message-digest message-digest-utils
 ```
 
 `ring.adapter.spiffy` depends on `spiffy`. Signed-cookie sessions and the
 anti-forgery stack depend on `hmac`, `sha2`, `message-digest`, and
-`message-digest-utils`.
+`message-digest-utils`. `ring.middleware.gzip` depends on `zlib`.
 
 ## Security Notes
 
@@ -103,6 +105,8 @@ anti-forgery stack depend on `hmac`, `sha2`, `message-digest`, and
 - Request bodies, multipart uploads, JSON payloads, and static resources are
   still buffered in memory. Size limits exist, but this is not a streaming
   server stack yet.
+- Response compression is gzip-only for now. Brotli is tracked separately and
+  still needs a backend.
 - Reverse-proxy safety still depends on correct deployment configuration for
   `:trusted-proxies` and `:trusted-hosts`.
 - The crypto primitives come from CHICKEN eggs, but the constant-time string
