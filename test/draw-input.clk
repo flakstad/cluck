@@ -79,11 +79,11 @@
   (draw-input-assert-true "debug panel lists space pan"
                           (draw-input-has-line? lines "  space+drag: pan"))
   (draw-input-assert-true "debug panel lists cursors"
-                          (draw-input-has-line? lines "  cursors: crosshair draw, move select, resize handles, text tool"))
+                          (draw-input-has-line? lines "  cursors: crosshair draw/rotate, move select, resize handles, text tool"))
   (draw-input-assert-true "debug panel lists draw"
                           (draw-input-has-line? lines "  drag: draw / move selection"))
   (draw-input-assert-true "debug panel lists rectangle resize"
-                          (draw-input-has-line? lines "  rectangle handles: resize selected rectangle"))
+                          (draw-input-has-line? lines "  rectangle handles: resize corners, rotate top handle"))
   (draw-input-assert-true "debug panel lists shift selection"
                           (draw-input-has-line? lines "  shift+click: add to selection"))
   (draw-input-assert-true "debug panel lists tools"
@@ -303,6 +303,28 @@
                :y 20.0
                :width 30.0
                :height 40.0
+               :rotation 0.0
+               :color [255 255 255]
+               :size 2}])
+      selected (assoc base :selection [1])
+      rect (get (draw-selection-handle-screen-rects selected
+                                                    (first (get selected :elements)))
+                :rotate)
+      hovered (draw-sync-pointer-state selected
+                                       [25.0 20.0 1.0]
+                                       [(+ (get rect :x) 2.0)
+                                        (+ (get rect :y) 2.0)])]
+  (draw-input-assert-str= "rotation handle uses crosshair cursor"
+                          "crosshair"
+                          (name (draw-desired-cursor-kind hovered))))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
                :color [255 255 255]
                :size 2}])
       selected (assoc base :selection [1])
@@ -419,6 +441,52 @@
                           (get box :height))
   (draw-input-assert-false "selection handle mouse-up clears resize"
                            (get finished :active-selection-resize)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
+               :rotation 0.0
+               :color [255 255 255]
+               :size 2}])
+      selected (assoc base :selection [1])
+      handle-rect (get (draw-selection-handle-screen-rects selected
+                                                           (first (get selected :elements)))
+                       :rotate)
+      rotate-start (draw-input-copy-state
+                     (draw-apply-input-event! selected
+                                              {:kind :mouse-down
+                                               :desc "SDL_EVENT_MOUSE_BUTTON_DOWN rotate"
+                                               :mouse-x (+ (get handle-rect :x) 2.0)
+                                               :mouse-y (+ (get handle-rect :y) 2.0)
+                                               :pressure 1.0
+                                               :shift? false}))
+      rotated (draw-input-copy-state
+                (draw-apply-input-event! rotate-start
+                                         {:kind :mouse-motion
+                                          :desc "SDL_EVENT_MOUSE_MOTION rotate"
+                                          :mouse-x 60.0
+                                          :mouse-y 80.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! rotated
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP rotate"
+                                           :mouse-x 60.0
+                                           :mouse-y 80.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      box (first (get finished :elements))]
+  (draw-input-assert-true "rotation handle mouse-down starts rotate"
+                          (get rotate-start :active-selection-rotate))
+  (draw-input-assert-true "rotation drag updates rectangle rotation"
+                          (not (= 0.0 (get box :rotation))))
+  (draw-input-assert-false "rotation mouse-up clears rotate"
+                           (get finished :active-selection-rotate)))
 
 (let [base (draw-sync-elements
              (draw-set-tool-core! (default-state) :select)

@@ -434,6 +434,51 @@
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
+               [{:kind :box
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :rotation 0.0
+                 :color [255 255 255]
+                 :size 2}])
+        selected (assoc base :selection [1])
+        handle (draw-find-selection-handle selected
+                                           (let [rect (get (draw-selection-handle-screen-rects selected
+                                                                                               (first (get selected :elements)))
+                                                           :rotate)]
+                                             [(+ (get rect :x) 2.0)
+                                              (+ (get rect :y) 2.0)]))
+        rotating (draw-start-selection-rotate selected
+                                              [25.0 10.0 1.0]
+                                              [25.0 10.0]
+                                              :mouse)
+        moved (draw-extend-selection-rotate rotating
+                                            [60.0 80.0 1.0]
+                                            [60.0 80.0])
+        finished (draw-finish-selection-rotate moved
+                                               [60.0 80.0 1.0]
+                                               [60.0 80.0])
+        box (first (get finished :elements))
+        undone (draw-undo-stroke! finished)
+        restored (first (get undone :elements))
+        bounds (draw-element-bounds finished box)]
+    (draw-tools-assert-str= "selection handle hits rotate handle"
+                            ":rotate"
+                            (pr-str handle))
+    (draw-tools-assert-true "selection rotate updates rotation"
+                            (not (= 0.0 (get box :rotation))))
+    (draw-tools-assert-false "selection rotate clears on finish"
+                             (get finished :active-selection-rotate))
+    (draw-tools-assert-num= "undo restores rectangle rotation"
+                            0.0
+                            (get restored :rotation))
+    (draw-tools-assert-true "rotated rectangle bounds remain visible"
+                            (and (> (get bounds :width) 0.0)
+                                 (> (get bounds :height) 0.0))))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
                [{:kind :arrow
                  :start [10.0 20.0 1.0]
                  :end [40.0 60.0 1.0]

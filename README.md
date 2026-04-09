@@ -277,7 +277,7 @@ selection mode when you want to move existing elements. Press `d` to toggle
 the debug panel on demand, or `tab` to toggle the in-window tool panel with
 clickable buttons and a selection summary. Cursor shape follows the current
 interaction mode: crosshair for drawing, move while panning or dragging
-selection, resize over rectangle handles, text for the text tool, and pointer
+selection, rotate with the top rectangle handle, resize over rectangle corner handles, text for the text tool, and pointer
 over clickable tool-panel buttons. The viewport range is now much deeper too:
 the world bounds are intentionally very large and pointer-anchored zoom is
 covered by focused view tests at extreme zoom levels. The current tool
@@ -315,7 +315,7 @@ dylib.
 The current structured-object milestone is intentionally small: ink, text, rectangle,
 arrow, and compatibility frame elements now coexist as first-class canvas elements, and the
 selection tool can now pick, shift-add, move existing elements, show a group bounds rectangle,
-resize a single selected rectangle through corner handles, and expose a first
+resize a single selected rectangle through corner handles, rotate it through a top handle, and expose a first
 clickable in-window tool panel with save/load controls. The next
 steps are broader selection work like lasso/grouping and deeper text editing
 rather than just placement.

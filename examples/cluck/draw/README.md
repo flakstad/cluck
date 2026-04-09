@@ -15,14 +15,14 @@ What is in place:
 - mixed canvas elements, so ink and objects can coexist on the same canvas
 - a first structured object tool: `r` drag-to-create rectangles (`b` still works as a legacy alias)
 - a first selection tool: `v` to select existing elements, `shift`+click to add to the selection, and drag them
-- selection bounds for the active selection, plus rectangle resize handles for a single selected rectangle
+- selection bounds for the active selection, plus rectangle corner resize handles and a top rotation handle for a single selected rectangle
 - a first connector tool: `a` drag-to-create arrows
 - a first text tool: `t` click to place text elements
 - an on-demand debug panel toggled with `d`
 - a toggleable in-window tool panel with clickable buttons, toggled with `tab`
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
-- tool-aware cursors: crosshair for draw tools, move for selection drag/pan, resize on rectangle handles, text cursor for the text tool, pointer over clickable tool-panel buttons
+- tool-aware cursors: crosshair for draw tools and rectangle rotation, move for selection drag/pan, resize on rectangle corner handles, text cursor for the text tool, pointer over clickable tool-panel buttons
 - tool shortcuts for `i` ink, `t` text, `r` rectangle, `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
@@ -90,7 +90,8 @@ While the window is live:
 - press `t` for the text tool, then click to place a text element
 - press `v` for the selection tool, then click or drag selected elements to move them
 - hold `shift` while clicking in selection mode to add another element to the active selection
-- drag a rectangle handle in selection mode to resize a selected rectangle
+- drag a rectangle corner handle in selection mode to resize a selected rectangle
+- drag the top handle in selection mode to rotate a selected rectangle
 - use the tool panel buttons to switch tools, and watch the panel summary for the current selection
 - press `r` for the rectangle tool, then drag to create a rectangle object (`b` still works as a legacy alias)
 - press `a` for the arrow tool, then drag to create a connector
