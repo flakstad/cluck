@@ -19,7 +19,7 @@ What is in place:
 - a first connector tool: `a` drag-to-create arrows
 - a first text tool: `t` click to place text elements
 - an on-demand debug panel toggled with `d`
-- a toggleable in-window tool panel with clickable buttons, toggled with `tab`
+- a toggleable in-window tool panel with clickable buttons and selection-aware action hints, toggled with `tab`
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
 - tool-aware cursors: crosshair for draw tools and rectangle rotation, move for selection drag/pan, resize on rectangle corner handles, text cursor for the text tool, pointer over clickable tool-panel buttons

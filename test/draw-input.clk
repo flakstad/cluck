@@ -109,6 +109,28 @@
   (draw-input-assert-true "tool panel lists load shortcut"
                           (draw-input-has-line? lines "CTRL+O load")))
 
+(let [lines (draw-tool-panel-selection-lines (default-state))]
+  (draw-input-assert-true "tool panel selection lines mention no selection"
+                          (draw-input-has-line? lines "actions: none selected"))
+  (draw-input-assert-true "tool panel selection lines mention canvas"
+                          (draw-input-has-line? lines "canvas: drag to draw or create")))
+
+(let [state (assoc (draw-sync-elements
+                     (draw-set-tool-core! (default-state) :select)
+                     [{:kind :box
+                       :x 10.0
+                       :y 20.0
+                       :width 30.0
+                       :height 40.0
+                       :color [255 255 255]
+                       :size 2}])
+                    :selection [1])
+      lines (draw-tool-panel-selection-lines state)]
+  (draw-input-assert-true "tool panel selection lines mention rectangle move"
+                          (draw-input-has-line? lines "actions: move rectangle"))
+  (draw-input-assert-true "tool panel selection lines mention rotate handle"
+                          (draw-input-has-line? lines "handles: corners resize, top rotates")))
+
 (let [mouse-point (draw-event-point (default-state)
                                     "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")]
   (draw-input-assert-str= "mouse point pressure defaults to 1"

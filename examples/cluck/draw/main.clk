@@ -2803,7 +2803,7 @@
   (let [width (draw-tool-panel-width)
         x (- (or (get state :width) 1280) width 12)
         y 12
-        height 304]
+        height 352]
     {:x x
      :y y
      :width width
@@ -2896,6 +2896,30 @@
                          counts)]
           (format "selected: %s"
                   (str/join ", " parts)))))))
+
+(defn draw-tool-panel-selection-lines
+  "Return compact action hints for the current selection."
+  [state]
+  (let [elements (draw-selected-elements state)
+        total (count elements)]
+    (if (= total 0)
+      ["actions: none selected"
+       "canvas: drag to draw or create"]
+      (if (= total 1)
+        (let [element (first elements)]
+          (if (draw-box-element? element)
+            ["actions: move rectangle"
+             "handles: corners resize, top rotates"]
+            (if (draw-arrow-element? element)
+              ["actions: move arrow"
+               "selection: single object"]
+              (if (draw-text-element? element)
+                ["actions: move text"
+                 "selection: single object"]
+                ["actions: move stroke"
+                 "selection: single object"]))))
+        [(format "actions: move %d selected items" total)
+         "selection: shift+click adds/removes"]))))
 
 (defn draw-tool-panel-hit?
   "Return true when SCREEN-POINT lies inside the visible tool panel."
@@ -5210,7 +5234,8 @@
   [renderer state]
   (let [panel (draw-tool-panel-rect state)
         buttons (draw-tool-panel-buttons state)
-        info-lines (draw-tool-panel-info-lines state)]
+        info-lines (draw-tool-panel-info-lines state)
+        selection-lines (draw-tool-panel-selection-lines state)]
     (sdl/set-draw-color! renderer 18 20 26 228)
     (sdl/render-fill-rect! renderer
                            (get panel :x)
@@ -5240,7 +5265,16 @@
                                         next-y
                                         line)
                 (+ next-y 16)))
-            (+ (get panel :y) 228)
+            (+ (get panel :y) 244)
+            selection-lines)
+    (reduce (fn [next-y line]
+              (begin
+                (sdl/render-debug-text! renderer
+                                        (+ (get panel :x) 10)
+                                        next-y
+                                        line)
+                (+ next-y 16)))
+            (+ (get panel :y) 292)
             info-lines)
     nil))
 

@@ -317,7 +317,7 @@ and arrow now coexist as first-class canvas elements, while older frame data is 
 to rectangles on load, and the
 selection tool can now pick, shift-add, move existing elements, show a group bounds rectangle,
 resize a single selected rectangle through corner handles, rotate it through a top handle, and expose a first
-clickable in-window tool panel with save/load controls. The next
+clickable in-window tool panel with save/load controls plus selection-aware action hints. The next
 steps are broader selection work like lasso/grouping and deeper text editing
 rather than just placement.
 
