@@ -2010,11 +2010,19 @@
     (nth point 2)
     1.0))
 
+(defn draw-normalize-pressure
+  "Map raw pen pressure into a more useful visual range for drawing."
+  [pressure]
+  (let [raw (draw-clamp (or pressure 1.0) 0.0 1.0)
+        scaled (draw-clamp (/ raw 0.72) 0.0 1.0)]
+    (math/sqrt scaled)))
+
 (defn draw-point-size
   "Scale BASE-SIZE by POINT pressure."
   [point base-size]
-  (let [scaled (draw-exact-int (math/ceiling (* base-size
-                                                 (draw-point-pressure point))))]
+  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
+        scaled (draw-exact-int (math/ceiling (* base-size
+                                                (+ 0.5 (* 1.5 pressure)))))]
     (if (> scaled 0)
       scaled
       1)))
@@ -2022,7 +2030,7 @@
 (defn draw-point-alpha
   "Scale the stroke alpha by POINT pressure."
   [point]
-  (let [pressure (draw-point-pressure point)
+  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
         alpha (draw-exact-int (math/ceiling (+ 72 (* 183 pressure))))]
     (if (> alpha 255)
       255
@@ -2170,6 +2178,21 @@
           (draw-render-stroke-segment! renderer state previous point size)))
       nil)))
 
+(defn draw-preview-batch-render!
+  "Render active stroke points from START-INDEX up to END-INDEX."
+  [renderer state points start-index end-index size]
+  (if (>= start-index end-index)
+    nil
+    (let [previous (nth points (- start-index 1))
+          point (nth points start-index)]
+      (draw-render-stroke-segment! renderer state previous point size)
+      (draw-preview-batch-render! renderer
+                                  state
+                                  points
+                                  (+ start-index 1)
+                                  end-index
+                                  size))))
+
 (defn draw-sync-preview!
   "Render only the missing active-stroke segments into the preview texture."
   [state]
@@ -2198,28 +2221,26 @@
             (set! *draw-preview-point-count* (if (> total 0) 1 0)))
           nil)
         (if (< *draw-preview-point-count* total)
-          (let [previous (nth points (- *draw-preview-point-count* 1))
-                pending (drop *draw-preview-point-count* points)
-                batch (take (draw-preview-segment-budget) pending)
-                batch-count (count batch)]
+          (let [end-index (if (> (+ *draw-preview-point-count*
+                                    (draw-preview-segment-budget))
+                                 total)
+                            total
+                            (+ *draw-preview-point-count*
+                               (draw-preview-segment-budget)))
+                batch-count (- end-index *draw-preview-point-count*)]
             (if (> batch-count 0)
               (draw-with-preview!
                 (lambda (renderer)
                   (draw-with-stroke-color (get active :color)
                     (lambda ()
-                      (reduce (fn [prior point]
-                                (begin
-                                  (draw-render-stroke-segment! renderer
-                                                               state
-                                                               prior
-                                                               point
-                                                               (get active :size))
-                                  point))
-                              previous
-                              batch)))))
+                      (draw-preview-batch-render! renderer
+                                                  state
+                                                  points
+                                                  *draw-preview-point-count*
+                                                  end-index
+                                                  (get active :size))))))
               nil)
-            (set! *draw-preview-point-count*
-                  (+ *draw-preview-point-count* batch-count)))
+            (set! *draw-preview-point-count* end-index))
           nil)
         true)
       (begin
