@@ -37,22 +37,27 @@
 (assert-true "hiccup namespace exists" (find-ns 'hiccup.core))
 (assert-str= "hiccup html escape"
              "<div>a &lt; b &apos; c</div>"
-             (h/html [:div "a < b ' c"]))
+             (str (h/html [:div "a < b ' c"])))
+(assert-str= "hiccup html4 apostrophe"
+             "<div>a &lt; b &#39; c</div>"
+             (str (h/html {:mode :sgml} [:div "a < b ' c"])))
 (assert-str= "hiccup raw string"
              "<div><span>raw</span></div>"
-             (h/html [:div (h/raw-string "<span>raw</span>")]))
+             (str (h/html [:div (h/raw "<span>raw</span>")])))
+(assert-true "hiccup raw alias"
+             (h/raw-string? (h/raw "<div/>")))
 (assert-str= "hiccup shorthand attrs"
              "<div class=\"feature banner\" id=\"card\">Hi</div>"
-             (h/html [:div#card.banner {:class "feature"} "Hi"]))
+             (str (h/html [:div#card.banner {:class "feature"} "Hi"])))
 (assert-str= "hiccup shorthand id overrides attrs"
              "<div id=\"card\">Hi</div>"
-             (h/html [:div#card {:id "override"} "Hi"]))
+             (str (h/html [:div#card {:id "override"} "Hi"])))
 (assert-str= "hiccup void tag html"
              "<br>"
-             (h/html {:mode :html} [:br]))
+             (str (h/html {:mode :html} [:br])))
 (assert-str= "hiccup void tag xml"
              "<br />"
-             (h/html {:mode :xml} [:br]))
+             (str (h/html {:mode :xml} [:br])))
 (assert-true "hiccup html5 doctype"
              (str/includes? (h/html5 {:lang "en"} [:body [:p "x"]])
                             "<!DOCTYPE html>"))
@@ -67,70 +72,43 @@
                             "<!DOCTYPE html PUBLIC"))
 (assert-str= "hiccup include-js"
              "<script src=\"/app.js\" type=\"text/javascript\"></script><script src=\"/other.js\" type=\"text/javascript\"></script>"
-             (h/html (h/include-js "/app.js" "/other.js")))
+             (str (h/html (h/include-js "/app.js" "/other.js"))))
 (assert-str= "hiccup include-css"
              "<link href=\"/app.css\" rel=\"stylesheet\" type=\"text/css\" /><link href=\"/other.css\" rel=\"stylesheet\" type=\"text/css\" />"
-             (h/html (h/include-css "/app.css" "/other.css")))
-(assert-true "hiccup javascript-tag"
-             (str/includes? (h/html (h/javascript-tag "alert('cluck');"))
-                            "//<![CDATA[\nalert('cluck');\n//]]>"))
-(assert-str= "hiccup link-to"
-             "<a href=\"/clock\">Clock</a>"
-             (h/html (h/link-to "/clock" "Clock")))
-(assert-str= "hiccup image"
-             "<img alt=\"Clock\" src=\"/clock.png\" />"
-             (h/html (h/image "/clock.png" "Clock")))
-(assert-str= "hiccup mail-to"
-             "<a href=\"mailto:hello@example.com\">hello@example.com</a>"
-             (h/html (h/mail-to "hello@example.com")))
-(assert-str= "hiccup unordered-list"
-             "<ul><li>a</li><li>b</li></ul>"
-             (h/html (h/unordered-list '("a" "b"))))
-(assert-str= "hiccup ordered-list"
-             "<ol><li>a</li><li>b</li></ol>"
-             (h/html (h/ordered-list '("a" "b"))))
+             (str (h/html (h/include-css "/app.css" "/other.css"))))
 (assert-str= "hiccup with-group"
              "<input id=\"person-name\" name=\"person[name]\" type=\"text\" value=\"\" />"
-             (h/with-group "person"
-                           (fn []
-                             (h/html (h/text-field :name)))))
+             (str (h/with-group "person"
+                                (fn []
+                                  (h/html (h/text-field :name))))))
 (assert-str= "hiccup hidden-field"
              "<input id=\"person-secret\" name=\"person[secret]\" type=\"hidden\" value=\"s3cr3t\" />"
-             (h/html (h/with-group "person"
-                           (fn []
-                             (h/hidden-field :secret "s3cr3t")))))
+             (str (h/html (h/with-group "person"
+                                        (fn []
+                                          (h/hidden-field :secret "s3cr3t"))))))
 (assert-str= "hiccup checkbox"
              "<input checked=\"checked\" id=\"person-accept\" name=\"person[accept]\" type=\"checkbox\" value=\"true\" />"
-             (h/html (h/with-group "person"
-                           (fn []
-                             (h/check-box :accept #t)))))
+             (str (h/html (h/with-group "person"
+                                        (fn []
+                                          (h/check-box :accept #t))))))
 (assert-str= "hiccup text-area"
              "<textarea id=\"person-notes\" name=\"person[notes]\">hello</textarea>"
-             (h/html (h/with-group "person"
-                           (fn []
-                             (h/text-area :notes "hello")))))
+             (str (h/html (h/with-group "person"
+                                        (fn []
+                                          (h/text-area :notes "hello"))))))
 (assert-str= "hiccup label"
              "<label for=\"person-notes\">Notes</label>"
-             (h/html (h/with-group "person"
-                           (fn []
-                             (h/label :notes "Notes")))))
+             (str (h/html (h/with-group "person"
+                                        (fn []
+                                          (h/label :notes "Notes"))))))
 (assert-str= "hiccup submit-button"
              "<input type=\"submit\" value=\"Save\" />"
-             (h/html (h/submit-button "Save")))
+             (str (h/html (h/submit-button "Save"))))
 (assert-true "hiccup form-to hidden method"
-             (str/includes? (h/html (h/form-to [:put "/post"]
-                                               [:button "Save"]))
+             (str/includes? (str (h/html (h/form-to [:put "/post"]
+                                                    [:button "Save"])))
                             "name=\"_method\""))
-(assert-str= "hiccup wrap-base-url"
-             "<a href=\"https://example.com/clock\">Clock</a>"
-             ((h/wrap-base-url
-               (fn [_] (h/html (h/link-to "/clock" "Clock")))
-               "https://example.com")
-              (hash-map :context "/app")))
 (assert-true "hiccup raw-string predicate"
-             (h/raw-string? (h/raw-string "<div/>")))
-(assert-str= "hiccup html-resolve-alias identity"
-             ":alias"
-             (pr-str (h/html-resolve-alias :alias)))
+             (h/raw-string? (h/raw "<div/>")))
 
 (in-ns 'cluck.smoke)

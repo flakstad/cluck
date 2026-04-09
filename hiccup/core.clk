@@ -10,6 +10,10 @@
   hiccup-raw-string?
   (value hiccup-raw-string-value))
 
+(set-record-printer! hiccup-raw-string
+  (lambda (x out)
+    (display (hiccup-raw-string-value x) out)))
+
 (def *html-mode* (make-parameter :xhtml))
 (def *escape-strings?* (make-parameter true))
 (def *base-url* (make-parameter nil))
@@ -75,7 +79,9 @@
         "<" "&lt;")
        ">" "&gt;")
       "\"" "&quot;")
-     "'" "&apos;")))
+     "'" (if (string=? (to-str (*html-mode*)) "sgml")
+             "&#39;"
+             "&apos;"))))
 
 (defn to-uri
   "Convert X into a URI-like string."
@@ -380,7 +386,7 @@
               (to-str x))))
 
 (defn render-html-with-options
-  "Render CONTENT while applying Hiccup HTML OPTIONS."
+  "Render CONTENT while applying Hiccup HTML OPTIONS and wrap it as raw HTML."
   [options content]
   (let ((options (if (map? options) options (hash-map)))
         (mode (option-value options :mode (*html-mode*)))
@@ -391,7 +397,7 @@
                    (*escape-strings?* escape-strings?)
                    (*base-url* base-url)
                    (*encoding* encoding))
-      (render-html content))))
+      (raw-string (render-html content)))))
 
 (def doctype
   "Common document type declarations."
@@ -500,44 +506,6 @@
                  :href (to-uri style)
                  :rel "stylesheet"}])
        styles))
-
-(defn javascript-tag
-  "Wrap SCRIPT in a script tag."
-  [script]
-  [:script {:type "text/javascript"}
-   (raw-string (str "//<![CDATA[\n" script "\n//]]>"))])
-
-(defn link-to
-  "Wrap CONTENTS in a link to URL."
-  [url & content]
-  [:a {:href (to-uri url)}
-   (if (null? content)
-       (to-uri url)
-       content)])
-
-(defn mail-to
-  "Wrap CONTENTS in a mailto link."
-  [email & content]
-  [:a {:href (str "mailto:" email)}
-   (if (null? content)
-       email
-       content)])
-
-(defn unordered-list
-  "Render a collection as an unordered list."
-  [coll]
-  [:ul (map (fn [x] [:li x]) coll)])
-
-(defn ordered-list
-  "Render a collection as an ordered list."
-  [coll]
-  [:ol (map (fn [x] [:li x]) coll)])
-
-(defn image
-  "Render an image element."
-  ([src] [:img {:src (to-uri src)}])
-  ([src alt] [:img {:src (to-uri src)
-                    :alt alt}]))
 
 (def *group* (make-parameter '()))
 
@@ -684,27 +652,12 @@
                      (cons (hidden-field "_method" method-str)
                            body)))))))
 
-(defn wrap-base-url
-  "Wrap HANDLER so relative URLs render against BASE-URL or request :context."
-  ([handler] (wrap-base-url handler nil))
-  ([handler base-url]
-   (fn [request]
-     (with-base-url (or base-url (:context request))
-       (fn []
-         (handler request))))))
-
-(defn html-resolve-alias
-  "Resolve alias metadata. Cluck currently treats this as identity."
-  [x]
-  x)
-
 (defn html
-  "Render Hiccup data to HTML text."
+  "Render Hiccup data to a raw HTML value."
   [& args]
   (if (and (not (null? args))
            (options-map? (first args)))
       (render-html-with-options (first args) (rest args))
       (render-html args)))
 
-(def html->str html)
-(def html-raw-str raw-string)
+(def raw raw-string)

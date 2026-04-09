@@ -57,8 +57,8 @@ The current implementation supports:
 - `type` for runtime type hints and `vec` for turning collections into vectors
 - `slurp`, `spit`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, and `group-by` in `cluck.core`, plus `cluck.io` for lower-level ports and string/stream helpers
 - `cluck.edn/read-string`
-- the separate top-level `hiccup/` library tree for HTML rendering helpers,
-  with `hiccup.core` as the single API
+- the separate top-level `hiccup/` library tree for Hiccup 2-style HTML
+  rendering helpers, with `hiccup.core` as the single API
 - the separate top-level `ring/` library tree for Ring-style request/response/middleware helpers, including signed-cookie sessions, params, request IDs, exception handling, JSON body/response helpers, CORS, static resources, HEAD handling, content length, conditional GET, trusted proxy/host handling for redirects, and `ring.adapter.spiffy` for the Spiffy bridge
 - `atom`, `atom?`, `deref`, `reset!`, `swap!`, and `compare-and-set!`
 - `cluck.mutable` for explicit mutable map/set helpers and host interop
