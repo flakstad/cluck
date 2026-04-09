@@ -2163,14 +2163,20 @@
               nil)))))))
 
 (comment
+  
+  (load-file "examples/cluck/draw/dev.clk")
+  (draw-clear-log!)
+  (start-dev!)
+
+  (draw-log-tail 50)
+  (dump-current-state!)
+
   (default-state)
   (describe-state (default-state))
   (draw-clear-strokes! (default-state))
   (draw-undo-stroke! (default-state))
   (draw-set-brush-size! (default-state) 6)
   (draw-toggle-eraser! (default-state))
-  (load-file "examples/cluck/draw/dev.clk")
-  (start-dev!)
   (restart-dev!)
   (draw-toggle-debug-panel! (current-state))
   (main ["--help"]))
