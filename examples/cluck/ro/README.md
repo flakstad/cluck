@@ -18,13 +18,25 @@ What is in place:
 Current implementation slice:
 - `ro` prints the top-level help for this CLI-first spike
 - `ro help` and `ro --help` print the same top-level help text
+- `ro docs` returns the JSON topics envelope
+- `ro docs --help` and `ro docs -h` print the docs help text
+- `ro completion` prints the completion help and exits with code 1
+- `ro completion <bash|zsh|fish>` prints shell completion scripts
+- `ro workspace` prints the workspace help surface
+- `ro workspace current` returns the current workspace envelope
+- `ro workspace list` returns the workspace list envelope
+- `ro status` returns the workspace status envelope and `_hints`
+- `ro identity` prints the identity usage surface
+- `ro identity list` returns the current actor list envelope
+- `ro identity whoami` returns the active actor envelope
 - the help text mirrors the Odin `ro` binary on `PATH`
 - unknown commands still fail explicitly; the rest of the surface will be built
   incrementally
 
-The CLI slice itself currently only uses the Cluck runtime and `cluck.string`,
-but the standalone launcher keeps `sqlite3` and `ncurses` wired in so the next
-slices can start using them without another bootstrap rewrite.
+The CLI slice itself currently uses the Cluck runtime plus `cluck.string`,
+`cluck.fs`, and the JSON egg, but the standalone launcher keeps `json`,
+`sqlite3`, and `ncurses` wired in so the next slices can start using them
+without another bootstrap rewrite.
 
 Run it from the repository root:
 
@@ -69,9 +81,15 @@ The testing plan is intentionally layered:
 - unit tests for pure parsing and planning logic
 - integration tests that run the Cluck CLI under development and compare it to
   the Odin `ro` binary on `PATH`
-- snapshot-style fixtures for stable help text and JSON/EDN envelopes
+- snapshot-style fixtures under `test/fixtures/ro/` for stable help text,
+  shell completion scripts, and static JSON/EDN envelopes
+- live parity checks for shared-state commands like `ro status`, `ro identity
+  list`, `ro identity whoami`, and workspace current/list
 
 The current test harness covers the root help path first, then will expand to
-the rest of the command surface one slice at a time.
+the rest of the command surface one slice at a time. It already checks `docs`
+and `completion` with static fixtures, and runs live parity checks for
+`workspace`, `status`, and `identity` because those depend on shared workspace
+state.
 
 See [`docs/CLI_SURFACE.md`](./docs/CLI_SURFACE.md) for the current inventory.

@@ -4,7 +4,11 @@
 ;; top-level help text. Command handling will expand slice by slice under tests.
 
 (ns cluck.examples.ro.app
-  (:require [cluck.string :as str]))
+  (:require [cluck.io :as io]
+            [cluck.fs :as fs]
+            [cluck.string :as str]
+            [json :as json]
+            [sqlite3 :as db]))
 
 (def root-help-lines
   (list
@@ -87,6 +91,514 @@
 (def root-help-output
   (string-append root-help-text "\n"))
 
+(def docs-help-lines
+  (list
+   "ro docs"
+   ""
+   "usage:"
+   "  ro docs"
+   "  ro docs <topic>"
+   "  ro docs <topic> --raw"))
+
+(def docs-help-text
+  (str/join "\n" docs-help-lines))
+
+(def docs-help-output
+  (string-append docs-help-text "\n"))
+
+(def docs-topics
+  (list "cli"
+        "getting-started"
+        "output-contract"
+        "storage"
+        "identity-ownership"
+        "agent-runtimes"
+        "sync"
+        "doctor-reindex"))
+
+(def completion-top-commands
+  (list "agent"
+        "attachments"
+        "capture"
+        "comments"
+        "completion"
+        "deps"
+        "docs"
+        "doctor"
+        "help"
+        "identity"
+        "init"
+        "items"
+        "reindex"
+        "status"
+        "sync"
+        "tasks"
+        "worklog"
+        "workspace"))
+
+(def completion-top-command-line
+  (str/join " " completion-top-commands))
+
+(def completion-doc-topics-line
+  (str/join " " docs-topics))
+
+(def completion-help-lines
+  (list
+   "ro completion"
+   ""
+   "usage:"
+   "  ro completion <bash|zsh|fish>"))
+
+(def completion-help-text
+  (str/join "\n" completion-help-lines))
+
+(def completion-help-output
+  (string-append completion-help-text "\n"))
+
+(def completion-bash-lines
+  (list
+   "_ro_complete() {"
+   "  local cur cmd"
+   "  cur=\"${COMP_WORDS[COMP_CWORD]}\""
+   "  cmd=\"${COMP_WORDS[1]}\""
+   ""
+   "  if [[ ${COMP_CWORD} -eq 1 ]]; then"
+   (string-append "    COMPREPLY=( $(compgen -W \"" completion-top-command-line "\" -- \"$cur\") )")
+   "    return 0"
+   "  fi"
+   ""
+   "  case \"$cmd\" in"
+   (string-append "    docs) COMPREPLY=( $(compgen -W \"" completion-doc-topics-line "\" -- \"$cur\") ) ;;")
+   "    *) COMPREPLY=() ;;"
+   "  esac"
+   "}"
+   ""
+   "complete -F _ro_complete ro"))
+
+(def completion-bash-output
+  (string-append (str/join "\n" completion-bash-lines) "\n"))
+
+(def completion-zsh-lines
+  (list
+   "#compdef ro"
+   ""
+   "_ro() {"
+   "  local -a top docs_topics"
+   (string-append "  top=(" completion-top-command-line ")")
+   (string-append "  docs_topics=(" completion-doc-topics-line ")")
+   ""
+   "  if (( CURRENT == 2 )); then"
+   "    _describe 'command' top"
+   "    return"
+   "  fi"
+   ""
+   "  case ${words[2]} in"
+   "    docs) _describe 'docs topic' docs_topics ;;"
+   "  esac"
+   "}"
+   ""
+   "compdef _ro ro"))
+
+(def completion-zsh-output
+  (string-append (str/join "\n" completion-zsh-lines) "\n"))
+
+(def completion-fish-lines
+  (list
+   "complete -c ro -f"
+   (string-append "complete -c ro -n '__fish_use_subcommand' -a '" completion-top-command-line "'")
+   (string-append "complete -c ro -n '__fish_seen_subcommand_from docs' -a '" completion-doc-topics-line "'")))
+
+(def completion-fish-output
+  (string-append (str/join "\n" completion-fish-lines) "\n"))
+
+(def workspace-help-lines
+  (list
+   "ro workspace"
+   ""
+   "usage:"
+   "  ro workspace current"
+   "  ro workspace list"
+   "  ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo"
+   "  ro workspace init <name> [--dir <path>] [--use]           blank workspace"
+   "  ro workspace use <name>"))
+
+(def workspace-help-text
+  (str/join "\n" workspace-help-lines))
+
+(def workspace-help-output
+  (string-append workspace-help-text "\n"))
+
+(defn json-key->text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-key->symbol
+  [key]
+  (string->symbol (json-key->text key)))
+
+(defn json-find-entry
+  [entries key]
+  (if (or (not entries)
+          (null? entries))
+      #f
+      (##core#let loop ((xs (seq entries)))
+        (cond
+          (empty? xs) #f
+          (string=? (json-key->text (first (car xs))) key) (car xs)
+          :else (loop (cdr xs))))))
+
+(defn cluck-value->json
+  [value]
+  (cond
+    (map? value)
+    (list->vector
+     (map (lambda (entry)
+            (cons (json-key->symbol (first entry))
+                  (cluck-value->json (nth entry 1))))
+          (seq value)))
+
+    (vector? value)
+    (map cluck-value->json value)
+
+    (set? value)
+    (map cluck-value->json (seq value))
+
+    (or (pair? value)
+        (null? value))
+    (map cluck-value->json (seq value))
+
+    (keyword? value)
+    (name value)
+
+    (symbol? value)
+    (if (string=? (symbol->string value) "null")
+        'null
+        (symbol->string value))
+
+    :else value))
+
+(defn compact-json-step
+  [text i len in-string? escaped? acc]
+  (if (= i len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text i)]
+        (cond
+          escaped?
+          (compact-json-step text (+ i 1) len in-string? false (cons ch acc))
+
+          (char=? ch #\")
+          (compact-json-step text (+ i 1) len (not in-string?) false (cons ch acc))
+
+          (and in-string?
+               (char=? ch #\\))
+          (compact-json-step text (+ i 1) len true true (cons ch acc))
+
+          in-string?
+          (compact-json-step text (+ i 1) len true false (cons ch acc))
+
+          (char-whitespace? ch)
+          (compact-json-step text (+ i 1) len false false acc)
+
+          :else
+          (compact-json-step text (+ i 1) len false false (cons ch acc))))))
+
+(defn compact-json-text
+  [text]
+  (compact-json-step text 0 (string-length text) false false '()))
+
+(defn json-output
+  [value]
+  (compact-json-text
+   (io/with-output-string
+    (lambda (port)
+      (json/json-write (cluck-value->json value) port)))))
+
+(defn json-write-output
+  [value]
+  (string-append
+   (compact-json-text
+    (io/with-output-string
+     (lambda (port)
+       (json/json-write value port))))
+   "\n"))
+
+(def docs-output
+  (string-append (json-output {:data {:topics docs-topics}}) "\n"))
+
+(def workspace-json-path
+  (fs/path (fs/home) ".ro" "workspaces.json"))
+
+(defn workspace-json-root
+  []
+  (call-with-input-file workspace-json-path
+    (lambda (port)
+      (json/json-read port))))
+
+(defn workspace-detail-value
+  [detail key]
+  (let ((entry (json-find-entry detail key)))
+    (and entry (cdr entry))))
+
+(defn workspace-current-detail
+  [details current-name]
+  (if (or (not details)
+          (null? details))
+      #f
+      (##core#let loop ((xs (seq details)))
+        (cond
+          (empty? xs) #f
+          (string=? (or (workspace-detail-value (car xs) "name") "")
+                    (or current-name ""))
+          (car xs)
+          :else (loop (cdr xs))))))
+
+(defn workspace-current-output
+  []
+  (let* ((root (workspace-json-root))
+         (data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (current-entry (json-find-entry data "currentWorkspace"))
+         (current-workspace (and current-entry (cdr current-entry)))
+         (meta-entry (json-find-entry root "meta"))
+         (meta (and meta-entry (cdr meta-entry)))
+         (details-entry (json-find-entry meta "details"))
+         (details (and details-entry (cdr details-entry)))
+         (detail (workspace-current-detail details current-workspace))
+         (path (and detail (workspace-detail-value detail "path"))))
+    (string-append
+     (compact-json-text
+      (io/with-output-string
+       (lambda (port)
+         (json/json-write
+          (vector (cons 'data
+                        (vector (cons 'workspace current-workspace)
+                                (cons 'dir path))))
+          port))))
+     "\n")))
+
+(def workspace-list-output
+  (string-append (fs/slurp workspace-json-path) "\n"))
+
+(def identity-help-lines
+  (list
+   "ro identity"
+   ""
+   "usage:"
+   "  ro identity list"
+   "  ro identity whoami"
+   "  ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]"
+   "  ro identity use <actor-id>"
+   "  ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]"))
+
+(def identity-help-text
+  (str/join "\n" identity-help-lines))
+
+(def identity-help-output
+  (string-append identity-help-text "\n"))
+
+(def status-help-lines
+  (list "usage: ro status"))
+
+(def status-help-text
+  (str/join "\n" status-help-lines))
+
+(def status-help-output
+  (string-append status-help-text "\n"))
+
+(defn workspace-current-info
+  []
+  (let* ((root (workspace-json-root))
+         (data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (current-entry (json-find-entry data "currentWorkspace"))
+         (current-workspace (and current-entry (cdr current-entry)))
+         (meta-entry (json-find-entry root "meta"))
+         (meta (and meta-entry (cdr meta-entry)))
+         (details-entry (json-find-entry meta "details"))
+         (details (and details-entry (cdr details-entry)))
+         (detail (workspace-current-detail details current-workspace))
+         (path (and detail (workspace-detail-value detail "path"))))
+    (and detail (cons current-workspace path))))
+
+(defn workspace-current-name
+  []
+  (let ((info (workspace-current-info)))
+    (and info (car info))))
+
+(defn workspace-current-path
+  []
+  (let ((info (workspace-current-info)))
+    (and info (cdr info))))
+
+(defn workspace-db-path
+  []
+  (let ((path (workspace-current-path)))
+    (and path (fs/path path ".ro" "index.sqlite"))))
+
+(defn open-workspace-db
+  []
+  (let ((db-path (workspace-db-path)))
+    (if (and db-path (fs/exists? db-path))
+        (let ((conn (db/open-database db-path)))
+          (db/set-busy-handler! conn (db/make-busy-timeout 1000))
+          conn)
+        (error "ro workspace database is unavailable" db-path))))
+
+(defn workspace-status-workspace-id
+  [conn]
+  (db/first-result
+   conn
+   "select workspace_id from events where workspace_id != '' group by workspace_id order by count(*) desc, workspace_id limit 1"))
+
+(defn workspace-status-current-actor-id
+  [conn]
+  (db/first-result conn "select v from state_meta where k='current_actor_id' limit 1"))
+
+(defn workspace-status-current-project-id
+  [conn]
+  (db/first-result conn "select v from state_meta where k='current_project_id' limit 1"))
+
+(defn workspace-status-count
+  [conn sql]
+  (db/first-result conn sql))
+
+(defn workspace-current-write-actor-id
+  [conn current-actor-id]
+  (let ((actor (workspace-actor-by-id conn current-actor-id)))
+    (if actor
+        (let ((kind (or (workspace-detail-value actor "kind") ""))
+              (user-id (or (workspace-detail-value actor "userId") "")))
+          (if (and (string=? kind "agent")
+                   (not (string=? user-id "")))
+              user-id
+              current-actor-id))
+        current-actor-id)))
+
+(defn workspace-status-visible-worklog-count
+  [conn current-write-actor-id]
+  (db/first-result
+   conn
+   "select count(*) from worklog where entity_kind = 'item' and author_id in (select id from actors where coalesce(nullif(trim(json_extract(json, '$.userId')), ''), id) = ?1)"
+   current-write-actor-id))
+
+(defn actor-record
+  [id name kind user-id session]
+  (vector
+   (cons 'id id)
+   (cons 'name name)
+   (cons 'kind kind)
+   (cons 'userId user-id)
+   (cons 'session session)))
+
+(defn workspace-actors
+  [conn]
+  (db/map-row
+   (lambda (id name kind user-id session)
+     (actor-record id name kind user-id session))
+   conn
+   "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors order by case lower(coalesce(json_extract(json, '$.kind'), '')) when 'human' then 0 when 'agent' then 1 else 2 end, lower(coalesce(json_extract(json, '$.name'), id)), id"))
+
+(defn workspace-actor-by-id
+  [conn actor-id]
+  (let ((rows
+         (db/map-row
+          (lambda (id name kind user-id session)
+            (actor-record id name kind user-id session))
+          conn
+          "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors where id = ?1 limit 1"
+          actor-id)))
+    (if (or (not rows)
+            (null? rows))
+        #f
+        (car (seq rows)))))
+
+(defn workspace-status-output
+  []
+  (let* ((workspace-name (or (workspace-current-name) ""))
+         (workspace-root (or (workspace-current-path) "")))
+    (if (and (not (string=? workspace-name ""))
+             (not (string=? workspace-root "")))
+        (let* ((conn (open-workspace-db))
+               (workspace-id (or (workspace-status-workspace-id conn) ""))
+               (current-actor-id (or (workspace-status-current-actor-id conn) ""))
+               (current-project-id (or (workspace-status-current-project-id conn) ""))
+               (actor-count (workspace-status-count conn "select count(*) from actors"))
+               (project-count (workspace-status-count conn "select count(*) from projects where archived = 0"))
+               (outline-count (workspace-status-count conn "select count(*) from outlines where archived = 0"))
+               (item-count (workspace-status-count conn "select count(*) from items where archived = 0"))
+               (dep-count (workspace-status-count conn "select count(*) from deps"))
+               (comment-count (workspace-status-count conn "select count(*) from comments where entity_kind = 'item'"))
+               (discussion-count (workspace-status-count conn "select count(*) from discussions"))
+               (current-write-actor-id (workspace-current-write-actor-id conn current-actor-id))
+               (worklog-count (workspace-status-visible-worklog-count conn current-write-actor-id))
+               (attachment-count (workspace-status-count conn "select count(*) from attachments")))
+          (json-write-output
+           (vector
+            (cons 'data
+                  (vector
+                   (cons 'workspace workspace-name)
+                   (cons 'workspaceId workspace-id)
+                   (cons 'currentActorId current-actor-id)
+                   (cons 'currentProjectId current-project-id)
+                   (cons 'actors actor-count)
+                   (cons 'projects project-count)
+                   (cons 'outlines outline-count)
+                   (cons 'items item-count)
+                   (cons 'deps dep-count)
+                   (cons 'comments comment-count)
+                   (cons 'discussions discussion-count)
+                   (cons 'worklog worklog-count)
+                   (cons 'attachments attachment-count)
+                   (cons 'counts
+                         (vector
+                          (cons 'actors actor-count)
+                          (cons 'projects project-count)
+                          (cons 'outlines outline-count)
+                          (cons 'items item-count)
+                          (cons 'deps dep-count)
+                          (cons 'comments comment-count)
+                          (cons 'discussions discussion-count)
+                          (cons 'worklog worklog-count)
+                          (cons 'attachments attachment-count)))))
+            (cons '_hints
+                  (list "ro projects list"
+                        "ro items list"
+                        "ro items ready")))))
+        (error "ro workspace current is unavailable" workspace-json-path))))
+
+(defn identity-list-output
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (current-actor-id (or (workspace-status-current-actor-id conn) ""))
+               (actors (workspace-actors conn)))
+          (json-write-output
+           (vector
+            (cons 'data
+                  (vector
+                   (cons 'currentActorId current-actor-id)
+                   (cons 'actors actors)))))))))
+
+(defn identity-whoami-output
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (current-actor-id (or (workspace-status-current-actor-id conn) "")))
+          (if (string=? current-actor-id "")
+              (error "no current actor" current-actor-id)
+              (let ((actor (workspace-actor-by-id conn current-actor-id)))
+                (if actor
+                    (json-write-output (vector (cons 'data actor)))
+                    (error "actor not found" current-actor-id))))))))
+
 (defn help-request?
   [args]
   (if (empty? args)
@@ -101,8 +613,225 @@
   (display root-help-output)
   root-help-output)
 
+(defn docs-help-request?
+  [args]
+  (if (empty? args)
+      false
+      (let [command (first args)]
+        (or (string=? command "help")
+            (string=? command "--help")
+            (string=? command "-h")))))
+
+(defn print-docs-help
+  []
+  (display docs-help-output)
+  docs-help-output)
+
+(defn print-docs
+  []
+  (display docs-output)
+  docs-output)
+
+(defn completion-help-request?
+  [args]
+  (if (empty? args)
+      false
+      (let [command (first args)]
+        (or (string=? command "help")
+            (string=? command "--help")
+            (string=? command "-h")))))
+
+(defn completion-output
+  [shell]
+  (cond
+    (string=? shell "bash") completion-bash-output
+    (string=? shell "zsh") completion-zsh-output
+    (string=? shell "fish") completion-fish-output
+    :else false))
+
+(defn print-completion-help
+  []
+  (display completion-help-output)
+  completion-help-output)
+
+(defn print-completion-output
+  [shell]
+  (let [output (completion-output shell)]
+    (if output
+        (begin
+          (display output)
+          output)
+        (error "ro completion expects bash, zsh, or fish" shell))))
+
+(defn completion-main
+  [args]
+  (cond
+    (empty? args) (print-completion-help)
+    (completion-help-request? args) (print-completion-help)
+    (empty? (rest args)) (print-completion-output (first args))
+    :else (error "ro completion expects bash, zsh, or fish" args)))
+
+(defn workspace-help-request?
+  [args]
+  (if (empty? args)
+      false
+      (let [command (first args)]
+        (or (string=? command "help")
+            (string=? command "--help")
+            (string=? command "-h")))))
+
+(defn print-workspace-help
+  []
+  (display workspace-help-output)
+  workspace-help-output)
+
+(defn print-workspace-current
+  []
+  (let ((output (workspace-current-output)))
+    (display output)
+    output))
+
+(defn print-workspace-list
+  []
+  (display workspace-list-output)
+  workspace-list-output)
+
+(defn print-status-help
+  []
+  (display status-help-output (current-error-port))
+  1)
+
+(defn print-status
+  []
+  (let ((output (workspace-status-output)))
+    (display output)
+    output))
+
+(defn print-identity-help
+  []
+  (display identity-help-output)
+  identity-help-output)
+
+(defn print-identity-list
+  []
+  (let ((output (identity-list-output)))
+    (display output)
+    output))
+
+(defn print-identity-whoami
+  []
+  (let ((output (identity-whoami-output)))
+    (display output)
+    output))
+
+(defn status-main
+  [args]
+  (cond
+    (and (not (empty? args))
+         (any-help-arg? args))
+    (print-status-help)
+
+    (empty? args)
+    (print-status)
+
+    :else
+    (error "ro status expects no arguments" args)))
+
+(defn identity-help-request?
+  [args]
+  (and (not (empty? args))
+       (help-flag? (first args))))
+
+(defn identity-main
+  [args]
+  (cond
+    (or (empty? args)
+        (identity-help-request? args))
+    (print-identity-help)
+
+    (string=? (first args) "whoami")
+    (cond
+      (empty? (rest args))
+      (print-identity-whoami)
+
+      (any-help-arg? (rest args))
+      (print-identity-help)
+
+      :else
+      (error "unexpected identity whoami argument" args))
+
+    (string=? (first args) "list")
+    (cond
+      (empty? (rest args))
+      (print-identity-list)
+
+      (any-help-arg? (rest args))
+      (print-identity-help)
+
+      :else
+      (error "unexpected identity list argument" args))
+
+    :else
+    (error "unsupported identity subcommand" args)))
+
+(defn workspace-main
+  [args]
+  (cond
+    (or (empty? args)
+        (workspace-help-request? args))
+    (print-workspace-help)
+
+    (and (string=? (first args) "current")
+         (empty? (rest args)))
+    (print-workspace-current)
+
+    (and (string=? (first args) "list")
+         (empty? (rest args)))
+    (print-workspace-list)
+
+    :else
+    (error "ro workspace commands are not implemented yet" args)))
+
+(defn docs-main
+  [args]
+  (cond
+    (empty? args) (print-docs)
+    (docs-help-request? args) (print-docs-help)
+    :else (error "ro docs topic lookup is not implemented yet" args)))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (if (empty? args)
+      false
+      (##core#let loop ((xs (seq args)))
+        (cond
+          (empty? xs) false
+          (help-flag? (car xs)) true
+          :else (loop (cdr xs))))))
+
 (defn main
   [args]
-  (if (help-request? args)
-      (print-help)
-      (error "ro CLI commands are not implemented yet" args)))
+  (cond
+    (help-request? args) (print-help)
+    (and (not (empty? args))
+         (string=? (first args) "completion"))
+    (completion-main (rest args))
+    (and (not (empty? args))
+         (string=? (first args) "status"))
+    (status-main (rest args))
+    (and (not (empty? args))
+         (string=? (first args) "identity"))
+    (identity-main (rest args))
+    (and (not (empty? args))
+         (string=? (first args) "workspace"))
+    (workspace-main (rest args))
+    (and (not (empty? args))
+         (string=? (first args) "docs"))
+    (docs-main (rest args))
+    :else (error "ro CLI commands are not implemented yet" args)))

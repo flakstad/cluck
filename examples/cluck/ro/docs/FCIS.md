@@ -53,8 +53,15 @@ The testing plan should cover three layers:
 1. Unit tests for pure helpers and planners.
 2. Integration tests that run the Cluck CLI under development and compare it to
    the Odin `ro` binary on `PATH`.
-3. Fixture/golden tests for the important contracts: help text, `docs`, status,
-   list/show commands, and JSON or EDN envelopes.
+3. Fixture/golden tests for the stable contracts: help text, `docs`,
+   shell completion scripts, and static JSON or EDN envelopes.
+4. Live parity tests for shared-state commands like `workspace current/list`,
+   `status`, and `identity list/whoami`.
+
+The first read-only slices in the spike are the root help surface plus `docs`,
+`completion`, `workspace`, `status`, and `identity`, with fixture-backed parity
+against Odin in place for the stable paths and live parity for the shared-state
+paths.
 
 The integration tests are important because they let us check parity quickly
 while the CLI is still being rebuilt command by command.

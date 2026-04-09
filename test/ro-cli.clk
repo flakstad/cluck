@@ -1,15 +1,44 @@
 ;; CLI contract tests for the Ro spike.
 
 (ns cluck.test.ro-cli
-  (:require [cluck.process :as proc]
+  (:require [cluck.fs :as fs]
+            [cluck.process :as proc]
+            [cluck.string :as str]
             [cluck.test.support :refer [assert-str=
                                         assert-num=
                                         assert-true
-                                        capture-output]]))
+                                        capture-output
+                                        capture-error-output]]))
 
 (def app-help-request? (ns-resolve 'cluck.examples.ro.app 'help-request?))
 (def app-root-help-output (ns-resolve 'cluck.examples.ro.app 'root-help-output))
+(def app-docs-help-output (ns-resolve 'cluck.examples.ro.app 'docs-help-output))
+(def app-docs-output (ns-resolve 'cluck.examples.ro.app 'docs-output))
+(def app-completion-help-output (ns-resolve 'cluck.examples.ro.app 'completion-help-output))
+(def app-status-help-output (ns-resolve 'cluck.examples.ro.app 'status-help-output))
+(def app-status-output (ns-resolve 'cluck.examples.ro.app 'workspace-status-output))
+(def app-identity-help-output (ns-resolve 'cluck.examples.ro.app 'identity-help-output))
+(def app-identity-list-output (ns-resolve 'cluck.examples.ro.app 'identity-list-output))
+(def app-identity-whoami-output (ns-resolve 'cluck.examples.ro.app 'identity-whoami-output))
+(def app-workspace-current-output (ns-resolve 'cluck.examples.ro.app 'workspace-current-output))
+(def app-workspace-list-output (ns-resolve 'cluck.examples.ro.app 'workspace-list-output))
+(def app-workspace-help-output (ns-resolve 'cluck.examples.ro.app 'workspace-help-output))
 (def app-main (ns-resolve 'cluck.examples.ro.app 'main))
+
+(def fixture-root "test/fixtures/ro")
+(def root-help-fixture "root-help")
+
+(defn fixture-path
+  [case-name ext]
+  (fs/path fixture-root (string-append case-name "." ext)))
+
+(defn read-fixture
+  [case-name]
+  (fs/slurp (fixture-path case-name "stdout")))
+
+(defn read-fixture-err
+  [case-name]
+  (fs/slurp (fixture-path case-name "stderr")))
 
 (defn run-cluck-ro
   [args]
@@ -19,6 +48,66 @@
 (defn run-odin-ro
   [args]
   (proc/exec "ro" args))
+
+(defn assert-cli-case
+  [label case-name args]
+  (let [fixture-out (read-fixture case-name)
+        cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-str= (string-append label " fixture")
+                 fixture-out
+                 (get cluck :out))
+    (assert-str= (string-append label " stdout parity")
+                 (get odin :out)
+                 (get cluck :out))
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-case-err
+  [label case-name args]
+  (let [fixture-out (read-fixture-err case-name)
+        cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-str= (string-append label " fixture")
+                 fixture-out
+                 cluck-out)
+    (assert-str= (string-append label " stdout parity")
+                 odin-out
+                 cluck-out)
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-parity
+  [label args]
+  (let [cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-str= (string-append label " stdout parity")
+                 odin-out
+                 cluck-out)
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
 
 (assert-true "help request empty args" (app-help-request? '()))
 (assert-true "help request help" (app-help-request? '("help")))
@@ -36,21 +125,107 @@
 (assert-str= "main prints root help on --help"
              app-root-help-output
              (capture-output (lambda () (app-main '("--help")))))
+(assert-str= "main prints root help on -h"
+             app-root-help-output
+             (capture-output (lambda () (app-main '("-h")))))
+(assert-str= "main prints docs help on docs --help"
+             app-docs-help-output
+             (capture-output (lambda () (app-main '("docs" "--help")))))
+(assert-str= "main prints docs help on docs -h"
+             app-docs-help-output
+             (capture-output (lambda () (app-main '("docs" "-h")))))
+(assert-str= "main prints docs output on docs"
+             app-docs-output
+             (capture-output (lambda () (app-main '("docs")))))
+(assert-str= "main prints completion help on completion no args"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion")))))
+(assert-str= "main prints completion help on completion help"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion" "help")))))
+(assert-str= "main prints completion help on completion --help"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion" "--help")))))
+(assert-str= "main prints completion help on completion -h"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion" "-h")))))
+(assert-str= "main prints status output on status"
+             (app-status-output)
+             (capture-output (lambda () (app-main '("status")))))
+(assert-str= "main prints status help on status --help"
+             app-status-help-output
+             (capture-error-output (lambda () (app-main '("status" "--help")))))
+(assert-str= "main prints status help on status help"
+             app-status-help-output
+             (capture-error-output (lambda () (app-main '("status" "help")))))
+(assert-str= "main prints identity help on identity"
+             app-identity-help-output
+             (capture-output (lambda () (app-main '("identity")))))
+(assert-str= "main prints identity help on identity --help"
+             app-identity-help-output
+             (capture-output (lambda () (app-main '("identity" "--help")))))
+(assert-str= "main prints identity help on identity list --help"
+             app-identity-help-output
+             (capture-output (lambda () (app-main '("identity" "list" "--help")))))
+(assert-str= "main prints identity list on identity list"
+             (app-identity-list-output)
+             (capture-output (lambda () (app-main '("identity" "list")))))
+(assert-str= "main prints identity whoami on identity whoami"
+             (app-identity-whoami-output)
+             (capture-output (lambda () (app-main '("identity" "whoami")))))
+(assert-str= "main prints workspace help on workspace"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace")))))
+(assert-str= "main prints workspace help on workspace help"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace" "help")))))
+(assert-str= "main prints workspace help on workspace --help"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace" "--help")))))
+(assert-str= "main prints workspace help on workspace -h"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace" "-h")))))
+(assert-str= "main prints workspace current on workspace current"
+             (app-workspace-current-output)
+             (capture-output (lambda () (app-main '("workspace" "current")))))
+(assert-str= "main prints workspace list on workspace list"
+             app-workspace-list-output
+             (capture-output (lambda () (app-main '("workspace" "list")))))
+(assert-str= "main prints completion bash on completion bash"
+             (read-fixture "completion-bash")
+             (capture-output (lambda () (app-main '("completion" "bash")))))
+(assert-str= "main prints completion zsh on completion zsh"
+             (read-fixture "completion-zsh")
+             (capture-output (lambda () (app-main '("completion" "zsh")))))
+(assert-str= "main prints completion fish on completion fish"
+             (read-fixture "completion-fish")
+             (capture-output (lambda () (app-main '("completion" "fish")))))
 
-(let [cluck (run-cluck-ro '("help"))
-      odin (run-odin-ro '("help"))]
-  (assert-num= "help exit parity"
-               (get odin :exit)
-               (get cluck :exit))
-  (assert-str= "help output parity"
-               (get odin :out)
-               (get cluck :out)))
-
-(let [cluck (run-cluck-ro '("--help"))
-      odin (run-odin-ro '("--help"))]
-  (assert-num= "--help exit parity"
-               (get odin :exit)
-               (get cluck :exit))
-  (assert-str= "--help output parity"
-               (get odin :out)
-               (get cluck :out)))
+(assert-cli-case "help" root-help-fixture '("help"))
+(assert-cli-case "--help" root-help-fixture '("--help"))
+(assert-cli-case "-h" root-help-fixture '("-h"))
+(assert-cli-case "docs --help" "docs-help" '("docs" "--help"))
+(assert-cli-case "docs -h" "docs-help" '("docs" "-h"))
+(assert-cli-case "docs" "docs" '("docs"))
+(assert-cli-case "completion" "completion-help" '("completion"))
+(assert-cli-case "completion help" "completion-help" '("completion" "help"))
+(assert-cli-case "completion --help" "completion-help" '("completion" "--help"))
+(assert-cli-case "completion -h" "completion-help" '("completion" "-h"))
+(assert-cli-parity "status" '("status"))
+(assert-cli-case-err "status --help" "status-help" '("status" "--help"))
+(assert-cli-case-err "status help" "status-help" '("status" "help"))
+(assert-cli-case "identity" "identity-help" '("identity"))
+(assert-cli-case "identity --help" "identity-help" '("identity" "--help"))
+(assert-cli-parity "identity list" '("identity" "list"))
+(assert-cli-case "identity list --help" "identity-help" '("identity" "list" "--help"))
+(assert-cli-parity "identity whoami" '("identity" "whoami"))
+(assert-cli-case "identity whoami --help" "identity-help" '("identity" "whoami" "--help"))
+(assert-cli-case "workspace" "workspace-help" '("workspace"))
+(assert-cli-case "workspace help" "workspace-help" '("workspace" "help"))
+(assert-cli-case "workspace --help" "workspace-help" '("workspace" "--help"))
+(assert-cli-case "workspace -h" "workspace-help" '("workspace" "-h"))
+(assert-cli-parity "workspace current" '("workspace" "current"))
+(assert-cli-parity "workspace list" '("workspace" "list"))
+(assert-cli-case "completion bash" "completion-bash" '("completion" "bash"))
+(assert-cli-case "completion zsh" "completion-zsh" '("completion" "zsh"))
+(assert-cli-case "completion fish" "completion-fish" '("completion" "fish"))

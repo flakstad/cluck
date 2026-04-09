@@ -3,6 +3,7 @@
         (chicken file)
         (chicken load)
         (chicken process-context)
+        (prefix json json:)
         (prefix ncurses nc:)
         (prefix sqlite3 db:))
 
@@ -14,8 +15,17 @@
 
 (include "src/cluck.scm")
 (include "src/cluck/string.clk")
-
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
+
+(include "src/cluck/fs.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
+
+(include "src/cluck/io.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.io #t)
+
+(define json/json-read json:json-read)
+(define json/json-write json:json-write)
+
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.app #t)
 
 (define nc/A_BOLD nc:A_BOLD)
@@ -63,4 +73,12 @@
 (include "examples/cluck/ro/src/app.clk")
 (include "examples/cluck/ro/main.clk")
 
-(main (command-line-arguments))
+(let ((args (command-line-arguments)))
+  (let ((result (main args)))
+    (if (number? result)
+        (exit result)
+        (if (and (pair? args)
+                 (string=? (car args) "completion")
+                 (null? (cdr args)))
+            (exit 1)
+            #t))))

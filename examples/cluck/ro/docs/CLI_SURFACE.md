@@ -122,9 +122,23 @@ Implemented now:
 - bare `ro` help output for the CLI-first spike
 - `help` and `--help` aliases
 - the first test harness for help parity
+- `ro docs` returns the JSON topics envelope
+- `ro docs --help` and `ro docs -h` print the docs help text
+- `ro completion` prints the completion help and exits with status 1
+- `ro completion <bash|zsh|fish>` prints shell completion scripts
+- `ro workspace` prints the workspace help surface
+- `ro workspace current` returns the current workspace envelope
+- `ro workspace list` returns the workspace list envelope
+- `ro status` returns the workspace status envelope and hints
+- `ro identity` prints the usage surface
+- `ro identity list` returns the current actor list envelope
+- `ro identity whoami` returns the active actor envelope
+- fixture-backed parity tests now cover help and docs
+- fixture-backed parity tests now cover completion and workspace help/scripts
+- live parity tests now cover workspace current/list, status, and identity
 
 Next slices:
 - parse the root command registry
-- implement read-only metadata commands
+- implement the remaining read-only commands
 - implement mutating domain commands
 - add parity tests for each command family as it lands
