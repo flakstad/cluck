@@ -101,6 +101,22 @@
                             "12"
                             (str (get tool-state :brush-size))))
 
+  (let [started (draw-start-stroke (default-state)
+                                   "SDL_EVENT_MOUSE_MOTION x=10.0 y=10.0")
+        extended (draw-extend-stroke started
+                                     "SDL_EVENT_MOUSE_MOTION x=20.0 y=20.0")
+        finished (draw-finish-stroke extended
+                                     "SDL_EVENT_MOUSE_MOTION x=30.0 y=30.0")
+        stroke (first (get finished :strokes))
+        resized (draw-set-brush-size! finished 6)
+        resized-stroke (first (get resized :strokes))]
+    (draw-tools-assert-num= "finished stroke keeps full point history"
+                            3
+                            (count (get stroke :points)))
+    (draw-tools-assert-num= "brush change keeps stroke point history"
+                            3
+                            (count (get resized-stroke :points))))
+
   (let [original draw-render-stroke-point!
         calls []]
     (set! draw-render-stroke-point!

@@ -48,6 +48,9 @@
   (draw-log-assert-num= "log writes one line"
                         1
                         (count (draw-log-lines)))
+  (draw-log-assert-num= "log tail one line"
+                        1
+                        (count (draw-log-tail 1)))
   (draw-log-assert-str-contains "log line includes note kind"
                                 (first (draw-log-lines))
                                 ":kind :note")

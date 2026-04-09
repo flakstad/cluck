@@ -47,6 +47,12 @@
 (draw-input-assert-true "focus lost event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_LOST")
                                      :focus-lost))
+(draw-input-assert-true "mouse enter event kind"
+                        (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_MOUSE_ENTER")
+                                     :mouse-enter))
+(draw-input-assert-true "mouse leave event kind"
+                        (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_MOUSE_LEAVE")
+                                     :mouse-leave))
 (draw-input-assert-true "pen axis event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_PEN_AXIS")
                                      :pen-axis))
@@ -116,3 +122,15 @@
   (draw-input-assert-num= "focus gained resets pressure"
                           1.0
                           (get gained :pen-pressure)))
+
+(let [left (draw-mouse-leave-core!
+             (assoc (default-state)
+                    :window-focused? true
+                    :pointer-down? true
+                    :active-stroke {:points [[1 2 1.0]]
+                                    :color [1 2 3]
+                                    :size 2}))]
+  (draw-input-assert-true "mouse leave keeps focus state"
+                          (get left :window-focused?))
+  (draw-input-assert-false "mouse leave clears active stroke"
+                           (get left :active-stroke)))

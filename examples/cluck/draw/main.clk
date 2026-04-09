@@ -158,11 +158,12 @@
 
 (defn draw-log-tail
   "Return the last COUNT draw log lines."
-  [count]
+  [n]
   (let [lines (draw-log-lines)
-        total (count lines)]
-    (if (> total count)
-      (vec (drop (- total count) lines))
+        total (count lines)
+        limit (if (and n (> n 0)) n 0)]
+    (if (> total limit)
+      (vec (drop (- total limit) lines))
       (vec lines))))
 
 (defn draw-state-snapshot
@@ -475,9 +476,9 @@
     (str/starts-with? desc "SDL_EVENT_QUIT") :quit
     (str/starts-with? desc "SDL_EVENT_WINDOW_CLOSE_REQUESTED") :quit
     (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_GAINED") :focus-gained
-    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_ENTER") :focus-gained
     (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_LOST") :focus-lost
-    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_LEAVE") :focus-lost
+    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_ENTER") :mouse-enter
+    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_LEAVE") :mouse-leave
     (str/starts-with? desc "SDL_EVENT_KEY_DOWN") :key-down
     (str/starts-with? desc "SDL_EVENT_KEY_UP") :key-up
     (str/starts-with? desc "SDL_EVENT_TEXT_INPUT") :text-input
@@ -1136,9 +1137,34 @@
   [state]
   (let [next-state (assoc state
                           :window-focused? true
+                          :canvas-dirty? true
                           :pen-pressure 1.0)]
     (draw-log-entry! :focus-gained {:state (draw-state-snapshot next-state)})
     next-state))
+
+(defn draw-mouse-leave-core!
+  "Handle the pointer leaving the window without changing focus state."
+  [state]
+  (draw-cancel-active-stroke-core! state))
+
+(defn draw-mouse-enter-core!
+  "Handle the pointer entering the window without changing focus state."
+  [state]
+  state)
+
+(defn draw-stroke-record
+  "Build a fresh stroke map."
+  [points color size]
+  {:points points
+   :color color
+   :size size})
+
+(defn draw-segment-stroke
+  "Build a fresh temporary stroke for incremental canvas commits."
+  [stroke points]
+  (draw-stroke-record points
+                      (get stroke :color)
+                      (get stroke :size)))
 
 (defn draw-start-stroke
   "Start a new stroke from DESC."
@@ -1147,9 +1173,9 @@
       (let [state (draw-push-history! state)
             next-state (assoc state
                               :pointer-down? true
-                              :active-stroke {:points [point]
-                                              :color (draw-stroke-color state)
-                                              :size (get state :brush-size)}
+                              :active-stroke (draw-stroke-record [point]
+                                                                 (draw-stroke-color state)
+                                                                 (get state :brush-size))
                               :mouse-x (nth point 0)
                               :mouse-y (nth point 1))]
       (draw-log-entry! :stroke-start
@@ -1168,16 +1194,17 @@
     (if stroke
         (let [points (get stroke :points)
             previous (last points)
-            next-stroke (assoc stroke
-                               :points (conj points point))
+            next-points (conj points point)
+            next-stroke (draw-stroke-record next-points
+                                            (get stroke :color)
+                                            (get stroke :size))
             next-state (assoc state
                               :mouse-x (nth point 0)
                               :mouse-y (nth point 1)
                               :active-stroke next-stroke)]
         (if (draw-canvas-ready?)
           (draw-commit-stroke! next-state
-                               (assoc stroke
-                                      :points [previous point]))
+                               (draw-segment-stroke stroke [previous point]))
           nil)
         next-state)
       (draw-start-stroke state desc))))
@@ -1190,8 +1217,10 @@
     (if stroke
         (let [points (get stroke :points)
               previous (last points)
-              finished (assoc stroke
-                              :points (conj points point))
+              finished-points (conj points point)
+              finished (draw-stroke-record finished-points
+                                           (get stroke :color)
+                                           (get stroke :size))
               next-state (assoc state
                                 :pointer-down? false
                                 :mouse-x (nth point 0)
@@ -1204,8 +1233,7 @@
                             :state (draw-state-snapshot next-state)})
           (if (draw-canvas-ready?)
             (draw-commit-stroke! next-state
-                                 (assoc stroke
-                                        :points [previous point]))
+                                 (draw-segment-stroke stroke [previous point]))
             nil)
           next-state)
       (assoc state
@@ -1374,13 +1402,17 @@
       (draw-kind=? kind :mouse-wheel)
       (draw-handle-wheel-event! state event)
 
-      (or (draw-kind=? kind :focus-lost)
-          (draw-kind=? kind :mouse-leave))
+      (draw-kind=? kind :focus-lost)
       (draw-focus-lost-core! state)
 
-      (or (draw-kind=? kind :focus-gained)
-          (draw-kind=? kind :mouse-enter))
+      (draw-kind=? kind :focus-gained)
       (draw-focus-gained-core! state)
+
+      (draw-kind=? kind :mouse-leave)
+      (draw-mouse-leave-core! state)
+
+      (draw-kind=? kind :mouse-enter)
+      (draw-mouse-enter-core! state)
 
       (draw-kind=? kind :text-input)
       (assoc state
@@ -1972,8 +2004,7 @@
   (draw-with-lock
     (lambda ()
       (draw-poll-input!)
-      (if (or (not *draw-state*)
-              (get *draw-state* :window-focused?))
+      (if *draw-state*
         (draw-render-current!)
         *draw-state*))))
 
