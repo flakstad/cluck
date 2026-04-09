@@ -13,6 +13,7 @@
             [cluck.examples.draw.geometry :as draw-geometry]
             [cluck.examples.draw.selection :as draw-selection]
             [cluck.examples.draw.edit :as draw-edit]
+            [cluck.examples.draw.create :as draw-create]
             [cluck.examples.draw.stroke :as draw-stroke]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
@@ -212,6 +213,19 @@
 (def draw-finish-selection-drag draw-edit/draw-finish-selection-drag)
 (def draw-finish-selection-rotate draw-edit/draw-finish-selection-rotate)
 (def draw-finish-selection-resize draw-edit/draw-finish-selection-resize)
+
+(def draw-start-box draw-create/draw-start-box)
+(def draw-start-arrow draw-create/draw-start-arrow)
+(def draw-start-frame draw-create/draw-start-frame)
+(def draw-start-text draw-create/draw-start-text)
+(def draw-extend-box draw-create/draw-extend-box)
+(def draw-extend-arrow draw-create/draw-extend-arrow)
+(def draw-extend-frame draw-create/draw-extend-frame)
+(def draw-extend-text draw-create/draw-extend-text)
+(def draw-finish-box draw-create/draw-finish-box)
+(def draw-finish-arrow draw-create/draw-finish-arrow)
+(def draw-finish-frame draw-create/draw-finish-frame)
+(def draw-finish-text draw-create/draw-finish-text)
 
 (def draw-segment-stroke draw-stroke/draw-segment-stroke)
 (def draw-point-screen-distance draw-stroke/draw-point-screen-distance)
@@ -1736,290 +1750,6 @@
                :pointer-down? false
                :pointer-source false
                :active-stroke false)
-        point
-        screen-point))))
-
-(defn draw-start-box
-  "Start a box drag from WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [state (draw-push-history! state)
-        active-box (draw-box-record point
-                                    point
-                                    (draw-stroke-color state)
-                                    (get state :brush-size))]
-    (draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :box
-             :active-stroke false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-arrow false
-             :active-frame false
-             :active-text false
-             :active-box active-box)
-      point
-      screen-point)))
-
-(defn draw-start-arrow
-  "Start an arrow drag from WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [state (draw-push-history! state)
-        active-arrow (draw-arrow-record point
-                                        point
-                                        (draw-stroke-color state)
-                                        (get state :brush-size))]
-    (draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :arrow
-             :active-stroke false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-box false
-             :active-frame false
-             :active-text false
-             :active-arrow active-arrow)
-      point
-      screen-point)))
-
-(defn draw-start-frame
-  "Start a frame drag from WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [state (draw-push-history! state)
-        active-frame (draw-frame-record point
-                                        point
-                                        (draw-stroke-color state)
-                                        (get state :brush-size))]
-    (draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :frame
-             :active-stroke false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-box false
-             :active-arrow false
-             :active-text false
-             :active-frame active-frame)
-      point
-      screen-point)))
-
-(defn draw-start-text
-  "Start a text placement interaction from WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [active-text (draw-text-record point
-                                      (draw-text-default-value)
-                                      (draw-stroke-color state)
-                                      (get state :brush-size))]
-    (draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :text
-             :active-selection-drag false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-stroke false
-             :active-box false
-             :active-arrow false
-             :active-frame false
-             :active-text active-text)
-      point
-      screen-point)))
-
-(defn draw-extend-box
-  "Update the active box drag to WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [active-box (get state :active-box)]
-    (if active-box
-      (draw-sync-pointer-state
-        (assoc state
-               :active-box (draw-box-record (get active-box :start)
-                                            point
-                                            (get active-box :color)
-                                            (get active-box :size)))
-        point
-        screen-point)
-      (draw-start-box state point screen-point))))
-
-(defn draw-extend-arrow
-  "Update the active arrow drag to WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [active-arrow (get state :active-arrow)]
-    (if active-arrow
-      (draw-sync-pointer-state
-        (assoc state
-               :active-arrow (draw-arrow-record (get active-arrow :start)
-                                                point
-                                                (get active-arrow :color)
-                                                (get active-arrow :size)))
-        point
-        screen-point)
-      (draw-start-arrow state point screen-point))))
-
-(defn draw-extend-frame
-  "Update the active frame drag to WORLD-POINT and SCREEN-POINT."
-  [state point screen-point]
-  (let [active-frame (get state :active-frame)]
-    (if active-frame
-      (draw-sync-pointer-state
-        (assoc state
-               :active-frame (draw-frame-record (get active-frame :start)
-                                                point
-                                                (get active-frame :color)
-                                                (get active-frame :size)))
-        point
-        screen-point)
-      (draw-start-frame state point screen-point))))
-
-(defn draw-extend-text
-  "Update the active text placement point."
-  [state point screen-point]
-  (let [active-text (get state :active-text)]
-    (if active-text
-      (draw-sync-pointer-state
-        (assoc state
-               :active-text (draw-text-record point
-                                              (get active-text :text)
-                                              (get active-text :color)
-                                              (get active-text :size)))
-        point
-        screen-point)
-      (draw-start-text state point screen-point))))
-
-(defn draw-finish-box
-  "Commit the active box drag when it is large enough."
-  [state point screen-point]
-  (let [active-box (get state :active-box)]
-    (if active-box
-      (let [box (draw-box-element
-                  (draw-box-record (get active-box :start)
-                                   point
-                                   (get active-box :color)
-                                   (get active-box :size)))
-            next-state (draw-sync-pointer-state
-                         (assoc state
-                                :pointer-down? false
-                                :pointer-source false
-                                :active-box false
-                                :canvas-dirty? true)
-                         point
-                         screen-point)
-            next-state (if (draw-box-visible? box)
-                         (draw-append-element next-state box)
-                         next-state)]
-        (draw-log-entry! :box-finish
-                         {:box (if (draw-box-visible? box) box false)
-                          :state (draw-state-snapshot next-state)})
-        next-state)
-      (draw-sync-pointer-state
-        (assoc state
-               :pointer-down? false
-               :pointer-source false
-               :active-box false)
-        point
-        screen-point))))
-
-(defn draw-finish-arrow
-  "Commit the active arrow drag when it is large enough."
-  [state point screen-point]
-  (let [active-arrow (get state :active-arrow)]
-    (if active-arrow
-      (let [arrow (draw-arrow-record (get active-arrow :start)
-                                     point
-                                     (get active-arrow :color)
-                                     (get active-arrow :size))
-            next-state (draw-sync-pointer-state
-                         (assoc state
-                                :pointer-down? false
-                                :pointer-source false
-                                :active-arrow false
-                                :canvas-dirty? true)
-                         point
-                         screen-point)
-            next-state (if (draw-arrow-visible? arrow)
-                         (draw-append-element next-state
-                                              (assoc arrow :kind :arrow))
-                         next-state)]
-        (draw-log-entry! :arrow-finish
-                         {:arrow (if (draw-arrow-visible? arrow) arrow false)
-                          :state (draw-state-snapshot next-state)})
-        next-state)
-      (draw-sync-pointer-state
-        (assoc state
-               :pointer-down? false
-               :pointer-source false
-               :active-arrow false)
-        point
-        screen-point))))
-
-(defn draw-finish-frame
-  "Commit the active frame drag when it is large enough."
-  [state point screen-point]
-  (let [active-frame (get state :active-frame)]
-    (if active-frame
-      (let [frame (draw-frame-element (draw-frame-record (get active-frame :start)
-                                                         point
-                                                         (get active-frame :color)
-                                                         (get active-frame :size)))
-            next-state (draw-sync-pointer-state
-                         (assoc state
-                                :pointer-down? false
-                                :pointer-source false
-                                :active-frame false
-                                :canvas-dirty? true)
-                         point
-                         screen-point)
-            next-state (if (draw-frame-visible? frame)
-                         (draw-append-element next-state frame)
-                         next-state)]
-        (draw-log-entry! :frame-finish
-                         {:frame (if (draw-frame-visible? frame) frame false)
-                          :state (draw-state-snapshot next-state)})
-        next-state)
-      (draw-sync-pointer-state
-        (assoc state
-               :pointer-down? false
-               :pointer-source false
-               :active-frame false)
-        point
-        screen-point))))
-
-(defn draw-finish-text
-  "Commit the active text placement when it has visible content."
-  [state point screen-point]
-  (let [active-text (get state :active-text)]
-    (if active-text
-      (let [text-element (draw-text-element
-                           (draw-text-record point
-                                             (get active-text :text)
-                                             (get active-text :color)
-                                             (get active-text :size)))
-            next-state (draw-sync-pointer-state
-                         (assoc state
-                                :pointer-down? false
-                                :pointer-source false
-                                :active-text false
-                                :canvas-dirty? true)
-                         point
-                         screen-point)
-            next-state (if (draw-text-visible? text-element)
-                         (draw-append-element (draw-push-history! next-state)
-                                              text-element)
-                         next-state)]
-        (draw-log-entry! :text-finish
-                         {:text (if (draw-text-visible? text-element) text-element false)
-                          :state (draw-state-snapshot next-state)})
-        next-state)
-      (draw-sync-pointer-state
-        (assoc state
-               :pointer-down? false
-               :pointer-source false
-               :active-text false)
         point
         screen-point))))
 
