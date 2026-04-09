@@ -110,19 +110,27 @@
                             (str (get tool-state :brush-size))))
 
   (let [box-state (draw-handle-tool-key! (default-state) "b")
+        text-state (draw-handle-tool-key! (default-state) "t")
         select-state (draw-handle-tool-key! (default-state) "v")
         arrow-state (draw-handle-tool-key! (default-state) "a")
+        frame-state (draw-handle-tool-key! (default-state) "f")
         box-snapshot (edn/read-string (pr-str box-state))
         ink-state (draw-handle-tool-key! box-state "i")]
     (draw-tools-assert-str= "box tool key preset"
                             "box"
                             (draw-tool-mode box-snapshot))
+    (draw-tools-assert-str= "text tool key preset"
+                            "text"
+                            (draw-tool-mode text-state))
     (draw-tools-assert-str= "selection tool key preset"
                             "select"
                             (draw-tool-mode select-state))
     (draw-tools-assert-str= "arrow tool key preset"
                             "arrow"
                             (draw-tool-mode arrow-state))
+    (draw-tools-assert-str= "frame tool key preset"
+                            "frame"
+                            (draw-tool-mode frame-state))
     (draw-tools-assert-str= "ink tool key preset"
                             "ink"
                             (draw-tool-mode ink-state)))
@@ -227,6 +235,73 @@
                             0
                             (count (get undone :elements))))
 
+  (let [frame-tool (draw-set-tool-core! (default-state) :frame)
+        started (draw-start-frame frame-tool
+                                  [10.0 20.0 1.0]
+                                  [10.0 20.0])
+        extended (draw-extend-frame started
+                                    [60.0 90.0 1.0]
+                                    [60.0 90.0])
+        finished (draw-finish-frame extended
+                                    [60.0 90.0 1.0]
+                                    [60.0 90.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        element (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)]
+    (draw-tools-assert-str= "finished frame keeps tool mode"
+                            "frame"
+                            (draw-tool-mode finished-snapshot))
+    (draw-tools-assert-num= "frame finish adds element"
+                            1
+                            (count (get finished-snapshot :elements)))
+    (draw-tools-assert-str= "frame finish element kind"
+                            ":frame"
+                            (pr-str (get element :kind)))
+    (draw-tools-assert-num= "frame finish width"
+                            50.0
+                            (get element :width))
+    (draw-tools-assert-num= "frame finish height"
+                            70.0
+                            (get element :height))
+    (draw-tools-assert-num= "undo removes frame element"
+                            0
+                            (count (get undone :elements))))
+
+  (let [text-tool (draw-set-tool-core! (default-state) :text)
+        started (draw-start-text text-tool
+                                 [25.0 35.0 1.0]
+                                 [25.0 35.0])
+        extended (draw-extend-text started
+                                   [40.0 55.0 1.0]
+                                   [40.0 55.0])
+        finished (draw-finish-text extended
+                                   [40.0 55.0 1.0]
+                                   [40.0 55.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        element (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)]
+    (draw-tools-assert-str= "finished text keeps tool mode"
+                            "text"
+                            (draw-tool-mode finished-snapshot))
+    (draw-tools-assert-num= "text finish adds element"
+                            1
+                            (count (get finished-snapshot :elements)))
+    (draw-tools-assert-str= "text finish element kind"
+                            ":text"
+                            (pr-str (get element :kind)))
+    (draw-tools-assert-num= "text finish x"
+                            40.0
+                            (get element :x))
+    (draw-tools-assert-num= "text finish y"
+                            55.0
+                            (get element :y))
+    (draw-tools-assert-str= "text finish default label"
+                            "Text"
+                            (get element :text))
+    (draw-tools-assert-num= "undo removes text element"
+                            0
+                            (count (get undone :elements))))
+
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
                [{:kind :box
@@ -303,6 +378,65 @@
     (draw-tools-assert-str= "selection drag moves arrow end"
                             "[50.0 70.0 1.0]"
                             (pr-str (get moved-arrow :end))))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :frame
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}])
+        selected (draw-start-selection-drag base
+                                            [15.0 25.0 1.0]
+                                            [15.0 25.0]
+                                            :mouse)
+        moved (draw-extend-selection-drag selected
+                                          [25.0 35.0 1.0]
+                                          [25.0 35.0])
+        finished (draw-finish-selection-drag moved
+                                             [25.0 35.0 1.0]
+                                             [25.0 35.0])
+        moved-frame (first (get finished :elements))]
+    (draw-tools-assert-num= "selection can hit frame elements"
+                            1
+                            (count (draw-selected-element-ids selected)))
+    (draw-tools-assert-num= "selection drag moves frame x"
+                            20.0
+                            (get moved-frame :x))
+    (draw-tools-assert-num= "selection drag moves frame y"
+                            30.0
+                            (get moved-frame :y)))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :text
+                 :x 20.0
+                 :y 30.0
+                 :text "Text"
+                 :color [255 255 255]
+                 :size 2}])
+        selected (draw-start-selection-drag base
+                                            [22.0 32.0 1.0]
+                                            [22.0 32.0]
+                                            :mouse)
+        moved (draw-extend-selection-drag selected
+                                          [42.0 52.0 1.0]
+                                          [42.0 52.0])
+        finished (draw-finish-selection-drag moved
+                                             [42.0 52.0 1.0]
+                                             [42.0 52.0])
+        moved-text (first (get finished :elements))]
+    (draw-tools-assert-num= "selection can hit text elements"
+                            1
+                            (count (draw-selected-element-ids selected)))
+    (draw-tools-assert-num= "selection drag moves text x"
+                            40.0
+                            (get moved-text :x))
+    (draw-tools-assert-num= "selection drag moves text y"
+                            50.0
+                            (get moved-text :y)))
 
   (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
                                    [255 255 255]

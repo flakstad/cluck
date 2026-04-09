@@ -153,6 +153,8 @@
    :active-stroke false
    :active-box false
    :active-arrow false
+   :active-frame false
+   :active-text false
    :last-key ""
    :last-text ""
    :last-event ""
@@ -401,6 +403,8 @@
                       0)
      :active-box? (if (get state :active-box) true false)
      :active-arrow? (if (get state :active-arrow) true false)
+     :active-frame? (if (get state :active-frame) true false)
+     :active-text? (if (get state :active-text) true false)
      :history (count (get state :history))
      :canvas-dirty? (get state :canvas-dirty?)
      :last-key (or (get state :last-key) "")
@@ -440,6 +444,16 @@
   "Return true when ELEMENT is an arrow."
   [element]
   (draw-kind=? (draw-element-kind element) :arrow))
+
+(defn draw-frame-element?
+  "Return true when ELEMENT is a frame."
+  [element]
+  (draw-kind=? (draw-element-kind element) :frame))
+
+(defn draw-text-element?
+  "Return true when ELEMENT is text."
+  [element]
+  (draw-kind=? (draw-element-kind element) :text))
 
 (defn draw-normalize-ink-element
   "Return ELEMENT in canonical ink-element form."
@@ -487,6 +501,29 @@
    :color (get element :color)
    :size (or (get element :size) 1)})
 
+(defn draw-normalize-frame-element
+  "Return ELEMENT in canonical frame-element form."
+  [element]
+  {:id (get element :id)
+   :kind :frame
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :width (or (get element :width) 0.0)
+   :height (or (get element :height) 0.0)
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
+(defn draw-normalize-text-element
+  "Return ELEMENT in canonical text-element form."
+  [element]
+  {:id (get element :id)
+   :kind :text
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :text (or (get element :text) "Text")
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
 (defn draw-normalize-element
   "Return ELEMENT in canonical element form."
   [element]
@@ -494,7 +531,11 @@
     (draw-normalize-box-element element)
     (if (draw-arrow-element? element)
       (draw-normalize-arrow-element element)
-      (draw-normalize-ink-element element))))
+      (if (draw-frame-element? element)
+        (draw-normalize-frame-element element)
+        (if (draw-text-element? element)
+          (draw-normalize-text-element element)
+          (draw-normalize-ink-element element))))))
 
 (defn draw-legacy-strokes->elements
   "Upgrade legacy stroke maps into ink elements."
@@ -1746,9 +1787,15 @@
   (let [history (get state :history)]
     (if (empty? history)
       (if (or (get state :active-stroke)
-              (get state :active-box))
+              (get state :active-box)
+              (get state :active-arrow)
+              (get state :active-frame)
+              (get state :active-text))
         (assoc state
                :active-box false
+               :active-arrow false
+               :active-frame false
+               :active-text false
                :active-stroke false
                :pointer-down? false)
         state)
@@ -1770,6 +1817,8 @@
                  :active-stroke false
                  :active-box false
                  :active-arrow false
+                 :active-frame false
+                 :active-text false
                  :pointer-down? false
                  :pointer-source false
                  :panning? false)
@@ -1785,9 +1834,13 @@
       (if (draw-kind=? (or (get state :tool) :ink)
                        :arrow)
         "arrow"
-        (if (draw-kind=? (or (get state :tool) :ink) :select)
-          "select"
-          "ink")))))
+        (if (draw-kind=? (or (get state :tool) :ink) :frame)
+          "frame"
+          (if (draw-kind=? (or (get state :tool) :ink) :text)
+            "text"
+            (if (draw-kind=? (or (get state :tool) :ink) :select)
+              "select"
+              "ink")))))))
 
 (defn draw-next-element-id
   "Return the next canvas element id for STATE."
@@ -1826,6 +1879,16 @@
   "Return true when STATE is currently in arrow mode."
   [state]
   (draw-kind=? (or (get state :tool) :ink) :arrow))
+
+(defn draw-frame-tool?
+  "Return true when STATE is currently in frame mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :frame))
+
+(defn draw-text-tool?
+  "Return true when STATE is currently in text mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :text))
 
 (defn draw-selection-tool?
   "Return true when STATE is currently in selection mode."
@@ -1909,6 +1972,8 @@
                               :active-stroke false
                               :active-box false
                               :active-arrow false
+                              :active-frame false
+                              :active-text false
                               :pointer-down? false
                               :panning? false
                               :canvas-dirty? true)
@@ -1956,9 +2021,11 @@
       (string=? key "c") (draw-clear-strokes-core! state)
       (string=? key "u") (draw-undo-stroke-core! state)
       (string=? key "i") (draw-set-tool-core! state :ink)
+      (string=? key "t") (draw-set-tool-core! state :text)
       (string=? key "v") (draw-set-tool-core! state :select)
       (string=? key "b") (draw-set-tool-core! state :box)
       (string=? key "a") (draw-set-tool-core! state :arrow)
+      (string=? key "f") (draw-set-tool-core! state :frame)
       (string=? key "e") (draw-toggle-eraser-core! state)
       (string=? key "1") (draw-set-brush-size-core! state 2)
       (string=? key "2") (draw-set-brush-size-core! state 6)
@@ -2066,13 +2133,15 @@
   [state]
   (draw-reset-preview-sync!)
   (draw-clear-preview!)
-  (let [state (assoc state
+    (let [state (assoc state
                      :pointer-down? false
                      :pointer-source false
                      :active-selection-drag false
                      :active-stroke false
                      :active-box false
                      :active-arrow false
+                     :active-frame false
+                     :active-text false
                      :panning? false
                      :pen-pressure 1.0
                      :canvas-dirty? true)]
@@ -2163,6 +2232,88 @@
   (and (>= (get box :width) (draw-box-min-size))
        (>= (get box :height) (draw-box-min-size))))
 
+(defn draw-frame-record
+  "Build a fresh active-frame record."
+  [start end color size]
+  {:start start
+   :end end
+   :color color
+   :size size})
+
+(defn draw-frame-element
+  "Build a committed frame element from ACTIVE-FRAME."
+  [active-frame]
+  (let [rect (draw-box-rect (get active-frame :start)
+                            (get active-frame :end))]
+    {:kind :frame
+     :x (get rect :x)
+     :y (get rect :y)
+     :width (get rect :width)
+     :height (get rect :height)
+     :color (get active-frame :color)
+     :size (get active-frame :size)}))
+
+(defn draw-frame-visible?
+  "Return true when FRAME is large enough to commit."
+  [frame]
+  (draw-box-visible? frame))
+
+(defn draw-text-default-value
+  "Return the placeholder text used for newly created text elements."
+  []
+  "Text")
+
+(defn draw-text-record
+  "Build a fresh active-text record."
+  [point text color size]
+  {:point point
+   :text (or text (draw-text-default-value))
+   :color color
+   :size size})
+
+(defn draw-text-element
+  "Build a committed text element from ACTIVE-TEXT."
+  [active-text]
+  {:kind :text
+   :x (nth (get active-text :point) 0)
+   :y (nth (get active-text :point) 1)
+   :text (or (get active-text :text) (draw-text-default-value))
+   :color (get active-text :color)
+   :size (get active-text :size)})
+
+(defn draw-text-visible?
+  "Return true when TEXT-ELEMENT has visible content."
+  [text-element]
+  (not (str/blank? (or (get text-element :text) ""))))
+
+(defn draw-text-screen-char-width
+  "Return the approximate character width of the debug font."
+  []
+  8.0)
+
+(defn draw-text-screen-height
+  "Return the approximate line height of the debug font."
+  []
+  16.0)
+
+(defn draw-text-screen-width
+  "Return the approximate screen-space width for TEXT."
+  [text]
+  (max (draw-text-screen-char-width)
+       (* (count (or text "")) (draw-text-screen-char-width))))
+
+(defn draw-text-world-width
+  "Return the approximate world-space width for TEXT in STATE."
+  [state text]
+  (/ (draw-text-screen-width text)
+     (draw-view-zoom state)))
+
+(defn draw-text-world-height
+  "Return the approximate world-space height for text in STATE."
+  [state]
+  (/ (draw-text-screen-height)
+     (draw-view-zoom state)))
+
 (defn draw-selection-screen-padding
   "Return the screen-space padding used for hit testing and selection outlines."
   []
@@ -2221,7 +2372,19 @@
        :height (+ (get element :height) (* padding 2.0))}
       (if (draw-arrow-element? element)
         (draw-point-bounds [(get element :start) (get element :end)] padding)
-        (draw-point-bounds (get element :points) padding)))))
+        (if (draw-frame-element? element)
+          {:x (- (get element :x) padding)
+           :y (- (get element :y) padding)
+           :width (+ (get element :width) (* padding 2.0))
+           :height (+ (get element :height) (* padding 2.0))}
+          (if (draw-text-element? element)
+            {:x (- (get element :x) padding)
+             :y (- (get element :y) padding)
+             :width (+ (draw-text-world-width state (get element :text))
+                       (* padding 2.0))
+             :height (+ (draw-text-world-height state)
+                        (* padding 2.0))}
+            (draw-point-bounds (get element :points) padding)))))))
 
 (defn draw-point-in-bounds?
   "Return true when POINT lies within BOUNDS."
@@ -2322,13 +2485,30 @@
        :end (draw-translate-point (get element :end) dx dy)
        :color (get element :color)
        :size (get element :size)}
-      {:id (get element :id)
-       :kind :ink
-       :points (vec (map (fn [point]
-                           (draw-translate-point point dx dy))
-                         (get element :points)))
-       :color (get element :color)
-       :size (get element :size)})))
+      (if (draw-frame-element? element)
+        {:id (get element :id)
+         :kind :frame
+         :x (+ (get element :x) dx)
+         :y (+ (get element :y) dy)
+         :width (get element :width)
+         :height (get element :height)
+         :color (get element :color)
+         :size (get element :size)}
+        (if (draw-text-element? element)
+          {:id (get element :id)
+           :kind :text
+           :x (+ (get element :x) dx)
+           :y (+ (get element :y) dy)
+           :text (get element :text)
+           :color (get element :color)
+           :size (get element :size)}
+          {:id (get element :id)
+           :kind :ink
+           :points (vec (map (fn [point]
+                               (draw-translate-point point dx dy))
+                             (get element :points)))
+           :color (get element :color)
+           :size (get element :size)})))))
 
 (defn draw-translate-selected-elements
   "Return ELEMENTS with IDS translated by DX and DY."
@@ -2353,6 +2533,8 @@
              :active-stroke false
              :active-box false
              :active-arrow false
+             :active-frame false
+             :active-text false
              :active-selection-drag (if element
                                       {:ids ids
                                        :anchor point
@@ -2469,6 +2651,8 @@
                             :active-selection-drag false
                             :active-box false
                             :active-arrow false
+                            :active-frame false
+                            :active-text false
                             :active-stroke stroke)
                      point
                      screen-point)]
@@ -2565,6 +2749,8 @@
              :pointer-source :box
              :active-stroke false
              :active-arrow false
+             :active-frame false
+             :active-text false
              :active-box active-box)
       point
       screen-point)))
@@ -2583,7 +2769,49 @@
              :pointer-source :arrow
              :active-stroke false
              :active-box false
+             :active-frame false
+             :active-text false
              :active-arrow active-arrow)
+      point
+      screen-point)))
+
+(defn draw-start-frame
+  "Start a frame drag from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [state (draw-push-history! state)
+        active-frame (draw-frame-record point
+                                        point
+                                        (draw-stroke-color state)
+                                        (get state :brush-size))]
+    (draw-sync-pointer-state
+      (assoc state
+             :pointer-down? true
+             :pointer-source :frame
+             :active-stroke false
+             :active-box false
+             :active-arrow false
+             :active-text false
+             :active-frame active-frame)
+      point
+      screen-point)))
+
+(defn draw-start-text
+  "Start a text placement interaction from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [active-text (draw-text-record point
+                                      (draw-text-default-value)
+                                      (draw-stroke-color state)
+                                      (get state :brush-size))]
+    (draw-sync-pointer-state
+      (assoc state
+             :pointer-down? true
+             :pointer-source :text
+             :active-selection-drag false
+             :active-stroke false
+             :active-box false
+             :active-arrow false
+             :active-frame false
+             :active-text active-text)
       point
       screen-point)))
 
@@ -2616,6 +2844,36 @@
         point
         screen-point)
       (draw-start-arrow state point screen-point))))
+
+(defn draw-extend-frame
+  "Update the active frame drag to WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [active-frame (get state :active-frame)]
+    (if active-frame
+      (draw-sync-pointer-state
+        (assoc state
+               :active-frame (draw-frame-record (get active-frame :start)
+                                                point
+                                                (get active-frame :color)
+                                                (get active-frame :size)))
+        point
+        screen-point)
+      (draw-start-frame state point screen-point))))
+
+(defn draw-extend-text
+  "Update the active text placement point."
+  [state point screen-point]
+  (let [active-text (get state :active-text)]
+    (if active-text
+      (draw-sync-pointer-state
+        (assoc state
+               :active-text (draw-text-record point
+                                              (get active-text :text)
+                                              (get active-text :color)
+                                              (get active-text :size)))
+        point
+        screen-point)
+      (draw-start-text state point screen-point))))
 
 (defn draw-finish-box
   "Commit the active box drag when it is large enough."
@@ -2680,6 +2938,72 @@
                :pointer-down? false
                :pointer-source false
                :active-arrow false)
+        point
+        screen-point))))
+
+(defn draw-finish-frame
+  "Commit the active frame drag when it is large enough."
+  [state point screen-point]
+  (let [active-frame (get state :active-frame)]
+    (if active-frame
+      (let [frame (draw-frame-element (draw-frame-record (get active-frame :start)
+                                                         point
+                                                         (get active-frame :color)
+                                                         (get active-frame :size)))
+            next-state (draw-sync-pointer-state
+                         (assoc state
+                                :pointer-down? false
+                                :pointer-source false
+                                :active-frame false
+                                :canvas-dirty? true)
+                         point
+                         screen-point)
+            next-state (if (draw-frame-visible? frame)
+                         (draw-append-element next-state frame)
+                         next-state)]
+        (draw-log-entry! :frame-finish
+                         {:frame (if (draw-frame-visible? frame) frame false)
+                          :state (draw-state-snapshot next-state)})
+        next-state)
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-frame false)
+        point
+        screen-point))))
+
+(defn draw-finish-text
+  "Commit the active text placement when it has visible content."
+  [state point screen-point]
+  (let [active-text (get state :active-text)]
+    (if active-text
+      (let [text-element (draw-text-element
+                           (draw-text-record point
+                                             (get active-text :text)
+                                             (get active-text :color)
+                                             (get active-text :size)))
+            next-state (draw-sync-pointer-state
+                         (assoc state
+                                :pointer-down? false
+                                :pointer-source false
+                                :active-text false
+                                :canvas-dirty? true)
+                         point
+                         screen-point)
+            next-state (if (draw-text-visible? text-element)
+                         (draw-append-element (draw-push-history! next-state)
+                                              text-element)
+                         next-state)]
+        (draw-log-entry! :text-finish
+                         {:text (if (draw-text-visible? text-element) text-element false)
+                          :state (draw-state-snapshot next-state)})
+        next-state)
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-text false)
         point
         screen-point))))
 
@@ -2914,7 +3238,11 @@
                   (draw-start-box state point screen-point)
                   (if (draw-arrow-tool? state)
                     (draw-start-arrow state point screen-point)
-                    (draw-start-stroke state point screen-point :mouse)))))
+                    (if (draw-frame-tool? state)
+                      (draw-start-frame state point screen-point)
+                      (if (draw-text-tool? state)
+                        (draw-start-text state point screen-point)
+                        (draw-start-stroke state point screen-point :mouse)))))))
 
             (and (draw-kind=? kind :mouse-up)
                  (get state :panning?))
@@ -2929,7 +3257,11 @@
                   (draw-finish-box state point screen-point)
                   (if (get state :active-arrow)
                     (draw-finish-arrow state point screen-point)
-                    (draw-finish-stroke state point screen-point)))))
+                    (if (get state :active-frame)
+                      (draw-finish-frame state point screen-point)
+                      (if (get state :active-text)
+                        (draw-finish-text state point screen-point)
+                        (draw-finish-stroke state point screen-point)))))))
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2943,7 +3275,11 @@
                   (draw-extend-box state point screen-point)
                   (if (get state :active-arrow)
                     (draw-extend-arrow state point screen-point)
-                    (draw-extend-stroke state point screen-point)))))
+                    (if (get state :active-frame)
+                      (draw-extend-frame state point screen-point)
+                      (if (get state :active-text)
+                        (draw-extend-text state point screen-point)
+                        (draw-extend-stroke state point screen-point)))))))
 
             :else
             (let [point (draw-input-event-point state event)
@@ -2971,7 +3307,11 @@
                 (draw-start-box state point screen-point)
                 (if (draw-arrow-tool? state)
                   (draw-start-arrow state point screen-point)
-                  (draw-start-stroke state point screen-point :pen)))))
+                  (if (draw-frame-tool? state)
+                    (draw-start-frame state point screen-point)
+                    (if (draw-text-tool? state)
+                      (draw-start-text state point screen-point)
+                      (draw-start-stroke state point screen-point :pen)))))))
 
           (and (or (draw-kind=? kind :pen-up)
                    (draw-kind=? kind :pen-button-up))
@@ -2988,7 +3328,11 @@
                 (draw-finish-box state point screen-point)
                 (if (get state :active-arrow)
                   (draw-finish-arrow state point screen-point)
-                  (draw-finish-stroke state point screen-point)))))
+                  (if (get state :active-frame)
+                    (draw-finish-frame state point screen-point)
+                    (if (get state :active-text)
+                      (draw-finish-text state point screen-point)
+                      (draw-finish-stroke state point screen-point)))))))
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
@@ -3002,7 +3346,11 @@
                 (draw-extend-box state point screen-point)
                 (if (get state :active-arrow)
                   (draw-extend-arrow state point screen-point)
-                  (draw-extend-stroke state point screen-point)))))
+                  (if (get state :active-frame)
+                    (draw-extend-frame state point screen-point)
+                    (if (get state :active-text)
+                      (draw-extend-text state point screen-point)
+                      (draw-extend-stroke state point screen-point)))))))
 
           :else
           (let [point (draw-input-event-point state event)
@@ -3469,6 +3817,69 @@
     (draw-render-box-edge! renderer state color size c d)
     (draw-render-box-edge! renderer state color size d a)))
 
+(defn draw-frame-tab-width
+  "Return the width of the frame header tab in world space."
+  [state frame]
+  (let [screen-width (max 28.0 72.0)
+        world-width (/ screen-width (draw-view-zoom state))
+        usable (- (get frame :width) (* 2.0 (get frame :size)))]
+    (if (> usable world-width)
+      world-width
+      (max 0.0 usable))))
+
+(defn draw-frame-tab-height
+  "Return the height of the frame header tab in world space."
+  [state frame]
+  (/ 20.0 (draw-view-zoom state)))
+
+(defn draw-render-frame!
+  "Render a frame/container element."
+  [renderer state frame]
+  (let [x (get frame :x)
+        y (get frame :y)
+        width (get frame :width)
+        height (get frame :height)
+        color (get frame :color)
+        size (get frame :size)
+        tab-width (draw-frame-tab-width state frame)
+        tab-height (draw-frame-tab-height state frame)
+        a [x y]
+        b [(+ x width) y]
+        c [(+ x width) (+ y height)]
+        d [x (+ y height)]
+        tab-right (+ x tab-width)
+        tab-bottom (+ y tab-height)]
+    (draw-render-box-edge! renderer state color size a b)
+    (draw-render-box-edge! renderer state color size b c)
+    (draw-render-box-edge! renderer state color size c d)
+    (draw-render-box-edge! renderer state color size d a)
+    (if (> tab-width 0.0)
+      (begin
+        (draw-render-box-edge! renderer state color size a [tab-right y])
+        (draw-render-box-edge! renderer state color size [x tab-bottom] [tab-right tab-bottom])
+        (draw-render-box-edge! renderer state color size [tab-right y] [tab-right tab-bottom]))
+      nil)))
+
+(defn draw-render-text!
+  "Render a text element using the built-in SDL debug font."
+  [renderer state text-element]
+  (let [screen-point (draw-world-point->screen-point
+                       state
+                       [(get text-element :x)
+                        (get text-element :y)
+                        1.0])
+        color (or (get text-element :color) [245 245 245])
+        text (or (get text-element :text) (draw-text-default-value))]
+    (sdl/set-draw-color! renderer
+                         (nth color 0)
+                         (nth color 1)
+                         (nth color 2)
+                         255)
+    (sdl/render-debug-text! renderer
+                            (nth screen-point 0)
+                            (nth screen-point 1)
+                            text)))
+
 (defn draw-arrow-head-length
   "Return the world-space arrowhead length for SIZE in STATE."
   [state size]
@@ -3519,7 +3930,11 @@
     (draw-render-box! renderer state element)
     (if (draw-arrow-element? element)
       (draw-render-arrow! renderer state element)
-      (draw-render-stroke! renderer state element))))
+      (if (draw-frame-element? element)
+        (draw-render-frame! renderer state element)
+        (if (draw-text-element? element)
+          (draw-render-text! renderer state element)
+          (draw-render-stroke! renderer state element))))))
 
 (defn draw-render-active-box!
   "Render the current active box preview."
@@ -3534,6 +3949,20 @@
   (draw-render-arrow! renderer
                       state
                       (assoc active-arrow :kind :arrow)))
+
+(defn draw-render-active-frame!
+  "Render the current active frame preview."
+  [renderer state active-frame]
+  (draw-render-frame! renderer
+                      state
+                      (draw-frame-element active-frame)))
+
+(defn draw-render-active-text!
+  "Render the current active text preview."
+  [renderer state active-text]
+  (draw-render-text! renderer
+                     state
+                     (draw-text-element active-text)))
 
 (defn draw-render-selection!
   "Render selection outlines for the currently selected elements."
@@ -3649,7 +4078,9 @@
         elements (get state :elements)
         active-stroke (get state :active-stroke)
         active-box (get state :active-box)
-        active-arrow (get state :active-arrow)]
+        active-arrow (get state :active-arrow)
+        active-frame (get state :active-frame)
+        active-text (get state :active-text)]
     (reduce (fn [acc element]
               (begin
                 (draw-render-element! renderer state element)
@@ -3665,6 +4096,12 @@
     (if active-arrow
       (draw-render-active-arrow! renderer state active-arrow)
       nil)
+    (if active-frame
+      (draw-render-active-frame! renderer state active-frame)
+      nil)
+    (if active-text
+      (draw-render-active-text! renderer state active-text)
+      nil)
     (draw-render-selection! renderer state)))
 
 (defn draw-render-canvas!
@@ -3675,7 +4112,9 @@
         preview (if ctx (get ctx :preview) nil)
         active (get state :active-stroke)
         active-box (get state :active-box)
-        active-arrow (get state :active-arrow)]
+        active-arrow (get state :active-arrow)
+        active-frame (get state :active-frame)
+        active-text (get state :active-text)]
     (if (draw-canvas-ready?)
       (begin
         (sdl/render-texture! renderer canvas)
@@ -3689,6 +4128,12 @@
           nil)
         (if active-arrow
           (draw-render-active-arrow! renderer state active-arrow)
+          nil)
+        (if active-frame
+          (draw-render-active-frame! renderer state active-frame)
+          nil)
+        (if active-text
+          (draw-render-active-text! renderer state active-text)
           nil)
         (draw-render-selection! renderer state)
         (if (and (not active) (draw-preview-ready?))
@@ -3712,13 +4157,15 @@
                                     (draw-view-y state)
                                     (draw-view-zoom state)))
     (sdl/render-debug-text! renderer 12 60
-                            (format "pointer: %s ink: %d box: %s arrow: %s"
+                            (format "pointer: %s ink: %d box: %s arrow: %s frame: %s text: %s"
                                     (if (get state :pointer-down?) "down" "up")
                                     (if (get state :active-stroke)
                                       (count (get (get state :active-stroke) :points))
                                       0)
                                     (if (get state :active-box) "active" "idle")
-                                    (if (get state :active-arrow) "active" "idle")))
+                                    (if (get state :active-arrow) "active" "idle")
+                                    (if (get state :active-frame) "active" "idle")
+                                    (if (get state :active-text) "active" "idle")))
     (sdl/render-debug-text! renderer 12 76
                             (format "pan: %s"
                                     (if (get state :panning?) "on" "off")))
@@ -3771,7 +4218,7 @@
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
    "  drag: draw / select"
-   "  i: ink   v: select   b: box   a: arrow"
+   "  i: ink   t: text   v: select   b: box   a: arrow   f: frame"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"
