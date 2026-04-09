@@ -1,0 +1,41 @@
+;; Shared event script for the focused draw brush/undo probe.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-brush-undo-script)
+  [ {:kind :mouse-down
+      :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=10 y=10"
+      :mouse-x 10
+      :mouse-y 10
+      :shift? false}
+    {:kind :mouse-motion
+     :desc "SDL_EVENT_MOUSE_MOTION x=20 y=20"
+     :mouse-x 20
+     :mouse-y 20
+     :shift? false}
+    {:kind :mouse-up
+     :desc "SDL_EVENT_MOUSE_BUTTON_UP x=20 y=20"
+     :mouse-x 20
+     :mouse-y 20
+     :shift? false}
+    {:kind :key-down
+     :desc "SDL_EVENT_KEY_DOWN key=2"
+     :key "2"}
+    {:kind :mouse-down
+     :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=30 y=30"
+     :mouse-x 30
+     :mouse-y 30
+     :shift? false}
+    {:kind :mouse-motion
+     :desc "SDL_EVENT_MOUSE_MOTION x=40 y=40"
+     :mouse-x 40
+     :mouse-y 40
+     :shift? false}
+    {:kind :mouse-up
+     :desc "SDL_EVENT_MOUSE_BUTTON_UP x=40 y=40"
+     :mouse-x 40
+     :mouse-y 40
+     :shift? false}
+    {:kind :key-down
+     :desc "SDL_EVENT_KEY_DOWN key=u"
+     :key "u"}])

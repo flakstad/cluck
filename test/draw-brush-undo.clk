@@ -1,0 +1,46 @@
+;; Focused draw brush/undo probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(load-file "test/draw-brush-undo-script.clk")
+
+(define (draw-brush-undo-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-brush-undo-fail label expected actual)
+  (error (string-append "draw brush/undo test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-brush-undo-assert-true label value)
+  (if value
+      (draw-brush-undo-pass label)
+      (draw-brush-undo-fail label "truthy value" (pr-str value))))
+
+(define (draw-brush-undo-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-brush-undo-pass label)
+      (draw-brush-undo-fail label expected actual)))
+
+(let [state (reduce (lambda (next-state event)
+                      (draw-apply-input-event! next-state event))
+                    (default-state)
+                    (draw-brush-undo-script))]
+  (draw-brush-undo-assert-num= "brush change keeps one undo snapshot"
+                               1
+                               (count (get state :history)))
+  (draw-brush-undo-assert-num= "brush change keeps brush size"
+                               6
+                               (get state :brush-size))
+  (draw-brush-undo-assert-num= "undo leaves one stroke"
+                               1
+                               (count (get state :strokes)))
+  (draw-brush-undo-assert-num= "undo keeps brush size"
+                               6
+                               (get state :brush-size))
+  (draw-brush-undo-assert-true "undo clears active stroke"
+                               (not (get state :active-stroke))))

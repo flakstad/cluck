@@ -339,6 +339,8 @@ It is loaded by:
 - [`test/run-tui-todos.scm`](./test/run-tui-todos.scm)
 - [`test/run-draw-replay.scm`](./test/run-draw-replay.scm)
 - [`test/run-draw-live-replay.scm`](./test/run-draw-live-replay.scm)
+- [`test/run-draw-brush-undo.scm`](./test/run-draw-brush-undo.scm)
+- [`test/run-draw-live-brush-undo.scm`](./test/run-draw-live-brush-undo.scm)
 
 Run it with:
 
@@ -355,11 +357,13 @@ csi -q -s test/run-tui-todos.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-replay.scm
 SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000
+csi -q -s test/run-draw-brush-undo.scm
+SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-brush-undo.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.
-The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL input/pressure/focus path, the SDL canvas cache path, and the running draw lifecycle path.
-The draw replay probes cover the scripted replay path and the live replay mode.
+The focused draw probes cover the keyboard toggle path, the mutable draw state path, the SDL input/pressure/focus path, the SDL canvas cache path, the running draw lifecycle path, and the brush-change/undo path.
+The draw replay probes cover the scripted replay path, the live replay mode, and the dedicated brush/undo replay mode.
 The TUI Todos probe covers the SQLite-backed example helpers, seed data, and a few formatting helpers without opening the TUI.
 
 ## Weather CLI Example

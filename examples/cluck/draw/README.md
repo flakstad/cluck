@@ -55,6 +55,7 @@ The intent is to build this interactively in small steps:
 15. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
 16. when you are working on input replay or performance inspection, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm` for a fast focused probe; pass a round count like `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000` when you want a longer sustained stress run
 17. when you want to exercise the real live window with scripted input, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-replay.scm` or omit the dummy video driver for an actual windowed session; this goes through `draw-replay-live!`
+18. when you want to exercise the brush-change and undo path specifically, run `csi -q -s test/run-draw-brush-undo.scm` for a fast focused probe or `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-brush-undo.scm` for the live-window replay
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
@@ -79,6 +80,7 @@ While the window is live:
 - if the window loses focus, the active stroke is canceled so recovery is cleaner
 - the debug panel lists the current bindings and REPL helpers in-window
 - from the REPL, use `draw-simulate-input!`, `draw-replay-events!`, `draw-replay-live!`, `draw-replay-benchmark!`, or `draw-replay-live-benchmark!` to drive and time synthetic mouse, wheel, keyboard, and pen input
+- if you are chasing brush-change or undo issues, use `draw-replay-live!` with `draw-brush-undo-script` or the dedicated `test/run-draw-brush-undo.scm` / `test/run-draw-live-brush-undo.scm` runners
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

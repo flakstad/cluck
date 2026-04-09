@@ -114,7 +114,22 @@
     (draw-tools-assert-num= "stroke segment walker calls"
                             2
                             (count calls))
-    (draw-tools-assert-str= "stroke segment first call"
-                            "[[10 10] [14 14] 2]"
-                            (pr-str (first calls)))
-    (set! draw-render-stroke-segment! original)))
+  (draw-tools-assert-str= "stroke segment first call"
+                          "[[10 10] [14 14] 2]"
+                          (pr-str (first calls)))
+  (set! draw-render-stroke-segment! original)))
+
+(let [original sdl/render-line!
+      calls []]
+  (set! sdl/render-line!
+        (lambda (renderer x1 y1 x2 y2)
+          (set! calls (conj calls [x1 y1 x2 y2]))
+          true))
+  (draw-render-thick-line! 'renderer [10 10] [14 14] 2)
+  (draw-tools-assert-num= "thick line call count"
+                          5
+                          (count calls))
+  (draw-tools-assert-str= "thick line first call"
+                          "[10 10 14 14]"
+                          (pr-str (first calls)))
+  (set! sdl/render-line! original))

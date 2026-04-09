@@ -1442,38 +1442,61 @@
       255
       alpha)))
 
-(defn draw-soft-brush-layer!
-  "Render a soft brush layer using the current stroke color."
-  [renderer point size alpha]
-  (let [color (if *draw-current-stroke-color*
-                *draw-current-stroke-color*
-                [255 255 255])]
+(defn draw-stroke-color-value
+  "Return the current stroke color, defaulting to white."
+  []
+  (if *draw-current-stroke-color*
+    *draw-current-stroke-color*
+    [255 255 255]))
+
+(defn draw-set-stroke-color!
+  "Set the draw color for the current stroke with ALPHA."
+  [renderer alpha]
+  (let [color (draw-stroke-color-value)]
     (sdl/set-draw-color! renderer
                          (nth color 0)
                          (nth color 1)
                          (nth color 2)
-                         alpha)
-    (draw-render-brush! renderer point size)))
+                         alpha)))
 
-(defn draw-soft-brush-stamp!
-  "Render a softer brush stamp by layering several discs."
-  [renderer point size alpha]
-  (let [layers [[1.0 1.0]
-                [0.82 0.72]
-                [0.62 0.42]
-                [0.42 0.18]
-                [0.24 0.08]]]
-    (reduce (lambda (acc layer)
-              (let [scale (nth layer 0)
-                    alpha-scale (nth layer 1)
-                    layer-size (draw-exact-int (math/ceiling (* size scale)))
-                    layer-alpha (draw-exact-int (math/ceiling (* alpha alpha-scale)))]
-                (if (> layer-size 0)
-                  (draw-soft-brush-layer! renderer point layer-size layer-alpha)
-                  nil)
-                acc))
-            nil
-            layers)))
+(defn draw-render-thick-line-step!
+  "Draw offset copies of a line segment to approximate a thick stroke."
+  [renderer x1 y1 x2 y2 nx ny radius offset]
+  (if (> offset radius)
+    nil
+    (begin
+      (let [shift (draw-exact-int offset)
+            ox (draw-exact-int (math/round (* nx shift)))
+            oy (draw-exact-int (math/round (* ny shift)))]
+        (sdl/render-line! renderer
+                          (+ x1 ox)
+                          (+ y1 oy)
+                          (+ x2 ox)
+                          (+ y2 oy))
+        (if (> offset 0)
+          (sdl/render-line! renderer
+                            (- x1 ox)
+                            (- y1 oy)
+                            (- x2 ox)
+                            (- y2 oy))
+          nil))
+      (draw-render-thick-line-step! renderer x1 y1 x2 y2 nx ny radius (+ offset 1)))))
+
+(defn draw-render-thick-line!
+  "Render a rounded thick line between SCREEN-A and SCREEN-B."
+  [renderer screen-a screen-b radius]
+  (let [x1 (draw-exact-int (math/round (nth screen-a 0)))
+        y1 (draw-exact-int (math/round (nth screen-a 1)))
+        x2 (draw-exact-int (math/round (nth screen-b 0)))
+        y2 (draw-exact-int (math/round (nth screen-b 1)))
+        dx (- x2 x1)
+        dy (- y2 y1)
+        length (math/sqrt (+ (* dx dx) (* dy dy)))]
+    (if (<= length 0)
+      (sdl/render-line! renderer x1 y1 x2 y2)
+      (let [nx (/ (- dy) length)
+            ny (/ dx length)]
+        (draw-render-thick-line-step! renderer x1 y1 x2 y2 nx ny radius 0)))))
 
 (defn draw-render-brush-rows!
   "Render the filled disc rows for POINT with RADIUS."
@@ -1519,7 +1542,8 @@
   (let [screen-point (draw-world-point->screen-point state point)
         base-size (draw-point-screen-size state point size)
         alpha (draw-point-alpha point)]
-    (draw-soft-brush-stamp! renderer screen-point base-size alpha)))
+    (draw-set-stroke-color! renderer alpha)
+    (draw-render-brush! renderer screen-point base-size)))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
@@ -1530,31 +1554,18 @@
         x2 (nth b 0)
         y2 (nth b 1)
         p2 (draw-point-pressure b)
-        dx (- x2 x1)
-        dy (- y2 y1)
-        distance (if (> (math/abs dx) (math/abs dy))
-                   (math/abs dx)
-                   (math/abs dy))
         radius-a (draw-brush-radius (draw-point-size a size))
         radius-b (draw-brush-radius (draw-point-size b size))
-        radius (if (< radius-a radius-b) radius-a radius-b)
-        spacing (if (> radius 1)
-                  (draw-exact-int (math/ceiling (/ radius 2)))
-                  1)
-        steps (draw-exact-int (math/ceiling (/ distance spacing)))
-        dp (- p2 p1)]
-    (if (<= steps 0)
-      (draw-render-stroke-brush! renderer state a size)
-      (draw-render-stroke-point-step! renderer state
-                                      x1
-                                      y1
-                                      p1
-                                      dx
-                                      dy
-                                      dp
-                                      size
-                                      steps
-                                      0))))
+        radius (if (< radius-a radius-b) radius-b radius-a)
+        screen-a (draw-world-point->screen-point state a)
+        screen-b (draw-world-point->screen-point state b)
+        alpha (draw-exact-int (math/round (/ (+ (draw-point-alpha a)
+                                                (draw-point-alpha b))
+                                             2)))]
+    (draw-set-stroke-color! renderer alpha)
+    (draw-render-thick-line! renderer screen-a screen-b radius)
+    (draw-render-brush! renderer screen-a radius-a)
+    (draw-render-brush! renderer screen-b radius-b)))
 
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
