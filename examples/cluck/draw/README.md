@@ -89,9 +89,12 @@ While the window is live:
 - press `i` for the ink tool
 - press `t` for the text tool, then click to place a text element
 - press `v` for the selection tool, then click or drag selected elements to move them
+- drag empty space in selection mode to marquee-select elements
 - hold `shift` while clicking in selection mode to add another element to the active selection
+- hold `shift` while marquee-selecting to add the marquee hits to the current selection
 - drag a rectangle corner handle in selection mode to resize a selected rectangle
 - drag the top handle in selection mode to rotate a selected rectangle
+- drag an arrow endpoint handle in selection mode to reshape a selected arrow
 - use the tool panel buttons to switch tools, and watch the panel summary for the current selection
 - press `r` for the rectangle tool, then drag to create a rectangle object (`b` still works as a legacy alias)
 - press `a` for the arrow tool, then drag to create a connector

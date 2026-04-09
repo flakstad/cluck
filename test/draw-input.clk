@@ -115,6 +115,11 @@
   (draw-input-assert-true "tool panel selection lines mention canvas"
                           (draw-input-has-line? lines "canvas: drag to draw or create")))
 
+(let [lines (draw-tool-panel-selection-lines
+              (draw-set-tool-core! (default-state) :select))]
+  (draw-input-assert-true "tool panel selection lines mention marquee"
+                          (draw-input-has-line? lines "canvas: drag empty space to marquee select")))
+
 (let [state (assoc (draw-sync-elements
                      (draw-set-tool-core! (default-state) :select)
                      [{:kind :box
@@ -678,6 +683,94 @@
                           (not (= 0.0 (get box :rotation))))
   (draw-input-assert-false "rotation mouse-up clears rotate"
                            (get finished :active-selection-rotate)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 20.0
+               :height 20.0
+               :color [255 255 255]
+               :size 2}
+              {:kind :box
+               :x 60.0
+               :y 80.0
+               :width 20.0
+               :height 20.0
+               :color [255 255 255]
+               :size 2}])
+      marquee-start (draw-input-copy-state
+                      (draw-apply-input-event! base
+                                               {:kind :mouse-down
+                                                :desc "SDL_EVENT_MOUSE_BUTTON_DOWN marquee"
+                                                :mouse-x 0.0
+                                                :mouse-y 0.0
+                                                :pressure 1.0
+                                                :shift? false}))
+      marquee-dragged (draw-input-copy-state
+                        (draw-apply-input-event! marquee-start
+                                                 {:kind :mouse-motion
+                                                  :desc "SDL_EVENT_MOUSE_MOTION marquee"
+                                                  :mouse-x 100.0
+                                                  :mouse-y 120.0
+                                                  :pressure 1.0
+                                                  :shift? false}))
+      marquee-finished (draw-input-copy-state
+                         (draw-apply-input-event! marquee-dragged
+                                                  {:kind :mouse-up
+                                                   :desc "SDL_EVENT_MOUSE_BUTTON_UP marquee"
+                                                   :mouse-x 100.0
+                                                   :mouse-y 120.0
+                                                   :pressure 1.0
+                                                   :shift? false}))]
+  (draw-input-assert-true "empty canvas drag starts marquee"
+                          (get marquee-start :active-selection-marquee))
+  (draw-input-assert-num= "marquee mouse-up selects both boxes"
+                          2
+                          (count (draw-selected-element-ids marquee-finished)))
+  (draw-input-assert-false "marquee mouse-up clears marquee"
+                           (get marquee-finished :active-selection-marquee)))
+
+(let [base (assoc (draw-sync-elements
+                    (draw-set-tool-core! (default-state) :select)
+                    [{:kind :box
+                      :x 10.0
+                      :y 20.0
+                      :width 20.0
+                      :height 20.0
+                      :color [255 255 255]
+                      :size 2}
+                     {:kind :box
+                      :x 60.0
+                      :y 80.0
+                      :width 20.0
+                      :height 20.0
+                      :color [255 255 255]
+                      :size 2}])
+                   :selection [1])
+      marquee-start (draw-input-copy-state
+                      (draw-apply-input-event! base
+                                               {:kind :mouse-down
+                                                :desc "SDL_EVENT_MOUSE_BUTTON_DOWN marquee-shift"
+                                                :mouse-x 55.0
+                                                :mouse-y 75.0
+                                                :pressure 1.0
+                                                :shift? true}))
+      marquee-finished (draw-input-copy-state
+                         (draw-apply-input-event! marquee-start
+                                                  {:kind :mouse-up
+                                                   :desc "SDL_EVENT_MOUSE_BUTTON_UP marquee-shift"
+                                                   :mouse-x 95.0
+                                                   :mouse-y 115.0
+                                                   :pressure 1.0
+                                                   :shift? true}))]
+  (draw-input-assert-num= "shift marquee keeps prior selection"
+                          2
+                          (count (draw-selected-element-ids marquee-finished)))
+  (draw-input-assert-true "shift marquee adds second box"
+                          (draw-selection-has-id? (draw-selected-element-ids marquee-finished)
+                                                  2)))
 
 (let [base (draw-sync-elements
              (draw-set-tool-core! (default-state) :select)

@@ -154,6 +154,7 @@
    :active-selection-drag false
    :active-selection-resize false
    :active-selection-rotate false
+   :active-selection-marquee false
    :strokes []
    :active-stroke false
    :active-box false
@@ -405,6 +406,7 @@
      :elements (count (get state :elements))
      :selection (count (or (get state :selection) []))
      :active-selection-rotate? (if (get state :active-selection-rotate) true false)
+     :active-selection-marquee? (if (get state :active-selection-marquee) true false)
      :strokes (count (get state :strokes))
      :active-points (if (get state :active-stroke)
                       (count (get (get state :active-stroke) :points))
@@ -642,6 +644,9 @@
            :active-selection-rotate (if (empty? selection)
                                       false
                                       (get state :active-selection-rotate))
+           :active-selection-marquee (if (get state :active-selection-marquee)
+                                       (get state :active-selection-marquee)
+                                       false)
            :strokes strokes
            :next-element-id next-id)))
 
@@ -666,6 +671,9 @@
         state (if (contains? state :active-selection-rotate)
                 state
                 (assoc state :active-selection-rotate false))
+        state (if (contains? state :active-selection-marquee)
+                state
+                (assoc state :active-selection-marquee false))
         state (if (contains? state :view-anchor-x)
                 state
                 (assoc state :view-anchor-x 0.0))
@@ -1901,16 +1909,18 @@
   (let [history (get state :history)]
     (if (empty? history)
       (if (or (get state :active-stroke)
-              (get state :active-box)
-              (get state :active-arrow)
-              (get state :active-frame)
-              (get state :active-text)
+             (get state :active-box)
+             (get state :active-arrow)
+             (get state :active-frame)
+             (get state :active-text)
+             (get state :active-selection-marquee)
               (get state :active-selection-rotate))
         (assoc state
                :active-box false
                :active-arrow false
                :active-frame false
                :active-text false
+               :active-selection-marquee false
                :active-stroke false
                :active-selection-resize false
                :active-selection-rotate false
@@ -1933,6 +1943,7 @@
                  :active-selection-drag false
                  :active-selection-resize false
                  :active-selection-rotate false
+                 :active-selection-marquee false
                  :active-stroke false
                  :active-box false
                  :active-arrow false
@@ -2256,6 +2267,7 @@
                      :active-selection-drag false
                      :active-selection-resize false
                      :active-selection-rotate false
+                     :active-selection-marquee false
                      :active-stroke false
                      :active-box false
                      :active-arrow false
@@ -2656,6 +2668,38 @@
           [(get element :id)])
         []))))
 
+(defn draw-selection-rect
+  "Return a world-space selection rectangle from START to END."
+  [start end]
+  (draw-box-rect start end))
+
+(defn draw-bounds-overlap?
+  "Return true when A and B overlap."
+  [a b]
+  (and a
+       b
+       (< (get a :x) (+ (get b :x) (get b :width)))
+       (< (get b :x) (+ (get a :x) (get a :width)))
+       (< (get a :y) (+ (get b :y) (get b :height)))
+       (< (get b :y) (+ (get a :y) (get a :height)))))
+
+(defn draw-marquee-selection-ids
+  "Return the next selected ids for marquee BOUNDS."
+  [state bounds extend-selection? original-selection]
+  (let [hits (reduce (fn [ids element]
+                       (if (draw-bounds-overlap? bounds
+                                                 (draw-element-bounds state element))
+                         (draw-selection-add-id ids (get element :id))
+                         ids))
+                     []
+                     (get state :elements))]
+    (if extend-selection?
+      (reduce (fn [ids element-id]
+                (draw-selection-add-id ids element-id))
+              (vec original-selection)
+              hits)
+      hits)))
+
 (defn draw-selection-color
   "Return the overlay color used for selected elements."
   []
@@ -2956,8 +3000,11 @@
   (let [elements (draw-selected-elements state)
         total (count elements)]
     (if (= total 0)
-      ["actions: none selected"
-       "canvas: drag to draw or create"]
+      (if (draw-selection-tool? state)
+        ["actions: none selected"
+         "canvas: drag empty space to marquee select"]
+        ["actions: none selected"
+         "canvas: drag to draw or create"])
       (if (= total 1)
         (let [element (first elements)]
           (if (draw-box-element? element)
@@ -3120,6 +3167,7 @@
          :active-selection-drag false
          :active-selection-resize false
          :active-selection-rotate false
+         :active-selection-marquee false
          :active-stroke false
          :active-box false
          :active-arrow false
@@ -3287,27 +3335,86 @@
   [state point screen-point pointer-source extend-selection?]
   (let [element (draw-find-hit-element state point)
         ids (draw-selection-next-ids state element extend-selection?)]
-    (draw-sync-pointer-state
-      (assoc state
-             :selection ids
-             :pointer-down? (if element true false)
-             :pointer-source (if element pointer-source false)
-             :active-stroke false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-box false
-             :active-arrow false
-             :active-frame false
-             :active-text false
-             :active-selection-drag (if element
-                                      {:ids ids
+    (if element
+      (draw-sync-pointer-state
+        (assoc state
+               :selection ids
+               :pointer-down? true
+               :pointer-source pointer-source
+               :active-stroke false
+               :active-selection-resize false
+               :active-selection-rotate false
+               :active-selection-marquee false
+               :active-box false
+               :active-arrow false
+               :active-frame false
+               :active-text false
+               :active-selection-drag {:ids ids
                                        :anchor point
                                        :original-elements (edn/read-string
                                                             (pr-str (get state :elements)))
-                                       :moved? false}
-                                      false))
-      point
-      screen-point)))
+                                       :moved? false})
+        point
+        screen-point)
+      (draw-sync-pointer-state
+        (assoc state
+               :selection (if extend-selection?
+                            (draw-selected-element-ids state)
+                            [])
+               :pointer-down? true
+               :pointer-source pointer-source
+               :active-stroke false
+               :active-selection-drag false
+               :active-selection-resize false
+               :active-selection-rotate false
+               :active-box false
+               :active-arrow false
+               :active-frame false
+               :active-text false
+               :active-selection-marquee {:anchor point
+                                          :point point
+                                          :extend-selection? (if extend-selection? true false)
+                                          :original-selection (vec (draw-selected-element-ids state))})
+        point
+        screen-point))))
+
+(defn draw-extend-selection-marquee
+  "Update the active marquee selection rectangle."
+  [state point screen-point]
+  (let [marquee (get state :active-selection-marquee)]
+    (if marquee
+      (draw-sync-pointer-state
+        (assoc state
+               :active-selection-marquee (assoc marquee :point point))
+        point
+        screen-point)
+      (draw-sync-pointer-state state point screen-point))))
+
+(defn draw-finish-selection-marquee
+  "Finish the active marquee selection rectangle and update selection."
+  [state point screen-point]
+  (let [marquee (get state :active-selection-marquee)]
+    (if marquee
+      (let [bounds (draw-selection-rect (get marquee :anchor) point)
+            ids (draw-marquee-selection-ids state
+                                            bounds
+                                            (get marquee :extend-selection?)
+                                            (get marquee :original-selection))]
+        (draw-sync-pointer-state
+          (assoc state
+                 :selection ids
+                 :pointer-down? false
+                 :pointer-source false
+                 :active-selection-marquee false)
+          point
+          screen-point))
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-selection-marquee false)
+        point
+        screen-point))))
 
 (defn draw-rectangle-opposite-corner
   "Return the fixed opposite corner world point for HANDLE on BOX."
@@ -3623,6 +3730,7 @@
                             :active-selection-drag false
                             :active-selection-resize false
                             :active-selection-rotate false
+                            :active-selection-marquee false
                             :active-box false
                             :active-arrow false
                             :active-frame false
@@ -3724,6 +3832,7 @@
              :active-stroke false
              :active-selection-resize false
              :active-selection-rotate false
+             :active-selection-marquee false
              :active-arrow false
              :active-frame false
              :active-text false
@@ -3746,6 +3855,7 @@
              :active-stroke false
              :active-selection-resize false
              :active-selection-rotate false
+             :active-selection-marquee false
              :active-box false
              :active-frame false
              :active-text false
@@ -3768,6 +3878,7 @@
              :active-stroke false
              :active-selection-resize false
              :active-selection-rotate false
+             :active-selection-marquee false
              :active-box false
              :active-arrow false
              :active-text false
@@ -3789,6 +3900,7 @@
              :active-selection-drag false
              :active-selection-resize false
              :active-selection-rotate false
+             :active-selection-marquee false
              :active-stroke false
              :active-box false
              :active-arrow false
@@ -4270,6 +4382,8 @@
                 (draw-finish-selection-rotate state point screen-point)
                 (if (get state :active-selection-resize)
                 (draw-finish-selection-resize state point screen-point)
+                (if (get state :active-selection-marquee)
+                (draw-finish-selection-marquee state point screen-point)
                 (if (get state :active-selection-drag)
                 (draw-finish-selection-drag state point screen-point)
                 (if (get state :active-box)
@@ -4280,7 +4394,7 @@
                       (draw-finish-frame state point screen-point)
                       (if (get state :active-text)
                         (draw-finish-text state point screen-point)
-                        (draw-finish-stroke state point screen-point)))))))))
+                        (draw-finish-stroke state point screen-point))))))))))
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
@@ -4292,6 +4406,8 @@
                 (draw-extend-selection-rotate state point screen-point)
                 (if (get state :active-selection-resize)
                 (draw-extend-selection-resize state point screen-point)
+                (if (get state :active-selection-marquee)
+                (draw-extend-selection-marquee state point screen-point)
                 (if (get state :active-selection-drag)
                 (draw-extend-selection-drag state point screen-point)
                 (if (get state :active-box)
@@ -4302,7 +4418,7 @@
                       (draw-extend-frame state point screen-point)
                       (if (get state :active-text)
                         (draw-extend-text state point screen-point)
-                        (draw-extend-stroke state point screen-point)))))))))
+                        (draw-extend-stroke state point screen-point))))))))))
 
             :else
             (let [point (draw-input-event-point state event)
@@ -4372,6 +4488,8 @@
               (draw-finish-selection-rotate state point screen-point)
               (if (get state :active-selection-resize)
               (draw-finish-selection-resize state point screen-point)
+              (if (get state :active-selection-marquee)
+              (draw-finish-selection-marquee state point screen-point)
               (if (get state :active-selection-drag)
               (draw-finish-selection-drag state point screen-point)
               (if (get state :active-box)
@@ -4382,7 +4500,7 @@
                     (draw-finish-frame state point screen-point)
                     (if (get state :active-text)
                       (draw-finish-text state point screen-point)
-                      (draw-finish-stroke state point screen-point)))))))))
+                      (draw-finish-stroke state point screen-point))))))))))
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
@@ -4394,6 +4512,8 @@
               (draw-extend-selection-rotate state point screen-point)
               (if (get state :active-selection-resize)
               (draw-extend-selection-resize state point screen-point)
+              (if (get state :active-selection-marquee)
+              (draw-extend-selection-marquee state point screen-point)
               (if (get state :active-selection-drag)
               (draw-extend-selection-drag state point screen-point)
               (if (get state :active-box)
@@ -4404,7 +4524,7 @@
                     (draw-extend-frame state point screen-point)
                     (if (get state :active-text)
                       (draw-extend-text state point screen-point)
-                      (draw-extend-stroke state point screen-point)))))))))
+                      (draw-extend-stroke state point screen-point))))))))))
 
           :else
           (let [point (draw-input-event-point state event)
@@ -5134,16 +5254,31 @@
                     []))))
       nil)))
 
+(defn draw-selection-marquee-bounds
+  "Return the current marquee-selection bounds when active."
+  [state]
+  (let [marquee (get state :active-selection-marquee)]
+    (if marquee
+      (draw-selection-rect (get marquee :anchor)
+                           (get marquee :point))
+      false)))
+
 (defn draw-render-selection!
   "Render selection bounds and handles for the current selection."
   [renderer state]
-  (let [bounds (draw-selection-bounds state)]
+  (let [bounds (draw-selection-bounds state)
+        marquee (draw-selection-marquee-bounds state)]
     (if bounds
       (begin
         (draw-render-box! renderer
                           state
                           (draw-selection-outline-element bounds))
         (draw-render-selection-handles! renderer state))
+      nil)
+    (if marquee
+      (draw-render-box! renderer
+                        state
+                        (draw-selection-outline-element marquee))
       nil)))
 
 (defn draw-preview-stroke!

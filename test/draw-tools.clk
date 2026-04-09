@@ -34,6 +34,9 @@
       (draw-tools-pass label)
       (draw-tools-fail label expected actual)))
 
+(define (draw-tools-copy-state state)
+  (edn/read-string (pr-str state)))
+
 (define (draw-tools-base-state)
   (draw-normalize-state
     {:title "Cluck Draw"
@@ -576,6 +579,78 @@
     (draw-tools-assert-num= "selection drag moves legacy frame y"
                             30.0
                             (get moved-box :y)))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :box
+                 :x 10.0
+                 :y 20.0
+                 :width 20.0
+                 :height 20.0
+                 :color [255 255 255]
+                 :size 2}
+                {:kind :box
+                 :x 60.0
+                 :y 80.0
+                 :width 20.0
+                 :height 20.0
+                 :color [255 255 255]
+                 :size 2}])
+        marquee (draw-tools-copy-state
+                  (draw-start-selection-interaction base
+                                                    [0.0 0.0 1.0]
+                                                    [0.0 0.0]
+                                                    :mouse
+                                                    false))
+        dragged (draw-tools-copy-state
+                  (draw-extend-selection-marquee marquee
+                                                 [100.0 120.0 1.0]
+                                                 [100.0 120.0]))
+        finished (draw-tools-copy-state
+                   (draw-finish-selection-marquee dragged
+                                                  [100.0 120.0 1.0]
+                                                  [100.0 120.0]))]
+    (draw-tools-assert-true "empty-space drag starts marquee selection"
+                            (get marquee :active-selection-marquee))
+    (draw-tools-assert-num= "marquee selects both rectangles"
+                            2
+                            (count (draw-selected-element-ids finished)))
+    (draw-tools-assert-false "marquee clears after finish"
+                             (get finished :active-selection-marquee)))
+
+  (let [base (assoc (draw-sync-elements
+                      (draw-set-tool-core! (default-state) :select)
+                      [{:kind :box
+                        :x 10.0
+                        :y 20.0
+                        :width 20.0
+                        :height 20.0
+                        :color [255 255 255]
+                        :size 2}
+                       {:kind :box
+                        :x 60.0
+                        :y 80.0
+                        :width 20.0
+                        :height 20.0
+                        :color [255 255 255]
+                        :size 2}])
+                     :selection [1])
+        marquee (draw-tools-copy-state
+                  (draw-start-selection-interaction base
+                                                    [55.0 75.0 1.0]
+                                                    [55.0 75.0]
+                                                    :mouse
+                                                    true))
+        finished (draw-tools-copy-state
+                   (draw-finish-selection-marquee marquee
+                                                  [95.0 115.0 1.0]
+                                                  [95.0 115.0]))]
+    (draw-tools-assert-num= "shift marquee keeps prior selection"
+                            2
+                            (count (draw-selected-element-ids finished)))
+    (draw-tools-assert-true "shift marquee includes second rectangle"
+                            (draw-selection-has-id? (draw-selected-element-ids finished)
+                                                    2)))
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
