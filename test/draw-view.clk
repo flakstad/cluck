@@ -31,6 +31,13 @@
 
 (draw-view-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 
+(draw-view-assert-true "world bound is very large"
+                       (> (draw-world-bound) 100000000.0))
+(draw-view-assert-true "min zoom supports deep zoom out"
+                       (< (draw-min-zoom) 0.001))
+(draw-view-assert-true "max zoom supports deep zoom in"
+                       (> (draw-max-zoom) 1000.0))
+
 (draw-view-assert-str= "screen point converts to world at default zoom"
                        "[12.0 34.0 1.0]"
                        (pr-str (draw-event-point (default-state)
@@ -107,6 +114,25 @@
                          "[100 50 1.0]"
                          (pr-str (draw-world-point->screen-point wheel-zoomed anchor))))
 
+(let [base (assoc (default-state)
+                  :view-x 123456789.0
+                  :view-y -234567890.0
+                  :zoom 0.5)
+      anchor [400.0 280.0 1.0]
+      world (draw-screen-point->world-point base anchor)
+      zoom-a (draw-zoom-at-core! base 10.0 400.0 280.0)
+      zoom-b (draw-zoom-at-core! zoom-a -18.0 400.0 280.0)
+      zoom-c (draw-zoom-at-core! zoom-b 6.0 400.0 280.0)]
+  (draw-view-assert-str= "deep repeated zoom keeps anchor after zoom a"
+                         "[400 280 1.0]"
+                         (pr-str (draw-world-point->screen-point zoom-a world)))
+  (draw-view-assert-str= "deep repeated zoom keeps anchor after zoom b"
+                         "[400 280 1.0]"
+                         (pr-str (draw-world-point->screen-point zoom-b world)))
+  (draw-view-assert-str= "deep repeated zoom keeps anchor after zoom c"
+                         "[400 280 1.0]"
+                         (pr-str (draw-world-point->screen-point zoom-c world))))
+
 (let [panning (draw-pan-core! (assoc (default-state)
                                      :panning? true
                                      :pan-last-x 10.0
@@ -121,6 +147,37 @@
   (draw-view-assert-num= "pan drag updates view-y"
                          18.0
                          (draw-view-y panning)))
+
+(let [state (assoc (default-state)
+                   :view-x 500000000.0
+                   :view-y -500000000.0
+                   :zoom 0.0005)
+      world [(+ (draw-view-x state) 4000.0)
+             (+ (draw-view-y state) 6000.0)
+             1.0]
+      screen (draw-world-point->screen-point state world)
+      roundtrip (draw-screen-point->world-point state screen)]
+  (draw-view-assert-str= "deep zoom out world point converts to coarse screen"
+                         "[2 3 1.0]"
+                         (pr-str screen))
+  (draw-view-assert-str= "deep zoom out roundtrip keeps world point"
+                         (pr-str world)
+                         (pr-str roundtrip)))
+
+(let [panned (draw-pan-core! (assoc (default-state)
+                                    :panning? true
+                                    :pan-last-x 0.0
+                                    :pan-last-y 0.0
+                                    :view-x 999999950.0
+                                    :view-y -999999950.0
+                                    :zoom 0.0005)
+                             [640.0 360.0])]
+  (draw-view-assert-true "extreme pan clamps view x"
+                         (<= (math/abs (draw-view-x panned))
+                             (draw-world-bound)))
+  (draw-view-assert-true "extreme pan clamps view y"
+                         (<= (math/abs (draw-view-y panned))
+                             (draw-world-bound))))
 
 (let [started (draw-start-stroke (assoc (default-state)
                                         :view-x 100.0

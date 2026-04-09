@@ -917,17 +917,17 @@
 (defn draw-world-bound
   "Return the viewport world bound used for navigation clamping."
   []
-  1000000.0)
+  1000000000.0)
 
 (defn draw-min-zoom
   "Return the minimum supported zoom level."
   []
-  0.01)
+  0.0005)
 
 (defn draw-max-zoom
   "Return the maximum supported zoom level."
   []
-  64.0)
+  2048.0)
 
 (defn draw-zoom-factor
   "Return the zoom multiplier used by keyboard shortcuts."

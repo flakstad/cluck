@@ -31,6 +31,7 @@ What is in place:
   - `ctrl` + `-` zoom out at the pointer
   - `h`, `j`, `k`, `l` pan left, down, up, and right
   - `0` reset the viewport
+  - the current viewport bounds are intentionally very large, with deep zoom-out and deep zoom-in ranges for a stronger infinite-canvas feel
 - focus loss cancels the active stroke instead of leaving the canvas in a half-drawn state
 - REPL state changes redraw the window immediately once the app is live
 
@@ -98,6 +99,7 @@ While the window is live:
 - press `1`, `2`, or `3` to switch brush sizes
 - use the mouse wheel to zoom around the cursor
 - use `ctrl` + `+` / `-` to zoom around the cursor
+- the viewport now supports a much larger bounded world and deeper zoom range, while keeping pointer-anchored zoom stable in the focused view tests
 - press `ctrl+s` to save and `ctrl+o` to load from the default save path
 - hold `space` and drag to pan the viewport
 - zoomed drawing keeps brush width visually stable on screen, so zooming in lets you place finer world-space detail

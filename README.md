@@ -278,7 +278,9 @@ the debug panel on demand, or `tab` to toggle the in-window tool panel with
 clickable buttons and a selection summary. Cursor shape follows the current
 interaction mode: crosshair for drawing, move while panning or dragging
 selection, resize over rectangle handles, text for the text tool, and pointer
-over clickable tool-panel buttons. The current tool
+over clickable tool-panel buttons. The viewport range is now much deeper too:
+the world bounds are intentionally very large and pointer-anchored zoom is
+covered by focused view tests at extreme zoom levels. The current tool
 shortcuts are:
 
 - `i` ink tool
