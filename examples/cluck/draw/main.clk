@@ -495,6 +495,10 @@
     (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_LOST") :focus-lost
     (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_ENTER") :mouse-enter
     (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_LEAVE") :mouse-leave
+    (str/starts-with? desc "SDL_EVENT_FINGER_MOTION") :finger-motion
+    (str/starts-with? desc "SDL_EVENT_FINGER_DOWN") :finger-down
+    (str/starts-with? desc "SDL_EVENT_FINGER_UP") :finger-up
+    (str/starts-with? desc "SDL_EVENT_FINGER_CANCELED") :finger-canceled
     (str/starts-with? desc "SDL_EVENT_KEY_DOWN") :key-down
     (str/starts-with? desc "SDL_EVENT_KEY_UP") :key-up
     (str/starts-with? desc "SDL_EVENT_TEXT_INPUT") :text-input
@@ -1524,7 +1528,9 @@
     state
     [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
      (or (get event :mouse-y) (get event :wheel-mouse-y) 0)
-     (or (get event :pressure) 1.0)]))
+     (or (get event :pressure)
+         (get state :pen-pressure)
+         1.0)]))
 
 (defn draw-build-input-event
   "Build a synthetic event map for DESC using the current SDL event state."
@@ -1553,6 +1559,16 @@
              (draw-kind=? kind :mouse-up))
          (str/includes? desc "which=4294967294"))))
 
+(defn draw-ignorable-input-event?
+  "Return true when EVENT should be discarded before it reaches app logic."
+  [event]
+  (let [kind (get event :kind)]
+    (or (draw-synthetic-pen-mouse-event? event)
+        (draw-kind=? kind :finger-motion)
+        (draw-kind=? kind :finger-down)
+        (draw-kind=? kind :finger-up)
+        (draw-kind=? kind :finger-canceled))))
+
 (defn draw-loggable-event?
   "Return true when EVENT is useful in the persistent draw log."
   [event]
@@ -1577,7 +1593,7 @@
 (defn draw-apply-and-log-input-event!
   "Apply EVENT to STATE and emit a diagnostic log entry when relevant."
   [state event source]
-  (if (draw-synthetic-pen-mouse-event? event)
+  (if (draw-ignorable-input-event? event)
     state
     (let [next-state (draw-apply-input-event! state event)]
       (if (draw-loggable-event? event)
@@ -1913,13 +1929,18 @@
     quit?
     (if (sdl/poll-event!)
       (let [desc (sdl/event-description)
-            kind (draw-event-kind desc)]
-        (set! *draw-state* (draw-record-input! *draw-state* desc))
-        (if (draw-kind=? kind :quit)
+            event (draw-build-input-event *draw-state* desc)
+            kind (get event :kind)]
+        (if (draw-ignorable-input-event? event)
+          (draw-drain-input-batch! remaining quit?)
           (begin
-            (set! *draw-running?* false)
-            (draw-drain-input-batch! (- remaining 1) true))
-          (draw-drain-input-batch! (- remaining 1) quit?)))
+            (set! *draw-state*
+                  (draw-apply-and-log-input-event! *draw-state* event :sdl))
+            (if (draw-kind=? kind :quit)
+              (begin
+                (set! *draw-running?* false)
+                (draw-drain-input-batch! (- remaining 1) true))
+              (draw-drain-input-batch! (- remaining 1) quit?)))))
       quit?)))
 
 (defn draw-poll-input!
