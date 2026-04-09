@@ -19,6 +19,11 @@
       (draw-tools-pass label)
       (draw-tools-fail label "truthy value" (pr-str value))))
 
+(define (draw-tools-assert-false label value)
+  (if (not value)
+      (draw-tools-pass label)
+      (draw-tools-fail label "falsey value" (pr-str value))))
+
 (define (draw-tools-assert-str= label expected actual)
   (if (string=? expected actual)
       (draw-tools-pass label)
@@ -105,11 +110,15 @@
                             (str (get tool-state :brush-size))))
 
   (let [box-state (draw-handle-tool-key! (default-state) "b")
+        select-state (draw-handle-tool-key! (default-state) "v")
         box-snapshot (edn/read-string (pr-str box-state))
         ink-state (draw-handle-tool-key! box-state "i")]
     (draw-tools-assert-str= "box tool key preset"
                             "box"
                             (draw-tool-mode box-snapshot))
+    (draw-tools-assert-str= "selection tool key preset"
+                            "select"
+                            (draw-tool-mode select-state))
     (draw-tools-assert-str= "ink tool key preset"
                             "ink"
                             (draw-tool-mode ink-state)))
@@ -181,6 +190,55 @@
     (draw-tools-assert-num= "undo removes box element"
                             0
                             (count (get undone :elements))))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :box
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}
+                {:kind :ink
+                 :points [[100.0 100.0 1.0] [120.0 100.0 1.0]]
+                 :color [255 255 255]
+                 :size 2}])
+        box-drag (draw-start-selection-drag base
+                                            [15.0 25.0 1.0]
+                                            [15.0 25.0]
+                                            :mouse)
+        moved (draw-extend-selection-drag box-drag
+                                          [25.0 35.0 1.0]
+                                          [25.0 35.0])
+        finished (draw-finish-selection-drag moved
+                                             [25.0 35.0 1.0]
+                                             [25.0 35.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        moved-box (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)
+        restored-box (first (get undone :elements))
+        ink-hit (draw-start-selection-drag base
+                                           [110.0 100.0 1.0]
+                                           [110.0 100.0]
+                                           :mouse)]
+    (draw-tools-assert-num= "selection picks one box"
+                            1
+                            (count (draw-selected-element-ids box-drag)))
+    (draw-tools-assert-num= "selection drag moves box x"
+                            20.0
+                            (get moved-box :x))
+    (draw-tools-assert-num= "selection drag moves box y"
+                            30.0
+                            (get moved-box :y))
+    (draw-tools-assert-false "selection drag clears active drag on finish"
+                             (get finished-snapshot :active-selection-drag))
+    (draw-tools-assert-num= "undo restores moved box x"
+                            10.0
+                            (get restored-box :x))
+    (draw-tools-assert-num= "selection can hit ink elements"
+                            1
+                            (count (draw-selected-element-ids ink-hit))))
 
   (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
                                    [255 255 255]
