@@ -81,7 +81,7 @@
   (draw-input-assert-true "debug panel lists draw"
                           (draw-input-has-line? lines "  drag: draw / select"))
   (draw-input-assert-true "debug panel lists tools"
-                          (draw-input-has-line? lines "  i: ink   v: select   b: box   a: arrow"))
+                          (draw-input-has-line? lines "  i: ink   t: text   v: select   b: box   a: arrow   f: frame"))
   (draw-input-assert-true "debug panel lists pressure"
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
@@ -253,6 +253,61 @@
                           (get moved-box :y))
   (draw-input-assert-false "selection mouse-up clears active drag"
                            (get finished :active-selection-drag)))
+
+(let [frame-created (draw-input-copy-state
+                      (draw-apply-input-event!
+                        (draw-apply-input-event! (draw-set-tool-core! (default-state) :frame)
+                                                 {:kind :mouse-down
+                                                  :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=15.0 y=25.0"
+                                                  :mouse-x 15.0
+                                                  :mouse-y 25.0
+                                                  :pressure 1.0
+                                                  :shift? false})
+                        {:kind :mouse-up
+                         :desc "SDL_EVENT_MOUSE_BUTTON_UP x=45.0 y=55.0"
+                         :mouse-x 45.0
+                         :mouse-y 55.0
+                         :pressure 1.0
+                         :shift? false}))
+      frame-element (first (get frame-created :elements))]
+  (draw-input-assert-str= "frame tool creates frame element"
+                          ":frame"
+                          (pr-str (get frame-element :kind)))
+  (draw-input-assert-num= "frame tool stores frame width"
+                          30.0
+                          (get frame-element :width))
+  (draw-input-assert-num= "frame tool stores frame height"
+                          30.0
+                          (get frame-element :height)))
+
+(let [text-created (draw-input-copy-state
+                     (draw-apply-input-event!
+                       (draw-apply-input-event! (draw-set-tool-core! (default-state) :text)
+                                                {:kind :mouse-down
+                                                 :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=18.0 y=28.0"
+                                                 :mouse-x 18.0
+                                                 :mouse-y 28.0
+                                                 :pressure 1.0
+                                                 :shift? false})
+                       {:kind :mouse-up
+                        :desc "SDL_EVENT_MOUSE_BUTTON_UP x=48.0 y=58.0"
+                        :mouse-x 48.0
+                        :mouse-y 58.0
+                        :pressure 1.0
+                        :shift? false}))
+      text-element (first (get text-created :elements))]
+  (draw-input-assert-str= "text tool creates text element"
+                          ":text"
+                          (pr-str (get text-element :kind)))
+  (draw-input-assert-num= "text tool stores text x"
+                          48.0
+                          (get text-element :x))
+  (draw-input-assert-num= "text tool stores text y"
+                          58.0
+                          (get text-element :y))
+  (draw-input-assert-str= "text tool stores default label"
+                          "Text"
+                          (get text-element :text)))
 
 (let [pen-state (draw-apply-and-log-input-event!
                   (default-state)
