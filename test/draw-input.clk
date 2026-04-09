@@ -40,6 +40,9 @@
           false
           lines))
 
+(define (draw-input-copy-state state)
+  (edn/read-string (pr-str state)))
+
 (draw-input-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 (draw-input-assert-true "focus gained event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_GAINED")
@@ -70,9 +73,11 @@
 
 (let [lines (draw-debug-control-lines)]
   (draw-input-assert-true "debug panel lists wheel zoom"
-                          (draw-input-has-line? lines "  wheel: zoom"))
-  (draw-input-assert-true "debug panel lists shift pan"
-                          (draw-input-has-line? lines "  shift+drag: pan"))
+                          (draw-input-has-line? lines "  wheel: zoom at pointer"))
+  (draw-input-assert-true "debug panel lists ctrl zoom"
+                          (draw-input-has-line? lines "  ctrl +/-: zoom at pointer"))
+  (draw-input-assert-true "debug panel lists space pan"
+                          (draw-input-has-line? lines "  space+drag: pan"))
   (draw-input-assert-true "debug panel lists draw"
                           (draw-input-has-line? lines "  drag: draw"))
   (draw-input-assert-true "debug panel lists pressure"
@@ -141,6 +146,65 @@
   (draw-input-assert-num= "focus gained resets pressure"
                           1.0
                           (get gained :pen-pressure)))
+
+(let [space-down (draw-input-copy-state
+                   (draw-apply-input-event! (default-state)
+                                            {:kind :key-down
+                                             :key "Space"
+                                             :desc "SDL_EVENT_KEY_DOWN key=Space"
+                                             :ctrl? false}))
+      panning (draw-input-copy-state
+                (draw-apply-input-event! space-down
+                                         {:kind :mouse-down
+                                          :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=100.0 y=100.0"
+                                          :mouse-x 100.0
+                                          :mouse-y 100.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      dragged (draw-input-copy-state
+                (draw-apply-input-event! panning
+                                         {:kind :mouse-motion
+                                          :desc "SDL_EVENT_MOUSE_MOTION x=140.0 y=130.0"
+                                          :mouse-x 140.0
+                                          :mouse-y 130.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! dragged
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP x=140.0 y=130.0"
+                                           :mouse-x 140.0
+                                           :mouse-y 130.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      space-up (draw-input-copy-state
+                 (draw-apply-input-event! finished
+                                          {:kind :key-up
+                                           :key "Space"
+                                           :desc "SDL_EVENT_KEY_UP key=Space"
+                                           :ctrl? false}))]
+  (draw-input-assert-true "space key enables pan mode"
+                          (get panning :panning?))
+  (draw-input-assert-num= "space drag changes view-x"
+                          -40.0
+                          (draw-view-x dragged))
+  (draw-input-assert-num= "space drag changes view-y"
+                          -30.0
+                          (draw-view-y dragged))
+  (draw-input-assert-false "mouse up ends panning"
+                           (get finished :panning?))
+  (draw-input-assert-false "space up clears modifier"
+                           (get space-up :space-down?)))
+
+(let [zoomed (draw-apply-input-event! (assoc (default-state)
+                                             :mouse-screen-x 120.0
+                                             :mouse-screen-y 80.0)
+                                      {:kind :key-down
+                                       :key "="
+                                       :desc "SDL_EVENT_KEY_DOWN key=="
+                                       :ctrl? true})]
+  (draw-input-assert-true "ctrl plus zooms"
+                          (> (draw-view-zoom zoomed) 1.0)))
 
 (let [pen-state (draw-apply-and-log-input-event!
                   (default-state)

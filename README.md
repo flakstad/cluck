@@ -269,7 +269,8 @@ there you can call functions
 like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
 while the window stays open. Use the mouse wheel to zoom around the cursor,
-hold `shift` while dragging to pan, and drag with the mouse or pen to paint
+hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
+pointer, and drag with the mouse or pen to paint
 strokes. Press `d` to toggle the debug panel on demand. The current tool
 shortcuts are:
 
@@ -277,12 +278,12 @@ shortcuts are:
 - `c` clear the canvas
 - `e` eraser
 - `1`/`2`/`3` brush sizes
-- `]`/`+`/`=` zoom in
-- `[`/`-` zoom out
+- `ctrl` + `+` / `=` zoom in at the pointer
+- `ctrl` + `-` zoom out at the pointer
 - `h`/`j`/`k`/`l` pan left/down/up/right
 - `0` reset the viewport
 - wheel zooms around the cursor
-- `shift`+drag pans the viewport
+- `space`+drag pans the viewport
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
 - draw session logging writes to `build/cluck-draw.log`

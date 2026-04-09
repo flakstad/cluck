@@ -14,13 +14,13 @@ What is in place:
 - freehand brush strokes while dragging, with a soft pressure-sensitive brush
 - an on-demand debug panel toggled with `d`
 - mouse-wheel zoom centered on the cursor
-- `shift`+drag panning for the viewport
+- `space`+drag panning for the viewport
 - tool shortcuts for `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default
 - viewport shortcuts for the infinite canvas:
-  - `]`, `+`, `=` zoom in
-  - `[`, `-` zoom out
+  - `ctrl` + `+` / `=` zoom in at the pointer
+  - `ctrl` + `-` zoom out at the pointer
   - `h`, `j`, `k`, `l` pan left, down, up, and right
   - `0` reset the viewport
 - focus loss cancels the active stroke instead of leaving the canvas in a half-drawn state
@@ -44,7 +44,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default
 5. if the draw child crashes or stalls, call `(restart-dev!)` to restart it without killing the REPL
-6. use the mouse wheel to zoom, hold `shift` and drag to pan, and drag with the mouse or pen to paint strokes; press `d` to toggle the debug panel
+6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, and drag with the mouse or pen to paint strokes; press `d` to toggle the debug panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
@@ -79,7 +79,8 @@ While the window is live:
 - press `e` to toggle eraser mode
 - press `1`, `2`, or `3` to switch brush sizes
 - use the mouse wheel to zoom around the cursor
-- hold `shift` and drag to pan the viewport
+- use `ctrl` + `+` / `-` to zoom around the cursor
+- hold `space` and drag to pan the viewport
 - call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state
 - draw session logging now writes to `build/cluck-draw.log`
 - crashes now write a snapshot to `build/cluck-draw-crash.edn`

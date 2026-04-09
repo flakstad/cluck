@@ -184,6 +184,10 @@ static bool cluck_mod_shift_pressed(void) {
   return (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
 }
 
+static bool cluck_mod_ctrl_pressed(void) {
+  return (SDL_GetModState() & SDL_KMOD_CTRL) != 0;
+}
+
 static bool cluck_render_fill_rect(SDL_Renderer *renderer, float x, float y, float w, float h) {
   SDL_FRect rect;
   rect.x = x;
@@ -533,6 +537,9 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (define sdl-mod-shift-pressed?
   (foreign-lambda bool "cluck_mod_shift_pressed"))
 
+(define sdl-mod-ctrl-pressed?
+  (foreign-lambda bool "cluck_mod_ctrl_pressed"))
+
 (define sdl-render-fill-rect!
   (foreign-lambda* bool ((c-pointer renderer)
                          (int x)
@@ -747,6 +754,10 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (defn mod-shift-pressed?
   []
   (sdl-mod-shift-pressed?))
+
+(defn mod-ctrl-pressed?
+  []
+  (sdl-mod-ctrl-pressed?))
 
 (defn render-fill-rect!
   [renderer x y w h]
