@@ -13,7 +13,8 @@
             [cluck.string :as str]))
 
 (import srfi-18
-        (chicken time))
+        (chicken time)
+        (prefix (chicken process-context posix) posix:))
 
 (def *draw-state* nil)
 (def *draw-context* nil)
@@ -24,6 +25,12 @@
 (def *draw-log-enabled?* true)
 (def *draw-log-path* false)
 (def *draw-crash-path* false)
+(def *draw-heartbeat-path* false)
+(def *draw-stall-path* false)
+(def *draw-stall-sample-path* false)
+(def *draw-watchdog-enabled?* true)
+(def *draw-watchdog-pid* false)
+(def *draw-last-heartbeat-at* 0)
 (def *draw-canvas-ready?* false)
 (def *draw-preview-ready?* false)
 (def *draw-brush-ready?* false)
@@ -40,14 +47,25 @@
   []
   4)
 
-(defn draw-debug-event-lines-limit
-  []
-  4)
-
 (defn draw-preview-segment-budget
   "Return the maximum number of new stroke points to preview in one frame."
   []
   24)
+
+(defn draw-heartbeat-interval-ms
+  "Return the minimum spacing between heartbeat file writes."
+  []
+  250)
+
+(defn draw-watchdog-stale-ms
+  "Return how long the heartbeat may stay stale before a stall is recorded."
+  []
+  5000)
+
+(defn draw-watchdog-poll-ms
+  "Return how often the external stall watcher checks the heartbeat."
+  []
+  500)
 
 (defn init-video!
   []
@@ -128,6 +146,34 @@
   (or *draw-crash-path*
       (fs/path (current-directory) "build" "cluck-draw-crash.edn")))
 
+(defn draw-heartbeat-file-path
+  "Return the path used for draw loop heartbeats."
+  []
+  (or *draw-heartbeat-path*
+      (fs/path (current-directory) "build" "cluck-draw-heartbeat.edn")))
+
+(defn draw-stall-file-path
+  "Return the path used for detected draw stalls."
+  []
+  (or *draw-stall-path*
+      (fs/path (current-directory) "build" "cluck-draw-stall.edn")))
+
+(defn draw-stall-sample-file-path
+  "Return the path used for detected draw stall samples."
+  []
+  (or *draw-stall-sample-path*
+      (fs/path (current-directory) "build" "cluck-draw-stall.sample")))
+
+(defn draw-watchdog-script-path
+  "Return the watchdog script used to capture draw stalls."
+  []
+  (fs/path (current-directory) "examples" "cluck" "draw" "watchdog.sh"))
+
+(defn draw-process-id
+  "Return the current process id."
+  []
+  (posix:current-process-id))
+
 (defn draw-ensure-parent-directory!
   "Ensure PATH's parent directory exists before writing a save file."
   [path]
@@ -161,6 +207,27 @@
   [path]
   (set! *draw-crash-path* (fs/path path)))
 
+(defn draw-enable-watchdog!
+  "Enable the external draw watchdog."
+  []
+  (set! *draw-watchdog-enabled?* true))
+
+(defn draw-disable-watchdog!
+  "Disable the external draw watchdog."
+  []
+  (set! *draw-watchdog-enabled?* false))
+
+(defn draw-watchdog-status
+  "Return the current watchdog configuration and paths."
+  []
+  {:enabled? *draw-watchdog-enabled?*
+   :pid *draw-watchdog-pid*
+   :heartbeat (draw-heartbeat-file-path)
+   :stall (draw-stall-file-path)
+   :sample (draw-stall-sample-file-path)
+   :stale-ms (draw-watchdog-stale-ms)
+   :poll-ms (draw-watchdog-poll-ms)})
+
 (defn draw-clear-log!
   "Delete the current draw log file when it exists."
   []
@@ -169,6 +236,26 @@
       (fs/delete! path)
       false)
     path))
+
+(defn draw-clear-watchdog-files!
+  "Delete prior heartbeat and stall artifacts."
+  []
+  (let [paths [(draw-heartbeat-file-path)
+               (draw-stall-file-path)
+               (draw-stall-sample-file-path)]]
+    (let [heartbeat (first paths)
+          stall (nth paths 1)
+          sample (nth paths 2)]
+      (if (fs/file? heartbeat)
+        (fs/delete! heartbeat)
+        false)
+      (if (fs/file? stall)
+        (fs/delete! stall)
+        false)
+      (if (fs/file? sample)
+        (fs/delete! sample)
+        false))
+    paths))
 
 (defn draw-log-lines
   "Return all current draw log lines."
@@ -215,6 +302,36 @@
      :last-event (or (get state :last-event) "")}
     nil))
 
+(defn draw-heartbeat-payload
+  "Return the external heartbeat payload for STATE at PHASE."
+  [phase state]
+  {:at (current-process-milliseconds)
+   :phase phase
+   :pid (draw-process-id)
+   :running? *draw-running?*
+   :watchdog? *draw-watchdog-enabled?*
+   :state (draw-state-snapshot state)})
+
+(defn draw-write-heartbeat!
+  "Write a heartbeat for PHASE and STATE when enough time has elapsed."
+  [phase state]
+  (let [now (current-process-milliseconds)
+        force? (or (equal? phase :start)
+                   (equal? phase :stop)
+                   (equal? phase :crash))
+        due? (or force?
+                 (= *draw-last-heartbeat-at* 0)
+                 (>= (- now *draw-last-heartbeat-at*)
+                     (draw-heartbeat-interval-ms)))]
+    (if due?
+      (let [path (draw-heartbeat-file-path)
+            payload (draw-heartbeat-payload phase state)]
+        (draw-ensure-parent-directory! path)
+        (io/spit path (pr-str payload))
+        (set! *draw-last-heartbeat-at* now)
+        payload)
+      false)))
+
 (defn draw-log-entry!
   "Append a diagnostic KIND/PAYLOAD entry to the draw session log."
   [kind payload]
@@ -245,6 +362,51 @@
     (draw-ensure-parent-directory! path)
     (io/spit path (pr-str report))
     path))
+
+(defn draw-stop-watchdog!
+  "Stop the external draw watchdog when one is running."
+  []
+  (let [pid *draw-watchdog-pid*]
+    (set! *draw-watchdog-pid* false)
+    (if pid
+      (proc/system
+        (format "kill %s >/dev/null 2>&1 || true"
+                (proc/qs (str pid))))
+      0)
+    nil))
+
+(defn draw-start-watchdog!
+  "Start the external draw watchdog if it is enabled."
+  []
+  (if (not *draw-watchdog-enabled?*)
+    nil
+    (let [script (draw-watchdog-script-path)]
+      (if (not (fs/file? script))
+        nil
+        (begin
+          (draw-stop-watchdog!)
+          (draw-write-heartbeat! :start *draw-state*)
+          (let [launcher
+                  (format "%s %s %s %s %s %s %s %s >/dev/null 2>&1 & echo $!"
+                          (proc/qs script)
+                          (proc/qs (str (draw-process-id)))
+                          (proc/qs (draw-heartbeat-file-path))
+                          (proc/qs (draw-stall-file-path))
+                          (proc/qs (draw-stall-sample-file-path))
+                          (proc/qs (draw-log-file-path))
+                          (proc/qs (str (draw-watchdog-stale-ms)))
+                          (proc/qs (str (draw-watchdog-poll-ms))))
+                command (format "/bin/sh -c %s"
+                                (proc/qs launcher))
+                result (proc/sh command)]
+            (if (zero? (get result :exit))
+              (let [pid-text (str/trim (get result :out))]
+                (if (str/blank? pid-text)
+                  nil
+                  (begin
+                    (set! *draw-watchdog-pid* (parse-long pid-text))
+                    *draw-watchdog-pid*)))
+              nil)))))))
 
 (defn draw-dump-state!
   "Write the current full draw state to PATH, or the default state file."
@@ -1345,6 +1507,8 @@
   (set! *draw-last-error* exn)
   (set! *draw-running?* false)
   (set! *draw-thread* nil)
+  (draw-write-heartbeat! :crash *draw-state*)
+  (draw-stop-watchdog!)
   (draw-log-entry! :crash
                    {:error (format "%s" exn)
                     :state (draw-state-snapshot *draw-state*)})
@@ -2470,9 +2634,13 @@
   []
   (draw-with-lock
     (lambda ()
+      (draw-write-heartbeat! :poll *draw-state*)
       (draw-poll-input!)
+      (draw-write-heartbeat! :render *draw-state*)
       (if *draw-state*
-        (draw-render-current!)
+        (let [state (draw-render-current!)]
+          (draw-write-heartbeat! :idle state)
+          state)
         *draw-state*))))
 
 (defn default-render-frame
@@ -2550,10 +2718,14 @@
               (set! *draw-state* state)
               (set! *draw-context* ctx)
               (set! *draw-running?* true)
+              (set! *draw-last-heartbeat-at* 0)
+              (draw-clear-watchdog-files!)
               (draw-log-entry! :start
                                {:state (draw-state-snapshot state)
                                 :log (draw-log-file-path)
-                                :crash (draw-crash-file-path)})
+                                :crash (draw-crash-file-path)
+                                :heartbeat (draw-heartbeat-file-path)
+                                :stall (draw-stall-file-path)})
               (draw-ensure-canvas! state)
               (draw-ensure-preview! state)
               (draw-ensure-brush-texture! state)
@@ -2563,6 +2735,8 @@
                 nil)
               (draw-reset-preview-sync!)
               (draw-clear-preview!)
+              (draw-write-heartbeat! :start state)
+              (draw-start-watchdog!)
               (sync-window-title!)
               ctx))))))))
 
@@ -2571,8 +2745,10 @@
   []
   (draw-with-lock
     (lambda ()
+      (draw-write-heartbeat! :stop *draw-state*)
       (draw-log-entry! :stop {:state (draw-state-snapshot *draw-state*)})
       (set! *draw-running?* false)
+      (draw-stop-watchdog!)
       (draw-release-canvas!)
       (draw-release-preview!)
       (draw-release-brush-texture!)
@@ -2582,6 +2758,7 @@
           (sdl/close-context! *draw-context*)
           (set! *draw-context* nil)))
       (set! *draw-thread* nil)
+      (set! *draw-last-heartbeat-at* 0)
       (shutdown!)
       nil)))
 
@@ -2668,10 +2845,12 @@
   
   (load-file "examples/cluck/draw/dev.clk")
   (draw-clear-log!)
+  (draw-clear-watchdog-files!)
   (start-dev!)
 
   (draw-log-tail 50)
   (dump-current-state!)
+  (draw-watchdog-status)
 
   (default-state)
   (describe-state (default-state))

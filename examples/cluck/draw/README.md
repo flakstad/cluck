@@ -78,11 +78,14 @@ While the window is live:
 - call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state
 - draw session logging now writes to `build/cluck-draw.log`
 - crashes now write a snapshot to `build/cluck-draw-crash.edn`
+- the draw loop now writes heartbeats to `build/cluck-draw-heartbeat.edn`
+- if the loop stalls, the external watchdog writes `build/cluck-draw-stall.edn` and, on macOS, a `build/cluck-draw-stall.sample` process sample
 - pen pressure now scales the brush while drawing on tablets that expose it
 - if the window loses focus, the active stroke is canceled so recovery is cleaner
 - the debug panel lists the current bindings and REPL helpers in-window
 - from the REPL, use `draw-simulate-input!`, `draw-replay-events!`, `draw-replay-live!`, `draw-replay-benchmark!`, or `draw-replay-live-benchmark!` to drive and time synthetic mouse, wheel, keyboard, and pen input
 - use `(draw-log-tail 20)` to inspect the last log entries, `(draw-clear-log!)` to reset the trace, and `(dump-current-state!)` to write the current full state to disk while the app is still running
+- use `(draw-watchdog-status)` to inspect the watchdog configuration; `draw-enable-watchdog!` and `draw-disable-watchdog!` control the external stall watcher
 - if you are chasing brush-change or undo issues, use `draw-replay-live!` with `draw-brush-undo-script` or the dedicated `test/run-draw-brush-undo.scm` / `test/run-draw-live-brush-undo.scm` runners
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
