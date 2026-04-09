@@ -105,6 +105,12 @@
 (def draw-world-point->screen-point draw-view/draw-world-point->screen-point)
 (def draw-point-screen-size draw-view/draw-point-screen-size)
 (def draw-world-rect->screen-rect draw-view/draw-world-rect->screen-rect)
+(def draw-wheel-zoom-factor draw-view/draw-wheel-zoom-factor)
+(def draw-zoom-at-core! draw-view/draw-zoom-at-core!)
+(def draw-zoom-at-pointer-core! draw-view/draw-zoom-at-pointer-core!)
+(def draw-start-pan-core! draw-view/draw-start-pan-core!)
+(def draw-pan-core! draw-view/draw-pan-core!)
+(def draw-finish-pan-core! draw-view/draw-finish-pan-core!)
 
 (def draw-tool-panel-width draw-panel/draw-tool-panel-width)
 (def draw-tool-panel-padding draw-panel/draw-tool-panel-padding)
@@ -890,11 +896,6 @@
   [text]
   (draw-truncate-text text 88))
 
-(defn draw-wheel-zoom-factor
-  "Return the multiplicative zoom factor for a wheel delta."
-  [delta]
-  (math/pow (draw-zoom-factor) delta))
-
 (defn draw-mark-canvas-dirty!
   "Mark the cached canvas as needing a rebuild."
   [state]
@@ -909,91 +910,6 @@
       (draw-rebuild-canvas! state)
       (assoc state :canvas-dirty? false))
     state))
-
-(defn draw-zoom-at-core!
-  "Zoom around SCREEN-X and SCREEN-Y using DELTA."
-  [state delta screen-x screen-y]
-  (let [screen-point [screen-x screen-y 1.0]
-        world-point (draw-screen-point->world-point state screen-point)
-        factor (draw-wheel-zoom-factor delta)
-        next-zoom (draw-clamp (* (draw-view-zoom state) factor)
-                              (draw-min-zoom)
-                              (draw-max-zoom))
-        next-state (assoc state
-                          :zoom next-zoom
-                          :view-x (draw-clamp-view-coordinate
-                                    (nth world-point 0))
-                          :view-y (draw-clamp-view-coordinate
-                                    (nth world-point 1))
-                          :view-anchor-x screen-x
-                          :view-anchor-y screen-y
-                          :canvas-dirty? true)]
-    (draw-sync-pointer-state next-state world-point screen-point)))
-
-(defn draw-zoom-at-pointer-core!
-  "Zoom around the currently tracked pointer anchor."
-  [state delta]
-  (let [anchor (draw-pointer-screen-anchor state)]
-    (draw-zoom-at-core! state
-                        delta
-                        (nth anchor 0)
-                        (nth anchor 1))))
-
-(defn draw-start-pan-core!
-  "Begin a viewport drag at SCREEN-POINT."
-  [state screen-point]
-  (let [world-point (draw-screen-point->world-point state
-                                                    [(nth screen-point 0)
-                                                     (nth screen-point 1)
-                                                     1.0])]
-    (draw-sync-pointer-state
-      (assoc state
-             :panning? true
-             :pan-last-x (nth screen-point 0)
-             :pan-last-y (nth screen-point 1)
-             :pointer-down? false
-             :pointer-source false
-             :active-stroke false
-             :pen-pressure 1.0)
-      world-point
-      screen-point)))
-
-(defn draw-pan-core!
-  "Update the viewport pan using SCREEN-POINT."
-  [state screen-point]
-  (if (get state :panning?)
-    (let [screen-x (nth screen-point 0)
-          screen-y (nth screen-point 1)
-          last-x (or (get state :pan-last-x) screen-x)
-          last-y (or (get state :pan-last-y) screen-y)
-          zoom (draw-view-zoom state)
-          dx (- screen-x last-x)
-          dy (- screen-y last-y)
-          next-state (assoc state
-                            :view-x (draw-clamp-view-coordinate
-                                      (- (draw-view-x state)
-                                         (/ dx zoom)))
-                            :view-y (draw-clamp-view-coordinate
-                                      (- (draw-view-y state)
-                                         (/ dy zoom)))
-                            :pan-last-x screen-x
-                            :pan-last-y screen-y
-                            :canvas-dirty? true)
-          world-point (draw-screen-point->world-point next-state
-                                                      [(nth screen-point 0)
-                                                       (nth screen-point 1)
-                                                       1.0])]
-      (draw-sync-pointer-state next-state world-point screen-point))
-    state))
-
-(defn draw-finish-pan-core!
-  "Finish a viewport drag."
-  [state]
-  (assoc state
-         :panning? false
-         :pointer-down? false
-         :pointer-source false
-         :canvas-dirty? true))
 
 (defn draw-clear-error!
   "Clear the last recorded draw error."
