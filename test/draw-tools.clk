@@ -140,11 +140,11 @@
         points (draw-append-stroke-point (default-state)
                                          stroke
                                          [11.0 10.0 1.0])]
-    (draw-tools-assert-num= "close active sample replaces last point"
+    (draw-tools-assert-num= "close active sample is ignored"
                             1
                             (count points))
-    (draw-tools-assert-str= "close active sample keeps latest point"
-                            "[11.0 10.0 1.0]"
+    (draw-tools-assert-str= "close active sample keeps prior point"
+                            "[10.0 10.0 1.0]"
                             (pr-str (first points))))
 
   (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
