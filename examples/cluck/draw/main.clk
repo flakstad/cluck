@@ -838,9 +838,6 @@
                   acc))
               nil
               (get state :strokes))
-      (if (get state :active-stroke)
-        (draw-render-stroke! renderer state (get state :active-stroke))
-        nil)
       nil)))
 
 (defn draw-history-limit
@@ -1181,9 +1178,6 @@
       (draw-log-entry! :stroke-start
                        {:point point
                         :state (draw-state-snapshot next-state)})
-      (if (draw-canvas-ready?)
-        (draw-commit-stroke! next-state (get next-state :active-stroke))
-        nil)
       next-state)))
 
 (defn draw-extend-stroke
@@ -1202,10 +1196,6 @@
                               :mouse-x (nth point 0)
                               :mouse-y (nth point 1)
                               :active-stroke next-stroke)]
-        (if (draw-canvas-ready?)
-          (draw-commit-stroke! next-state
-                               (draw-segment-stroke stroke [previous point]))
-          nil)
         next-state)
       (draw-start-stroke state desc))))
 
@@ -1216,7 +1206,6 @@
         stroke (get state :active-stroke)]
     (if stroke
         (let [points (get stroke :points)
-              previous (last points)
               finished-points (conj points point)
               finished (draw-stroke-record finished-points
                                            (get stroke :color)
@@ -1232,8 +1221,7 @@
                             :points (count (get finished :points))
                             :state (draw-state-snapshot next-state)})
           (if (draw-canvas-ready?)
-            (draw-commit-stroke! next-state
-                                 (draw-segment-stroke stroke [previous point]))
+            (draw-commit-stroke! next-state finished)
             nil)
           next-state)
       (assoc state
@@ -1895,9 +1883,14 @@
   "Render the cached canvas texture, or fall back to stroke replay."
   [ctx state]
   (let [renderer (get ctx :renderer)
-        canvas (if ctx (get ctx :canvas) nil)]
+        canvas (if ctx (get ctx :canvas) nil)
+        active (get state :active-stroke)]
     (if (draw-canvas-ready?)
-      (sdl/render-texture! renderer canvas)
+      (begin
+        (sdl/render-texture! renderer canvas)
+        (if active
+          (draw-render-stroke! renderer state active)
+          nil))
       (draw-render-strokes! ctx state))))
 
 (defn draw-render-debug-panel!
