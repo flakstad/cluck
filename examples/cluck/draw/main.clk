@@ -36,6 +36,14 @@
   []
   8)
 
+(defn draw-debug-event-lines-limit
+  []
+  4)
+
+(defn draw-debug-event-lines-limit
+  []
+  4)
+
 (defn draw-preview-segment-budget
   "Return the maximum number of new stroke points to preview in one frame."
   []
@@ -524,6 +532,34 @@
     (if (> total limit)
       (vec (drop (- total limit) events))
       (vec events))))
+
+(defn draw-truncate-text
+  "Clamp TEXT to at most LIMIT characters for live debug rendering."
+  [text limit]
+  (let [text (or text "")
+        limit (if (and limit (> limit 4)) limit 4)]
+    (if (> (count text) limit)
+      (str (substring text 0 (- limit 3)) "...")
+      text)))
+
+(defn draw-compact-event-text
+  "Return a shorter event description suitable for the debug panel."
+  [text]
+  (draw-truncate-text text 88))
+
+(defn draw-truncate-text
+  "Clamp TEXT to at most LIMIT characters for live debug rendering."
+  [text limit]
+  (let [text (or text "")
+        limit (if (and limit (> limit 4)) limit 4)]
+    (if (> (count text) limit)
+      (str (substring text 0 (- limit 3)) "...")
+      text)))
+
+(defn draw-compact-event-text
+  "Return a shorter event description suitable for the debug panel."
+  [text]
+  (draw-truncate-text text 88))
 
 (defn draw-pen-event-kind?
   "Return true when KIND carries live pen pressure."
@@ -2319,8 +2355,7 @@
   [renderer state]
   (let [mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)
-        recent (reverse (take (draw-recent-events-limit)
-                              (get state :recent-events)))]
+        recent-lines (draw-debug-event-lines state)]
     (sdl/set-draw-color! renderer 245 245 245 255)
     (sdl/render-debug-text! renderer 12 12 (describe-state state))
     (sdl/render-debug-text! renderer 12 28
@@ -2354,21 +2389,28 @@
     (sdl/render-debug-text! renderer 12 140
                             (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 156
-                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
+                            (format "last key desc: %s"
+                                    (draw-compact-event-text
+                                      (or (get state :last-key-desc) ""))))
     (sdl/render-debug-text! renderer 12 172
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last text: %s"
+                                    (draw-truncate-text (or (get state :last-text) "") 48)))
     (sdl/render-debug-text! renderer 12 188
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last event: %s"
+                                    (draw-compact-event-text
+                                      (or (get state :last-event) ""))))
     (sdl/render-debug-text! renderer 12 204
                             (format "last error: %s"
                                     (if *draw-last-error*
-                                      (format "%s" *draw-last-error*)
+                                      (draw-truncate-text (format "%s" *draw-last-error*) 88)
                                       "")))
-    (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 220
-                              (format "recent: %s"
-                                      (str/join " | " recent))))
-    (draw-render-debug-lines! renderer 236 (draw-debug-control-lines))
+    (when (not (empty? recent-lines))
+      (sdl/render-debug-text! renderer 12 220 "recent events:")
+      (draw-render-debug-lines! renderer 236 recent-lines))
+    (draw-render-debug-lines!
+      renderer
+      (+ 236 (* 16 (count recent-lines)))
+      (draw-debug-control-lines))
     nil))
 
 (defn draw-debug-control-lines
@@ -2386,6 +2428,17 @@
    "  repl: (draw-log-tail 20), draw-clear-log!, dump-current-state!"
    "  repl: draw-simulate-input!, draw-replay-live!"
    "  repl: draw-replay-benchmark!, draw-replay-live-benchmark!"])
+
+(defn draw-debug-event-lines
+  "Return compact recent event lines for the debug overlay."
+  [state]
+  (let [recent (reverse (take (draw-debug-event-lines-limit)
+                              (get state :recent-events)))]
+    (map-indexed (fn [index line]
+                   (format "  %d: %s"
+                           (+ index 1)
+                           (draw-compact-event-text line)))
+                 recent)))
 
 (defn draw-render-debug-lines!
   "Render LINES in the debug overlay starting at Y."
