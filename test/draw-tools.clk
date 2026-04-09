@@ -357,6 +357,83 @@
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
+               [{:kind :box
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}
+                {:kind :box
+                 :x 70.0
+                 :y 90.0
+                 :width 20.0
+                 :height 30.0
+                 :color [255 255 255]
+                 :size 2}])
+        selected (assoc base :selection [1 2])
+        bounds (draw-selection-bounds selected)]
+    (draw-tools-assert-num= "selection bounds union x"
+                            0.0
+                            (get bounds :x))
+    (draw-tools-assert-num= "selection bounds union y"
+                            10.0
+                            (get bounds :y))
+    (draw-tools-assert-num= "selection bounds union width"
+                            100.0
+                            (get bounds :width))
+    (draw-tools-assert-num= "selection bounds union height"
+                            120.0
+                            (get bounds :height)))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :box
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}])
+        selected (assoc base :selection [1])
+        handle (draw-find-selection-handle selected [40.0 60.0])
+        resizing (assoc selected
+                        :pointer-down? true
+                        :pointer-source :mouse
+                        :active-selection-resize {:id 1
+                                                  :handle :se
+                                                  :original-elements (edn/read-string
+                                                                       (pr-str (get selected :elements)))
+                                                  :moved? false})
+        moved (draw-extend-selection-resize resizing
+                                            [50.0 70.0 1.0]
+                                            [50.0 70.0])
+        finished (draw-finish-selection-resize moved
+                                               [50.0 70.0 1.0]
+                                               [50.0 70.0])
+        box (first (get finished :elements))
+        undone (draw-undo-stroke! finished)
+        restored (first (get undone :elements))]
+    (draw-tools-assert-str= "selection handle hits south-east corner"
+                            ":se"
+                            (pr-str handle))
+    (draw-tools-assert-num= "selection resize updates width"
+                            40.0
+                            (get box :width))
+    (draw-tools-assert-num= "selection resize updates height"
+                            50.0
+                            (get box :height))
+    (draw-tools-assert-false "selection resize clears on finish"
+                             (get finished :active-selection-resize))
+    (draw-tools-assert-num= "undo restores rectangle width after resize"
+                            30.0
+                            (get restored :width))
+    (draw-tools-assert-num= "undo restores rectangle height after resize"
+                            40.0
+                            (get restored :height)))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
                [{:kind :arrow
                  :start [10.0 20.0 1.0]
                  :end [40.0 60.0 1.0]

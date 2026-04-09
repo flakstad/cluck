@@ -149,6 +149,7 @@
    :next-element-id 1
    :selection []
    :active-selection-drag false
+   :active-selection-resize false
    :strokes []
    :active-stroke false
    :active-box false
@@ -626,6 +627,9 @@
            :active-selection-drag (if (empty? selection)
                                     false
                                     (get state :active-selection-drag))
+           :active-selection-resize (if (empty? selection)
+                                      false
+                                      (get state :active-selection-resize))
            :strokes strokes
            :next-element-id next-id)))
 
@@ -643,7 +647,10 @@
                 (assoc state :selection []))
         state (if (contains? state :active-selection-drag)
                 state
-                (assoc state :active-selection-drag false))]
+                (assoc state :active-selection-drag false))
+        state (if (contains? state :active-selection-resize)
+                state
+                (assoc state :active-selection-resize false))]
     (draw-sync-elements state (get state :elements))))
 
 (defn draw-heartbeat-payload
@@ -1823,6 +1830,7 @@
                :active-frame false
                :active-text false
                :active-stroke false
+               :active-selection-resize false
                :pointer-down? false)
         state)
       (let [total (count history)
@@ -1840,6 +1848,7 @@
                  :eraser? (if (get snapshot :eraser?) true false)
                  :selection []
                  :active-selection-drag false
+                 :active-selection-resize false
                  :active-stroke false
                  :active-box false
                  :active-arrow false
@@ -1995,6 +2004,7 @@
                        (assoc state
                               :selection []
                               :active-selection-drag false
+                              :active-selection-resize false
                               :active-stroke false
                               :active-box false
                               :active-arrow false
@@ -2159,6 +2169,7 @@
                      :pointer-down? false
                      :pointer-source false
                      :active-selection-drag false
+                     :active-selection-resize false
                      :active-stroke false
                      :active-box false
                      :active-arrow false
@@ -2481,6 +2492,117 @@
    :color (draw-selection-color)
    :size (draw-selection-outline-size)})
 
+(defn draw-bounds-union
+  "Return the union of A and B."
+  [a b]
+  (if a
+    (if b
+      (let [left (min (get a :x) (get b :x))
+            top (min (get a :y) (get b :y))
+            right (max (+ (get a :x) (get a :width))
+                       (+ (get b :x) (get b :width)))
+            bottom (max (+ (get a :y) (get a :height))
+                        (+ (get b :y) (get b :height)))]
+        {:x left
+         :y top
+         :width (- right left)
+         :height (- bottom top)})
+      a)
+    b))
+
+(defn draw-selected-elements
+  "Return the selected elements from STATE in canvas order."
+  [state]
+  (vec
+    (filter (fn [element]
+              (draw-selected? state element))
+            (get state :elements))))
+
+(defn draw-selection-bounds
+  "Return aggregate bounds for the current selection."
+  [state]
+  (reduce (fn [current element]
+            (draw-bounds-union current
+                               (draw-element-bounds state element)))
+          false
+          (draw-selected-elements state)))
+
+(defn draw-single-selected-element
+  "Return the sole selected element when exactly one element is selected."
+  [state]
+  (let [elements (draw-selected-elements state)]
+    (if (= (count elements) 1)
+      (first elements)
+      false)))
+
+(defn draw-single-selected-rectangle
+  "Return the sole selected rectangle element when one is selected."
+  [state]
+  (let [element (draw-single-selected-element state)]
+    (if (and element (draw-box-element? element))
+      element
+      false)))
+
+(defn draw-selection-handle-screen-size
+  "Return the square handle size in screen pixels."
+  []
+  10)
+
+(defn draw-rectangle-handle-world-points
+  "Return corner handle world points for BOX."
+  [box]
+  (let [x (get box :x)
+        y (get box :y)
+        right (+ x (get box :width))
+        bottom (+ y (get box :height))]
+    {:nw [x y 1.0]
+     :ne [right y 1.0]
+     :se [right bottom 1.0]
+     :sw [x bottom 1.0]}))
+
+(defn draw-selection-handle-screen-rects
+  "Return screen-space handle rectangles for the selected rectangle."
+  [state box]
+  (let [size (draw-selection-handle-screen-size)
+        radius (/ size 2.0)
+        points (draw-rectangle-handle-world-points box)]
+    (reduce (fn [handles handle]
+              (let [screen-point (draw-world-point->screen-point state
+                                                                 (get points handle))
+                    x (draw-exact-int (math/round (- (nth screen-point 0) radius)))
+                    y (draw-exact-int (math/round (- (nth screen-point 1) radius)))]
+                (assoc handles
+                       handle
+                       {:x x
+                        :y y
+                        :width size
+                        :height size})))
+            {}
+            [:nw :ne :se :sw])))
+
+(defn draw-screen-point-in-rect?
+  "Return true when screen POINT lies inside RECT."
+  [point rect]
+  (and rect
+       (>= (nth point 0) (get rect :x))
+       (>= (nth point 1) (get rect :y))
+       (<= (nth point 0) (+ (get rect :x) (get rect :width)))
+       (<= (nth point 1) (+ (get rect :y) (get rect :height)))))
+
+(defn draw-find-selection-handle
+  "Return the resize handle hit by SCREEN-POINT, or false."
+  [state screen-point]
+  (let [box (draw-single-selected-rectangle state)]
+    (if box
+      (let [rects (draw-selection-handle-screen-rects state box)]
+        (cond
+          (draw-screen-point-in-rect? screen-point (get rects :nw)) :nw
+          (draw-screen-point-in-rect? screen-point (get rects :ne)) :ne
+          (draw-screen-point-in-rect? screen-point (get rects :se)) :se
+          (draw-screen-point-in-rect? screen-point (get rects :sw)) :sw
+          :else false))
+      false)))
+
 (defn draw-world-rect->screen-rect
   "Convert a world-space rectangle to a visible screen-space rectangle."
   [state x y width height]
@@ -2581,6 +2703,27 @@
            :color (get element :color)
            :size (get element :size)})))))
 
+(defn draw-find-element-by-id
+  "Return the element with ELEMENT-ID from ELEMENTS, or false."
+  [elements element-id]
+  (let loop ((remaining elements))
+    (if (empty? remaining)
+      false
+      (let [element (first remaining)]
+        (if (= (get element :id) element-id)
+          element
+          (loop (rest remaining)))))))
+
+(defn draw-replace-element-by-id
+  "Return ELEMENTS with ELEMENT-ID replaced by NEXT-ELEMENT."
+  [elements element-id next-element]
+  (vec
+    (map (fn [element]
+           (if (= (get element :id) element-id)
+             next-element
+             element))
+         elements)))
+
 (defn draw-translate-selected-elements
   "Return ELEMENTS with IDS translated by DX and DY."
   [elements ids dx dy]
@@ -2602,6 +2745,7 @@
              :pointer-down? (if element true false)
              :pointer-source (if element pointer-source false)
              :active-stroke false
+             :active-selection-resize false
              :active-box false
              :active-arrow false
              :active-frame false
@@ -2615,6 +2759,39 @@
                                       false))
       point
       screen-point)))
+
+(defn draw-rectangle-opposite-corner
+  "Return the fixed opposite corner world point for HANDLE on BOX."
+  [box handle]
+  (let [x (get box :x)
+        y (get box :y)
+        right (+ x (get box :width))
+        bottom (+ y (get box :height))]
+    (cond
+      (draw-kind=? handle :nw) [right bottom 1.0]
+      (draw-kind=? handle :ne) [x bottom 1.0]
+      (draw-kind=? handle :se) [x y 1.0]
+      (draw-kind=? handle :sw) [right y 1.0]
+      :else [right bottom 1.0])))
+
+(defn draw-start-selection-resize
+  "Begin resizing the currently selected rectangle from HANDLE."
+  [state point screen-point pointer-source handle]
+  (let [box (draw-single-selected-rectangle state)]
+    (if box
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? true
+               :pointer-source pointer-source
+               :active-selection-drag false
+               :active-selection-resize {:id (get box :id)
+                                         :handle handle
+                                         :original-elements (edn/read-string
+                                                              (pr-str (get state :elements)))
+                                         :moved? false})
+        point
+        screen-point)
+      state)))
 
 (defn draw-start-selection-drag
   "Select the topmost element under POINT and begin a drag when present."
@@ -2659,6 +2836,50 @@
         next-state)
       (draw-sync-pointer-state state point screen-point))))
 
+(defn draw-extend-selection-resize
+  "Resize the selected rectangle from the active resize handle."
+  [state point screen-point]
+  (let [resize (get state :active-selection-resize)]
+    (if resize
+      (let [original-elements (get resize :original-elements)
+            element-id (get resize :id)
+            original-box (draw-find-element-by-id original-elements element-id)]
+        (if (and original-box (draw-box-element? original-box))
+          (let [fixed (draw-rectangle-opposite-corner original-box (get resize :handle))
+                moved? (or (get resize :moved?)
+                           (not (= (nth point 0) (nth fixed 0)))
+                           (not (= (nth point 1) (nth fixed 1))))
+                state (if (and moved?
+                               (not (get resize :moved?)))
+                        (draw-push-history! state)
+                        state)
+                next-box (let [rect (draw-box-rect fixed point)]
+                           {:id (get original-box :id)
+                            :kind :box
+                            :x (get rect :x)
+                            :y (get rect :y)
+                            :width (get rect :width)
+                            :height (get rect :height)
+                            :color (get original-box :color)
+                            :size (get original-box :size)})
+                next-elements (draw-replace-element-by-id original-elements
+                                                          element-id
+                                                          next-box)
+                next-state (draw-sync-pointer-state
+                             (draw-sync-elements
+                               (assoc state
+                                      :active-selection-resize (assoc resize :moved? moved?)
+                                      :canvas-dirty? moved?)
+                               next-elements)
+                             point
+                             screen-point)]
+            next-state)
+          (draw-sync-pointer-state
+            (assoc state :active-selection-resize false)
+            point
+            screen-point)))
+      (draw-sync-pointer-state state point screen-point))))
+
 (defn draw-finish-selection-drag
   "Finish the current selection drag and leave the selection active."
   [state point screen-point]
@@ -2667,6 +2888,17 @@
            :pointer-down? false
            :pointer-source false
            :active-selection-drag false)
+    point
+    screen-point))
+
+(defn draw-finish-selection-resize
+  "Finish the current selection resize and leave the selection active."
+  [state point screen-point]
+  (draw-sync-pointer-state
+    (assoc state
+           :pointer-down? false
+           :pointer-source false
+           :active-selection-resize false)
     point
     screen-point))
 
@@ -2729,6 +2961,7 @@
                             :pointer-down? true
                             :pointer-source pointer-source
                             :active-selection-drag false
+                            :active-selection-resize false
                             :active-box false
                             :active-arrow false
                             :active-frame false
@@ -2828,6 +3061,7 @@
              :pointer-down? true
              :pointer-source :box
              :active-stroke false
+             :active-selection-resize false
              :active-arrow false
              :active-frame false
              :active-text false
@@ -2848,6 +3082,7 @@
              :pointer-down? true
              :pointer-source :arrow
              :active-stroke false
+             :active-selection-resize false
              :active-box false
              :active-frame false
              :active-text false
@@ -2868,6 +3103,7 @@
              :pointer-down? true
              :pointer-source :frame
              :active-stroke false
+             :active-selection-resize false
              :active-box false
              :active-arrow false
              :active-text false
@@ -2887,6 +3123,7 @@
              :pointer-down? true
              :pointer-source :text
              :active-selection-drag false
+             :active-selection-resize false
              :active-stroke false
              :active-box false
              :active-arrow false
@@ -3311,13 +3548,22 @@
 
             (draw-kind=? kind :mouse-down)
             (let [point (draw-input-event-point state event)
-                  screen-point (draw-input-event-screen-point event)]
+                  screen-point (draw-input-event-screen-point event)
+                  resize-handle (if (draw-selection-tool? state)
+                                  (draw-find-selection-handle state screen-point)
+                                  false)]
               (if (draw-selection-tool? state)
-                (draw-start-selection-interaction state
-                                                 point
-                                                 screen-point
-                                                 :mouse
-                                                 (if (get event :shift?) true false))
+                (if resize-handle
+                  (draw-start-selection-resize state
+                                               point
+                                               screen-point
+                                               :mouse
+                                               resize-handle)
+                  (draw-start-selection-interaction state
+                                                   point
+                                                   screen-point
+                                                   :mouse
+                                                   (if (get event :shift?) true false)))
                 (if (draw-box-tool? state)
                   (draw-start-box state point screen-point)
                   (if (draw-arrow-tool? state)
@@ -3335,7 +3581,9 @@
             (draw-kind=? kind :mouse-up)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (if (get state :active-selection-drag)
+              (if (get state :active-selection-resize)
+                (draw-finish-selection-resize state point screen-point)
+                (if (get state :active-selection-drag)
                 (draw-finish-selection-drag state point screen-point)
                 (if (get state :active-box)
                   (draw-finish-box state point screen-point)
@@ -3345,7 +3593,7 @@
                       (draw-finish-frame state point screen-point)
                       (if (get state :active-text)
                         (draw-finish-text state point screen-point)
-                        (draw-finish-stroke state point screen-point)))))))
+                        (draw-finish-stroke state point screen-point))))))))
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
@@ -3353,7 +3601,9 @@
             (get state :pointer-down?)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (if (get state :active-selection-drag)
+              (if (get state :active-selection-resize)
+                (draw-extend-selection-resize state point screen-point)
+                (if (get state :active-selection-drag)
                 (draw-extend-selection-drag state point screen-point)
                 (if (get state :active-box)
                   (draw-extend-box state point screen-point)
@@ -3363,7 +3613,7 @@
                       (draw-extend-frame state point screen-point)
                       (if (get state :active-text)
                         (draw-extend-text state point screen-point)
-                        (draw-extend-stroke state point screen-point)))))))
+                        (draw-extend-stroke state point screen-point))))))))
 
             :else
             (let [point (draw-input-event-point state event)
@@ -3384,13 +3634,22 @@
 
           (draw-kind=? kind :pen-down)
           (let [point (draw-input-event-point state event)
-                screen-point (draw-input-event-screen-point event)]
+                screen-point (draw-input-event-screen-point event)
+                resize-handle (if (draw-selection-tool? state)
+                                (draw-find-selection-handle state screen-point)
+                                false)]
             (if (draw-selection-tool? state)
-              (draw-start-selection-interaction state
-                                               point
-                                               screen-point
-                                               :pen
-                                               (if (get event :shift?) true false))
+              (if resize-handle
+                (draw-start-selection-resize state
+                                             point
+                                             screen-point
+                                             :pen
+                                             resize-handle)
+                (draw-start-selection-interaction state
+                                                 point
+                                                 screen-point
+                                                 :pen
+                                                 (if (get event :shift?) true false)))
               (if (draw-box-tool? state)
                 (draw-start-box state point screen-point)
                 (if (draw-arrow-tool? state)
@@ -3410,7 +3669,9 @@
               (draw-kind=? kind :pen-button-up))
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (if (get state :active-selection-drag)
+            (if (get state :active-selection-resize)
+              (draw-finish-selection-resize state point screen-point)
+              (if (get state :active-selection-drag)
               (draw-finish-selection-drag state point screen-point)
               (if (get state :active-box)
                 (draw-finish-box state point screen-point)
@@ -3420,7 +3681,7 @@
                     (draw-finish-frame state point screen-point)
                     (if (get state :active-text)
                       (draw-finish-text state point screen-point)
-                      (draw-finish-stroke state point screen-point)))))))
+                      (draw-finish-stroke state point screen-point))))))))
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
@@ -3428,7 +3689,9 @@
           (get state :pointer-down?)
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (if (get state :active-selection-drag)
+            (if (get state :active-selection-resize)
+              (draw-extend-selection-resize state point screen-point)
+              (if (get state :active-selection-drag)
               (draw-extend-selection-drag state point screen-point)
               (if (get state :active-box)
                 (draw-extend-box state point screen-point)
@@ -3438,7 +3701,7 @@
                     (draw-extend-frame state point screen-point)
                     (if (get state :active-text)
                       (draw-extend-text state point screen-point)
-                      (draw-extend-stroke state point screen-point)))))))
+                      (draw-extend-stroke state point screen-point))))))))
 
           :else
           (let [point (draw-input-event-point state event)
@@ -4104,22 +4367,41 @@
                      state
                      (draw-text-element active-text)))
 
-(defn draw-render-selection!
-  "Render selection outlines for the currently selected elements."
+(defn draw-render-selection-handles!
+  "Render resize handles for the currently selected rectangle."
   [renderer state]
-  (reduce (fn [acc element]
-            (begin
-              (if (draw-selected? state element)
-                (let [bounds (draw-element-bounds state element)]
-                  (if bounds
-                    (draw-render-box! renderer
-                                      state
-                                      (draw-selection-outline-element bounds))
-                    nil))
-                nil)
-              acc))
-          nil
-          (get state :elements)))
+  (let [box (draw-single-selected-rectangle state)]
+    (if box
+      (let [rects (draw-selection-handle-screen-rects state box)
+            color (draw-selection-color)]
+        (sdl/set-draw-color! renderer
+                             (nth color 0)
+                             (nth color 1)
+                             (nth color 2)
+                             255)
+                (reduce (fn [acc handle]
+                  (let [rect (get rects handle)]
+                    (sdl/render-fill-rect! renderer
+                                           (get rect :x)
+                                           (get rect :y)
+                                           (get rect :width)
+                                           (get rect :height))
+                    acc))
+                nil
+                [:nw :ne :se :sw]))
+      nil)))
+
+(defn draw-render-selection!
+  "Render selection bounds and handles for the current selection."
+  [renderer state]
+  (let [bounds (draw-selection-bounds state)]
+    (if bounds
+      (begin
+        (draw-render-box! renderer
+                          state
+                          (draw-selection-outline-element bounds))
+        (draw-render-selection-handles! renderer state))
+      nil)))
 
 (defn draw-preview-stroke!
   "Render STROKE into the preview texture."
@@ -4356,7 +4638,8 @@
    "  wheel: zoom at pointer"
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
-   "  drag: draw / select"
+   "  drag: draw / move selection"
+   "  rectangle handles: resize selected rectangle"
    "  shift+click: add to selection"
    "  i: ink   t: text   v: select   r: rectangle   a: arrow"
    "  mouse/pen: pressure-sensitive strokes"
