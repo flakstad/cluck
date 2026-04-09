@@ -79,7 +79,9 @@
   (draw-input-assert-true "debug panel lists space pan"
                           (draw-input-has-line? lines "  space+drag: pan"))
   (draw-input-assert-true "debug panel lists draw"
-                          (draw-input-has-line? lines "  drag: draw / select"))
+                          (draw-input-has-line? lines "  drag: draw / move selection"))
+  (draw-input-assert-true "debug panel lists rectangle resize"
+                          (draw-input-has-line? lines "  rectangle handles: resize selected rectangle"))
   (draw-input-assert-true "debug panel lists shift selection"
                           (draw-input-has-line? lines "  shift+click: add to selection"))
   (draw-input-assert-true "debug panel lists tools"
@@ -255,6 +257,59 @@
                           (get moved-box :y))
   (draw-input-assert-false "selection mouse-up clears active drag"
                            (get finished :active-selection-drag)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
+               :color [255 255 255]
+               :size 2}])
+      selected (draw-input-copy-state
+                 (draw-apply-input-event! base
+                                          {:kind :mouse-down
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=15.0 y=25.0"
+                                           :mouse-x 15.0
+                                           :mouse-y 25.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      resize-start (draw-input-copy-state
+                     (draw-apply-input-event! selected
+                                              {:kind :mouse-down
+                                               :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=40.0 y=60.0"
+                                               :mouse-x 40.0
+                                               :mouse-y 60.0
+                                               :pressure 1.0
+                                               :shift? false}))
+      resized (draw-input-copy-state
+                (draw-apply-input-event! resize-start
+                                         {:kind :mouse-motion
+                                          :desc "SDL_EVENT_MOUSE_MOTION x=50.0 y=70.0"
+                                          :mouse-x 50.0
+                                          :mouse-y 70.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! resized
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP x=50.0 y=70.0"
+                                           :mouse-x 50.0
+                                           :mouse-y 70.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      box (first (get finished :elements))]
+  (draw-input-assert-true "selection handle mouse-down starts resize"
+                          (get resize-start :active-selection-resize))
+  (draw-input-assert-num= "selection handle drag updates width"
+                          40.0
+                          (get box :width))
+  (draw-input-assert-num= "selection handle drag updates height"
+                          50.0
+                          (get box :height))
+  (draw-input-assert-false "selection handle mouse-up clears resize"
+                           (get finished :active-selection-resize)))
 
 (let [base (draw-sync-elements
              (draw-set-tool-core! (default-state) :select)
