@@ -1,0 +1,710 @@
+;; Cluck-native Hiccup.
+
+(ns hiccup.core
+  "Cluck-native Hiccup."
+  (:require [cluck.string :as str]
+            [uri-common :as uri]))
+
+(define-record-type hiccup-raw-string
+  (make-hiccup-raw-string value)
+  hiccup-raw-string?
+  (value hiccup-raw-string-value))
+
+(def *html-mode* (make-parameter :xhtml))
+(def *escape-strings?* (make-parameter true))
+(def *base-url* (make-parameter nil))
+(def *encoding* (make-parameter "UTF-8"))
+
+(defn trim-trailing-slash
+  "Trim a trailing slash from PATH, if present."
+  [path]
+  (if (or (nil? path) (zero? (string-length path)))
+      path
+      (let ((len (string-length path)))
+        (if (char=? (string-ref path (- len 1)) #\/)
+            (substring path 0 (- len 1))
+            path))))
+
+(defn replace-text
+  "Replace NEEDLE in TEXT with REPLACEMENT."
+  [text needle replacement]
+  (str/join replacement
+            (str/split (if (nil? text) "" (str text)) needle)))
+
+(defn raw-string
+  "Create a value that Hiccup rendering will not escape."
+  ([] (make-hiccup-raw-string ""))
+  ([x] (make-hiccup-raw-string (str x)))
+  ([x & xs] (make-hiccup-raw-string (apply str x xs))))
+
+(defn raw-string?
+  "Return true when X is a raw Hiccup string."
+  [x]
+  (hiccup-raw-string? x))
+
+(defn raw-string-value
+  "Return the raw string payload from X."
+  [x]
+  (hiccup-raw-string-value x))
+
+(defn to-str
+  "Convert X into a string for Hiccup rendering."
+  [x]
+  (cond
+    (nil? x) ""
+    (raw-string? x) (raw-string-value x)
+    (keyword? x) (name x)
+    (symbol? x) (symbol->string x)
+    (string? x) x
+    :else (str x)))
+
+(defn as-str
+  "Convert one or more values into a single string."
+  [& xs]
+  (apply str (map to-str xs)))
+
+(defn escape-html
+  "Escape HTML special characters in TEXT."
+  [text]
+  (let ((text (as-str text)))
+    (replace-text
+     (replace-text
+      (replace-text
+       (replace-text
+        (replace-text text "&" "&amp;")
+        "<" "&lt;")
+       ">" "&gt;")
+      "\"" "&quot;")
+     "'" "&apos;")))
+
+(defn to-uri
+  "Convert X into a URI-like string."
+  [x]
+  (cond
+    (nil? x) ""
+    (raw-string? x) (raw-string-value x)
+    (keyword? x) (name x)
+    (symbol? x) (symbol->string x)
+    (string? x)
+    (let ((base (*base-url*)))
+      (if (and base (str/starts-with? x "/"))
+          (let ((base (trim-trailing-slash (as-str base))))
+            (if (nil? base)
+                x
+                (str base x)))
+          x))
+    :else (to-str x)))
+
+(defn url-encode
+  "URL-encode a string, map, or any value that can be rendered as text."
+  [x]
+  (cond
+    (nil? x) ""
+    (map? x)
+    (str/join "&"
+              (map (fn [entry]
+                     (let ((k (first entry))
+                           (v (first (rest entry))))
+                       (str (url-encode k) "=" (url-encode v))))
+                   (seq x)))
+    :else (uri/uri-encode-string (to-str x))))
+
+(defn split-last-step
+  "Recursive helper for split-last."
+  [xs acc]
+  (if (or (null? xs) (null? (cdr xs)))
+      (list (reverse acc) (if (null? xs) nil (car xs)))
+      (split-last-step (cdr xs) (cons (car xs) acc))))
+
+(defn split-last
+  "Split ITEMS into [prefix last-item]."
+  [items]
+  (split-last-step (seq items) '()))
+
+(defn url
+  "Build a URL string from path fragments and an optional parameter map."
+  [& args]
+  (if (null? args)
+      ""
+      (let ((parts (split-last args))
+            (path-parts (first parts))
+            (params (first (rest parts))))
+        (if (map? params)
+            (let ((query (if (zero? (count (seq params)))
+                             ""
+                             (str "?" (url-encode params)))))
+              (to-uri (str (apply str path-parts) query)))
+            (to-uri (apply str args))))))
+
+(defn with-base-url
+  "Call THUNK with BASE-URL bound as the current base URL."
+  [base-url thunk]
+  (parameterize ((*base-url* base-url))
+    (thunk)))
+
+(defn with-encoding
+  "Call THUNK with ENCODING bound as the default URL encoding."
+  [encoding thunk]
+  (parameterize ((*encoding* encoding))
+    (thunk)))
+
+(def void-tags
+  #{"area" "base" "br" "col" "command" "embed" "hr" "img" "input" "keygen"
+    "link" "meta" "param" "source" "track" "wbr"})
+
+(defn html-mode?
+  "Return true when the current rendering mode is HTML-like."
+  []
+  (let ((mode (to-str (*html-mode*))))
+    (or (string=? mode "html")
+        (string=? mode "xhtml"))))
+
+(defn xml-mode?
+  "Return true when the current rendering mode is XML-like."
+  []
+  (let ((mode (to-str (*html-mode*))))
+    (or (string=? mode "xml")
+        (string=? mode "xhtml"))))
+
+(defn options-map?
+  "Return true when X looks like a Hiccup rendering options map."
+  [x]
+  (and (map? x)
+       (or (contains? x :mode)
+           (contains? x :escape-strings?)
+           (contains? x :base-url)
+           (contains? x :encoding)
+           (contains? x :lang)
+           (contains? x :xml?))))
+
+(defn option-value
+  "Return a map value or DEFAULT when KEY is absent."
+  [options key default]
+  (if (contains? options key)
+      (get options key)
+      default))
+
+(defn style-map->text
+  "Render a style map as CSS text."
+  [style-map]
+  (str/join ""
+            (cluck-sort-list
+             (map (fn [entry]
+                    (str (to-str (first entry))
+                         ":"
+                         (to-str (first (rest entry)))
+                         ";"))
+                  (seq style-map))
+             (fn [a b]
+               (string<? a b)))))
+
+(defn string-index-of-loop
+  "Recursive helper for string-index-of."
+  [hay needle needle-len hay-len i]
+  (if (> (+ i needle-len) hay-len)
+      false
+      (if (string=? needle (substring hay i (+ i needle-len)))
+          i
+          (string-index-of-loop hay needle needle-len hay-len (+ i 1)))))
+
+(defn string-index-of
+  "Return the index of NEEDLE in TEXT at or after START, or false."
+  [text needle start]
+  (let ((hay (to-str text))
+        (needle (to-str needle))
+        (hay-len (string-length hay))
+        (needle-len (string-length needle))
+        (start (max 0 start)))
+    (if (> needle-len hay-len)
+        false
+        (if (= needle-len 0)
+            (if (<= start hay-len) start false)
+            (string-index-of-loop hay needle needle-len hay-len start)))))
+
+(defn attr-value->text
+  "Render an attribute value as plain text."
+  [value]
+  (cond
+    (nil? value) ""
+    (raw-string? value) (raw-string-value value)
+    (map? value) (style-map->text value)
+    (or (pair? value) (null? value) (vector? value))
+    (str/join " "
+              (remove str/blank?
+                      (map attr-value->text value)))
+    (keyword? value) (name value)
+    (symbol? value) (symbol->string value)
+    :else (to-str value)))
+
+(defn merge-classes
+  "Merge shorthand classes with an existing class attribute."
+  [class classes]
+  (let ((class-text (attr-value->text class))
+        (classes-text (attr-value->text classes)))
+    (cond
+      (str/blank? class-text) classes-text
+      (str/blank? classes-text) class-text
+      :else (str class-text " " classes-text))))
+
+(defn render-attribute
+  "Render a single attribute entry."
+  [entry]
+  (let ((name (to-str (first entry)))
+        (value (first (rest entry))))
+    (cond
+      (eq? value true)
+      (if (xml-mode?)
+          (str " " name "=\"" (escape-html name) "\"")
+          (str " " name))
+      (or (nil? value) (eq? value false))
+      ""
+      :else
+      (str " " name "=\"" (escape-html (attr-value->text value)) "\""))))
+
+(defn render-attr-map
+  "Render a map of attributes in deterministic order."
+  [attrs]
+  (if (or (nil? attrs) (null? (seq attrs)))
+      ""
+      (apply str
+             (map render-attribute
+                  (cluck-sort-list
+                   (seq attrs)
+                   (fn [a b]
+                     (string<? (to-str (first a))
+                               (to-str (first b)))))))))
+
+(defn parse-tag
+  "Split a Hiccup tag string into tag, id, and class pieces."
+  [tag]
+  (let* ((text (to-str tag))
+         (len (string-length text))
+         (hash (string-index-of text "#" 0))
+         (dot (string-index-of text "." 0))
+         (tag-end (if (and hash dot)
+                      (min hash dot)
+                      (if hash
+                          hash
+                          (if dot dot len))))
+         (id-start (and hash (+ hash 1)))
+         (id-end (if (and hash dot (> dot hash))
+                     dot
+                     (if hash len #f)))
+         (class-start (and dot (+ dot 1)))
+         (base (substring text 0 tag-end))
+         (id (and id-start id-end (< id-start id-end)
+                  (substring text id-start id-end)))
+         (class-text (and class-start (< class-start len)
+                          (substring text class-start len)))
+         (classes (and class-text
+                       (not (str/blank? class-text))
+                       (str/join " " (remove str/blank? (str/split class-text "."))))))
+    (if (str/blank? base)
+        (error "Invalid Hiccup tag" tag)
+        (hash-map :tag base :id id :class classes))))
+
+(defn merge-attributes
+  "Merge normalized tag attributes with a user-provided attr map."
+  [attrs id classes]
+  (let ((attrs (if (nil? attrs) (hash-map) attrs)))
+    (let ((attrs (if id
+                     (assoc attrs :id id)
+                     attrs)))
+      (if classes
+          (assoc attrs :class (merge-classes (get attrs :class) classes))
+          attrs))))
+
+(defn normalize-element
+  "Normalize an element vector into [tag attrs content]."
+  [element]
+  (let ((tag (first element))
+        (content (rest element)))
+    (if (not (or (keyword? tag) (symbol? tag) (string? tag)))
+        (error (str tag " is not a valid Hiccup element name"))
+        (let ((parsed (parse-tag tag))
+              (attrs (if (and (not (null? content))
+                              (map? (first content)))
+                         (first content)
+                         (hash-map)))
+              (body (if (and (not (null? content))
+                             (map? (first content)))
+                        (rest content)
+                        content)))
+          (list (get parsed :tag)
+                (merge-attributes attrs
+                                  (get parsed :id)
+                                  (get parsed :class))
+                body)))))
+
+(defn container-tag?
+  "Return true when TAG should render with an explicit closing tag."
+  [tag content]
+  (or (not (null? content))
+      (not (contains? void-tags tag))))
+
+(defn render-element
+  "Render a normalized or raw element vector."
+  [element]
+  (let ((normalized (normalize-element element))
+        (tag (first normalized))
+        (attrs (first (rest normalized)))
+        (content (first (rest (rest normalized)))))
+    (if (container-tag? tag content)
+        (str "<" tag (render-attr-map attrs) ">"
+             (render-html content)
+             "</" tag ">")
+        (str "<" tag (render-attr-map attrs)
+             (if (xml-mode?) " />" ">")))))
+
+(defn render-html
+  "Render any supported Hiccup value to HTML text."
+  [x]
+  (cond
+    (nil? x) ""
+    (raw-string? x) (raw-string-value x)
+    (vector? x) (render-element x)
+    (pair? x) (apply str (map render-html x))
+    (null? x) ""
+    (string? x) (if (*escape-strings?*)
+                    (escape-html x)
+                    x)
+    (keyword? x) (if (*escape-strings?*)
+                    (escape-html (name x))
+                    (name x))
+    (symbol? x) (if (*escape-strings?*)
+                   (escape-html (symbol->string x))
+                   (symbol->string x))
+    (boolean? x) (if x "true" "false")
+    :else (if (*escape-strings?*)
+              (escape-html (to-str x))
+              (to-str x))))
+
+(defn render-html-with-options
+  "Render CONTENT while applying Hiccup HTML OPTIONS."
+  [options content]
+  (let ((options (if (map? options) options (hash-map)))
+        (mode (option-value options :mode (*html-mode*)))
+        (escape-strings? (option-value options :escape-strings? (*escape-strings?*)))
+        (base-url (option-value options :base-url (*base-url*)))
+        (encoding (option-value options :encoding (*encoding*))))
+    (parameterize ((*html-mode* mode)
+                   (*escape-strings?* escape-strings?)
+                   (*base-url* base-url)
+                   (*encoding* encoding))
+      (render-html content))))
+
+(def doctype
+  "Common document type declarations."
+  (hash-map
+   :html4 (raw-string "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n")
+   :xhtml-strict (raw-string "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n")
+   :xhtml-transitional (raw-string "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n")
+   :html5 (raw-string "<!DOCTYPE html>\n")))
+
+(def doctype-html4 (get doctype :html4))
+(def doctype-xhtml-strict (get doctype :xhtml-strict))
+(def doctype-xhtml-transitional (get doctype :xhtml-transitional))
+(def doctype-html5 (get doctype :html5))
+
+(defn xml-declaration
+  "Create an XML declaration for ENCODING."
+  [encoding]
+  (raw-string "<?xml version=\"1.0\" encoding=\"" encoding "\"?>\n"))
+
+(defn xhtml-tag
+  "Create an XHTML root tag for LANG and CONTENTS."
+  [lang & contents]
+  (list->vector
+   (cons 'html
+         (cons (hash-map :xmlns "http://www.w3.org/1999/xhtml"
+                         "xml:lang" lang
+                         :lang lang)
+               contents))))
+
+(defn html4
+  "Render an HTML4 document."
+  [& contents]
+  (render-html-with-options
+   (hash-map :mode :sgml)
+   (list doctype-html4
+         (list->vector (cons 'html contents)))))
+
+(defn xhtml
+  "Render an XHTML document."
+  [& args]
+  (let ((has-options? (and (not (null? args)) (options-map? (first args))))
+        (options (if has-options?
+                     (first args)
+                     (hash-map)))
+        (contents (if has-options?
+                      (rest args)
+                      args))
+        (encoding (option-value options :encoding "UTF-8"))
+        (lang (option-value options :lang nil))
+        (render-options (hash-map :mode :xhtml
+                                  :escape-strings? (option-value options :escape-strings? (*escape-strings?*))
+                                  :base-url (option-value options :base-url (*base-url*))
+                                  :encoding encoding))
+        (root-attrs (hash-map :xmlns "http://www.w3.org/1999/xhtml"
+                              "xml:lang" lang
+                              :lang lang)))
+    (render-html-with-options
+     render-options
+     (list (xml-declaration encoding)
+           doctype-xhtml-strict
+           (list->vector (cons 'html (cons root-attrs contents)))))))
+
+(defn html5
+  "Render an HTML5 document."
+  [& args]
+  (let ((has-options? (and (not (null? args)) (options-map? (first args))))
+        (options (if has-options?
+                     (first args)
+                     (hash-map)))
+        (contents (if has-options?
+                      (rest args)
+                      args))
+        (xml? (option-value options :xml? false))
+        (encoding (option-value options :encoding "UTF-8"))
+        (lang (option-value options :lang nil))
+        (render-options (hash-map :mode (if xml? :xhtml :html)
+                                  :escape-strings? (option-value options :escape-strings? (*escape-strings?*))
+                                  :base-url (option-value options :base-url (*base-url*))
+                                  :encoding encoding))
+        (html-attrs (hash-map :lang lang))
+        (html-node (list->vector (cons 'html (cons html-attrs contents)))))
+    (render-html-with-options
+     render-options
+     (if xml?
+         (list (xml-declaration encoding)
+               doctype-html5
+               (list->vector (cons 'html (cons (hash-map :xmlns "http://www.w3.org/1999/xhtml"
+                                                         "xml:lang" lang
+                                                         :lang lang)
+                                               contents))))
+         (list doctype-html5 html-node)))))
+
+(defn include-js
+  "Return script tags for one or more JS sources."
+  [& scripts]
+  (map (fn [script]
+         [:script {:type "text/javascript"
+                   :src (to-uri script)}])
+       scripts))
+
+(defn include-css
+  "Return link tags for one or more stylesheet sources."
+  [& styles]
+  (map (fn [style]
+         [:link {:type "text/css"
+                 :href (to-uri style)
+                 :rel "stylesheet"}])
+       styles))
+
+(defn javascript-tag
+  "Wrap SCRIPT in a script tag."
+  [script]
+  [:script {:type "text/javascript"}
+   (raw-string (str "//<![CDATA[\n" script "\n//]]>"))])
+
+(defn link-to
+  "Wrap CONTENTS in a link to URL."
+  [url & content]
+  [:a {:href (to-uri url)}
+   (if (null? content)
+       (to-uri url)
+       content)])
+
+(defn mail-to
+  "Wrap CONTENTS in a mailto link."
+  [email & content]
+  [:a {:href (str "mailto:" email)}
+   (if (null? content)
+       email
+       content)])
+
+(defn unordered-list
+  "Render a collection as an unordered list."
+  [coll]
+  [:ul (map (fn [x] [:li x]) coll)])
+
+(defn ordered-list
+  "Render a collection as an ordered list."
+  [coll]
+  [:ol (map (fn [x] [:li x]) coll)])
+
+(defn image
+  "Render an image element."
+  ([src] [:img {:src (to-uri src)}])
+  ([src alt] [:img {:src (to-uri src)
+                    :alt alt}]))
+
+(def *group* (make-parameter '()))
+
+(defn with-group
+  "Call THUNK with GROUP pushed onto the current field-group stack."
+  [group thunk]
+  (parameterize ((*group* (cons (as-str group) (*group*))))
+    (thunk)))
+
+(defn make-name
+  "Build a grouped field name."
+  [name]
+  (reduce (fn [left right]
+            (str left "[" right "]"))
+          (append (reverse (*group*))
+                  (list (as-str name)))))
+
+(defn make-id
+  "Build a grouped field id."
+  [name]
+  (reduce (fn [left right]
+            (str left "-" right))
+          (append (reverse (*group*))
+                  (list (as-str name)))))
+
+(defn input-field
+  "Create a standard input field."
+  [type name value]
+  [:input {:type type
+           :name (make-name name)
+           :id (make-id name)
+           :value (or value "")}])
+
+(defn hidden-field
+  "Create a hidden input field."
+  ([name] (hidden-field name nil))
+  ([name value] (input-field "hidden" name value)))
+
+(defn text-field
+  "Create a text field."
+  ([name] (text-field name nil))
+  ([name value] (input-field "text" name value)))
+
+(defn password-field
+  "Create a password field."
+  ([name] (password-field name nil))
+  ([name value] (input-field "password" name value)))
+
+(defn email-field
+  "Create an email field."
+  ([name] (email-field name nil))
+  ([name value] (input-field "email" name value)))
+
+(defn check-box
+  "Create a checkbox."
+  ([name] (check-box name nil))
+  ([name checked?] (check-box name checked? "true"))
+  ([name checked? value]
+   [:input {:type "checkbox"
+            :name (make-name name)
+            :id (make-id name)
+            :value value
+            :checked checked?}]))
+
+(defn radio-button
+  "Create a radio button."
+  ([group] (radio-button group nil))
+  ([group checked?] (radio-button group checked? "true"))
+  ([group checked? value]
+   [:input {:type "radio"
+            :name (make-name group)
+            :id (make-id (str (as-str group) "-" (as-str value)))
+            :value value
+            :checked checked?}]))
+
+(defn select-options
+  "Turn a collection into option tags."
+  ([coll] (select-options coll nil))
+  ([coll selected]
+   (map (fn [x]
+          (if (or (pair? x) (null? x) (vector? x))
+              (let ((text (first x))
+                    (val (first (rest x))))
+                (if (or (pair? val) (null? val) (vector? val))
+                    [:optgroup {:label text}
+                     (select-options val selected)]
+                    [:option {:value val
+                              :selected (= val selected)}
+                     text]))
+              [:option {:selected (= x selected)} x]))
+        coll)))
+
+(defn drop-down
+  "Create a select element."
+  ([name options] (drop-down name options nil))
+  ([name options selected]
+   [:select {:name (make-name name)
+             :id (make-id name)}
+    (select-options options selected)]))
+
+(defn text-area
+  "Create a text area."
+  ([name] (text-area name nil))
+  ([name value]
+   [:textarea {:name (make-name name)
+               :id (make-id name)}
+    value]))
+
+(defn file-upload
+  "Create a file upload field."
+  [name]
+  (input-field "file" name nil))
+
+(defn label
+  "Create a label for NAME."
+  [name text]
+  [:label {:for (make-id name)} text])
+
+(defn submit-button
+  "Create a submit button."
+  [text]
+  [:input {:type "submit" :value text}])
+
+(defn reset-button
+  "Create a reset button."
+  [text]
+  [:input {:type "reset" :value text}])
+
+(defn form-to
+  "Create a form targeting METHOD and ACTION."
+  [[method action] & body]
+  (let ((method-str (str/upper-case (name method)))
+        (action-uri (to-uri action)))
+    (if (or (eq? method :get) (eq? method :post))
+        (list->vector
+         (cons 'form
+               (cons (hash-map :method method-str
+                               :action action-uri)
+                     body)))
+        (list->vector
+         (cons 'form
+               (cons (hash-map :method "POST"
+                               :action action-uri)
+                     (cons (hidden-field "_method" method-str)
+                           body)))))))
+
+(defn wrap-base-url
+  "Wrap HANDLER so relative URLs render against BASE-URL or request :context."
+  ([handler] (wrap-base-url handler nil))
+  ([handler base-url]
+   (fn [request]
+     (with-base-url (or base-url (:context request))
+       (fn []
+         (handler request))))))
+
+(defn html-resolve-alias
+  "Resolve alias metadata. Cluck currently treats this as identity."
+  [x]
+  x)
+
+(defn html
+  "Render Hiccup data to HTML text."
+  [& args]
+  (if (and (not (null? args))
+           (options-map? (first args)))
+      (render-html-with-options (first args) (rest args))
+      (render-html args)))
+
+(def html->str html)
+(def html-raw-str raw-string)

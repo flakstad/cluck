@@ -146,6 +146,7 @@
 (assert-num= "keys count" 2 (count (keys sample)))
 (assert-num= "vals count" 2 (count (vals sample)))
 (load-file "ring/test.clk")
+(load-file "hiccup/test.clk")
 (in-ns 'cluck.smoke)
 (require [ring.adapter.spiffy :as ring-adapter]
          [ring.request :as request]
