@@ -89,6 +89,7 @@
    :mouse-x 0
    :mouse-y 0
    :pointer-down? false
+   :pointer-source false
    :panning? false
    :pan-last-x 0
    :pan-last-y 0
@@ -611,6 +612,7 @@
            :pan-last-x (nth screen-point 0)
            :pan-last-y (nth screen-point 1)
            :pointer-down? false
+           :pointer-source false
            :active-stroke false
            :mouse-x (nth world-point 0)
            :mouse-y (nth world-point 1)
@@ -649,6 +651,7 @@
   (assoc state
          :panning? false
          :pointer-down? false
+         :pointer-source false
          :canvas-dirty? true))
 
 (defn draw-event-key-label
@@ -1308,6 +1311,7 @@
   (draw-clear-preview!)
   (let [state (assoc state
                      :pointer-down? false
+                     :pointer-source false
                      :active-stroke false
                      :panning? false
                      :pen-pressure 1.0
@@ -1410,6 +1414,9 @@
                                      (get state :brush-size))
           next-state (assoc state
                             :pointer-down? true
+                            :pointer-source (if (str/starts-with? desc "SDL_EVENT_PEN_")
+                                              :pen
+                                              :mouse)
                             :active-stroke stroke
                             :mouse-x (nth point 0)
                             :mouse-y (nth point 1))]
@@ -1450,6 +1457,7 @@
                                            (get stroke :size))
               next-state (assoc state
                                 :pointer-down? false
+                                :pointer-source false
                                 :mouse-x (nth point 0)
                                 :mouse-y (nth point 1)
                                 :active-stroke false
@@ -1466,9 +1474,15 @@
           next-state)
       (assoc state
              :pointer-down? false
+             :pointer-source false
              :mouse-x (nth point 0)
              :mouse-y (nth point 1)
              :active-stroke false))))
+
+(defn draw-pen-owned-pointer?
+  "Return true when STATE says the active pointer source is the pen."
+  [state]
+  (draw-kind=? (get state :pointer-source) :pen))
 
 (defn draw-kind=?
   "Compare two keyword event kinds by name."
@@ -1674,7 +1688,9 @@
       (or (draw-kind=? kind :mouse-motion)
           (draw-kind=? kind :mouse-down)
           (draw-kind=? kind :mouse-up))
-      (let [state (assoc state :pen-pressure 1.0)]
+      (if (draw-pen-owned-pointer? state)
+        state
+        (let [state (assoc state :pen-pressure 1.0)]
         (cond
         (and (draw-kind=? kind :mouse-down)
              (get event :shift?))
@@ -1709,7 +1725,7 @@
         (let [point (draw-input-event-point state event)]
           (assoc state
                  :mouse-x (nth point 0)
-                 :mouse-y (nth point 1)))))
+                 :mouse-y (nth point 1))))))
 
       (or (draw-kind=? kind :pen-motion)
           (draw-kind=? kind :pen-down)

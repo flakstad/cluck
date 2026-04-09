@@ -167,6 +167,29 @@
                           1
                           (count (get (get deduped :active-stroke) :points))))
 
+(let [pen-state (draw-apply-and-log-input-event!
+                  (default-state)
+                  {:kind :pen-down
+                   :desc "SDL_EVENT_PEN_DOWN x=12.0 y=34.0"
+                   :mouse-x 12.0
+                   :mouse-y 34.0
+                   :pressure 0.4
+                   :shift? false}
+                  :simulated)
+      ignored-mouse-up (draw-apply-and-log-input-event!
+                         pen-state
+                         {:kind :mouse-up
+                          :desc "SDL_EVENT_MOUSE_BUTTON_UP which=0 x=12.0 y=34.0"
+                          :mouse-x 12.0
+                          :mouse-y 34.0
+                          :pressure 1.0
+                          :shift? false}
+                         :simulated)]
+  (draw-input-assert-true "mouse-up is ignored while pen owns pointer"
+                          (get ignored-mouse-up :pointer-down?))
+  (draw-input-assert-true "mouse-up keeps active pen stroke alive"
+                          (get ignored-mouse-up :active-stroke)))
+
 (let [left (draw-mouse-leave-core!
              (assoc (default-state)
                     :window-focused? true
