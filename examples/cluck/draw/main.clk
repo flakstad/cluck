@@ -35,6 +35,11 @@
   []
   8)
 
+(defn draw-preview-segment-budget
+  "Return the maximum number of new stroke points to preview in one frame."
+  []
+  24)
+
 (defn init-video!
   []
   (sdl/init-video!))
@@ -1923,7 +1928,10 @@
         spacing (if (> stamp 1)
                   (/ stamp 3.0)
                   1.0)
-        steps (draw-exact-int (math/ceiling (/ distance spacing)))]
+        raw-steps (draw-exact-int (math/ceiling (/ distance spacing)))
+        steps (if (> raw-steps 48)
+                48
+                raw-steps)]
     (if (> steps 0)
       steps
       1)))
@@ -2065,24 +2073,29 @@
             (set! *draw-preview-point-count* (if (> total 0) 1 0)))
           nil)
         (if (< *draw-preview-point-count* total)
-          (draw-with-preview!
-            (lambda (renderer)
-              (draw-with-stroke-color (get active :color)
-                (lambda ()
-                  (let [previous (nth points (- *draw-preview-point-count* 1))
-                        remaining (drop *draw-preview-point-count* points)]
-                    (reduce (fn [prior point]
-                              (begin
-                                (draw-render-stroke-segment! renderer
-                                                             state
-                                                             prior
-                                                             point
-                                                             (get active :size))
-                                point))
-                            previous
-                            remaining))))))
+          (let [previous (nth points (- *draw-preview-point-count* 1))
+                pending (drop *draw-preview-point-count* points)
+                batch (take (draw-preview-segment-budget) pending)
+                batch-count (count batch)]
+            (if (> batch-count 0)
+              (draw-with-preview!
+                (lambda (renderer)
+                  (draw-with-stroke-color (get active :color)
+                    (lambda ()
+                      (reduce (fn [prior point]
+                                (begin
+                                  (draw-render-stroke-segment! renderer
+                                                               state
+                                                               prior
+                                                               point
+                                                               (get active :size))
+                                  point))
+                              previous
+                              batch)))))
+              nil)
+            (set! *draw-preview-point-count*
+                  (+ *draw-preview-point-count* batch-count)))
           nil)
-        (set! *draw-preview-point-count* total)
         true)
       (begin
         (if (> *draw-preview-point-count* 0)
