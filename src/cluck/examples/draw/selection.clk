@@ -1,0 +1,207 @@
+;; Pure draw selection and cursor helpers.
+
+(ns cluck.examples.draw.selection
+  (:require [cluck.examples.draw.geometry :as draw-geometry]
+            [cluck.examples.draw.state :as draw-state]
+            [cluck.examples.draw.panel :as draw-panel]
+            [cluck.examples.draw.view :as draw-view]))
+
+(defn draw-find-hit-element
+  "Return the topmost element under POINT, or false."
+  [state point]
+  (let [elements (get state :elements)
+        total (count elements)]
+    (let loop ((index (- total 1)))
+      (if (< index 0)
+        false
+        (let [element (nth elements index)]
+          (if (if (draw-state/draw-box-element? element)
+                (draw-geometry/draw-point-in-box? point
+                                                  element
+                                                  (+ (draw-geometry/draw-selection-world-padding state)
+                                                     (or (get element :size) 1.0)))
+                (draw-geometry/draw-point-in-bounds? point
+                                                    (draw-geometry/draw-element-bounds state element)))
+            element
+            (loop (- index 1))))))))
+
+(defn draw-selection-ids
+  "Return a normalized single-selection vector for ELEMENT."
+  [element]
+  (if element
+    [(get element :id)]
+    []))
+
+(defn draw-selection-add-id
+  "Return SELECTION with ELEMENT-ID appended when it is not already present."
+  [selection element-id]
+  (if (or (not element-id)
+          (draw-state/draw-selection-has-id? selection element-id))
+    (vec selection)
+    (conj (vec selection) element-id)))
+
+(defn draw-selection-next-ids
+  "Return the next selection ids after hitting ELEMENT."
+  [state element extend-selection?]
+  (let [current (draw-state/draw-selected-element-ids state)]
+    (if extend-selection?
+      (if element
+        (draw-selection-add-id current (get element :id))
+        current)
+      (if element
+        (if (draw-state/draw-selection-has-id? current (get element :id))
+          current
+          [(get element :id)])
+        []))))
+
+(defn draw-marquee-selection-ids
+  "Return the next selected ids for marquee BOUNDS."
+  [state bounds extend-selection? original-selection]
+  (let [hits (reduce (fn [ids element]
+                       (if (draw-geometry/draw-bounds-overlap? bounds
+                                                               (draw-geometry/draw-element-bounds state element))
+                         (draw-selection-add-id ids (get element :id))
+                         ids))
+                     []
+                     (get state :elements))]
+    (if extend-selection?
+      (reduce (fn [ids element-id]
+                (draw-selection-add-id ids element-id))
+              (vec original-selection)
+              hits)
+      hits)))
+
+(defn draw-selection-bounds
+  "Return aggregate bounds for the current selection."
+  [state]
+  (reduce (fn [current element]
+            (draw-geometry/draw-bounds-union current
+                                             (draw-geometry/draw-element-bounds state element)))
+          false
+          (draw-state/draw-selected-elements state)))
+
+(defn draw-single-selected-element
+  "Return the sole selected element when exactly one element is selected."
+  [state]
+  (let [elements (draw-state/draw-selected-elements state)]
+    (if (= (count elements) 1)
+      (first elements)
+      false)))
+
+(defn draw-single-selected-rectangle
+  "Return the sole selected rectangle element when one is selected."
+  [state]
+  (let [element (draw-single-selected-element state)]
+    (if (and element (draw-state/draw-box-element? element))
+      element
+      false)))
+
+(defn draw-single-selected-arrow
+  "Return the sole selected arrow element when one is selected."
+  [state]
+  (let [element (draw-single-selected-element state)]
+    (if (and element (draw-state/draw-arrow-element? element))
+      element
+      false)))
+
+(defn draw-find-selection-handle
+  "Return the resize handle hit by SCREEN-POINT, or false."
+  [state screen-point]
+  (let [element (draw-single-selected-element state)]
+    (if element
+      (let [rects (draw-geometry/draw-selection-handle-screen-rects state element)]
+        (cond
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :rotate)) :rotate
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :nw)) :nw
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :ne)) :ne
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :se)) :se
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :sw)) :sw
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :start)) :start
+          (draw-panel/draw-screen-point-in-rect? screen-point (get rects :end)) :end
+          :else false))
+      false)))
+
+(defn draw-selection-handle-cursor-kind
+  "Return the appropriate resize cursor for HANDLE."
+  [handle]
+  (if (draw-state/draw-kind=? handle :rotate)
+    :crosshair
+    (if (or (draw-state/draw-kind=? handle :start)
+            (draw-state/draw-kind=? handle :end))
+      :crosshair
+      (if (or (draw-state/draw-kind=? handle :nw)
+              (draw-state/draw-kind=? handle :se))
+        :nwse-resize
+        (if (or (draw-state/draw-kind=? handle :ne)
+                (draw-state/draw-kind=? handle :sw))
+          :nesw-resize
+          :default)))))
+
+(defn draw-desired-cursor-kind
+  "Return the desired system cursor for STATE."
+  [state]
+  (let [screen-point (draw-panel/draw-pointer-screen-point state)
+        world-point (draw-panel/draw-pointer-world-point state)]
+    (cond
+      (or (get state :panning?)
+          (get state :space-down?))
+      :move
+
+      (and (draw-state/draw-selection-tool? state)
+           (get state :active-selection-rotate))
+      (draw-selection-handle-cursor-kind :rotate)
+
+      (and (draw-state/draw-selection-tool? state)
+           (get state :active-selection-resize))
+      (draw-selection-handle-cursor-kind
+        (get (get state :active-selection-resize) :handle))
+
+      (and (draw-state/draw-selection-tool? state)
+           (get state :active-selection-drag))
+      :move
+
+      (draw-panel/draw-find-tool-panel-button state screen-point)
+      :pointer
+
+      (draw-panel/draw-tool-panel-hit? state screen-point)
+      :default
+
+      (and (draw-state/draw-selection-tool? state)
+           (draw-find-selection-handle state screen-point))
+      (draw-selection-handle-cursor-kind
+        (draw-find-selection-handle state screen-point))
+
+      (and (draw-state/draw-selection-tool? state)
+           (draw-find-hit-element state world-point))
+      :move
+
+      (draw-state/draw-text-tool? state)
+      :text
+
+      (or (draw-state/draw-box-tool? state)
+          (draw-state/draw-arrow-tool? state)
+          (draw-state/draw-frame-tool? state)
+          (draw-state/draw-text-tool? state)
+          (draw-state/draw-kind=? (or (get state :tool) :ink) :ink)
+          (get state :eraser?))
+      :crosshair
+
+      :else
+      :default)))
+
+(defn draw-clear-active-interactions
+  "Clear transient pointer interaction state from STATE."
+  [state]
+  (assoc state
+         :pointer-down? false
+         :pointer-source false
+         :panning? false
+         :active-selection-drag false
+         :active-selection-resize false
+         :active-selection-rotate false
+         :active-selection-marquee false
+         :active-stroke false
+         :active-box false
+         :active-arrow false
+         :active-frame false
+         :active-text false))

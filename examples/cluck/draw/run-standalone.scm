@@ -15,6 +15,8 @@
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.state #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.view #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.panel #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.geometry #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.selection #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.sdl3 #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw #t)
 
@@ -22,6 +24,8 @@
 (include "src/cluck/examples/draw/state.clk")
 (include "src/cluck/examples/draw/view.clk")
 (include "src/cluck/examples/draw/panel.clk")
+(include "src/cluck/examples/draw/geometry.clk")
+(include "src/cluck/examples/draw/selection.clk")
 (include "src/cluck/examples/draw/sdl3.clk")
 (include "examples/cluck/draw/main.clk")
 

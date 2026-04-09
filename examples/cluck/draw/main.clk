@@ -9,6 +9,8 @@
             [cluck.examples.draw.state :as draw-state]
             [cluck.examples.draw.view :as draw-view]
             [cluck.examples.draw.panel :as draw-panel]
+            [cluck.examples.draw.geometry :as draw-geometry]
+            [cluck.examples.draw.selection :as draw-selection]
             [cluck.fs :as fs]
             [cluck.io :as io]
             [cluck.process :as proc]
@@ -117,6 +119,76 @@
 (def draw-pointer-world-point draw-panel/draw-pointer-world-point)
 (def draw-pointer-screen-point draw-panel/draw-pointer-screen-point)
 (def draw-find-tool-panel-button draw-panel/draw-find-tool-panel-button)
+
+(def draw-arrow-record draw-geometry/draw-arrow-record)
+(def draw-arrow-length draw-geometry/draw-arrow-length)
+(def draw-arrow-visible? draw-geometry/draw-arrow-visible?)
+(def draw-translate-point draw-geometry/draw-translate-point)
+(def draw-translate-element draw-geometry/draw-translate-element)
+(def draw-find-element-by-id draw-geometry/draw-find-element-by-id)
+(def draw-replace-element-by-id draw-geometry/draw-replace-element-by-id)
+(def draw-translate-selected-elements draw-geometry/draw-translate-selected-elements)
+(def draw-stroke-record draw-geometry/draw-stroke-record)
+(def draw-box-record draw-geometry/draw-box-record)
+(def draw-box-rect draw-geometry/draw-box-rect)
+(def draw-box-min-size draw-geometry/draw-box-min-size)
+(def draw-box-element draw-geometry/draw-box-element)
+(def draw-box-rotation draw-geometry/draw-box-rotation)
+(def draw-box-center draw-geometry/draw-box-center)
+(def draw-rotation-handle-screen-offset draw-geometry/draw-rotation-handle-screen-offset)
+(def draw-pi draw-geometry/draw-pi)
+(def draw-normalize-angle draw-geometry/draw-normalize-angle)
+(def draw-point-angle draw-geometry/draw-point-angle)
+(def draw-rotate-point-around draw-geometry/draw-rotate-point-around)
+(def draw-unrotate-point-around draw-geometry/draw-unrotate-point-around)
+(def draw-box-corner-points draw-geometry/draw-box-corner-points)
+(def draw-box-visible? draw-geometry/draw-box-visible?)
+(def draw-frame-record draw-geometry/draw-frame-record)
+(def draw-frame-element draw-geometry/draw-frame-element)
+(def draw-frame-visible? draw-geometry/draw-frame-visible?)
+(def draw-text-default-value draw-geometry/draw-text-default-value)
+(def draw-text-record draw-geometry/draw-text-record)
+(def draw-text-element draw-geometry/draw-text-element)
+(def draw-text-visible? draw-geometry/draw-text-visible?)
+(def draw-text-screen-char-width draw-geometry/draw-text-screen-char-width)
+(def draw-text-screen-height draw-geometry/draw-text-screen-height)
+(def draw-text-screen-width draw-geometry/draw-text-screen-width)
+(def draw-text-world-width draw-geometry/draw-text-world-width)
+(def draw-text-world-height draw-geometry/draw-text-world-height)
+(def draw-selection-screen-padding draw-geometry/draw-selection-screen-padding)
+(def draw-selection-world-padding draw-geometry/draw-selection-world-padding)
+(def draw-point-bounds draw-geometry/draw-point-bounds)
+(def draw-element-bounds draw-geometry/draw-element-bounds)
+(def draw-point-in-bounds? draw-geometry/draw-point-in-bounds?)
+(def draw-point-in-box? draw-geometry/draw-point-in-box?)
+(def draw-selection-rect draw-geometry/draw-selection-rect)
+(def draw-bounds-overlap? draw-geometry/draw-bounds-overlap?)
+(def draw-selection-color draw-geometry/draw-selection-color)
+(def draw-selection-outline-size draw-geometry/draw-selection-outline-size)
+(def draw-selection-outline-element draw-geometry/draw-selection-outline-element)
+(def draw-bounds-union draw-geometry/draw-bounds-union)
+(def draw-selection-handle-screen-size draw-geometry/draw-selection-handle-screen-size)
+(def draw-rectangle-handle-world-points draw-geometry/draw-rectangle-handle-world-points)
+(def draw-screen-point-rect draw-geometry/draw-screen-point-rect)
+(def draw-rotation-handle-screen-point draw-geometry/draw-rotation-handle-screen-point)
+(def draw-arrow-handle-screen-rects draw-geometry/draw-arrow-handle-screen-rects)
+(def draw-selection-handle-screen-rects draw-geometry/draw-selection-handle-screen-rects)
+(def draw-rectangle-opposite-corner draw-geometry/draw-rectangle-opposite-corner)
+(def draw-box-with-rect draw-geometry/draw-box-with-rect)
+
+(def draw-find-hit-element draw-selection/draw-find-hit-element)
+(def draw-selection-ids draw-selection/draw-selection-ids)
+(def draw-selection-add-id draw-selection/draw-selection-add-id)
+(def draw-selection-next-ids draw-selection/draw-selection-next-ids)
+(def draw-marquee-selection-ids draw-selection/draw-marquee-selection-ids)
+(def draw-selection-bounds draw-selection/draw-selection-bounds)
+(def draw-single-selected-element draw-selection/draw-single-selected-element)
+(def draw-single-selected-rectangle draw-selection/draw-single-selected-rectangle)
+(def draw-single-selected-arrow draw-selection/draw-single-selected-arrow)
+(def draw-find-selection-handle draw-selection/draw-find-selection-handle)
+(def draw-selection-handle-cursor-kind draw-selection/draw-selection-handle-cursor-kind)
+(def draw-desired-cursor-kind draw-selection/draw-desired-cursor-kind)
+(def draw-clear-active-interactions draw-selection/draw-clear-active-interactions)
 
 (defn draw-recent-events-limit
   []
@@ -1839,612 +1911,6 @@
    :color color
    :size size})
 
-(defn draw-box-record
-  "Build a fresh active-box record."
-  [start end color size]
-  {:start start
-   :end end
-   :color color
-   :size size})
-
-(defn draw-box-rect
-  "Return a normalized box rectangle from START and END world points."
-  [start end]
-  (let [x0 (nth start 0)
-        y0 (nth start 1)
-        x1 (nth end 0)
-        y1 (nth end 1)]
-    {:x (if (< x0 x1) x0 x1)
-     :y (if (< y0 y1) y0 y1)
-     :width (math/abs (- x1 x0))
-     :height (math/abs (- y1 y0))}))
-
-(defn draw-box-min-size
-  "Return the minimum world-space box dimension worth committing."
-  []
-  1.0)
-
-(defn draw-box-element
-  "Build a committed box element from ACTIVE-BOX."
-  [active-box]
-  (let [rect (draw-box-rect (get active-box :start)
-                            (get active-box :end))]
-    {:kind :box
-     :x (get rect :x)
-     :y (get rect :y)
-     :width (get rect :width)
-     :height (get rect :height)
-     :rotation 0.0
-     :color (get active-box :color)
-     :size (get active-box :size)}))
-
-(defn draw-box-rotation
-  "Return the rotation in radians for BOX."
-  [box]
-  (or (get box :rotation) 0.0))
-
-(defn draw-box-center
-  "Return the center point for BOX."
-  [box]
-  [(+ (get box :x) (/ (get box :width) 2.0))
-   (+ (get box :y) (/ (get box :height) 2.0))
-   1.0])
-
-(defn draw-rotation-handle-screen-offset
-  "Return the screen-space distance between the top edge and rotate handle."
-  []
-  20.0)
-
-(defn draw-pi
-  "Return pi."
-  []
-  3.141592653589793)
-
-(defn draw-normalize-angle
-  "Normalize ANGLE to the range [-pi, pi]."
-  [angle]
-  (let [pi (draw-pi)
-        two-pi (* 2.0 pi)]
-    (cond
-      (> angle pi)
-      (draw-normalize-angle (- angle two-pi))
-
-      (< angle (- 0.0 pi))
-      (draw-normalize-angle (+ angle two-pi))
-
-      :else angle)))
-
-(defn draw-point-angle
-  "Return the world-space angle from CENTER to POINT."
-  [center point]
-  (let [dx (- (nth point 0) (nth center 0))
-        dy (- (nth point 1) (nth center 1))]
-    (math/atan dx dy)))
-
-(defn draw-rotate-point-around
-  "Return POINT rotated around CENTER by ROTATION radians."
-  [point center rotation]
-  (let [cx (nth center 0)
-        cy (nth center 1)
-        dx (- (nth point 0) cx)
-        dy (- (nth point 1) cy)
-        cosine (math/cos rotation)
-        sine (math/sin rotation)
-        pressure (if (> (count point) 2) (nth point 2) 1.0)]
-    [(+ cx (- (* dx cosine) (* dy sine)))
-     (+ cy (+ (* dx sine) (* dy cosine)))
-     pressure]))
-
-(defn draw-unrotate-point-around
-  "Return POINT transformed into CENTER's local frame for ROTATION."
-  [point center rotation]
-  (draw-rotate-point-around point center (- 0.0 rotation)))
-
-(defn draw-box-corner-points
-  "Return BOX corner points after applying its rotation."
-  [box]
-  (let [x (get box :x)
-        y (get box :y)
-        right (+ x (get box :width))
-        bottom (+ y (get box :height))
-        center (draw-box-center box)
-        rotation (draw-box-rotation box)]
-    {:nw (draw-rotate-point-around [x y 1.0] center rotation)
-     :ne (draw-rotate-point-around [right y 1.0] center rotation)
-     :se (draw-rotate-point-around [right bottom 1.0] center rotation)
-     :sw (draw-rotate-point-around [x bottom 1.0] center rotation)}))
-
-(defn draw-box-visible?
-  "Return true when BOX is large enough to commit."
-  [box]
-  (and (>= (get box :width) (draw-box-min-size))
-       (>= (get box :height) (draw-box-min-size))))
-
-(defn draw-frame-record
-  "Build a fresh active-frame record."
-  [start end color size]
-  {:start start
-   :end end
-   :color color
-   :size size})
-
-(defn draw-frame-element
-  "Build a committed frame element from ACTIVE-FRAME."
-  [active-frame]
-  (let [rect (draw-box-rect (get active-frame :start)
-                            (get active-frame :end))]
-    {:kind :frame
-     :x (get rect :x)
-     :y (get rect :y)
-     :width (get rect :width)
-     :height (get rect :height)
-     :color (get active-frame :color)
-     :size (get active-frame :size)}))
-
-(defn draw-frame-visible?
-  "Return true when FRAME is large enough to commit."
-  [frame]
-  (draw-box-visible? frame))
-
-(defn draw-text-default-value
-  "Return the placeholder text used for newly created text elements."
-  []
-  "Text")
-
-(defn draw-text-record
-  "Build a fresh active-text record."
-  [point text color size]
-  {:point point
-   :text (or text (draw-text-default-value))
-   :color color
-   :size size})
-
-(defn draw-text-element
-  "Build a committed text element from ACTIVE-TEXT."
-  [active-text]
-  {:kind :text
-   :x (nth (get active-text :point) 0)
-   :y (nth (get active-text :point) 1)
-   :text (or (get active-text :text) (draw-text-default-value))
-   :color (get active-text :color)
-   :size (get active-text :size)})
-
-(defn draw-text-visible?
-  "Return true when TEXT-ELEMENT has visible content."
-  [text-element]
-  (not (str/blank? (or (get text-element :text) ""))))
-
-(defn draw-text-screen-char-width
-  "Return the approximate character width of the debug font."
-  []
-  8.0)
-
-(defn draw-text-screen-height
-  "Return the approximate line height of the debug font."
-  []
-  16.0)
-
-(defn draw-text-screen-width
-  "Return the approximate screen-space width for TEXT."
-  [text]
-  (max (draw-text-screen-char-width)
-       (* (count (or text "")) (draw-text-screen-char-width))))
-
-(defn draw-text-world-width
-  "Return the approximate world-space width for TEXT in STATE."
-  [state text]
-  (/ (draw-text-screen-width text)
-     (draw-view-zoom state)))
-
-(defn draw-text-world-height
-  "Return the approximate world-space height for text in STATE."
-  [state]
-  (/ (draw-text-screen-height)
-     (draw-view-zoom state)))
-
-(defn draw-selection-screen-padding
-  "Return the screen-space padding used for hit testing and selection outlines."
-  []
-  8.0)
-
-(defn draw-selection-world-padding
-  "Return the world-space selection padding for STATE."
-  [state]
-  (/ (draw-selection-screen-padding)
-     (draw-view-zoom state)))
-
-(defn draw-point-bounds
-  "Return bounds for POINTS expanded by PADDING."
-  [points padding]
-  (if (empty? points)
-    false
-    (let [point (first points)
-          x (nth point 0)
-          y (nth point 1)
-          initial {:x x :y y :right x :bottom y}
-          bounds (reduce (lambda (current next-point)
-                           (let [px (nth next-point 0)
-                                 py (nth next-point 1)]
-                             {:x (if (< px (get current :x))
-                                   px
-                                   (get current :x))
-                              :y (if (< py (get current :y))
-                                   py
-                                   (get current :y))
-                              :right (if (> px (get current :right))
-                                       px
-                                       (get current :right))
-                              :bottom (if (> py (get current :bottom))
-                                        py
-                                        (get current :bottom))}))
-                         initial
-                         (rest points))]
-      {:x (- (get bounds :x) padding)
-       :y (- (get bounds :y) padding)
-       :width (+ (- (get bounds :right)
-                    (get bounds :x))
-                 (* padding 2.0))
-       :height (+ (- (get bounds :bottom)
-                     (get bounds :y))
-                  (* padding 2.0))})))
-
-(defn draw-element-bounds
-  "Return world-space bounds for ELEMENT, expanded for selection."
-  [state element]
-  (let [padding (+ (draw-selection-world-padding state)
-                   (or (get element :size) 1.0))]
-    (if (draw-box-element? element)
-      (draw-point-bounds [(get (draw-box-corner-points element) :nw)
-                          (get (draw-box-corner-points element) :ne)
-                          (get (draw-box-corner-points element) :se)
-                          (get (draw-box-corner-points element) :sw)]
-                         padding)
-      (if (draw-arrow-element? element)
-        (draw-point-bounds [(get element :start) (get element :end)] padding)
-        (if (draw-frame-element? element)
-          {:x (- (get element :x) padding)
-           :y (- (get element :y) padding)
-           :width (+ (get element :width) (* padding 2.0))
-           :height (+ (get element :height) (* padding 2.0))}
-          (if (draw-text-element? element)
-            {:x (- (get element :x) padding)
-             :y (- (get element :y) padding)
-             :width (+ (draw-text-world-width state (get element :text))
-                       (* padding 2.0))
-             :height (+ (draw-text-world-height state)
-                        (* padding 2.0))}
-            (draw-point-bounds (get element :points) padding)))))))
-
-(defn draw-point-in-bounds?
-  "Return true when POINT lies within BOUNDS."
-  [point bounds]
-  (and bounds
-       (>= (nth point 0) (get bounds :x))
-       (>= (nth point 1) (get bounds :y))
-       (<= (nth point 0) (+ (get bounds :x) (get bounds :width)))
-       (<= (nth point 1) (+ (get bounds :y) (get bounds :height)))))
-
-(defn draw-point-in-box?
-  "Return true when POINT lies inside BOX, accounting for rotation and PADDING."
-  [point box padding]
-  (let [center (draw-box-center box)
-        local-point (draw-unrotate-point-around point
-                                                center
-                                                (draw-box-rotation box))
-        left (- (get box :x) padding)
-        top (- (get box :y) padding)
-        right (+ (get box :x) (get box :width) padding)
-        bottom (+ (get box :y) (get box :height) padding)]
-    (and (>= (nth local-point 0) left)
-         (>= (nth local-point 1) top)
-         (<= (nth local-point 0) right)
-         (<= (nth local-point 1) bottom))))
-
-(defn draw-find-hit-element
-  "Return the topmost element under POINT, or false."
-  [state point]
-  (let [elements (get state :elements)
-        total (count elements)]
-    (let loop ((index (- total 1)))
-      (if (< index 0)
-        false
-        (let [element (nth elements index)]
-          (if (if (draw-box-element? element)
-                (draw-point-in-box? point
-                                    element
-                                    (+ (draw-selection-world-padding state)
-                                       (or (get element :size) 1.0)))
-                (draw-point-in-bounds? point
-                                       (draw-element-bounds state element)))
-            element
-            (loop (- index 1))))))))
-
-(defn draw-selection-ids
-  "Return a normalized single-selection vector for ELEMENT."
-  [element]
-  (if element
-    [(get element :id)]
-    []))
-
-(defn draw-selection-add-id
-  "Return SELECTION with ELEMENT-ID appended when it is not already present."
-  [selection element-id]
-  (if (or (not element-id)
-          (draw-selection-has-id? selection element-id))
-    (vec selection)
-    (conj (vec selection) element-id)))
-
-(defn draw-selection-next-ids
-  "Return the next selection ids after hitting ELEMENT."
-  [state element extend-selection?]
-  (let [current (draw-selected-element-ids state)]
-    (if extend-selection?
-      (if element
-        (draw-selection-add-id current (get element :id))
-        current)
-      (if element
-        (if (draw-selection-has-id? current (get element :id))
-          current
-          [(get element :id)])
-        []))))
-
-(defn draw-selection-rect
-  "Return a world-space selection rectangle from START to END."
-  [start end]
-  (draw-box-rect start end))
-
-(defn draw-bounds-overlap?
-  "Return true when A and B overlap."
-  [a b]
-  (and a
-       b
-       (< (get a :x) (+ (get b :x) (get b :width)))
-       (< (get b :x) (+ (get a :x) (get a :width)))
-       (< (get a :y) (+ (get b :y) (get b :height)))
-       (< (get b :y) (+ (get a :y) (get a :height)))))
-
-(defn draw-marquee-selection-ids
-  "Return the next selected ids for marquee BOUNDS."
-  [state bounds extend-selection? original-selection]
-  (let [hits (reduce (fn [ids element]
-                       (if (draw-bounds-overlap? bounds
-                                                 (draw-element-bounds state element))
-                         (draw-selection-add-id ids (get element :id))
-                         ids))
-                     []
-                     (get state :elements))]
-    (if extend-selection?
-      (reduce (fn [ids element-id]
-                (draw-selection-add-id ids element-id))
-              (vec original-selection)
-              hits)
-      hits)))
-
-(defn draw-selection-color
-  "Return the overlay color used for selected elements."
-  []
-  [120 180 255])
-
-(defn draw-selection-outline-size
-  "Return the stroke size used for selection outlines."
-  []
-  2)
-
-(defn draw-selection-outline-element
-  "Build a box-shaped outline element from BOUNDS."
-  [bounds]
-  {:kind :box
-   :x (get bounds :x)
-   :y (get bounds :y)
-   :width (get bounds :width)
-   :height (get bounds :height)
-   :color (draw-selection-color)
-   :size (draw-selection-outline-size)})
-
-(defn draw-bounds-union
-  "Return the union of A and B."
-  [a b]
-  (if a
-    (if b
-      (let [left (min (get a :x) (get b :x))
-            top (min (get a :y) (get b :y))
-            right (max (+ (get a :x) (get a :width))
-                       (+ (get b :x) (get b :width)))
-            bottom (max (+ (get a :y) (get a :height))
-                        (+ (get b :y) (get b :height)))]
-        {:x left
-         :y top
-         :width (- right left)
-         :height (- bottom top)})
-      a)
-    b))
-
-(defn draw-selection-bounds
-  "Return aggregate bounds for the current selection."
-  [state]
-  (reduce (fn [current element]
-            (draw-bounds-union current
-                               (draw-element-bounds state element)))
-          false
-          (draw-selected-elements state)))
-
-(defn draw-single-selected-element
-  "Return the sole selected element when exactly one element is selected."
-  [state]
-  (let [elements (draw-selected-elements state)]
-    (if (= (count elements) 1)
-      (first elements)
-      false)))
-
-(defn draw-single-selected-rectangle
-  "Return the sole selected rectangle element when one is selected."
-  [state]
-  (let [element (draw-single-selected-element state)]
-    (if (and element (draw-box-element? element))
-      element
-      false)))
-
-(defn draw-single-selected-arrow
-  "Return the sole selected arrow element when one is selected."
-  [state]
-  (let [element (draw-single-selected-element state)]
-    (if (and element (draw-arrow-element? element))
-      element
-      false)))
-
-(defn draw-selection-handle-screen-size
-  "Return the square handle size in screen pixels."
-  []
-  10)
-
-(defn draw-rectangle-handle-world-points
-  "Return corner handle world points for BOX."
-  [box]
-  (draw-box-corner-points box))
-
-(defn draw-screen-point-rect
-  "Return a centered screen-space handle rect for SCREEN-POINT."
-  [screen-point size]
-  (let [radius (/ size 2.0)]
-    {:x (draw-exact-int (math/round (- (nth screen-point 0) radius)))
-     :y (draw-exact-int (math/round (- (nth screen-point 1) radius)))
-     :width size
-     :height size}))
-
-(defn draw-rotation-handle-screen-point
-  "Return the screen-space rotate handle point for BOX."
-  [state box]
-  (let [points (draw-box-corner-points box)
-        nw (draw-world-point->screen-point state (get points :nw))
-        ne (draw-world-point->screen-point state (get points :ne))
-        mid-x (/ (+ (nth nw 0) (nth ne 0)) 2.0)
-        mid-y (/ (+ (nth nw 1) (nth ne 1)) 2.0)
-        dx (- (nth ne 0) (nth nw 0))
-        dy (- (nth ne 1) (nth nw 1))
-        length (math/sqrt (+ (* dx dx) (* dy dy)))
-        offset (draw-rotation-handle-screen-offset)]
-    (if (> length 0.0)
-      [(+ mid-x (* (/ dy length) offset))
-       (+ mid-y (* (/ (- 0.0 dx) length) offset))]
-      [mid-x (- mid-y offset)])))
-
-(defn draw-arrow-handle-screen-rects
-  "Return screen-space handle rectangles for the selected arrow."
-  [state arrow]
-  (let [size (draw-selection-handle-screen-size)]
-    {:start (draw-screen-point-rect
-              (draw-world-point->screen-point state (get arrow :start))
-              size)
-     :end (draw-screen-point-rect
-            (draw-world-point->screen-point state (get arrow :end))
-            size)}))
-
-(defn draw-selection-handle-screen-rects
-  "Return screen-space handle rectangles for the currently selected editable object."
-  [state element]
-  (if (draw-box-element? element)
-    (let [size (draw-selection-handle-screen-size)
-          points (draw-rectangle-handle-world-points element)
-          rotate-point (draw-rotation-handle-screen-point state element)]
-      (reduce (fn [handles handle]
-                (let [screen-point (if (draw-kind=? handle :rotate)
-                                     rotate-point
-                                     (draw-world-point->screen-point state
-                                                                    (get points handle)))]
-                  (assoc handles
-                         handle
-                         (draw-screen-point-rect screen-point size))))
-              {}
-              [:nw :ne :se :sw :rotate]))
-    (if (draw-arrow-element? element)
-      (draw-arrow-handle-screen-rects state element)
-      {})))
-
-(defn draw-find-selection-handle
-  "Return the resize handle hit by SCREEN-POINT, or false."
-  [state screen-point]
-  (let [element (draw-single-selected-element state)]
-    (if element
-      (let [rects (draw-selection-handle-screen-rects state element)]
-        (cond
-          (draw-screen-point-in-rect? screen-point (get rects :rotate)) :rotate
-          (draw-screen-point-in-rect? screen-point (get rects :nw)) :nw
-          (draw-screen-point-in-rect? screen-point (get rects :ne)) :ne
-          (draw-screen-point-in-rect? screen-point (get rects :se)) :se
-          (draw-screen-point-in-rect? screen-point (get rects :sw)) :sw
-          (draw-screen-point-in-rect? screen-point (get rects :start)) :start
-          (draw-screen-point-in-rect? screen-point (get rects :end)) :end
-          :else false))
-      false)))
-
-(defn draw-selection-handle-cursor-kind
-  "Return the appropriate resize cursor for HANDLE."
-  [handle]
-  (if (draw-kind=? handle :rotate)
-    :crosshair
-    (if (or (draw-kind=? handle :start)
-            (draw-kind=? handle :end))
-      :crosshair
-    (if (or (draw-kind=? handle :nw)
-          (draw-kind=? handle :se))
-      :nwse-resize
-      (if (or (draw-kind=? handle :ne)
-              (draw-kind=? handle :sw))
-        :nesw-resize
-        :default)))))
-
-(defn draw-desired-cursor-kind
-  "Return the desired system cursor for STATE."
-  [state]
-  (let [screen-point (draw-pointer-screen-point state)
-        world-point (draw-pointer-world-point state)]
-    (cond
-      (or (get state :panning?)
-          (get state :space-down?))
-      :move
-
-      (and (draw-selection-tool? state)
-           (get state :active-selection-rotate))
-      (draw-selection-handle-cursor-kind :rotate)
-
-      (and (draw-selection-tool? state)
-           (get state :active-selection-resize))
-      (draw-selection-handle-cursor-kind
-        (get (get state :active-selection-resize) :handle))
-
-      (and (draw-selection-tool? state)
-           (get state :active-selection-drag))
-      :move
-
-      (draw-find-tool-panel-button state screen-point)
-      :pointer
-
-      (draw-tool-panel-hit? state screen-point)
-      :default
-
-      (and (draw-selection-tool? state)
-           (draw-find-selection-handle state screen-point))
-      (draw-selection-handle-cursor-kind
-        (draw-find-selection-handle state screen-point))
-
-      (and (draw-selection-tool? state)
-           (draw-find-hit-element state world-point))
-      :move
-
-      (draw-text-tool? state)
-      :text
-
-      (or (draw-box-tool? state)
-          (draw-arrow-tool? state)
-          (draw-frame-tool? state)
-          (draw-text-tool? state)
-          (draw-kind=? (or (get state :tool) :ink) :ink)
-          (get state :eraser?))
-      :crosshair
-
-      :else
-      :default)))
-
 (defn draw-ensure-system-cursor!
   "Return a cached system cursor pointer for KIND, creating it when needed."
   [kind]
@@ -2480,23 +1946,6 @@
               kind)
             current-kind))))))
 
-(defn draw-clear-active-interactions
-  "Clear transient pointer interaction state from STATE."
-  [state]
-  (assoc state
-         :pointer-down? false
-         :pointer-source false
-         :panning? false
-         :active-selection-drag false
-         :active-selection-resize false
-         :active-selection-rotate false
-         :active-selection-marquee false
-         :active-stroke false
-         :active-box false
-         :active-arrow false
-         :active-frame false
-         :active-text false))
-
 (defn draw-apply-tool-panel-button
   "Apply BUTTON from the tool panel to STATE."
   [state button point screen-point]
@@ -2519,111 +1968,6 @@
         screen-point)
 
       :else base-state)))
-
-(defn draw-arrow-record
-  "Build a fresh active-arrow record."
-  [start end color size]
-  {:start start
-   :end end
-   :color color
-   :size size})
-
-(defn draw-arrow-length
-  "Return the world-space length of ARROW."
-  [arrow]
-  (let [start (get arrow :start)
-        end (get arrow :end)
-        dx (- (nth end 0) (nth start 0))
-        dy (- (nth end 1) (nth start 1))]
-    (math/sqrt (+ (* dx dx) (* dy dy)))))
-
-(defn draw-arrow-visible?
-  "Return true when ARROW is long enough to commit."
-  [arrow]
-  (>= (draw-arrow-length arrow) (draw-box-min-size)))
-
-(defn draw-translate-point
-  "Offset POINT by DX and DY, preserving pressure."
-  [point dx dy]
-  [(+ (nth point 0) dx)
-   (+ (nth point 1) dy)
-   (draw-point-pressure point)])
-
-(defn draw-translate-element
-  "Return ELEMENT moved by DX and DY."
-  [element dx dy]
-  (if (draw-box-element? element)
-    {:id (get element :id)
-     :kind :box
-     :x (+ (get element :x) dx)
-     :y (+ (get element :y) dy)
-     :width (get element :width)
-     :height (get element :height)
-     :rotation (draw-box-rotation element)
-     :color (get element :color)
-     :size (get element :size)}
-    (if (draw-arrow-element? element)
-      {:id (get element :id)
-       :kind :arrow
-       :start (draw-translate-point (get element :start) dx dy)
-       :end (draw-translate-point (get element :end) dx dy)
-       :color (get element :color)
-       :size (get element :size)}
-      (if (draw-frame-element? element)
-        {:id (get element :id)
-         :kind :frame
-         :x (+ (get element :x) dx)
-         :y (+ (get element :y) dy)
-         :width (get element :width)
-         :height (get element :height)
-         :color (get element :color)
-         :size (get element :size)}
-        (if (draw-text-element? element)
-          {:id (get element :id)
-           :kind :text
-           :x (+ (get element :x) dx)
-           :y (+ (get element :y) dy)
-           :text (get element :text)
-           :color (get element :color)
-           :size (get element :size)}
-          {:id (get element :id)
-           :kind :ink
-           :points (vec (map (fn [point]
-                               (draw-translate-point point dx dy))
-                             (get element :points)))
-           :color (get element :color)
-           :size (get element :size)})))))
-
-(defn draw-find-element-by-id
-  "Return the element with ELEMENT-ID from ELEMENTS, or false."
-  [elements element-id]
-  (let loop ((remaining elements))
-    (if (empty? remaining)
-      false
-      (let [element (first remaining)]
-        (if (= (get element :id) element-id)
-          element
-          (loop (rest remaining)))))))
-
-(defn draw-replace-element-by-id
-  "Return ELEMENTS with ELEMENT-ID replaced by NEXT-ELEMENT."
-  [elements element-id next-element]
-  (vec
-    (map (fn [element]
-           (if (= (get element :id) element-id)
-             next-element
-             element))
-         elements)))
-
-(defn draw-translate-selected-elements
-  "Return ELEMENTS with IDS translated by DX and DY."
-  [elements ids dx dy]
-  (vec
-    (map (fn [element]
-           (if (draw-selection-has-id? ids (get element :id))
-             (draw-translate-element element dx dy)
-             element))
-         elements)))
 
 (defn draw-start-selection-interaction
   "Update selection from POINT and begin a drag when an element was hit."
@@ -2710,33 +2054,6 @@
                :active-selection-marquee false)
         point
         screen-point))))
-
-(defn draw-rectangle-opposite-corner
-  "Return the fixed opposite corner world point for HANDLE on BOX."
-  [box handle]
-  (let [x (get box :x)
-        y (get box :y)
-        right (+ x (get box :width))
-        bottom (+ y (get box :height))]
-    (cond
-      (draw-kind=? handle :nw) [right bottom 1.0]
-      (draw-kind=? handle :ne) [x bottom 1.0]
-      (draw-kind=? handle :se) [x y 1.0]
-      (draw-kind=? handle :sw) [right y 1.0]
-      :else [right bottom 1.0])))
-
-(defn draw-box-with-rect
-  "Return BOX with X/Y/WIDTH/HEIGHT from RECT, preserving style and rotation."
-  [box rect]
-  {:id (get box :id)
-   :kind :box
-   :x (get rect :x)
-   :y (get rect :y)
-   :width (get rect :width)
-   :height (get rect :height)
-   :rotation (draw-box-rotation box)
-   :color (get box :color)
-   :size (get box :size)})
 
 (defn draw-start-selection-rotate
   "Begin rotating the currently selected rectangle."
