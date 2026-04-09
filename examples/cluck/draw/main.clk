@@ -1,10 +1,10 @@
 ;; SDL3 drawing app spike for Cluck.
 ;;
-;; The app stays in Cluck syntax. The SDL3 bindings live in cluck.sdl3, which
-;; is the direct C-interop boundary.
+;; The app stays in Cluck syntax. The SDL3 bindings live alongside the example
+;; in cluck.examples.draw.sdl3, which is the direct C-interop boundary.
 
 (ns cluck.examples.draw
-  (:require [cluck.sdl3 :as sdl]
+  (:require [cluck.examples.draw.sdl3 :as sdl]
             [cluck.fs :as fs]
             [cluck.io :as io]
             [cluck.process :as proc]

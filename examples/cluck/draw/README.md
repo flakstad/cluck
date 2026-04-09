@@ -4,7 +4,7 @@ This is the starting point for the SDL3 drawing app.
 
 What is in place:
 - a Cluck-only `main.clk`
-- a thin `cluck.sdl3` direct-interop layer
+- a thin example-scoped `cluck.examples.draw.sdl3` direct-interop layer
 - a compiled runner entrypoint in `run.scm`
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
 - a first SDL3 window-open loop that clears the screen until quit
@@ -50,7 +50,7 @@ csi -q -s examples/cluck/draw/run.scm
 ```
 
 The intent is to build this interactively in small steps:
-1. keep the SDL3 boundary isolated in `cluck.sdl3`
+1. keep the SDL3 boundary isolated in `cluck.examples.draw.sdl3`
 2. start a normal Cluck REPL, then evaluate `(load-file "examples/cluck/draw/dev.clk")` to load the SDL3 support code
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default

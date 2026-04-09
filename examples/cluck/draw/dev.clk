@@ -34,7 +34,7 @@
 
 (defn draw-dev-library-path
   [root]
-  (fs/path (draw-dev-build-dir root) "cluck-sdl3.so"))
+  (fs/path (draw-dev-build-dir root) "cluck-draw-sdl3.so"))
 
 (defn draw-dev-build-lock-path
   [root]
@@ -42,7 +42,7 @@
 
 (defn draw-dev-source-path
   [root]
-  (fs/path root "src/cluck/sdl3.clk"))
+  (fs/path root "examples/cluck/draw/sdl3.clk"))
 
 (defn draw-dev-source-mtime
   [path]
@@ -85,7 +85,7 @@
 
 (defn draw-dev-library-build-command
   [root]
-  (format "cd %s && csc -v -s -J -unit cluck.sdl3 -o %s %s %s -L \"%s\""
+  (format "cd %s && csc -v -s -J -unit cluck.examples.draw.sdl3 -o %s %s %s -L \"%s\""
           (proc/qs root)
           (proc/qs (draw-dev-library-path root))
           (proc/qs (draw-dev-loadable-source-path root))
@@ -140,5 +140,5 @@
 (let [root (draw-dev-root)
       lib (draw-dev-ensure-library! root)
       app (fs/path root "examples/cluck/draw/main.clk")]
-  (load-library 'cluck.sdl3 lib)
+  (load-library 'cluck.examples.draw.sdl3 lib)
   (load-file app))

@@ -247,10 +247,10 @@ The SDL3 example is a minimal drawing app scaffold that now opens a window,
  selection tool, a first arrow tool, and a first text tool:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
-- [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
+- [`examples/cluck/draw/sdl3.clk`](./examples/cluck/draw/sdl3.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
-It uses direct C interop through `cluck.sdl3`, but the application logic stays
+It uses direct C interop through `cluck.examples.draw.sdl3`, but the application logic stays
 in Cluck. The release launcher vendors a static SDL3 build into `build/vendor/`
 and compiles a self-contained native binary:
 

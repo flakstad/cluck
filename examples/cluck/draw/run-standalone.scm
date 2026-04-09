@@ -12,11 +12,11 @@
 (include "src/cluck.scm")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.sdl3 #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.sdl3 #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw #t)
 
 (include "src/cluck/string.clk")
-(include "src/cluck/sdl3.clk")
+(include "examples/cluck/draw/sdl3.clk")
 (include "examples/cluck/draw/main.clk")
 
 (main (command-line-arguments))

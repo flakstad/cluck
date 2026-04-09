@@ -1,10 +1,9 @@
-;; Thin SDL3 interop layer for Cluck.
+;; Thin SDL3 interop layer for the Cluck draw example.
 ;;
-;; This is the direct C-interop boundary for the drawing example. The app
-;; itself stays in Cluck; this namespace keeps the SDL-specific calls in one
-;; place.
+;; This stays with the example instead of the core language so the SDL-specific
+;; boundary is clearly scoped to the drawing app.
 
-(ns cluck.sdl3)
+(ns cluck.examples.draw.sdl3)
 
 (import (chicken foreign))
 

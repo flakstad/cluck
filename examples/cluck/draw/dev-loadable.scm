@@ -10,6 +10,6 @@
 
 (include "src/cluck.scm")
 
-(hash-table-set! *cluck-loaded-namespaces* 'cluck.sdl3 #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.sdl3 #t)
 
-(include "src/cluck/sdl3.clk")
+(include "examples/cluck/draw/sdl3.clk")
