@@ -88,6 +88,34 @@
 (assert-num= "or" 3 (or false nil 3))
 (assert-str= "if nil result" "nil" (pr-str (if false 1 nil)))
 (assert-str= "cond nil result" "nil" (pr-str (cond false 1 :else nil)))
+(assert-num= "cond-> no clauses" 3 (cond-> 3))
+(assert-num= "cond-> threaded inc" 3 (cond-> 1 true inc false inc true inc))
+(assert-str= "cond-> map threading" "{:a 1 :b 2}"
+             (pr-str (cond-> {:a 1}
+                             true (assoc :b 2)
+                             false (assoc :c 3))))
+(assert-str= "cond->> threaded sequence" "(2 4)"
+             (pr-str (cond->> [1 2 3]
+                              true (map inc)
+                              true (filter even?))))
+(assert-num= "-> keyword lookup" 3 (-> {:a {:b 3}} :a :b))
+(assert-num= "->> keyword lookup" 3 (->> {:a {:b 3}} :a :b))
+(assert-num= "cond-> keyword lookup" 3 (cond-> {:a {:b 3}} true :a true :b))
+(assert-num= "cond->> keyword lookup" 3 (cond->> {:a {:b 3}} true :a true :b))
+(assert-num= "some-> map lookup" 3 (some-> {:a {:b 3}} :a :b))
+(assert-str= "some-> nil" "nil" (pr-str (some-> nil inc inc)))
+(assert-num= "some->> threaded sequence" 2 (some->> [1 2 3] (map inc) first))
+(assert-num= "some->> keyword lookup" 3 (some->> {:a {:b 3}} :a :b))
+(assert-str= "some->> nil" "nil" (pr-str (some->> nil (map inc) first)))
+(assert-num= "case match" 2 (case :b :a 1 :b 2 3))
+(assert-str= "case default" "other" (case :c :a "one" :b "two" "other"))
+(assert-num= "case symbol key" 2 (case 'foo foo 2 bar 1 3))
+(assert-true "case no match throws"
+             (handle-exceptions exn
+                 #t
+               (begin
+                 (case :c :a 1 :b 2)
+                 #f)))
 (assert-num= "defn" 5 (add2 3))
 (assert-num= "let" 3 (let [x 1 y 2] (+ x y)))
 (assert-num= "let vector destructuring" 3 (let [[a b] [1 2]] (+ a b)))
@@ -282,6 +310,21 @@
 (assert-str= "doc and"
              "and\n\nEvaluate forms left to right and return the last truthy value, or the first falsey value.\n"
              (capture-output (lambda () (doc and))))
+(assert-str= "doc case"
+             "case\n\nCompare x against literal clauses and return the matching expression or trailing default.\n"
+             (capture-output (lambda () (doc case))))
+(assert-str= "doc cond->"
+             "cond->\n\nThread x through forms as the second argument when the corresponding test is truthy.\n"
+             (capture-output (lambda () (doc cond->))))
+(assert-str= "doc cond->>"
+             "cond->>\n\nThread x through forms as the last argument when the corresponding test is truthy.\n"
+             (capture-output (lambda () (doc cond->>))))
+(assert-str= "doc some->"
+             "some->\n\nThread x through forms as the second argument, returning nil if any step is nil.\n"
+             (capture-output (lambda () (doc some->))))
+(assert-str= "doc some->>"
+             "some->>\n\nThread x through forms as the last argument, returning nil if any step is nil.\n"
+             (capture-output (lambda () (doc some->>))))
 (assert-str= "doc or"
              "or\n\nEvaluate forms left to right and return the first truthy value, or false.\n"
              (capture-output (lambda () (doc or))))

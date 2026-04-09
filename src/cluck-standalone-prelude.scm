@@ -219,6 +219,33 @@
                            (lambda () ,temp)
                            (lambda () ,(cluck-standalone-expand-or (cdr clauses) rename))))))))
 
+(define (cluck-standalone-rewrite-keyword-calls form)
+  (cond
+    ((pair? form)
+     (let ((head (car form)))
+       (if (or (eq? head 'quote)
+               (eq? head 'quasiquote)
+               (eq? head 'ns)
+               (eq? head 'comment))
+           form
+           (let ((rewritten (map cluck-standalone-rewrite-keyword-calls form)))
+             (let ((kw-name (cluck-standalone-keyword-form-name (car rewritten))))
+               (if kw-name
+                   (let ((kw (car rewritten))
+                         (args (cdr rewritten)))
+                     (cond
+                       ((null? args) rewritten)
+                       ((null? (cdr args))
+                        `(get ,(car args) ,kw))
+                       ((null? (cddr args))
+                        `(get ,(car args) ,kw ,(cadr args)))
+                       (else rewritten)))
+                   rewritten))))))
+    ((vector? form)
+     (list->vector
+      (map cluck-standalone-rewrite-keyword-calls (vector->list form))))
+    (else form)))
+
 (define (cluck-standalone-expand-cond clauses rename)
   (let loop ((rest clauses))
     (cond
@@ -235,6 +262,86 @@
          `(cluck-if-thunks ,(car rest)
                            (lambda () ,(cadr rest))
                            (lambda () ,tail)))))))
+
+(define (cluck-standalone-thread-step-form x step last?)
+  (cluck-standalone-rewrite-keyword-calls
+   (if (cluck-standalone-keyword-form-name step)
+       (list step x)
+       (if (and (pair? step)
+                (cluck-standalone-keyword-form-name (car step)))
+           (cons (car step) (cons x (cdr step)))
+           (if last?
+               (if (pair? step)
+                   (append step (list x))
+                   (list step x))
+               (if (pair? step)
+                   (cons (car step) (cons x (cdr step)))
+                   (list step x)))))))
+
+(define (cluck-standalone-cond-thread-first-step x step)
+  (cluck-standalone-thread-step-form x step #f))
+
+(define (cluck-standalone-cond-thread-last-step x step)
+  (cluck-standalone-thread-step-form x step #t))
+
+(define (cluck-standalone-expand-cond-> x clauses rename stepper)
+  (if (null? clauses)
+      x
+      (if (null? (cdr clauses))
+          (error "cond-> and cond->> expect test/expression pairs" clauses)
+          (let ((temp (rename 'cluck-cond-thread-value)))
+            `(##core#let ((,temp ,x))
+               (cluck-if-thunks ,(car clauses)
+                                (lambda () ,(cluck-standalone-expand-cond-> (stepper temp (cadr clauses))
+                                                                             (cddr clauses)
+                                                                             rename
+                                                                             stepper))
+                                (lambda () ,(cluck-standalone-expand-cond-> temp
+                                                                             (cddr clauses)
+                                                                             rename
+                                                                             stepper))))))))
+
+(define (cluck-standalone-expand-some-thread x clauses rename stepper)
+  (if (null? clauses)
+      x
+      (let ((temp (rename 'cluck-some-value))
+            (next (rename 'cluck-some-next)))
+        `(##core#let ((,temp ,x))
+           (if (nil? ,temp)
+               nil
+               (##core#let ((,next ,(stepper temp (car clauses))))
+                 (if (nil? ,next)
+                     nil
+                     ,(cluck-standalone-expand-some-thread next
+                                                            (cdr clauses)
+                                                            rename
+                                                            stepper))))))))
+
+(define (cluck-standalone-case-key->expr key)
+  (cond
+    ((symbol? key) `(quote ,key))
+    ((and (pair? key)
+          (eq? (car key) 'quote)
+          (pair? (cdr key))
+          (null? (cddr key)))
+     key)
+    (else key)))
+
+(define (cluck-standalone-expand-case-clauses temp clauses)
+  (if (null? clauses)
+      `(error "No matching clause:" ,temp)
+      (if (null? (cdr clauses))
+          (car clauses)
+          `(if (cluck-value=? ,temp ,(cluck-standalone-case-key->expr (car clauses)))
+               ,(cadr clauses)
+               ,(cluck-standalone-expand-case-clauses temp (cddr clauses))))))
+
+(define (cluck-standalone-expand-case test clauses rename)
+  (if (null? clauses)
+      (error "case expects at least one clause" test)
+      (let ((temp (rename 'cluck-case-value)))
+        `(##core#let ((,temp ,test))
+           ,(cluck-standalone-expand-case-clauses temp clauses)))))
 
 (define (cluck-standalone-destructure-key-expr key)
   (let ((kw (cluck-standalone-keyword-form-name key)))
@@ -632,6 +739,13 @@
 (define cluck-expand-and cluck-standalone-expand-and)
 (define cluck-expand-or cluck-standalone-expand-or)
 (define cluck-expand-cond cluck-standalone-expand-cond)
+(define cluck-thread-step-form cluck-standalone-thread-step-form)
+(define cluck-cond-thread-first-step cluck-standalone-cond-thread-first-step)
+(define cluck-cond-thread-last-step cluck-standalone-cond-thread-last-step)
+(define cluck-expand-cond-> cluck-standalone-expand-cond->)
+(define cluck-expand-some-thread cluck-standalone-expand-some-thread)
+(define cluck-case-key->expr cluck-standalone-case-key->expr)
+(define cluck-expand-case cluck-standalone-expand-case)
 (define cluck-destructure-key-expr cluck-standalone-destructure-key-expr)
 (define cluck-destructure-defaults-alist cluck-standalone-destructure-defaults-alist)
 (define cluck-destructure-symbol-binding cluck-standalone-destructure-symbol-binding)

@@ -2999,6 +2999,11 @@
    (cons 'when-not "Evaluate BODY when TEST is falsey.")
    (cons 'if-not "Evaluate ELSE when TEST is truthy, THEN otherwise.")
    (cons 'cond "Evaluate the first clause whose test is truthy, with :else as the final default clause.")
+   (cons 'case "Compare x against literal clauses and return the matching expression or trailing default.")
+   (cons 'cond-> "Thread x through forms as the second argument when the corresponding test is truthy.")
+   (cons 'cond->> "Thread x through forms as the last argument when the corresponding test is truthy.")
+   (cons 'some-> "Thread x through forms as the second argument, returning nil if any step is nil.")
+   (cons 'some->> "Thread x through forms as the last argument, returning nil if any step is nil.")
    (cons '-> "Thread x through forms as the second argument.")
    (cons '->> "Thread x through forms as the last argument.")
    (cons 'ns "Set the current namespace and optionally require dependencies.")
@@ -3639,15 +3644,130 @@
    (lambda (form rename compare)
      (cluck-expand-cond (cdr form) rename))))
 
+(define (cluck-thread-step-form x step last?)
+  (cluck-rewrite-keyword-calls
+   (if (cluck-keyword-form-name step)
+       (list step x)
+       (if (and (pair? step)
+                (cluck-keyword-form-name (car step)))
+           (cons (car step) (cons x (cdr step)))
+           (if last?
+               (if (pair? step)
+                   (append step (list x))
+                   (list step x))
+               (if (pair? step)
+                   (cons (car step) (cons x (cdr step)))
+                   (list step x)))))))
+
+(define (cluck-cond-thread-first-step x step)
+  (cluck-thread-step-form x step #f))
+
+(define (cluck-cond-thread-last-step x step)
+  (cluck-thread-step-form x step #t))
+
+(define (cluck-expand-cond-> x clauses rename stepper)
+  (if (null? clauses)
+      x
+      (if (null? (cdr clauses))
+          (error "cond-> and cond->> expect test/expression pairs" clauses)
+          (let ((temp (rename 'cluck-cond-thread-value)))
+            `(##core#let ((,temp ,x))
+               (cluck-if-thunks ,(car clauses)
+                                (lambda () ,(cluck-expand-cond-> (stepper temp (cadr clauses))
+                                                                 (cddr clauses)
+                                                                 rename
+                                                                 stepper))
+                                (lambda () ,(cluck-expand-cond-> temp
+                                                                 (cddr clauses)
+                                                                 rename
+                                                                 stepper))))))))
+
+(define (cluck-expand-some-thread x clauses rename stepper)
+  (if (null? clauses)
+      x
+      (let ((temp (rename 'cluck-some-value))
+            (next (rename 'cluck-some-next)))
+        `(##core#let ((,temp ,x))
+           (if (nil? ,temp)
+               nil
+               (##core#let ((,next ,(stepper temp (car clauses))))
+                 (if (nil? ,next)
+                     nil
+                     ,(cluck-expand-some-thread next
+                                                (cdr clauses)
+                                                rename
+                                                stepper))))))))
+
+(define (cluck-case-key->expr key)
+  (if (symbol? key)
+      `(quote ,key)
+      (if (and (pair? key)
+               (eq? (car key) 'quote)
+               (pair? (cdr key))
+               (null? (cddr key)))
+          key
+          key)))
+
+(define (cluck-expand-case-clauses temp clauses)
+  (if (null? clauses)
+      `(error "No matching clause:" ,temp)
+      (if (null? (cdr clauses))
+          (car clauses)
+          `(if (cluck-value=? ,temp ,(cluck-case-key->expr (car clauses)))
+               ,(cadr clauses)
+               ,(cluck-expand-case-clauses temp (cddr clauses))))))
+
+(define (cluck-expand-case test clauses rename)
+  (if (null? clauses)
+      (error "case expects at least one clause" test)
+      (let ((temp (rename 'cluck-case-value)))
+        `(##core#let ((,temp ,test))
+           ,(cluck-expand-case-clauses temp clauses)))))
+
+(define-syntax case
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-case (cadr form)
+                        (cddr form)
+                        rename))))
+
+(define-syntax cond->
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-cond-> (cadr form)
+                          (cddr form)
+                          rename
+                          cluck-cond-thread-first-step))))
+
+(define-syntax cond->>
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-cond-> (cadr form)
+                          (cddr form)
+                          rename
+                          cluck-cond-thread-last-step))))
+
+(define-syntax some->
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-some-thread (cadr form)
+                               (cddr form)
+                               rename
+                               cluck-cond-thread-first-step))))
+
+(define-syntax some->>
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (cluck-expand-some-thread (cadr form)
+                               (cddr form)
+                               rename
+                               cluck-cond-thread-last-step))))
+
 (define (cluck-thread-first-step x step)
-  (##core#if (pair? step)
-             (cons (car step) (cons x (cdr step)))
-             (list step x)))
+  (cluck-thread-step-form x step #f))
 
 (define (cluck-thread-last-step x step)
-  (##core#if (pair? step)
-             (append step (list x))
-             (list step x)))
+  (cluck-thread-step-form x step #t))
 
 (define (cluck-thread-chain x steps stepper)
   (##core#if (null? steps)
