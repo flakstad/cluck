@@ -62,6 +62,7 @@ The current implementation supports:
 - `cluck.mutable` for explicit mutable map/set helpers and host interop
 - `cluck.persistent` for opt-in persistent/immutable map and set helpers
 - `cluck.examples.outline`
+- `cluck.examples.datastar-clock`
 - `pr-str`, `str`, `format`, `println`, and `prn`
 - mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce` in the core layer, plus a separate opt-in persistent collection namespace
 - `let`, `fn`, and `defn` destructuring for vectors and maps
@@ -493,6 +494,62 @@ curl -I http://127.0.0.1:8081/health
 curl -i -H 'If-None-Match: "cluck-health-v1"' http://127.0.0.1:8081/health
 curl -i http://127.0.0.1:8081/missing
 ```
+
+## Datastar Clock Example
+
+A small Datastar-style clock example lives in:
+
+- [`examples/cluck/datastar-clock/main.clk`](./examples/cluck/datastar-clock/main.clk)
+- [`examples/cluck/datastar-clock/README.md`](./examples/cluck/datastar-clock/README.md)
+
+It keeps the page logic in pure Cluck, uses the existing `ring.adapter.spiffy`
+transport boundary, and serves a vendored copy of the official Datastar client
+bundle from [`examples/cluck/datastar-clock/datastar.js`](./examples/cluck/datastar-clock/datastar.js),
+embedded into the self-contained native launcher via
+[`examples/cluck/datastar-clock/assets.clk`](./examples/cluck/datastar-clock/assets.clk).
+
+The example ships both a source launcher and a native-build launcher:
+
+- [`examples/cluck/datastar-clock/run.scm`](./examples/cluck/datastar-clock/run.scm)
+- [`examples/cluck/datastar-clock/run-standalone.scm`](./examples/cluck/datastar-clock/run-standalone.scm)
+
+The example is intentionally minimal: it renders an HTML shell, opens an SSE
+stream on load, and patches the clock text once per second with a
+`datastar-patch-elements` event.
+
+Run it from source with:
+
+```bash
+csi -q -s examples/cluck/datastar-clock/run.scm 8082
+```
+
+Or build and run the native launcher:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/datastar-clock-standalone \
+  examples/cluck/datastar-clock/run-standalone.scm
+./build/datastar-clock-standalone 8082
+```
+
+The native launcher is self-contained. Build it from the repo root, then you
+can run or copy the resulting binary anywhere without the source tree.
+
+On this machine, the resulting binary is about `7.9 MB` and links only
+against `libSystem` on macOS.
+
+Try these requests while it is running:
+
+```bash
+curl -i http://127.0.0.1:8082/
+curl -i http://127.0.0.1:8082/datastar.js
+curl -N http://127.0.0.1:8082/clock-stream
+```
+
+The colocated example tests live in
+[`examples/cluck/datastar-clock/test.clk`](./examples/cluck/datastar-clock/test.clk)
+and are loaded by [`test/smoke.clk`](./test/smoke.clk). Run the repo-wide smoke
+suite with `csi -q -s test/run.scm`. The full ADR-backed Datastar follow-up is
+tracked in `item-2hz`.
 
 ## TODO Scanner Utility
 

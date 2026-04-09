@@ -1,0 +1,48 @@
+(import scheme
+        (chicken base)
+        (chicken load)
+        (chicken process-context))
+
+(begin-for-syntax
+  (import (chicken file)
+          (chicken process-context))
+  (include "src/syntax-bootstrap.scm")
+  (include "src/cluck-standalone-prelude.scm"))
+
+;; Bundle the runtime, Ring tree, and Datastar app source into one compilation
+;; unit so the resulting binary is self-contained.
+(include "src/cluck.scm")
+
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.io #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.datastar-clock.assets #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.datastar-clock #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.util #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.util.random #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.request #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.response #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.middleware #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.middleware.content-length #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.middleware.exceptions #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.middleware.head #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.middleware.request-id #t)
+(hash-table-set! *cluck-loaded-namespaces* 'ring.adapter.spiffy #t)
+
+(include "src/cluck/string.clk")
+(include "src/cluck/fs.clk")
+(include "src/cluck/io.clk")
+(include "ring/util.clk")
+(include "ring/util/random.clk")
+(include "ring/request.clk")
+(include "ring/response.clk")
+(include "ring/middleware.clk")
+(include "ring/middleware/content-length.clk")
+(include "ring/middleware/exceptions.clk")
+(include "ring/middleware/head.clk")
+(include "ring/middleware/request-id.clk")
+(include "ring/adapter/spiffy.clk")
+(include "examples/cluck/datastar-clock/assets.clk")
+(include "examples/cluck/datastar-clock/main.clk")
+
+(main (command-line-arguments))

@@ -1,0 +1,251 @@
+;; Cluck Datastar clock example.
+;;
+;; The reusable page logic stays in pure Cluck. The actual SSE transport stays
+;; at the Spiffy/intarweb boundary so the example can demonstrate Datastar
+;; without pulling the whole transport into the Ring layer.
+
+(ns cluck.examples.datastar-clock
+  (:require [ring.request :as request]
+            [ring.response :as response]
+            [ring.middleware :as middleware]
+            [ring.middleware.content-length :as content-length]
+            [ring.middleware.exceptions :as exceptions]
+            [ring.middleware.head :as head]
+            [ring.middleware.request-id :as request-id]
+            [ring.adapter.spiffy :as ring-adapter]
+            [cluck.examples.datastar-clock.assets :as assets]
+            [cluck.string :as str]
+            [intarweb :as http]))
+
+(import (chicken time)
+        (chicken time posix)
+        intarweb
+        spiffy
+        srfi-18)
+
+(def datastar-clock-default-port
+  8082)
+
+(def datastar-clock-stream-path
+  "/clock-stream")
+
+(def datastar-clock-script-path
+  "/datastar.js")
+
+(def datastar-clock-title
+  "Cluck Datastar clock")
+
+(def datastar-clock-js-source
+  assets/datastar-clock-js-source)
+
+(defn replace-text
+  "Replace NEEDLE in TEXT with REPLACEMENT."
+  [text needle replacement]
+  (str/join replacement (str/split (if (nil? text) "" (str text)) needle)))
+
+(defn html-escape
+  "Escape the basic HTML special characters in TEXT."
+  [text]
+  (let [text (if (nil? text) "" (str text))]
+    (replace-text
+     (replace-text
+      (replace-text
+       (replace-text
+        (replace-text text "&" "&amp;")
+        "<" "&lt;")
+       ">" "&gt;")
+      "\"" "&quot;")
+     "'" "&#39;")))
+
+(defn current-clock-text
+  "Return the current clock text for the page and stream."
+  []
+  (seconds->string (current-seconds)))
+
+(defn clock-time-fragment
+  "Return the clock span fragment."
+  [clock-text]
+  (str "<span id=\"clock-time\">" (html-escape clock-text) "</span>"))
+
+(defn clock-shell
+  "Return the HTML shell for the example."
+  [clock-text]
+  (str "<!doctype html>"
+       "<html lang=\"en\">"
+       "<head>"
+       "<meta charset=\"UTF-8\">"
+       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+       "<script type=\"module\" defer src=\"/datastar.js\"></script>"
+       "<title>" (html-escape datastar-clock-title) "</title>"
+       "</head>"
+       "<body>"
+       "<main id=\"clock\" data-init=\"@get('" datastar-clock-stream-path "')\">"
+       "<h1>Cluck Datastar clock</h1>"
+       "<p>This example keeps the transport low-level and uses the vendored Datastar client bundle.</p>"
+       "<p>Current server time: "
+       (clock-time-fragment clock-text)
+       "</p>"
+       "<p>The clock updates over an SSE stream from <code>"
+       (html-escape datastar-clock-stream-path)
+       "</code>.</p>"
+       "</main>"
+       "</body>"
+       "</html>"))
+
+(defn health-page
+  "Return the health check body."
+  []
+  "<h1>ok</h1><p>The Datastar clock example is alive.</p>")
+
+(defn sse-line
+  "Return a single SSE line."
+  [label value]
+  (str label ": " value "\n"))
+
+(defn clock-sse-message
+  "Return the Datastar SSE message for CLOCK-TEXT."
+  [event-id clock-text]
+  (str (sse-line "event" "datastar-patch-elements")
+       (sse-line "id" event-id)
+       (sse-line "data" "selector #clock-time")
+       (sse-line "data" "mode outer")
+       (sse-line "data" (str "elements " (clock-time-fragment clock-text)))
+       "\n"))
+
+(defn request-method-text
+  "Return METHOD as upper-case text."
+  [method]
+  (cond
+    (keyword? method) (str/upper-case (name method))
+    (symbol? method) (str/upper-case (symbol->string method))
+    (string? method) (str/upper-case method)
+    :else "UNKNOWN"))
+
+(defn clock-stream-headers
+  "Return the low-level headers used by the SSE endpoint."
+  []
+  (list (cons "Content-Type" "text/event-stream; charset=utf-8")
+        (cons "Cache-Control" "no-store")
+        (cons "Connection" "keep-alive")
+        (cons "X-Accel-Buffering" "no")))
+
+(defn write-sse-message!
+  "Write MESSAGE to PORT using HTTP chunked encoding."
+  [port message]
+  (let [text (if (string? message) message (str message))]
+    (display (number->string (string-length text) 16) port)
+    (display "\r\n" port)
+    (display text port)
+    (display "\r\n" port)
+    (flush-output port)))
+
+(defn write-clock-stream-loop!
+  "Continuously write clock updates to PORT until the client disconnects."
+  [port]
+  (let loop ()
+    (write-sse-message!
+     port
+     (clock-sse-message (number->string (current-seconds))
+                        (current-clock-text)))
+    (thread-sleep! 1)
+    (loop)))
+
+(defn clock-stream-port
+  "Return the active output port for the SSE response."
+  []
+  (let [resp (spiffy/current-response)]
+    (handle-exceptions exn
+        (##sys#slot resp 1)
+      (http/response-port resp))))
+
+(defn start-clock-stream!
+  "Write a never-ending Datastar SSE stream to the current request."
+  []
+  (handle-exceptions exn
+      #f
+    (let [port (clock-stream-port)]
+      (display "HTTP/1.1 200 OK\r\n" port)
+      (for-each (lambda (entry)
+                  (display (car entry) port)
+                  (display ": " port)
+                  (display (cdr entry) port)
+                  (display "\r\n" port))
+                (clock-stream-headers))
+      (display "Transfer-Encoding: chunked\r\n\r\n" port)
+      (flush-output port)
+      (write-clock-stream-loop! port))))
+
+(defn route-response
+  "Return a ring.response map for REQUEST."
+  [request]
+  (let [method (request-method-text (request/request-method request))
+        path (request/request-uri request)]
+    (cond
+      (not (string=? method "GET"))
+      (response/method-not-allowed
+       (str "<h1>Method not allowed</h1><p>No "
+            (html-escape method)
+            " route for "
+            (html-escape path)
+            ".</p>"))
+
+      (string=? path "/")
+      (response/ok (clock-shell (current-clock-text)))
+
+      (string=? path datastar-clock-script-path)
+      (response/content-type
+       (response/ok datastar-clock-js-source)
+       "text/javascript; charset=utf-8")
+
+      (string=? path "/health")
+      (response/ok (health-page))
+
+      :else
+      (response/not-found
+       (str "<h1>Not found</h1><p>No route for "
+            (html-escape method)
+            " "
+            (html-escape path)
+            ".</p>")))))
+
+(def handler
+  (-> route-response
+      (content-length/wrap-content-length)
+      (head/wrap-head)
+      (middleware/wrap-content-type
+       "text/html; charset=utf-8")
+      (exceptions/wrap-exceptions
+       (hash-map :content-type "text/plain; charset=utf-8"))
+      (request-id/wrap-request-id
+       (hash-map))))
+
+(defn dispatch-request
+  "Route the current Spiffy request through the ring adapter."
+  [continue]
+  (handle-exceptions exn
+    (begin
+        (send-status 'internal-server-error "Internal Server Error"))
+    (let [raw-request (spiffy/current-request)]
+      (let [ring-request (ring-adapter/request->ring-request raw-request)
+            path (request/request-uri ring-request)]
+        (if (string=? path datastar-clock-stream-path)
+            (start-clock-stream!)
+            (let [ring-response (handler ring-request)]
+              (ring-adapter/send-response! ring-response)))))))
+
+(defn start-web-server
+  "Start the example server on PORT."
+  [port]
+  (parameterize ((server-port port)
+                 (vhost-map `((".*" . ,dispatch-request))))
+    (start-server)))
+
+(defn main
+  "Start the example web server on PORT."
+  [args]
+  (let [port (if (empty? args)
+               datastar-clock-default-port
+               (parse-long (first args)))]
+    (println (format "Cluck Datastar clock listening on http://127.0.0.1:%d"
+                     port))
+    (start-web-server port)))

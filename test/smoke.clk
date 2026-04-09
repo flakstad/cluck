@@ -605,6 +605,9 @@
                                               "Content-Length"))))
 (in-ns 'cluck.smoke)
 
+(load-file "examples/cluck/datastar-clock/test.clk")
+(in-ns 'cluck.smoke)
+
 (assert-str= "demo load output"
              "cluck demo\nProject settings: {:mode :demo :owners #{:andreas} :project \"cluck\"}\nTotal items: 6\nStatus counts: {:doing 2 :done 2 :todo 2}\nOpen items: (\"namespace support\" \"destructuring\" \"demo program\" \"package metadata\")\nDocs items: (\"bootstrap reader\" \"demo program\" \"package metadata\")\nHigh priority open items: (\"namespace support\" \"destructuring\" \"demo program\")\nRaw EDN: {:release \"0.1.0\" :targets #{:cli :geiser}}\n"
              (capture-output (lambda () (load-file "examples/cluck/demo/main.clk"))))

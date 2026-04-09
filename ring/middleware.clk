@@ -26,7 +26,12 @@
 (defn wrap-content-type
   "Return a handler that adds a Content-Type header to every response."
   [handler value]
-  (wrap-header handler "Content-Type" value))
+  (wrap-response
+   handler
+   (fn [resp]
+     (if (response/response-header resp "Content-Type")
+         resp
+         (response/header resp "Content-Type" value)))))
 
 (defn wrap-status
   "Return a handler that forces every response to use CODE."

@@ -310,6 +310,15 @@
   (assert-str= "middleware wrap-content-type" "text/html; charset=utf-8"
                (response/response-header (handler (request/request :get "/"))
                                          "Content-Type")))
+(let [handler (middleware/wrap-content-type
+               (fn [_]
+                 (response/content-type (response/ok "body")
+                                        "text/plain"))
+               "text/html; charset=utf-8")]
+  (assert-str= "middleware wrap-content-type preserves explicit type"
+               "text/plain"
+               (response/response-header (handler (request/request :get "/"))
+                                         "Content-Type")))
 (let [handler (middleware/wrap-status
                (fn [_]
                  (response/ok "body"))

@@ -1,0 +1,104 @@
+;; Datastar clock example tests.
+;;
+;; This file is colocated with the example so the example-specific checks stay
+;; close to the source they cover. The repo-wide smoke harness loads it.
+
+(load-file "examples/cluck/datastar-clock/main.clk")
+(in-ns 'cluck.examples.datastar-clock)
+
+(assert-true "datastar-clock namespace exists" (find-ns 'cluck.examples.datastar-clock))
+(assert-true "datastar-clock asset namespace exists"
+             (find-ns 'cluck.examples.datastar-clock.assets))
+(assert-str= "datastar-clock method text keyword"
+             "GET"
+             (request-method-text :get))
+(assert-str= "datastar-clock method text symbol"
+             "POST"
+             (request-method-text 'post))
+(assert-str= "datastar-clock method text string"
+             "HEAD"
+             (request-method-text "head"))
+(assert-str= "datastar-clock escaped fragment"
+             "<span id=\"clock-time\">&lt;clock&gt; &amp; &#39;time&#39;</span>"
+             (clock-time-fragment "<clock> & 'time'"))
+
+(let [shell (clock-shell "12:34:56")
+      sse (clock-sse-message "1700000000" "12:34:56")
+      stream-headers (pr-str (clock-stream-headers))
+      home-route (route-response (request/request :get "/"))
+      home-handler (handler (request/request :get "/"))
+      health-route (route-response (request/request :get "/health"))
+      missing-route (route-response (request/request :get "/missing"))
+      method-route (route-response (request/request :post "/"))
+      script-route (route-response (request/request :get datastar-clock-script-path))]
+  (assert-true "datastar-clock shell module script"
+               (str/includes? shell
+                              "<script type=\"module\" defer src=\"/datastar.js\"></script>"))
+  (assert-true "datastar-clock shell init"
+               (str/includes? shell
+                              "data-init=\"@get('/clock-stream')\""))
+  (assert-true "datastar-clock shell clock text"
+               (str/includes? shell
+                              "<span id=\"clock-time\">12:34:56</span>"))
+  (assert-true "datastar-clock sse event"
+               (str/includes? sse "event: datastar-patch-elements\n"))
+  (assert-true "datastar-clock sse selector"
+               (str/includes? sse "data: selector #clock-time\n"))
+  (assert-true "datastar-clock sse mode"
+               (str/includes? sse "data: mode outer\n"))
+  (assert-true "datastar-clock sse elements"
+               (str/includes? sse
+                              "data: elements <span id=\"clock-time\">12:34:56</span>\n"))
+  (assert-true "datastar-clock stream headers content-type"
+               (str/includes? stream-headers "text/event-stream"))
+  (assert-true "datastar-clock stream headers cache-control"
+               (str/includes? stream-headers "no-store"))
+  (assert-true "datastar-clock stream headers connection"
+               (str/includes? stream-headers "keep-alive"))
+  (assert-true "datastar-clock stream headers buffering"
+               (str/includes? (str/lower-case stream-headers)
+                              "x-accel-buffering"))
+  (assert-num= "datastar-clock home status"
+               200
+               (response/response-status home-route))
+  (assert-str= "datastar-clock home content-type"
+               "text/html; charset=utf-8"
+               (response/response-header home-handler "Content-Type"))
+  (assert-true "datastar-clock home body script"
+               (str/includes? (response/response-body home-handler)
+                              "<script type=\"module\" defer src=\"/datastar.js\"></script>"))
+  (assert-num= "datastar-clock health status"
+               200
+               (response/response-status health-route))
+  (assert-str= "datastar-clock health body"
+               "<h1>ok</h1><p>The Datastar clock example is alive.</p>"
+               (response/response-body health-route))
+  (assert-num= "datastar-clock missing status"
+               404
+               (response/response-status missing-route))
+  (assert-num= "datastar-clock method status"
+               405
+               (response/response-status method-route))
+  (assert-str= "datastar-clock method body"
+               "<h1>Method not allowed</h1><p>No POST route for /.</p>"
+               (response/response-body method-route))
+  (assert-num= "datastar-clock script status"
+               200
+               (response/response-status script-route))
+  (assert-str= "datastar-clock script content-type"
+               "text/javascript; charset=utf-8"
+               (response/response-header script-route "Content-Type"))
+  (assert-true "datastar-clock asset bundle embedded"
+               (str/includes? datastar-clock-js-source
+                              "Datastar v1.0.0-RC.8"))
+  (assert-true "datastar-clock script version"
+               (str/includes? (response/response-body script-route)
+                              "Datastar v1.0.0-RC.8"))
+  (assert-true "datastar-clock script fetch event"
+               (str/includes? (response/response-body script-route)
+                              "datastar-fetch"))
+  (assert-true "datastar-clock script event"
+               (str/includes? (response/response-body script-route)
+                              "datastar-patch-elements")))
+
+(in-ns 'cluck.smoke)

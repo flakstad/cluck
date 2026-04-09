@@ -11,15 +11,35 @@
             [spiffy :as spiffy]
             [uri-common :as uri]))
 
-(defn request-method->keyword
-  "Convert a Spiffy request method to a lowercase Ring keyword."
+(import spiffy)
+
+(define spiffy/current-request current-request)
+(define spiffy/current-response current-response)
+(define spiffy/write-logged-response write-logged-response)
+(define spiffy/default-host default-host)
+(define spiffy/remote-address remote-address)
+(define spiffy/server-port server-port)
+(define spiffy/vhost-map vhost-map)
+(define spiffy/start-server start-server)
+(define spiffy/send-response send-response)
+(define spiffy/send-status send-status)
+(define spiffy/secure-connection? secure-connection?)
+
+(defn request-method-value
+  "Return the request method, falling back to the raw request slot."
   [request]
-  (let [method (http/request-method request)]
+  (handle-exceptions exn
+      (##sys#slot request 3)
+    (http/request-method request)))
+
+(defn request-method->keyword
+  "Convert a Spiffy request method value to a lowercase Ring keyword."
+  [method]
     (cond
       (keyword? method) (keyword (str/lower-case (name method)))
       (symbol? method) (keyword (str/lower-case (symbol->string method)))
       (string? method) (keyword (str/lower-case method))
-      :else (keyword (str/lower-case (str method))))))
+      :else (keyword (str/lower-case (str method)))))
 
 (defn path->text
   "Convert a `uri-path` list into a slash-prefixed path string."
@@ -42,7 +62,7 @@
 (defn uri-query-string->text
   "Convert a URI query list into the raw Ring query-string text."
   [request-uri]
-  (let [query (uri/uri-query request-uri)]
+  (let [query (uri-query-value request-uri)]
     (if (or (not query) (empty? query))
         #f
         (uri/form-urlencode query separator: "&"))))
@@ -148,31 +168,106 @@
   (if (string=? (util/lower-header-name-text header-name) "cookie")
       (cookie-header-value->ring-text value)
       (handle-exceptions exn
-          (header-values->ring-text header-name value)
-        (header-values->ring-text header-name
-         (http/unparse-header header-name value)))))
+          (str value)
+        (header-values->ring-text header-name value))))
 
 (defn request-headers->ring-map
   "Convert Intarweb request headers into a Ring request header map."
   [headers]
-  (##core#let loop ((entries (seq (http/headers->list headers)))
-                    (acc (hash-map)))
-    (if (empty? entries)
-        acc
-        (let* ((entry (first entries))
-               (name (first entry))
-               (value (nth entry 1)))
-          (loop (rest entries)
-                (assoc acc
-                       (util/lower-header-name-text name)
-                       (header-value->ring-text name value)))))))
+  (let [entries (handle-exceptions exn
+                    '()
+                  (seq (http/headers->list headers)))]
+    (##core#let loop ((entries entries)
+                      (acc (hash-map)))
+      (if (empty? entries)
+          acc
+          (let* ((entry (first entries))
+                 (name (first entry))
+                 (value (nth entry 1))
+                 (header-text (handle-exceptions exn
+                                  (str value)
+                                (header-value->ring-text name value))))
+            (loop (rest entries)
+                  (assoc acc
+                         (util/lower-header-name-text name)
+                         header-text)))))))
 
 (defn request-protocol-text
   "Return the HTTP protocol string for REQUEST."
   [request]
   (format "HTTP/%d.%d"
-          (http/request-major request)
-          (http/request-minor request)))
+          (request-major-value request)
+          (request-minor-value request)))
+
+(defn request-port-value
+  "Return the request body port, falling back to the raw request slot."
+  [request]
+  (handle-exceptions exn
+      (##sys#slot request 2)
+    (http/request-port request)))
+
+(defn request-major-value
+  "Return the request major HTTP version, falling back to the raw request slot."
+  [request]
+  (handle-exceptions exn
+      (##sys#slot request 4)
+    (http/request-major request)))
+
+(defn request-minor-value
+  "Return the request minor HTTP version, falling back to the raw request slot."
+  [request]
+  (handle-exceptions exn
+      (##sys#slot request 5)
+    (http/request-minor request)))
+
+(defn request-headers-value
+  "Return the parsed request headers, falling back to the raw request slot."
+  [request]
+  (handle-exceptions exn
+      (##sys#slot request 6)
+    (http/request-headers request)))
+
+(defn request-uri-value
+  "Return the request URI, falling back to the raw request slot when needed."
+  [request]
+  (handle-exceptions exn
+      (##sys#slot request 1)
+    (http/request-uri request)))
+
+(defn uri-scheme-value
+  "Return the URI scheme, falling back to the raw URI slot."
+  [uri]
+  (handle-exceptions exn
+      :http
+    (uri/uri-scheme uri)))
+
+(defn uri-path-value
+  "Return the URI path, falling back to the raw URI slot."
+  [uri]
+  (handle-exceptions exn
+      (##sys#slot uri 6)
+    (uri/uri-path uri)))
+
+(defn uri-query-value
+  "Return the URI query, falling back to the raw URI slot."
+  [uri]
+  (handle-exceptions exn
+      (##sys#slot uri 7)
+    (uri/uri-query uri)))
+
+(defn uri-host-value
+  "Return the URI host, falling back to the raw URI slot."
+  [uri]
+  (handle-exceptions exn
+      (##sys#slot uri 4)
+    (uri/uri-host uri)))
+
+(defn uri-port-value
+  "Return the URI port, falling back to the raw URI slot."
+  [uri]
+  (handle-exceptions exn
+      (##sys#slot uri 5)
+    (uri/uri-port uri)))
 
 (defn content-length->number
   "Convert a Content-Length header to a number when possible."
@@ -186,18 +281,33 @@
 (defn request->ring-request
   "Convert a Spiffy request object into a full Ring request map."
   [request]
-  (let [request-uri (http/request-uri request)
-        base-request (assoc (request/request (request-method->keyword request)
-                                             (path->text (uri/uri-path request-uri)))
-                            :scheme (scheme->keyword (uri/uri-scheme request-uri))
-                            :protocol (request-protocol-text request)
-                            :server-name (or (uri/uri-host request-uri)
-                                             (spiffy/default-host))
-                            :server-port (or (uri/uri-port request-uri)
-                                             (spiffy/server-port))
-                            :remote-addr (or (spiffy/remote-address) "")
-                            :body (http/request-port request)
-                            :headers (request-headers->ring-map (http/request-headers request)))
+  (let [request-uri (request-uri-value request)
+        request-method (request-method-value request)
+        uri-path (uri-path-value request-uri)
+        request-path-text (path->text uri-path)
+        request-method-keyword (request-method->keyword request-method)
+        request-scheme (scheme->keyword (uri-scheme-value request-uri))
+        request-server-name (or (uri-host-value request-uri)
+                                (spiffy/default-host))
+        request-server-port (or (uri-port-value request-uri)
+                                (spiffy/server-port))
+        request-body (request-port-value request)
+        request-headers (request-headers-value request)
+        request-core (request/request request-method-keyword request-path-text)
+        request-with-scheme (assoc request-core
+                                   :scheme request-scheme)
+        request-with-protocol (assoc request-with-scheme
+                                     :protocol (request-protocol-text request))
+        request-with-server-name (assoc request-with-protocol
+                                        :server-name request-server-name)
+        request-with-server-port (assoc request-with-server-name
+                                        :server-port request-server-port)
+        request-with-remote-addr (assoc request-with-server-port
+                                        :remote-addr (or (spiffy/remote-address) ""))
+        request-with-body (assoc request-with-remote-addr
+                                 :body request-body)
+        base-request (assoc request-with-body
+                            :headers (request-headers->ring-map request-headers))
         query-string (uri-query-string->text request-uri)
         content-type (request/request-header base-request "Content-Type")
         content-length (request/request-header base-request "Content-Length")]
@@ -302,3 +412,29 @@
           (send-response! response)
           (spiffy/send-status 'internal-server-error
                               "Ring handler returned no response")))))
+
+(defn current-ring-request
+  "Return the current Spiffy request as a Ring request map."
+  []
+  (request->ring-request (spiffy/current-request)))
+
+(defn with-current-response
+  "Initialize the active Spiffy response and invoke THUNK with that response."
+  [status headers thunk]
+  (let [resp (spiffy/current-response)]
+    (http/response-status-set! resp status)
+    (http/response-headers-set! resp headers)
+    (handle-exceptions exn
+        (handle-exceptions ignored #f
+            (http/finish-response-body resp))
+      (begin
+        (parameterize ((spiffy/current-response resp))
+          (spiffy/write-logged-response))
+        (thunk resp)))))
+
+(defn start-server!
+  "Start a Spiffy server on PORT and route every host to VHOST-HANDLER."
+  [port vhost-handler]
+  (parameterize ((spiffy/server-port port)
+                 (spiffy/vhost-map `((".*" . ,vhost-handler))))
+    (spiffy/start-server)))
