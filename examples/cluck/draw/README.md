@@ -10,7 +10,7 @@ What is in place:
 - a first SDL3 window-open loop that clears the screen until quit
 - a REPL-first development bootstrap in `dev.clk` that you load explicitly from the normal Cluck REPL before calling `(start-dev!)`
 - live mouse, pen, and keyboard-event overlays in the window
-- freehand brush strokes while dragging, with pen pressure feeding the brush size
+- freehand brush strokes while dragging, with a soft pressure-sensitive brush
 - an on-demand debug panel toggled with `d`
 - mouse-wheel zoom centered on the cursor
 - `shift`+drag panning for the viewport

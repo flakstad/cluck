@@ -238,8 +238,8 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 ## SDL3 drawing scaffold
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
-tracks mouse, pen, and recent keyboard input, and supports a basic sketchpad
-workflow:
+ tracks mouse, pen, and recent keyboard input, and supports a basic sketchpad
+ workflow with a soft pressure-sensitive brush:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)

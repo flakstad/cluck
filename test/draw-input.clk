@@ -81,9 +81,13 @@
                           "[12.0 34.0 0.5]"
                           (pr-str pen-point)))
 
-(draw-input-assert-num= "pressure scales brush size"
-                        2
-                        (draw-point-size [10 20 0.5] 4))
+(draw-input-assert-true "pressure scales brush size"
+                        (< (draw-point-size [10 20 0.25] 4)
+                           (draw-point-size [10 20 1.0] 4)))
+
+(draw-input-assert-true "pressure scales brush alpha"
+                        (< (draw-point-alpha [10 20 0.25])
+                           (draw-point-alpha [10 20 1.0])))
 
 (let [focused (draw-focus-lost-core!
                (assoc (default-state)

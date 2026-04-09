@@ -21,6 +21,7 @@
 (def *draw-render-fn* nil)
 (def *draw-last-error* false)
 (def *draw-canvas-ready?* false)
+(def *draw-brush-ready?* false)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
 (def *draw-current-stroke-color* false)
 
@@ -541,6 +542,74 @@
   []
   (and *draw-canvas-ready?*
        (sdl/pointer-ready? (draw-canvas))))
+
+(defn draw-brush-texture
+  "Return the cached brush texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :brush-texture)
+    nil))
+
+(defn draw-brush-texture-ready?
+  "Return true when the cached brush texture is available."
+  []
+  (and *draw-brush-ready?*
+       (sdl/pointer-ready? (draw-brush-texture))))
+
+(defn draw-brush-texture-diameter
+  "Return the canonical brush stamp diameter."
+  []
+  128)
+
+(defn draw-brush-hardness
+  "Return the default brush hardness used by the stamp texture."
+  []
+  0.65)
+
+(defn draw-ensure-brush-texture!
+  "Create or refresh the brush stamp texture."
+  [state]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        diameter (draw-brush-texture-diameter)
+        current (draw-brush-texture)
+        current-diameter (if *draw-context* (get *draw-context* :brush-texture-diameter) nil)]
+    (if (and (draw-brush-texture-ready?)
+             (= current-diameter diameter))
+      *draw-context*
+      (begin
+        (if (draw-brush-texture-ready?)
+          (begin
+            (sdl/destroy-texture! current)
+            (set! *draw-context*
+                  (dissoc *draw-context* :brush-texture :brush-texture-diameter))
+            (set! *draw-brush-ready?* false))
+          nil)
+        (if renderer
+          (let [texture (sdl/create-soft-brush-texture renderer
+                                                       diameter
+                                                       (draw-brush-hardness))]
+            (if texture
+              (let [ctx (assoc *draw-context*
+                               :brush-texture texture
+                               :brush-texture-diameter diameter)]
+                (set! *draw-context* ctx)
+                (set! *draw-brush-ready?* true)
+                ctx)
+              (begin
+                (set! *draw-brush-ready?* false)
+                *draw-context*)))
+          *draw-context*)))))
+
+(defn draw-release-brush-texture!
+  "Destroy the cached brush stamp texture and clear it from the draw context."
+  []
+  (let [brush (draw-brush-texture)]
+    (if (draw-brush-texture-ready?)
+      (sdl/destroy-texture! brush))
+    (if *draw-context*
+      (set! *draw-context* (dissoc *draw-context* :brush-texture :brush-texture-diameter)))
+    (set! *draw-brush-ready?* false)
+    nil))
 
 (defn draw-ensure-canvas!
   "Create or resize the cached canvas texture to match STATE."
@@ -1459,113 +1528,88 @@
                          (nth color 2)
                          alpha)))
 
-(defn draw-render-thick-line-step!
-  "Draw offset copies of a line segment to approximate a thick stroke."
-  [renderer x1 y1 x2 y2 nx ny radius offset]
-  (if (> offset radius)
-    nil
-    (begin
-      (let [shift (draw-exact-int offset)
-            ox (draw-exact-int (math/round (* nx shift)))
-            oy (draw-exact-int (math/round (* ny shift)))]
-        (sdl/render-line! renderer
-                          (+ x1 ox)
-                          (+ y1 oy)
-                          (+ x2 ox)
-                          (+ y2 oy))
-        (if (> offset 0)
-          (sdl/render-line! renderer
-                            (- x1 ox)
-                            (- y1 oy)
-                            (- x2 ox)
-                            (- y2 oy))
-          nil))
-      (draw-render-thick-line-step! renderer x1 y1 x2 y2 nx ny radius (+ offset 1)))))
+(defn draw-soft-brush-step-count
+  "Return the number of soft brush stamps for a segment."
+  [state a b size]
+  (let [screen-a (draw-world-point->screen-point state a)
+        screen-b (draw-world-point->screen-point state b)
+        dx (- (nth screen-b 0) (nth screen-a 0))
+        dy (- (nth screen-b 1) (nth screen-a 1))
+        distance (math/sqrt (+ (* dx dx) (* dy dy)))
+        stamp-a (draw-point-screen-size state a size)
+        stamp-b (draw-point-screen-size state b size)
+        stamp (if (< stamp-a stamp-b) stamp-a stamp-b)
+        spacing (if (> stamp 1)
+                  (/ stamp 3.0)
+                  1.0)
+        steps (draw-exact-int (math/ceiling (/ distance spacing)))]
+    (if (> steps 0)
+      steps
+      1)))
 
-(defn draw-render-thick-line!
-  "Render a rounded thick line between SCREEN-A and SCREEN-B."
-  [renderer screen-a screen-b radius]
-  (let [x1 (draw-exact-int (math/round (nth screen-a 0)))
-        y1 (draw-exact-int (math/round (nth screen-a 1)))
-        x2 (draw-exact-int (math/round (nth screen-b 0)))
-        y2 (draw-exact-int (math/round (nth screen-b 1)))
-        dx (- x2 x1)
-        dy (- y2 y1)
-        length (math/sqrt (+ (* dx dx) (* dy dy)))]
-    (if (<= length 0)
-      (sdl/render-line! renderer x1 y1 x2 y2)
-      (let [nx (/ (- dy) length)
-            ny (/ dx length)]
-        (draw-render-thick-line-step! renderer x1 y1 x2 y2 nx ny radius 0)))))
-
-(defn draw-render-brush-rows!
-  "Render the filled disc rows for POINT with RADIUS."
-  [renderer x y radius dy]
-  (if (> dy radius)
-    nil
-    (let [span (draw-exact-int (math/floor (math/sqrt (- (* radius radius)
-                                                         (* dy dy)))))]
-      (sdl/render-line! renderer
-                        (- x span)
-                        (+ y dy)
-                        (+ x span)
-                        (+ y dy))
-      (draw-render-brush-rows! renderer x y radius (+ dy 1)))))
-
-(defn draw-render-brush!
-  "Render a circular brush at POINT."
-  [renderer point size]
-  (let [x (nth point 0)
-        y (nth point 1)
-        radius (draw-brush-radius size)]
-    (draw-render-brush-rows! renderer x y radius (- radius))))
-
-(defn draw-render-stroke-point-step!
-  "Sample a line segment between A and B with pressure-aware brushes."
-  [renderer state x1 y1 p1 dx dy dp size steps i]
-  (if (> i steps)
-    nil
-    (let [x (+ x1 (/ (* dx i) steps))
-          y (+ y1 (/ (* dy i) steps))
-          pressure (+ p1 (/ (* dp i) steps))]
-      (draw-render-stroke-brush! renderer state [x y pressure] size)
-      (draw-render-stroke-point-step! renderer state x1 y1 p1 dx dy dp size steps (+ i 1)))))
+(defn draw-render-soft-brush!
+  "Render the soft brush texture at POINT with SIZE."
+  [renderer state point size]
+  (let [brush (draw-brush-texture)
+        color (draw-stroke-color-value)
+        screen-point (draw-world-point->screen-point state point)
+        stamp-size (draw-point-screen-size state point size)
+        alpha (draw-point-alpha point)]
+    (if (draw-brush-texture-ready?)
+      (begin
+        (sdl/set-texture-color-mod! brush
+                                    (nth color 0)
+                                    (nth color 1)
+                                    (nth color 2))
+        (sdl/set-texture-alpha-mod! brush alpha)
+        (sdl/render-texture-at! renderer
+                                brush
+                                (- (nth screen-point 0) (/ stamp-size 2.0))
+                                (- (nth screen-point 1) (/ stamp-size 2.0))
+                                stamp-size
+                                stamp-size)
+        true)
+      (begin
+        (draw-set-stroke-color! renderer alpha)
+        (sdl/render-fill-rect! renderer
+                               (- (nth screen-point 0) (/ stamp-size 2.0))
+                               (- (nth screen-point 1) (/ stamp-size 2.0))
+                               stamp-size
+                               stamp-size)
+        false))))
 
 (defn draw-render-stroke-point!
   "Render a single stroke sample at POINT."
   [renderer state point size]
-  (draw-render-stroke-brush! renderer state point size))
+  (draw-render-soft-brush! renderer state point size))
 
-(defn draw-render-stroke-brush!
-  "Render a single stroke sample at POINT."
-  [renderer state point size]
-  (let [screen-point (draw-world-point->screen-point state point)
-        base-size (draw-point-screen-size state point size)
-        alpha (draw-point-alpha point)]
-    (draw-set-stroke-color! renderer alpha)
-    (draw-render-brush! renderer screen-point base-size)))
+(defn draw-render-stroke-segment-step!
+  "Render interpolated samples between A and B."
+  [renderer state a b size steps i]
+  (if (> i steps)
+    nil
+    (let [t (/ i steps)
+          x (+ (nth a 0)
+               (* (- (nth b 0) (nth a 0)) t))
+          y (+ (nth a 1)
+               (* (- (nth b 1) (nth a 1)) t))
+          pressure (+ (draw-point-pressure a)
+                      (* (- (draw-point-pressure b)
+                            (draw-point-pressure a))
+                         t))]
+      (draw-render-stroke-point! renderer state [x y pressure] size)
+      (draw-render-stroke-segment-step! renderer state a b size steps (+ i 1)))))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
   [renderer state a b size]
-  (let [x1 (nth a 0)
-        y1 (nth a 1)
-        p1 (draw-point-pressure a)
-        x2 (nth b 0)
-        y2 (nth b 1)
-        p2 (draw-point-pressure b)
-        radius-a (draw-brush-radius (draw-point-size a size))
-        radius-b (draw-brush-radius (draw-point-size b size))
-        radius (if (< radius-a radius-b) radius-b radius-a)
-        screen-a (draw-world-point->screen-point state a)
-        screen-b (draw-world-point->screen-point state b)
-        alpha (draw-exact-int (math/round (/ (+ (draw-point-alpha a)
-                                                (draw-point-alpha b))
-                                             2)))]
-    (draw-set-stroke-color! renderer alpha)
-    (draw-render-thick-line! renderer screen-a screen-b radius)
-    (draw-render-brush! renderer screen-a radius-a)
-    (draw-render-brush! renderer screen-b radius-b)))
+  (draw-render-stroke-segment-step! renderer
+                                    state
+                                    a
+                                    b
+                                    size
+                                    (draw-soft-brush-step-count state a b size)
+                                    0))
 
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
@@ -1573,14 +1617,12 @@
   (let [total (count points)]
     (if (<= total 1)
       nil
-      (begin
-        (reduce (fn [previous point]
-                  (begin
-                    (draw-render-stroke-segment! renderer state previous point size)
-                    point))
-                (first points)
-                (rest points))
-        nil))))
+      (reduce (fn [previous point]
+                (begin
+                  (draw-render-stroke-segment! renderer state previous point size)
+                  point))
+              (first points)
+              (rest points)))))
 
 (defn draw-render-stroke!
   "Render a stroke map."
@@ -1592,8 +1634,9 @@
       nil
       (draw-with-stroke-color color
         (lambda ()
-          (draw-render-stroke-point! renderer state (first points) size)
-          (draw-render-stroke-segments! renderer state points size))))))
+          (if (<= (count points) 1)
+            (draw-render-stroke-point! renderer state (first points) size)
+            (draw-render-stroke-segments! renderer state points size)))))))
 
 (defn draw-render-strokes!
   "Render all finished strokes and the active stroke."
@@ -1709,11 +1752,9 @@
         mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)
         pressure (or (get state :pen-pressure) 1.0)
-        marker-point [mouse-x mouse-y pressure]
-        marker-size (draw-point-screen-size state marker-point 3)
-        screen-point (draw-world-point->screen-point state marker-point)]
+        marker-point [mouse-x mouse-y pressure]]
     (sdl/set-draw-color! renderer 220 180 90 255)
-    (draw-render-brush! renderer screen-point marker-size)
+    (draw-render-stroke-point! renderer state marker-point 3)
     (if (get state :debug-panel?)
       (draw-render-debug-panel! renderer state)
       nil)
@@ -1806,6 +1847,7 @@
               (set! *draw-context* ctx)
               (set! *draw-running?* true)
               (draw-ensure-canvas! state)
+              (draw-ensure-brush-texture! state)
               (if (draw-canvas-ready?)
                 (draw-rebuild-canvas! state)
                 nil)
@@ -1820,6 +1862,7 @@
     (lambda ()
       (set! *draw-running?* false)
       (draw-release-canvas!)
+      (draw-release-brush-texture!)
       (if *draw-context*
         (begin
           (sdl/stop-text-input! (get *draw-context* :window))

@@ -101,35 +101,71 @@
                             "12"
                             (str (get tool-state :brush-size))))
 
-  (let [original draw-render-stroke-segment!
+  (let [original draw-render-stroke-point!
         calls []]
-    (set! draw-render-stroke-segment!
-          (fn [renderer state a b size]
-            (set! calls (conj calls [a b size]))
+    (set! draw-render-stroke-point!
+          (fn [renderer state point size]
+            (set! calls (conj calls [point size]))
             nil))
     (draw-render-stroke-segments! 'renderer
                                   (default-state)
-                                  [[10 10] [14 14] [18 18]]
+                                  [[10 10 0.25] [20 20 0.75] [30 30 1.0]]
                                   2)
-    (draw-tools-assert-num= "stroke segment walker calls"
-                            2
-                            (count calls))
-  (draw-tools-assert-str= "stroke segment first call"
-                          "[[10 10] [14 14] 2]"
-                          (pr-str (first calls)))
-  (set! draw-render-stroke-segment! original)))
+    (draw-tools-assert-true "stroke segment walker stamps multiple points"
+                            (> (count calls) 2))
+    (draw-tools-assert-true "stroke segment walker interpolates pressure"
+                            (< (draw-point-pressure (nth (first calls) 0))
+                               (draw-point-pressure (nth (last calls) 0))))
+    (set! draw-render-stroke-point! original)))
 
-(let [original sdl/render-line!
-      calls []]
-  (set! sdl/render-line!
-        (lambda (renderer x1 y1 x2 y2)
-          (set! calls (conj calls [x1 y1 x2 y2]))
+(let [original-ready draw-brush-texture-ready?
+      original-brush draw-brush-texture
+      original-color sdl/set-texture-color-mod!
+      original-alpha sdl/set-texture-alpha-mod!
+      original-render sdl/render-texture-at!
+      color-calls []
+      alpha-calls []
+      render-calls []]
+  (set! draw-brush-texture-ready?
+        (lambda ()
           true))
-  (draw-render-thick-line! 'renderer [10 10] [14 14] 2)
-  (draw-tools-assert-num= "thick line call count"
-                          5
-                          (count calls))
-  (draw-tools-assert-str= "thick line first call"
-                          "[10 10 14 14]"
-                          (pr-str (first calls)))
-  (set! sdl/render-line! original))
+  (set! draw-brush-texture
+        (lambda ()
+          'brush))
+  (set! sdl/set-texture-color-mod!
+        (lambda (texture r g b)
+          (set! color-calls (conj color-calls [texture r g b]))
+          true))
+  (set! sdl/set-texture-alpha-mod!
+        (lambda (texture alpha)
+          (set! alpha-calls (conj alpha-calls [texture alpha]))
+          true))
+  (set! sdl/render-texture-at!
+        (lambda (renderer texture x y w h)
+          (set! render-calls (conj render-calls [texture x y w h]))
+          true))
+  (draw-with-stroke-color [120 160 200]
+    (lambda ()
+      (draw-render-soft-brush! 'renderer
+                               (default-state)
+                               [20 24 0.5]
+                               6)))
+  (draw-tools-assert-num= "soft brush color mod count"
+                          1
+                          (count color-calls))
+  (draw-tools-assert-num= "soft brush alpha mod count"
+                          1
+                          (count alpha-calls))
+  (draw-tools-assert-num= "soft brush render count"
+                          1
+                          (count render-calls))
+  (draw-tools-assert-str= "soft brush color mod value"
+                          "[brush 120 160 200]"
+                          (pr-str (first color-calls)))
+  (draw-tools-assert-true "soft brush render has positive size"
+                          (> (nth (first render-calls) 3) 0))
+  (set! draw-brush-texture-ready? original-ready)
+  (set! draw-brush-texture original-brush)
+  (set! sdl/set-texture-color-mod! original-color)
+  (set! sdl/set-texture-alpha-mod! original-alpha)
+  (set! sdl/render-texture-at! original-render))
