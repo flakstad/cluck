@@ -1,10 +1,14 @@
 ;; SDL3 drawing app spike for Cluck.
 ;;
-;; The app stays in Cluck syntax. The SDL3 bindings live alongside the example
-;; in cluck.examples.draw.sdl3, which is the direct C-interop boundary.
+;; The app stays in Cluck syntax. The SDL3 bindings and extracted pure helper
+;; namespaces live under src/cluck/examples/draw/, keeping this entrypoint
+;; focused on orchestration and the live draw loop.
 
 (ns cluck.examples.draw
   (:require [cluck.examples.draw.sdl3 :as sdl]
+            [cluck.examples.draw.state :as draw-state]
+            [cluck.examples.draw.view :as draw-view]
+            [cluck.examples.draw.panel :as draw-panel]
             [cluck.fs :as fs]
             [cluck.io :as io]
             [cluck.process :as proc]
@@ -47,6 +51,72 @@
 (def *draw-preview-point-count* 0)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
 (def *draw-current-stroke-color* false)
+
+(def default-state draw-state/default-state)
+(def draw-state-file-path draw-state/draw-state-file-path)
+(def draw-kind=? draw-state/draw-kind=?)
+(def draw-tool-mode draw-state/draw-tool-mode)
+(def draw-state-snapshot draw-state/draw-state-snapshot)
+(def draw-element-kind draw-state/draw-element-kind)
+(def draw-ink-element? draw-state/draw-ink-element?)
+(def draw-box-element? draw-state/draw-box-element?)
+(def draw-arrow-element? draw-state/draw-arrow-element?)
+(def draw-frame-element? draw-state/draw-frame-element?)
+(def draw-text-element? draw-state/draw-text-element?)
+(def draw-selection-has-id? draw-state/draw-selection-has-id?)
+(def draw-selected-element-ids draw-state/draw-selected-element-ids)
+(def draw-selected? draw-state/draw-selected?)
+(def draw-selected-elements draw-state/draw-selected-elements)
+(def draw-sync-elements draw-state/draw-sync-elements)
+(def draw-normalize-state draw-state/draw-normalize-state)
+(def draw-next-element-id draw-state/draw-next-element-id)
+(def draw-alloc-element-id draw-state/draw-alloc-element-id)
+(def draw-append-element draw-state/draw-append-element)
+(def draw-set-tool-core! draw-state/draw-set-tool-core!)
+(def draw-box-tool? draw-state/draw-box-tool?)
+(def draw-arrow-tool? draw-state/draw-arrow-tool?)
+(def draw-frame-tool? draw-state/draw-frame-tool?)
+(def draw-text-tool? draw-state/draw-text-tool?)
+(def draw-selection-tool? draw-state/draw-selection-tool?)
+
+(def draw-exact-int draw-view/draw-exact-int)
+(def draw-point-pressure draw-view/draw-point-pressure)
+(def draw-normalize-pressure draw-view/draw-normalize-pressure)
+(def draw-point-size draw-view/draw-point-size)
+(def draw-clamp draw-view/draw-clamp)
+(def draw-world-bound draw-view/draw-world-bound)
+(def draw-min-zoom draw-view/draw-min-zoom)
+(def draw-max-zoom draw-view/draw-max-zoom)
+(def draw-zoom-factor draw-view/draw-zoom-factor)
+(def draw-pan-step draw-view/draw-pan-step)
+(def draw-view-zoom draw-view/draw-view-zoom)
+(def draw-view-x draw-view/draw-view-x)
+(def draw-view-y draw-view/draw-view-y)
+(def draw-view-anchor-x draw-view/draw-view-anchor-x)
+(def draw-view-anchor-y draw-view/draw-view-anchor-y)
+(def draw-clamp-view-coordinate draw-view/draw-clamp-view-coordinate)
+(def draw-sync-pointer-state draw-view/draw-sync-pointer-state)
+(def draw-pointer-screen-anchor draw-view/draw-pointer-screen-anchor)
+(def draw-screen-point->world-point draw-view/draw-screen-point->world-point)
+(def draw-world-point->screen-point draw-view/draw-world-point->screen-point)
+(def draw-point-screen-size draw-view/draw-point-screen-size)
+(def draw-world-rect->screen-rect draw-view/draw-world-rect->screen-rect)
+
+(def draw-tool-panel-width draw-panel/draw-tool-panel-width)
+(def draw-tool-panel-padding draw-panel/draw-tool-panel-padding)
+(def draw-tool-panel-button-height draw-panel/draw-tool-panel-button-height)
+(def draw-tool-panel-button-gap draw-panel/draw-tool-panel-button-gap)
+(def draw-tool-panel-rect draw-panel/draw-tool-panel-rect)
+(def draw-save-format-label draw-panel/draw-save-format-label)
+(def draw-tool-panel-info-lines draw-panel/draw-tool-panel-info-lines)
+(def draw-tool-panel-buttons draw-panel/draw-tool-panel-buttons)
+(def draw-selection-summary draw-panel/draw-selection-summary)
+(def draw-tool-panel-selection-lines draw-panel/draw-tool-panel-selection-lines)
+(def draw-screen-point-in-rect? draw-panel/draw-screen-point-in-rect?)
+(def draw-tool-panel-hit? draw-panel/draw-tool-panel-hit?)
+(def draw-pointer-world-point draw-panel/draw-pointer-world-point)
+(def draw-pointer-screen-point draw-panel/draw-pointer-screen-point)
+(def draw-find-tool-panel-button draw-panel/draw-find-tool-panel-button)
 
 (defn draw-recent-events-limit
   []
@@ -114,62 +184,6 @@
     (lambda () false)
     (lambda () (thunk))
     (lambda () (mutex-unlock! *draw-io-lock*))))
-
-(defn default-state
-  "Return the starter app state."
-  []
-  {:title "Cluck Draw"
-   :width 1280
-   :height 720
-   :background [24 24 28]
-   :brush-color [245 245 245]
-   :brush-size 2
-   :pen-pressure 1.0
-   :window-focused? true
-   :view-x 0.0
-   :view-y 0.0
-   :view-anchor-x 0.0
-   :view-anchor-y 0.0
-   :zoom 1.0
-   :running? true
-   :frame 0
-   :mouse-x 0
-   :mouse-y 0
-   :mouse-screen-x 0.0
-   :mouse-screen-y 0.0
-   :pointer-down? false
-   :pointer-source false
-   :panning? false
-   :pan-last-x 0
-   :pan-last-y 0
-   :space-down? false
-   :ctrl-down? false
-   :canvas-dirty? false
-   :debug-panel? false
-   :tool-panel? false
-   :history []
-   :elements []
-   :next-element-id 1
-   :selection []
-   :active-selection-drag false
-   :active-selection-resize false
-   :active-selection-rotate false
-   :active-selection-marquee false
-   :strokes []
-   :active-stroke false
-   :active-box false
-   :active-arrow false
-   :active-frame false
-   :active-text false
-   :last-key ""
-   :last-text ""
-   :last-event ""
-   :recent-events []})
-
-(defn draw-state-file-path
-  "Return the default path used for saving and loading the canvas state."
-  []
-  (fs/path (current-directory) "build" "cluck-draw-state.edn"))
 
 (defn draw-log-file-path
   "Return the path used for the draw session log."
@@ -381,47 +395,6 @@
       (vec (drop (- total limit) lines))
       (vec lines))))
 
-(defn draw-state-snapshot
-  "Return a compact diagnostic snapshot for STATE."
-  [state]
-  (if state
-    {:frame (get state :frame)
-     :mouse-x (or (get state :mouse-x) 0.0)
-     :mouse-y (or (get state :mouse-y) 0.0)
-     :mouse-screen-x (or (get state :mouse-screen-x) 0.0)
-     :mouse-screen-y (or (get state :mouse-screen-y) 0.0)
-     :view-x (draw-view-x state)
-     :view-y (draw-view-y state)
-     :view-anchor-x (draw-view-anchor-x state)
-     :view-anchor-y (draw-view-anchor-y state)
-     :zoom (draw-view-zoom state)
-     :pressure (or (get state :pen-pressure) 1.0)
-     :pointer-down? (get state :pointer-down?)
-     :panning? (get state :panning?)
-     :space-down? (get state :space-down?)
-     :ctrl-down? (get state :ctrl-down?)
-     :window-focused? (get state :window-focused?)
-     :tool (draw-tool-mode state)
-     :brush-size (get state :brush-size)
-     :elements (count (get state :elements))
-     :selection (count (or (get state :selection) []))
-     :active-selection-rotate? (if (get state :active-selection-rotate) true false)
-     :active-selection-marquee? (if (get state :active-selection-marquee) true false)
-     :strokes (count (get state :strokes))
-     :active-points (if (get state :active-stroke)
-                      (count (get (get state :active-stroke) :points))
-                      0)
-     :active-box? (if (get state :active-box) true false)
-     :active-arrow? (if (get state :active-arrow) true false)
-     :active-frame? (if (get state :active-frame) true false)
-     :active-text? (if (get state :active-text) true false)
-     :history (count (get state :history))
-     :canvas-dirty? (get state :canvas-dirty?)
-     :last-key (or (get state :last-key) "")
-     :last-text (or (get state :last-text) "")
-     :last-event (or (get state :last-event) "")}
-    nil))
-
 (defn draw-read-state-file
   "Read the latest full draw state from disk when available."
   []
@@ -431,259 +404,6 @@
         (draw-normalize-state
           (edn/read-string (io/slurp path))))
       false)))
-
-(defn draw-element-kind
-  "Return the normalized kind keyword for ELEMENT."
-  [element]
-  (let [kind (get element :kind)]
-    (if (keyword? kind)
-      kind
-      :ink)))
-
-(defn draw-ink-element?
-  "Return true when ELEMENT is an ink stroke."
-  [element]
-  (draw-kind=? (draw-element-kind element) :ink))
-
-(defn draw-box-element?
-  "Return true when ELEMENT is a box."
-  [element]
-  (draw-kind=? (draw-element-kind element) :box))
-
-(defn draw-arrow-element?
-  "Return true when ELEMENT is an arrow."
-  [element]
-  (draw-kind=? (draw-element-kind element) :arrow))
-
-(defn draw-frame-element?
-  "Return true when ELEMENT is a frame."
-  [element]
-  (draw-kind=? (draw-element-kind element) :frame))
-
-(defn draw-text-element?
-  "Return true when ELEMENT is text."
-  [element]
-  (draw-kind=? (draw-element-kind element) :text))
-
-(defn draw-normalize-ink-element
-  "Return ELEMENT in canonical ink-element form."
-  [element]
-  {:id (get element :id)
-   :kind :ink
-   :points (vec (get element :points))
-   :color (get element :color)
-   :size (get element :size)})
-
-(defn draw-normalize-box-element
-  "Return ELEMENT in canonical box-element form."
-  [element]
-  {:id (get element :id)
-   :kind :box
-   :x (or (get element :x) 0.0)
-   :y (or (get element :y) 0.0)
-   :width (or (get element :width) 0.0)
-   :height (or (get element :height) 0.0)
-   :rotation (or (get element :rotation) 0.0)
-   :color (get element :color)
-   :size (or (get element :size) 1)})
-
-(defn draw-normalize-arrow-point
-  "Return POINT in canonical [x y pressure] form."
-  [point]
-  [(or (nth point 0) 0.0)
-   (or (nth point 1) 0.0)
-   (or (if (> (count point) 2) (nth point 2) 1.0) 1.0)])
-
-(defn draw-normalize-arrow-element
-  "Return ELEMENT in canonical arrow-element form."
-  [element]
-  {:id (get element :id)
-   :kind :arrow
-   :start (draw-normalize-arrow-point
-            (or (get element :start)
-                [(or (get element :x1) 0.0)
-                 (or (get element :y1) 0.0)
-                 1.0]))
-   :end (draw-normalize-arrow-point
-          (or (get element :end)
-              [(or (get element :x2) 0.0)
-               (or (get element :y2) 0.0)
-               1.0]))
-   :color (get element :color)
-   :size (or (get element :size) 1)})
-
-(defn draw-normalize-frame-element
-  "Upgrade a legacy frame ELEMENT into canonical rectangle form."
-  [element]
-  {:id (get element :id)
-   :kind :box
-   :x (or (get element :x) 0.0)
-   :y (or (get element :y) 0.0)
-   :width (or (get element :width) 0.0)
-   :height (or (get element :height) 0.0)
-   :rotation 0.0
-   :color (get element :color)
-   :size (or (get element :size) 1)})
-
-(defn draw-normalize-text-element
-  "Return ELEMENT in canonical text-element form."
-  [element]
-  {:id (get element :id)
-   :kind :text
-   :x (or (get element :x) 0.0)
-   :y (or (get element :y) 0.0)
-   :text (or (get element :text) "Text")
-   :color (get element :color)
-   :size (or (get element :size) 1)})
-
-(defn draw-normalize-element
-  "Return ELEMENT in canonical element form."
-  [element]
-  (if (draw-box-element? element)
-    (draw-normalize-box-element element)
-    (if (draw-arrow-element? element)
-      (draw-normalize-arrow-element element)
-      (if (draw-frame-element? element)
-        (draw-normalize-frame-element element)
-        (if (draw-text-element? element)
-          (draw-normalize-text-element element)
-          (draw-normalize-ink-element element))))))
-
-(defn draw-legacy-strokes->elements
-  "Upgrade legacy stroke maps into ink elements."
-  [strokes]
-  (let [next-id 1]
-    (reduce (lambda (result stroke)
-              (let [id (count result)]
-                (conj result
-                      {:id (+ id next-id)
-                       :kind :ink
-                       :points (vec (get stroke :points))
-                       :color (get stroke :color)
-                       :size (get stroke :size)})))
-            []
-            strokes)))
-
-(defn draw-elements->strokes
-  "Return the legacy strokes view derived from ELEMENTS."
-  [elements]
-  (reduce (lambda (strokes element)
-            (if (draw-ink-element? element)
-              (conj strokes
-                    {:points (vec (get element :points))
-                     :color (get element :color)
-                     :size (get element :size)})
-              strokes))
-          []
-          elements))
-
-(defn draw-selection-has-id?
-  "Return true when SELECTION contains ELEMENT-ID."
-  [selection element-id]
-  (if (empty? selection)
-    false
-    (truthy?
-      (some (fn [selected-id]
-              (if (= selected-id element-id)
-                true
-                false))
-            selection))))
-
-(defn draw-normalize-selection
-  "Return SELECTION filtered down to ids present in ELEMENTS."
-  [selection elements]
-  (let [selection (or selection [])]
-    (vec
-      (filter (fn [element-id]
-                (draw-selection-has-id?
-                  (map (fn [element]
-                         (get element :id))
-                       elements)
-                  element-id))
-              selection))))
-
-(defn draw-max-element-id
-  "Return the highest element id present in ELEMENTS."
-  [elements]
-  (reduce (lambda (current element)
-            (let [id (or (get element :id) 0)]
-              (if (> id current)
-                id
-                current)))
-          0
-          elements))
-
-(defn draw-elements-with-ids
-  "Return ELEMENTS normalized and with stable ids assigned when missing."
-  [elements]
-  (vec
-    (map-indexed
-      (fn [index element]
-        (let [element (draw-normalize-element element)]
-          (if (get element :id)
-            element
-            (assoc element :id (+ index 1)))))
-      elements)))
-
-(defn draw-sync-elements
-  "Install ELEMENTS as the authoritative element set and derive legacy strokes."
-  [state elements]
-  (let [elements (draw-elements-with-ids elements)
-        strokes (vec (draw-elements->strokes elements))
-        selection (draw-normalize-selection (get state :selection) elements)
-        next-id (+ 1 (draw-max-element-id elements))]
-    (assoc state
-           :elements elements
-           :selection selection
-           :active-selection-drag (if (empty? selection)
-                                    false
-                                    (get state :active-selection-drag))
-           :active-selection-resize (if (empty? selection)
-                                      false
-                                      (get state :active-selection-resize))
-           :active-selection-rotate (if (empty? selection)
-                                      false
-                                      (get state :active-selection-rotate))
-           :active-selection-marquee (if (get state :active-selection-marquee)
-                                       (get state :active-selection-marquee)
-                                       false)
-           :strokes strokes
-           :next-element-id next-id)))
-
-(defn draw-normalize-state
-  "Upgrade STATE so element and stroke views are both populated."
-  [state]
-  (let [state (if (get state :elements)
-                state
-                (assoc state :elements (draw-legacy-strokes->elements (get state :strokes))))
-        state (if (contains? state :tool)
-                state
-                (assoc state :tool :ink))
-        state (if (contains? state :selection)
-                state
-                (assoc state :selection []))
-        state (if (contains? state :active-selection-drag)
-                state
-                (assoc state :active-selection-drag false))
-        state (if (contains? state :active-selection-resize)
-                state
-                (assoc state :active-selection-resize false))
-        state (if (contains? state :active-selection-rotate)
-                state
-                (assoc state :active-selection-rotate false))
-        state (if (contains? state :active-selection-marquee)
-                state
-                (assoc state :active-selection-marquee false))
-        state (if (contains? state :view-anchor-x)
-                state
-                (assoc state :view-anchor-x 0.0))
-        state (if (contains? state :view-anchor-y)
-                state
-                (assoc state :view-anchor-y 0.0))
-        state (if (contains? state :tool-panel?)
-                state
-                (assoc state :tool-panel? false))]
-    (draw-sync-elements state (get state :elements))))
 
 (defn draw-heartbeat-payload
   "Return the external heartbeat payload for STATE at PHASE."
@@ -915,125 +635,6 @@
                           :state (draw-state-snapshot next-state)})
         next-state)
       state)))
-
-(defn draw-view-zoom
-  "Return the current zoom factor from STATE."
-  [state]
-  (let [zoom (or (get state :zoom) 1.0)]
-    (if (> zoom (draw-min-zoom))
-      zoom
-      (draw-min-zoom))))
-
-(defn draw-view-x
-  "Return the current viewport X offset from STATE."
-  [state]
-  (or (get state :view-x) 0.0))
-
-(defn draw-view-y
-  "Return the current viewport Y offset from STATE."
-  [state]
-  (or (get state :view-y) 0.0))
-
-(defn draw-view-anchor-x
-  "Return the current screen-space zoom anchor X from STATE."
-  [state]
-  (or (get state :view-anchor-x) 0.0))
-
-(defn draw-view-anchor-y
-  "Return the current screen-space zoom anchor Y from STATE."
-  [state]
-  (or (get state :view-anchor-y) 0.0))
-
-(defn draw-clamp
-  "Clamp VALUE between LOW and HIGH."
-  [value low high]
-  (cond
-    (< value low) low
-    (> value high) high
-    :else value))
-
-(defn draw-world-bound
-  "Return the viewport world bound used for navigation clamping."
-  []
-  1000000000.0)
-
-(defn draw-min-zoom
-  "Return the minimum supported zoom level."
-  []
-  0.0005)
-
-(defn draw-max-zoom
-  "Return the maximum supported zoom level."
-  []
-  2048.0)
-
-(defn draw-zoom-factor
-  "Return the zoom multiplier used by keyboard shortcuts."
-  []
-  1.125)
-
-(defn draw-pan-step
-  "Return the keyboard pan step in screen pixels."
-  []
-  64)
-
-(defn draw-clamp-view-coordinate
-  "Clamp VALUE into the supported world navigation range."
-  [value]
-  (let [limit (draw-world-bound)]
-    (draw-clamp value (- limit) limit)))
-
-(defn draw-sync-pointer-state
-  "Write WORLD-POINT and SCREEN-POINT back into STATE."
-  [state world-point screen-point]
-  (assoc state
-         :mouse-x (nth world-point 0)
-         :mouse-y (nth world-point 1)
-         :mouse-screen-x (nth screen-point 0)
-         :mouse-screen-y (nth screen-point 1)))
-
-(defn draw-pointer-screen-anchor
-  "Return the current screen-space pointer anchor for keyboard zoom."
-  [state]
-  [(or (get state :mouse-screen-x)
-       (/ (or (get state :width) 0) 2.0))
-   (or (get state :mouse-screen-y)
-       (/ (or (get state :height) 0) 2.0))])
-
-(defn draw-screen-point->world-point
-  "Convert a screen POINT into world coordinates using STATE's viewport."
-  [state point]
-  (let [zoom (draw-view-zoom state)
-        vx (draw-view-x state)
-        vy (draw-view-y state)
-        ax (draw-view-anchor-x state)
-        ay (draw-view-anchor-y state)]
-    [(+ vx (/ (- (nth point 0) ax) zoom))
-     (+ vy (/ (- (nth point 1) ay) zoom))
-     (draw-point-pressure point)]))
-
-(defn draw-world-point->screen-point
-  "Convert a world POINT into screen coordinates using STATE's viewport."
-  [state point]
-  (let [zoom (draw-view-zoom state)
-        vx (draw-view-x state)
-        vy (draw-view-y state)
-        ax (draw-view-anchor-x state)
-        ay (draw-view-anchor-y state)]
-    [(draw-exact-int (math/round (+ (* (- (nth point 0) vx) zoom)
-                                     ax)))
-     (draw-exact-int (math/round (+ (* (- (nth point 1) vy) zoom)
-                                     ay)))
-     (draw-point-pressure point)]))
-
-(defn draw-point-screen-size
-  "Scale BASE-SIZE by POINT pressure in screen space."
-  [state point base-size]
-  (let [scaled (draw-exact-int (math/ceiling (* base-size
-                                                 (draw-point-pressure point))))]
-    (if (> scaled 0)
-      scaled
-      1)))
 
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
@@ -1954,87 +1555,6 @@
                  :panning? false)
           (get snapshot :elements))))))
 
-(defn draw-tool-mode
-  "Return the current tool mode label."
-  [state]
-  (if (get state :eraser?)
-    "eraser"
-    (if (draw-kind=? (or (get state :tool) :ink) :box)
-      "rectangle"
-      (if (draw-kind=? (or (get state :tool) :ink)
-                       :arrow)
-        "arrow"
-        (if (draw-kind=? (or (get state :tool) :ink) :text)
-          "text"
-          (if (draw-kind=? (or (get state :tool) :ink) :select)
-            "select"
-            "ink"))))))
-
-(defn draw-next-element-id
-  "Return the next canvas element id for STATE."
-  [state]
-  (or (get state :next-element-id) 1))
-
-(defn draw-alloc-element-id
-  "Allocate the next element id and return [id next-state]."
-  [state]
-  (let [id (draw-next-element-id state)]
-    [id (assoc state :next-element-id (+ id 1))]))
-
-(defn draw-append-element
-  "Append ELEMENT to STATE and refresh the derived stroke view."
-  [state element]
-  (let [[id state] (if (get element :id)
-                     [(get element :id) state]
-                     (draw-alloc-element-id state))
-        element (assoc element :id id)]
-    (draw-sync-elements state
-                        (conj (get state :elements) element))))
-
-(defn draw-set-tool-core!
-  "Set the current primary tool without recording history."
-  [state tool]
-  (assoc state
-         :tool (if (draw-kind=? tool :frame) :box tool)
-         :eraser? false))
-
-(defn draw-box-tool?
-  "Return true when STATE is currently in box mode."
-  [state]
-  (draw-kind=? (or (get state :tool) :ink) :box))
-
-(defn draw-arrow-tool?
-  "Return true when STATE is currently in arrow mode."
-  [state]
-  (draw-kind=? (or (get state :tool) :ink) :arrow))
-
-(defn draw-frame-tool?
-  "Return true when STATE is currently in frame mode."
-  [state]
-  (draw-kind=? (or (get state :tool) :ink) :frame))
-
-(defn draw-text-tool?
-  "Return true when STATE is currently in text mode."
-  [state]
-  (draw-kind=? (or (get state :tool) :ink) :text))
-
-(defn draw-selection-tool?
-  "Return true when STATE is currently in selection mode."
-  [state]
-  (draw-kind=? (or (get state :tool) :ink) :select))
-
-(defn draw-selected-element-ids
-  "Return the current selected element ids from STATE."
-  [state]
-  (or (get state :selection) []))
-
-(defn draw-selected?
-  "Return true when ELEMENT is selected in STATE."
-  [state element]
-  (draw-selection-has-id?
-    (draw-selected-element-ids state)
-    (get element :id)))
-
 (defn draw-stroke-color
   "Return the active stroke color for STATE."
   [state]
@@ -2739,14 +2259,6 @@
       a)
     b))
 
-(defn draw-selected-elements
-  "Return the selected elements from STATE in canvas order."
-  [state]
-  (vec
-    (filter (fn [element]
-              (draw-selected? state element))
-            (get state :elements))))
-
 (defn draw-selection-bounds
   "Return aggregate bounds for the current selection."
   [state]
@@ -2848,15 +2360,6 @@
       (draw-arrow-handle-screen-rects state element)
       {})))
 
-(defn draw-screen-point-in-rect?
-  "Return true when screen POINT lies inside RECT."
-  [point rect]
-  (and rect
-       (>= (nth point 0) (get rect :x))
-       (>= (nth point 1) (get rect :y))
-       (<= (nth point 0) (+ (get rect :x) (get rect :width)))
-       (<= (nth point 1) (+ (get rect :y) (get rect :height)))))
-
 (defn draw-find-selection-handle
   "Return the resize handle hit by SCREEN-POINT, or false."
   [state screen-point]
@@ -2873,186 +2376,6 @@
           (draw-screen-point-in-rect? screen-point (get rects :end)) :end
           :else false))
       false)))
-
-(defn draw-tool-panel-width
-  "Return the tool panel width in screen pixels."
-  []
-  184)
-
-(defn draw-tool-panel-padding
-  "Return the tool panel inner padding in screen pixels."
-  []
-  10)
-
-(defn draw-tool-panel-button-height
-  "Return the button height for tool panel buttons."
-  []
-  20)
-
-(defn draw-tool-panel-button-gap
-  "Return the vertical gap between tool panel buttons."
-  []
-  6)
-
-(defn draw-tool-panel-rect
-  "Return the tool panel screen rectangle for STATE."
-  [state]
-  (let [width (draw-tool-panel-width)
-        x (- (or (get state :width) 1280) width 12)
-        y 12
-        height 352]
-    {:x x
-     :y y
-     :width width
-     :height height}))
-
-(defn draw-save-format-label
-  "Return the default on-disk canvas format label."
-  []
-  "EDN")
-
-(defn draw-tool-panel-info-lines
-  "Return the footer metadata and shortcut lines for the tool panel."
-  [state]
-  [(format "file: %s" (fs/basename (draw-state-file-path)))
-   (format "format: %s" (draw-save-format-label))
-   "TAB toggle  CTRL+S save"
-   "CTRL+O load"])
-
-(defn draw-tool-panel-buttons
-  "Return clickable tool panel buttons for STATE."
-  [state]
-  (let [panel (draw-tool-panel-rect state)
-        padding (draw-tool-panel-padding)
-        x (+ (get panel :x) padding)
-        width (- (get panel :width) (* padding 2))
-        height (draw-tool-panel-button-height)
-        gap (draw-tool-panel-button-gap)
-        y0 (+ (get panel :y) 40)]
-    [ {:id :tool-ink
-       :label "Ink"
-       :kind :tool
-       :tool :ink
-       :active? (draw-kind=? (or (get state :tool) :ink) :ink)
-       :x x :y y0 :width width :height height}
-      {:id :tool-select
-       :label "Select"
-       :kind :tool
-       :tool :select
-       :active? (draw-kind=? (or (get state :tool) :ink) :select)
-       :x x :y (+ y0 (* 1 (+ height gap))) :width width :height height}
-      {:id :tool-rectangle
-       :label "Rectangle"
-       :kind :tool
-       :tool :box
-       :active? (draw-kind=? (or (get state :tool) :ink) :box)
-       :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
-      {:id :tool-arrow
-       :label "Arrow"
-       :kind :tool
-       :tool :arrow
-       :active? (draw-kind=? (or (get state :tool) :ink) :arrow)
-       :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
-      {:id :tool-text
-       :label "Text"
-       :kind :tool
-       :tool :text
-       :active? (draw-kind=? (or (get state :tool) :ink) :text)
-       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
-      {:id :save
-       :label "Save"
-       :kind :save
-       :active? false
-       :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
-      {:id :load
-       :label "Load"
-       :kind :load
-       :active? false
-       :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}]))
-
-(defn draw-selection-summary
-  "Return a compact summary of the current selection."
-  [state]
-  (let [elements (draw-selected-elements state)
-        total (count elements)]
-    (if (= total 0)
-      "selected: none"
-      (if (= total 1)
-        (format "selected: %s"
-                (name (get (first elements) :kind)))
-        (let [counts (reduce (fn [current element]
-                               (let [kind (name (get element :kind))
-                                     prior (or (get current kind) 0)]
-                                 (assoc current kind (+ prior 1))))
-                             {}
-                             elements)
-              parts (map (fn [entry]
-                           (format "%d %s"
-                                   (nth entry 1)
-                                   (nth entry 0)))
-                         counts)]
-          (format "selected: %s"
-                  (str/join ", " parts)))))))
-
-(defn draw-tool-panel-selection-lines
-  "Return compact action hints for the current selection."
-  [state]
-  (let [elements (draw-selected-elements state)
-        total (count elements)]
-    (if (= total 0)
-      (if (draw-selection-tool? state)
-        ["actions: none selected"
-         "canvas: drag empty space to marquee select"]
-        ["actions: none selected"
-         "canvas: drag to draw or create"])
-      (if (= total 1)
-        (let [element (first elements)]
-          (if (draw-box-element? element)
-            ["actions: move rectangle"
-             "handles: corners resize, top rotates"]
-            (if (draw-arrow-element? element)
-              ["actions: move arrow"
-               "handles: drag endpoints"]
-              (if (draw-text-element? element)
-                ["actions: move text"
-                 "selection: single object"]
-                ["actions: move stroke"
-                 "selection: single object"]))))
-        [(format "actions: move %d selected items" total)
-         "selection: shift+click adds/removes"]))))
-
-(defn draw-tool-panel-hit?
-  "Return true when SCREEN-POINT lies inside the visible tool panel."
-  [state screen-point]
-  (and (get state :tool-panel?)
-       (draw-screen-point-in-rect? screen-point
-                                   (draw-tool-panel-rect state))))
-
-(defn draw-pointer-world-point
-  "Return the current pointer world point from STATE."
-  [state]
-  [(or (get state :mouse-x) 0.0)
-   (or (get state :mouse-y) 0.0)
-   (or (get state :pen-pressure) 1.0)])
-
-(defn draw-pointer-screen-point
-  "Return the current pointer screen point from STATE."
-  [state]
-  [(or (get state :mouse-screen-x) 0.0)
-   (or (get state :mouse-screen-y) 0.0)])
-
-(defn draw-find-tool-panel-button
-  "Return the clicked tool-panel button for SCREEN-POINT, or false."
-  [state screen-point]
-  (if (get state :tool-panel?)
-    (let loop ((buttons (draw-tool-panel-buttons state)))
-      (if (empty? buttons)
-        false
-        (let [button (first buttons)]
-          (if (draw-screen-point-in-rect? screen-point button)
-            button
-            (loop (rest buttons))))))
-    false))
 
 (defn draw-selection-handle-cursor-kind
   "Return the appropriate resize cursor for HANDLE."
@@ -3196,34 +2519,6 @@
         screen-point)
 
       :else base-state)))
-
-(defn draw-world-rect->screen-rect
-  "Convert a world-space rectangle to a visible screen-space rectangle."
-  [state x y width height]
-  (let [left-world (min x (+ x width))
-        right-world (max x (+ x width))
-        top-world (min y (+ y height))
-        bottom-world (max y (+ y height))
-        top-left (draw-world-point->screen-point state
-                                                 [left-world top-world 1.0])
-        bottom-right (draw-world-point->screen-point state
-                                                     [right-world bottom-world 1.0])
-        raw-left (nth top-left 0)
-        raw-right (nth bottom-right 0)
-        raw-top (nth top-left 1)
-        raw-bottom (nth bottom-right 1)
-        left (draw-exact-int (math/floor (min raw-left raw-right)))
-        right (draw-exact-int (math/ceiling (max raw-left raw-right)))
-        top (draw-exact-int (math/floor (min raw-top raw-bottom)))
-        bottom (draw-exact-int (math/ceiling (max raw-top raw-bottom)))
-        visible-right (if (> right left) right (+ left 1))
-        visible-bottom (if (> bottom top) bottom (+ top 1))]
-    {:x left
-     :y top
-     :width (- visible-right left)
-     :height (- visible-bottom top)
-     :right visible-right
-     :bottom visible-bottom}))
 
 (defn draw-arrow-record
   "Build a fresh active-arrow record."
@@ -4106,13 +3401,6 @@
   [state]
   (draw-kind=? (get state :pointer-source) :pen))
 
-(defn draw-kind=?
-  "Compare two keyword event kinds by name."
-  [kind expected]
-  (and (keyword? kind)
-       (keyword? expected)
-       (string=? (name kind) (name expected))))
-
 (defn draw-nonblank
   "Return VALUE when it contains visible text, otherwise FALLBACK."
   [value fallback]
@@ -4151,11 +3439,6 @@
   [state]
   (assoc state
          :frame (+ (get state :frame) 1)))
-
-(defn draw-exact-int
-  "Coerce VALUE to an exact integer."
-  [value]
-  (inexact->exact value))
 
 (defn draw-input-event-screen-point
   "Return the raw [x y] screen coordinate from EVENT."
@@ -4804,30 +4087,6 @@
   (if (> size 0)
     (draw-exact-int size)
     1))
-
-(defn draw-point-pressure
-  "Return the pressure stored in POINT, defaulting to 1.0."
-  [point]
-  (if (> (count point) 2)
-    (nth point 2)
-    1.0))
-
-(defn draw-normalize-pressure
-  "Map raw pen pressure into a more useful visual range for drawing."
-  [pressure]
-  (let [raw (draw-clamp (or pressure 1.0) 0.0 1.0)
-        scaled (draw-clamp (/ raw 0.68) 0.0 1.0)]
-    (math/sqrt scaled)))
-
-(defn draw-point-size
-  "Scale BASE-SIZE by POINT pressure."
-  [point base-size]
-  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
-        scaled (draw-exact-int (math/ceiling (* base-size
-                                                (+ 0.5 (* 1.5 pressure)))))]
-    (if (> scaled 0)
-      scaled
-      1)))
 
 (defn draw-point-alpha
   "Scale the stroke alpha by POINT pressure."

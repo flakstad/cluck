@@ -1,0 +1,449 @@
+;; Pure draw state and model helpers.
+
+(ns cluck.examples.draw.state
+  (:require [cluck.fs :as fs]))
+
+(defn default-state
+  "Return the starter app state."
+  []
+  {:title "Cluck Draw"
+   :width 1280
+   :height 720
+   :background [24 24 28]
+   :brush-color [245 245 245]
+   :brush-size 2
+   :pen-pressure 1.0
+   :window-focused? true
+   :view-x 0.0
+   :view-y 0.0
+   :view-anchor-x 0.0
+   :view-anchor-y 0.0
+   :zoom 1.0
+   :running? true
+   :frame 0
+   :mouse-x 0
+   :mouse-y 0
+   :mouse-screen-x 0.0
+   :mouse-screen-y 0.0
+   :pointer-down? false
+   :pointer-source false
+   :panning? false
+   :pan-last-x 0
+   :pan-last-y 0
+   :space-down? false
+   :ctrl-down? false
+   :canvas-dirty? false
+   :debug-panel? false
+   :tool-panel? false
+   :history []
+   :elements []
+   :next-element-id 1
+   :selection []
+   :active-selection-drag false
+   :active-selection-resize false
+   :active-selection-rotate false
+   :active-selection-marquee false
+   :strokes []
+   :active-stroke false
+   :active-box false
+   :active-arrow false
+   :active-frame false
+   :active-text false
+   :last-key ""
+   :last-text ""
+   :last-event ""
+   :recent-events []})
+
+(defn draw-state-file-path
+  "Return the default path used for saving and loading the canvas state."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-state.edn"))
+
+(defn draw-kind=?
+  "Compare two keyword event kinds by name."
+  [kind expected]
+  (and (keyword? kind)
+       (keyword? expected)
+       (string=? (name kind) (name expected))))
+
+(defn draw-tool-mode
+  "Return the current tool mode label."
+  [state]
+  (if (get state :eraser?)
+    "eraser"
+    (if (draw-kind=? (or (get state :tool) :ink) :box)
+      "rectangle"
+      (if (draw-kind=? (or (get state :tool) :ink) :arrow)
+        "arrow"
+        (if (draw-kind=? (or (get state :tool) :ink) :text)
+          "text"
+          (if (draw-kind=? (or (get state :tool) :ink) :select)
+            "select"
+            "ink"))))))
+
+(defn draw-state-snapshot
+  "Return a compact diagnostic snapshot for STATE."
+  [state]
+  (if state
+    {:frame (get state :frame)
+     :mouse-x (or (get state :mouse-x) 0.0)
+     :mouse-y (or (get state :mouse-y) 0.0)
+     :mouse-screen-x (or (get state :mouse-screen-x) 0.0)
+     :mouse-screen-y (or (get state :mouse-screen-y) 0.0)
+     :view-x (or (get state :view-x) 0.0)
+     :view-y (or (get state :view-y) 0.0)
+     :view-anchor-x (or (get state :view-anchor-x) 0.0)
+     :view-anchor-y (or (get state :view-anchor-y) 0.0)
+     :zoom (or (get state :zoom) 1.0)
+     :pressure (or (get state :pen-pressure) 1.0)
+     :pointer-down? (get state :pointer-down?)
+     :panning? (get state :panning?)
+     :space-down? (get state :space-down?)
+     :ctrl-down? (get state :ctrl-down?)
+     :window-focused? (get state :window-focused?)
+     :tool (draw-tool-mode state)
+     :brush-size (get state :brush-size)
+     :elements (count (get state :elements))
+     :selection (count (or (get state :selection) []))
+     :active-selection-rotate? (if (get state :active-selection-rotate) true false)
+     :active-selection-marquee? (if (get state :active-selection-marquee) true false)
+     :strokes (count (get state :strokes))
+     :active-points (if (get state :active-stroke)
+                      (count (get (get state :active-stroke) :points))
+                      0)
+     :active-box? (if (get state :active-box) true false)
+     :active-arrow? (if (get state :active-arrow) true false)
+     :active-frame? (if (get state :active-frame) true false)
+     :active-text? (if (get state :active-text) true false)
+     :history (count (get state :history))
+     :canvas-dirty? (get state :canvas-dirty?)
+     :last-key (or (get state :last-key) "")
+     :last-text (or (get state :last-text) "")
+     :last-event (or (get state :last-event) "")}
+    nil))
+
+(defn draw-element-kind
+  "Return the normalized kind keyword for ELEMENT."
+  [element]
+  (let [kind (get element :kind)]
+    (if (keyword? kind)
+      kind
+      :ink)))
+
+(defn draw-ink-element?
+  "Return true when ELEMENT is an ink stroke."
+  [element]
+  (draw-kind=? (draw-element-kind element) :ink))
+
+(defn draw-box-element?
+  "Return true when ELEMENT is a box."
+  [element]
+  (draw-kind=? (draw-element-kind element) :box))
+
+(defn draw-arrow-element?
+  "Return true when ELEMENT is an arrow."
+  [element]
+  (draw-kind=? (draw-element-kind element) :arrow))
+
+(defn draw-frame-element?
+  "Return true when ELEMENT is a frame."
+  [element]
+  (draw-kind=? (draw-element-kind element) :frame))
+
+(defn draw-text-element?
+  "Return true when ELEMENT is text."
+  [element]
+  (draw-kind=? (draw-element-kind element) :text))
+
+(defn draw-normalize-ink-element
+  "Return ELEMENT in canonical ink-element form."
+  [element]
+  {:id (get element :id)
+   :kind :ink
+   :points (vec (get element :points))
+   :color (get element :color)
+   :size (get element :size)})
+
+(defn draw-normalize-box-element
+  "Return ELEMENT in canonical box-element form."
+  [element]
+  {:id (get element :id)
+   :kind :box
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :width (or (get element :width) 0.0)
+   :height (or (get element :height) 0.0)
+   :rotation (or (get element :rotation) 0.0)
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
+(defn draw-normalize-arrow-point
+  "Return POINT in canonical [x y pressure] form."
+  [point]
+  [(or (nth point 0) 0.0)
+   (or (nth point 1) 0.0)
+   (or (if (> (count point) 2) (nth point 2) 1.0) 1.0)])
+
+(defn draw-normalize-arrow-element
+  "Return ELEMENT in canonical arrow-element form."
+  [element]
+  {:id (get element :id)
+   :kind :arrow
+   :start (draw-normalize-arrow-point
+            (or (get element :start)
+                [(or (get element :x1) 0.0)
+                 (or (get element :y1) 0.0)
+                 1.0]))
+   :end (draw-normalize-arrow-point
+          (or (get element :end)
+              [(or (get element :x2) 0.0)
+               (or (get element :y2) 0.0)
+               1.0]))
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
+(defn draw-normalize-frame-element
+  "Upgrade a legacy frame ELEMENT into canonical rectangle form."
+  [element]
+  {:id (get element :id)
+   :kind :box
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :width (or (get element :width) 0.0)
+   :height (or (get element :height) 0.0)
+   :rotation 0.0
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
+(defn draw-normalize-text-element
+  "Return ELEMENT in canonical text-element form."
+  [element]
+  {:id (get element :id)
+   :kind :text
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :text (or (get element :text) "Text")
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
+(defn draw-normalize-element
+  "Return ELEMENT in canonical element form."
+  [element]
+  (if (draw-box-element? element)
+    (draw-normalize-box-element element)
+    (if (draw-arrow-element? element)
+      (draw-normalize-arrow-element element)
+      (if (draw-frame-element? element)
+        (draw-normalize-frame-element element)
+        (if (draw-text-element? element)
+          (draw-normalize-text-element element)
+          (draw-normalize-ink-element element))))))
+
+(defn draw-legacy-strokes->elements
+  "Upgrade legacy stroke maps into ink elements."
+  [strokes]
+  (let [next-id 1]
+    (reduce (lambda (result stroke)
+              (let [id (count result)]
+                (conj result
+                      {:id (+ id next-id)
+                       :kind :ink
+                       :points (vec (get stroke :points))
+                       :color (get stroke :color)
+                       :size (get stroke :size)})))
+            []
+            strokes)))
+
+(defn draw-elements->strokes
+  "Return the legacy strokes view derived from ELEMENTS."
+  [elements]
+  (reduce (lambda (strokes element)
+            (if (draw-ink-element? element)
+              (conj strokes
+                    {:points (vec (get element :points))
+                     :color (get element :color)
+                     :size (get element :size)})
+              strokes))
+          []
+          elements))
+
+(defn draw-selection-has-id?
+  "Return true when SELECTION contains ELEMENT-ID."
+  [selection element-id]
+  (if (empty? selection)
+    false
+    (truthy?
+      (some (fn [selected-id]
+              (if (= selected-id element-id)
+                true
+                false))
+            selection))))
+
+(defn draw-selected-element-ids
+  "Return the current selected element ids from STATE."
+  [state]
+  (or (get state :selection) []))
+
+(defn draw-selected?
+  "Return true when ELEMENT is selected in STATE."
+  [state element]
+  (draw-selection-has-id?
+    (draw-selected-element-ids state)
+    (get element :id)))
+
+(defn draw-selected-elements
+  "Return the selected elements from STATE in canvas order."
+  [state]
+  (vec
+    (filter (fn [element]
+              (draw-selected? state element))
+            (get state :elements))))
+
+(defn draw-normalize-selection
+  "Return SELECTION filtered down to ids present in ELEMENTS."
+  [selection elements]
+  (let [selection (or selection [])]
+    (vec
+      (filter (fn [element-id]
+                (draw-selection-has-id?
+                  (map (fn [element]
+                         (get element :id))
+                       elements)
+                  element-id))
+              selection))))
+
+(defn draw-max-element-id
+  "Return the highest element id present in ELEMENTS."
+  [elements]
+  (reduce (lambda (current element)
+            (let [id (or (get element :id) 0)]
+              (if (> id current)
+                id
+                current)))
+          0
+          elements))
+
+(defn draw-elements-with-ids
+  "Return ELEMENTS normalized and with stable ids assigned when missing."
+  [elements]
+  (vec
+    (map-indexed
+      (fn [index element]
+        (let [element (draw-normalize-element element)]
+          (if (get element :id)
+            element
+            (assoc element :id (+ index 1)))))
+      elements)))
+
+(defn draw-sync-elements
+  "Install ELEMENTS as the authoritative element set and derive legacy strokes."
+  [state elements]
+  (let [elements (draw-elements-with-ids elements)
+        strokes (vec (draw-elements->strokes elements))
+        selection (draw-normalize-selection (get state :selection) elements)
+        next-id (+ 1 (draw-max-element-id elements))]
+    (assoc state
+           :elements elements
+           :selection selection
+           :active-selection-drag (if (empty? selection)
+                                    false
+                                    (get state :active-selection-drag))
+           :active-selection-resize (if (empty? selection)
+                                      false
+                                      (get state :active-selection-resize))
+           :active-selection-rotate (if (empty? selection)
+                                      false
+                                      (get state :active-selection-rotate))
+           :active-selection-marquee (if (get state :active-selection-marquee)
+                                       (get state :active-selection-marquee)
+                                       false)
+           :strokes strokes
+           :next-element-id next-id)))
+
+(defn draw-normalize-state
+  "Upgrade STATE so element and stroke views are both populated."
+  [state]
+  (let [state (if (get state :elements)
+                state
+                (assoc state :elements (draw-legacy-strokes->elements (get state :strokes))))
+        state (if (contains? state :tool)
+                state
+                (assoc state :tool :ink))
+        state (if (contains? state :selection)
+                state
+                (assoc state :selection []))
+        state (if (contains? state :active-selection-drag)
+                state
+                (assoc state :active-selection-drag false))
+        state (if (contains? state :active-selection-resize)
+                state
+                (assoc state :active-selection-resize false))
+        state (if (contains? state :active-selection-rotate)
+                state
+                (assoc state :active-selection-rotate false))
+        state (if (contains? state :active-selection-marquee)
+                state
+                (assoc state :active-selection-marquee false))
+        state (if (contains? state :view-anchor-x)
+                state
+                (assoc state :view-anchor-x 0.0))
+        state (if (contains? state :view-anchor-y)
+                state
+                (assoc state :view-anchor-y 0.0))
+        state (if (contains? state :tool-panel?)
+                state
+                (assoc state :tool-panel? false))]
+    (draw-sync-elements state (get state :elements))))
+
+(defn draw-next-element-id
+  "Return the next canvas element id for STATE."
+  [state]
+  (or (get state :next-element-id) 1))
+
+(defn draw-alloc-element-id
+  "Allocate the next element id and return [id next-state]."
+  [state]
+  (let [id (draw-next-element-id state)]
+    [id (assoc state :next-element-id (+ id 1))]))
+
+(defn draw-append-element
+  "Append ELEMENT to STATE and refresh the derived stroke view."
+  [state element]
+  (let [[id state] (if (get element :id)
+                     [(get element :id) state]
+                     (draw-alloc-element-id state))
+        element (assoc element :id id)]
+    (draw-sync-elements state
+                        (conj (get state :elements) element))))
+
+(defn draw-set-tool-core!
+  "Set the current primary tool without recording history."
+  [state tool]
+  (assoc state
+         :tool (if (draw-kind=? tool :frame) :box tool)
+         :eraser? false))
+
+(defn draw-box-tool?
+  "Return true when STATE is currently in box mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :box))
+
+(defn draw-arrow-tool?
+  "Return true when STATE is currently in arrow mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :arrow))
+
+(defn draw-frame-tool?
+  "Return true when STATE is currently in frame mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :frame))
+
+(defn draw-text-tool?
+  "Return true when STATE is currently in text mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :text))
+
+(defn draw-selection-tool?
+  "Return true when STATE is currently in selection mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :select))

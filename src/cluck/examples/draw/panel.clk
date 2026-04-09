@@ -1,0 +1,195 @@
+;; Pure draw tool-panel helpers.
+
+(ns cluck.examples.draw.panel
+  (:require [cluck.examples.draw.state :as draw.state]
+            [cluck.fs :as fs]
+            [cluck.string :as str]))
+
+(defn draw-tool-panel-width
+  "Return the tool panel width in screen pixels."
+  []
+  184)
+
+(defn draw-tool-panel-padding
+  "Return the tool panel inner padding in screen pixels."
+  []
+  10)
+
+(defn draw-tool-panel-button-height
+  "Return the button height for tool panel buttons."
+  []
+  20)
+
+(defn draw-tool-panel-button-gap
+  "Return the vertical gap between tool panel buttons."
+  []
+  6)
+
+(defn draw-tool-panel-rect
+  "Return the tool panel screen rectangle for STATE."
+  [state]
+  (let [width (draw-tool-panel-width)
+        x (- (or (get state :width) 1280) width 12)
+        y 12
+        height 352]
+    {:x x
+     :y y
+     :width width
+     :height height}))
+
+(defn draw-save-format-label
+  "Return the default on-disk canvas format label."
+  []
+  "EDN")
+
+(defn draw-tool-panel-info-lines
+  "Return the footer metadata and shortcut lines for the tool panel."
+  [state]
+  [(format "file: %s" (fs/basename (draw.state/draw-state-file-path)))
+   (format "format: %s" (draw-save-format-label))
+   "TAB toggle  CTRL+S save"
+   "CTRL+O load"])
+
+(defn draw-tool-panel-buttons
+  "Return clickable tool panel buttons for STATE."
+  [state]
+  (let [panel (draw-tool-panel-rect state)
+        padding (draw-tool-panel-padding)
+        x (+ (get panel :x) padding)
+        width (- (get panel :width) (* padding 2))
+        height (draw-tool-panel-button-height)
+        gap (draw-tool-panel-button-gap)
+        y0 (+ (get panel :y) 40)]
+    [{:id :tool-ink
+      :label "Ink"
+      :kind :tool
+      :tool :ink
+      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
+      :x x :y y0 :width width :height height}
+     {:id :tool-select
+      :label "Select"
+      :kind :tool
+      :tool :select
+      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :select)
+      :x x :y (+ y0 (* 1 (+ height gap))) :width width :height height}
+     {:id :tool-rectangle
+      :label "Rectangle"
+      :kind :tool
+      :tool :box
+      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :box)
+      :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
+     {:id :tool-arrow
+      :label "Arrow"
+      :kind :tool
+      :tool :arrow
+      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :arrow)
+      :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
+     {:id :tool-text
+      :label "Text"
+      :kind :tool
+      :tool :text
+      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :text)
+      :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
+     {:id :save
+      :label "Save"
+      :kind :save
+      :active? false
+      :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
+     {:id :load
+      :label "Load"
+      :kind :load
+      :active? false
+      :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}]))
+
+(defn draw-selection-summary
+  "Return a compact summary of the current selection."
+  [state]
+  (let [elements (draw.state/draw-selected-elements state)
+        total (count elements)]
+    (if (= total 0)
+      "selected: none"
+      (if (= total 1)
+        (format "selected: %s"
+                (name (get (first elements) :kind)))
+        (let [counts (reduce (fn [current element]
+                               (let [kind (name (get element :kind))
+                                     prior (or (get current kind) 0)]
+                                 (assoc current kind (+ prior 1))))
+                             {}
+                             elements)
+              parts (map (fn [entry]
+                           (format "%d %s"
+                                   (nth entry 1)
+                                   (nth entry 0)))
+                         counts)]
+          (format "selected: %s"
+                  (str/join ", " parts)))))))
+
+(defn draw-tool-panel-selection-lines
+  "Return compact action hints for the current selection."
+  [state]
+  (let [elements (draw.state/draw-selected-elements state)
+        total (count elements)]
+    (if (= total 0)
+      (if (draw.state/draw-selection-tool? state)
+        ["actions: none selected"
+         "canvas: drag empty space to marquee select"]
+        ["actions: none selected"
+         "canvas: drag to draw or create"])
+      (if (= total 1)
+        (let [element (first elements)]
+          (if (draw.state/draw-box-element? element)
+            ["actions: move rectangle"
+             "handles: corners resize, top rotates"]
+            (if (draw.state/draw-arrow-element? element)
+              ["actions: move arrow"
+               "handles: drag endpoints"]
+              (if (draw.state/draw-text-element? element)
+                ["actions: move text"
+                 "selection: single object"]
+                ["actions: move stroke"
+                 "selection: single object"]))))
+        [(format "actions: move %d selected items" total)
+         "selection: shift+click adds/removes"]))))
+
+(defn draw-screen-point-in-rect?
+  "Return true when screen POINT lies inside RECT."
+  [point rect]
+  (and rect
+       (>= (nth point 0) (get rect :x))
+       (>= (nth point 1) (get rect :y))
+       (<= (nth point 0) (+ (get rect :x) (get rect :width)))
+       (<= (nth point 1) (+ (get rect :y) (get rect :height)))))
+
+(defn draw-tool-panel-hit?
+  "Return true when SCREEN-POINT lies inside the visible tool panel."
+  [state screen-point]
+  (and (get state :tool-panel?)
+       (draw-screen-point-in-rect? screen-point
+                                   (draw-tool-panel-rect state))))
+
+(defn draw-pointer-world-point
+  "Return the current pointer world point from STATE."
+  [state]
+  [(or (get state :mouse-x) 0.0)
+   (or (get state :mouse-y) 0.0)
+   (or (get state :pen-pressure) 1.0)])
+
+(defn draw-pointer-screen-point
+  "Return the current pointer screen point from STATE."
+  [state]
+  [(or (get state :mouse-screen-x) 0.0)
+   (or (get state :mouse-screen-y) 0.0)])
+
+(defn draw-find-tool-panel-button
+  "Return the clicked tool-panel button for SCREEN-POINT, or false."
+  [state screen-point]
+  (if (get state :tool-panel?)
+    (let loop ((buttons (draw-tool-panel-buttons state)))
+      (if (empty? buttons)
+        false
+        (let [button (first buttons)]
+          (if (draw-screen-point-in-rect? screen-point button)
+            button
+            (loop (rest buttons))))))
+    false))

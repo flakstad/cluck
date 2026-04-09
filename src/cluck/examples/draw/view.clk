@@ -1,0 +1,180 @@
+;; Pure viewport and brush math helpers.
+
+(ns cluck.examples.draw.view
+  (:require [cluck.math :as math]))
+
+(defn draw-exact-int
+  "Coerce VALUE to an exact integer."
+  [value]
+  (inexact->exact value))
+
+(defn draw-point-pressure
+  "Return the pressure stored in POINT, defaulting to 1.0."
+  [point]
+  (if (> (count point) 2)
+    (nth point 2)
+    1.0))
+
+(defn draw-normalize-pressure
+  "Map raw pen pressure into a more useful visual range for drawing."
+  [pressure]
+  (let [raw (draw-clamp (or pressure 1.0) 0.0 1.0)
+        scaled (draw-clamp (/ raw 0.68) 0.0 1.0)]
+    (math/sqrt scaled)))
+
+(defn draw-point-size
+  "Scale BASE-SIZE by POINT pressure."
+  [point base-size]
+  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
+        scaled (draw-exact-int (math/ceiling (* base-size
+                                                (+ 0.5 (* 1.5 pressure)))))]
+    (if (> scaled 0)
+      scaled
+      1)))
+
+(defn draw-clamp
+  "Clamp VALUE between LOW and HIGH."
+  [value low high]
+  (cond
+    (< value low) low
+    (> value high) high
+    :else value))
+
+(defn draw-world-bound
+  "Return the viewport world bound used for navigation clamping."
+  []
+  1000000000.0)
+
+(defn draw-min-zoom
+  "Return the minimum supported zoom level."
+  []
+  0.0005)
+
+(defn draw-max-zoom
+  "Return the maximum supported zoom level."
+  []
+  2048.0)
+
+(defn draw-zoom-factor
+  "Return the zoom multiplier used by keyboard shortcuts."
+  []
+  1.125)
+
+(defn draw-pan-step
+  "Return the keyboard pan step in screen pixels."
+  []
+  64)
+
+(defn draw-view-zoom
+  "Return the current zoom factor from STATE."
+  [state]
+  (let [zoom (or (get state :zoom) 1.0)]
+    (if (> zoom (draw-min-zoom))
+      zoom
+      (draw-min-zoom))))
+
+(defn draw-view-x
+  "Return the current viewport X offset from STATE."
+  [state]
+  (or (get state :view-x) 0.0))
+
+(defn draw-view-y
+  "Return the current viewport Y offset from STATE."
+  [state]
+  (or (get state :view-y) 0.0))
+
+(defn draw-view-anchor-x
+  "Return the current screen-space zoom anchor X from STATE."
+  [state]
+  (or (get state :view-anchor-x) 0.0))
+
+(defn draw-view-anchor-y
+  "Return the current screen-space zoom anchor Y from STATE."
+  [state]
+  (or (get state :view-anchor-y) 0.0))
+
+(defn draw-clamp-view-coordinate
+  "Clamp VALUE into the supported world navigation range."
+  [value]
+  (let [limit (draw-world-bound)]
+    (draw-clamp value (- limit) limit)))
+
+(defn draw-sync-pointer-state
+  "Write WORLD-POINT and SCREEN-POINT back into STATE."
+  [state world-point screen-point]
+  (assoc state
+         :mouse-x (nth world-point 0)
+         :mouse-y (nth world-point 1)
+         :mouse-screen-x (nth screen-point 0)
+         :mouse-screen-y (nth screen-point 1)))
+
+(defn draw-pointer-screen-anchor
+  "Return the current screen-space pointer anchor for keyboard zoom."
+  [state]
+  [(or (get state :mouse-screen-x)
+       (/ (or (get state :width) 0) 2.0))
+   (or (get state :mouse-screen-y)
+       (/ (or (get state :height) 0) 2.0))])
+
+(defn draw-screen-point->world-point
+  "Convert a screen POINT into world coordinates using STATE's viewport."
+  [state point]
+  (let [zoom (draw-view-zoom state)
+        vx (draw-view-x state)
+        vy (draw-view-y state)
+        ax (draw-view-anchor-x state)
+        ay (draw-view-anchor-y state)]
+    [(+ vx (/ (- (nth point 0) ax) zoom))
+     (+ vy (/ (- (nth point 1) ay) zoom))
+     (draw-point-pressure point)]))
+
+(defn draw-world-point->screen-point
+  "Convert a world POINT into screen coordinates using STATE's viewport."
+  [state point]
+  (let [zoom (draw-view-zoom state)
+        vx (draw-view-x state)
+        vy (draw-view-y state)
+        ax (draw-view-anchor-x state)
+        ay (draw-view-anchor-y state)]
+    [(draw-exact-int (math/round (+ (* (- (nth point 0) vx) zoom)
+                                     ax)))
+     (draw-exact-int (math/round (+ (* (- (nth point 1) vy) zoom)
+                                     ay)))
+     (draw-point-pressure point)]))
+
+(defn draw-point-screen-size
+  "Scale BASE-SIZE by POINT pressure in screen space."
+  [state point base-size]
+  (let [scaled (draw-exact-int (math/ceiling (* base-size
+                                                 (draw-point-pressure point))))]
+    (if (> scaled 0)
+      scaled
+      1)))
+
+(defn draw-world-rect->screen-rect
+  "Convert a world-space rectangle to a visible screen-space rectangle."
+  [state x y width height]
+  (let [left-world (min x (+ x width))
+        right-world (max x (+ x width))
+        top-world (min y (+ y height))
+        bottom-world (max y (+ y height))
+        top-left (draw-world-point->screen-point state
+                                                 [left-world top-world 1.0])
+        bottom-right (draw-world-point->screen-point state
+                                                     [right-world bottom-world 1.0])
+        raw-left (nth top-left 0)
+        raw-right (nth bottom-right 0)
+        raw-top (nth top-left 1)
+        raw-bottom (nth bottom-right 1)
+        left (draw-exact-int (math/floor (min raw-left raw-right)))
+        right (draw-exact-int (math/ceiling (max raw-left raw-right)))
+        top (draw-exact-int (math/floor (min raw-top raw-bottom)))
+        bottom (draw-exact-int (math/ceiling (max raw-top raw-bottom)))
+        visible-right (if (> right left) right (+ left 1))
+        visible-bottom (if (> bottom top) bottom (+ top 1))]
+    {:x left
+     :y top
+     :width (- visible-right left)
+     :height (- visible-bottom top)
+     :right visible-right
+     :bottom visible-bottom}))
