@@ -1,0 +1,92 @@
+;; Focused draw logging probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-log-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-log-fail label expected actual)
+  (error (string-append "draw logging test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-log-assert-true label value)
+  (if value
+      (draw-log-pass label)
+      (draw-log-fail label "truthy value" (pr-str value))))
+
+(define (draw-log-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-log-pass label)
+      (draw-log-fail label expected actual)))
+
+(define (draw-log-assert-str-contains label hay needle)
+  (if (str/includes? hay needle)
+      (draw-log-pass label)
+      (draw-log-fail label needle hay)))
+
+(let [original-log *draw-log-path*
+      original-crash *draw-crash-path*
+      original-enabled *draw-log-enabled?*
+      log-path (fs/path (current-directory) "build" "cluck-draw-test.log")
+      crash-path (fs/path (current-directory) "build" "cluck-draw-crash-test.edn")]
+  (draw-set-log-path! log-path)
+  (draw-set-crash-path! crash-path)
+  (draw-enable-logging!)
+  (draw-clear-log!)
+  (if (fs/file? crash-path)
+    (fs/delete! crash-path)
+    false)
+  (draw-log-assert-num= "log starts empty"
+                        0
+                        (count (draw-log-lines)))
+  (draw-log-entry! :note {:hello "world"})
+  (draw-log-assert-num= "log writes one line"
+                        1
+                        (count (draw-log-lines)))
+  (draw-log-assert-str-contains "log line includes note kind"
+                                (first (draw-log-lines))
+                                ":kind :note")
+  (let [snapshot (draw-state-snapshot (default-state))]
+    (draw-log-assert-num= "snapshot brush size"
+                          2
+                          (get snapshot :brush-size))
+    (draw-log-assert-num= "snapshot strokes"
+                          0
+                          (get snapshot :strokes)))
+  (let [state (draw-apply-and-log-input-event!
+                (default-state)
+                {:kind :key-down
+                 :desc "SDL_EVENT_KEY_DOWN key=d"
+                 :key "d"}
+                :test)]
+    (draw-log-assert-str-contains "input log includes source"
+                                  (last (draw-log-lines))
+                                  ":source :test")
+    (draw-log-assert-true "input logging toggled debug"
+                          (get state :debug-panel?)))
+  (set! *draw-state* (default-state))
+  (draw-write-crash-report! "boom")
+  (draw-log-assert-true "crash report exists"
+                        (fs/file? crash-path))
+  (draw-log-assert-str-contains "crash report includes boom"
+                                (fs/slurp crash-path)
+                                "boom")
+  (draw-disable-logging!)
+  (draw-log-entry! :disabled {:ignored true})
+  (draw-log-assert-num= "disabled logging stops new lines"
+                        2
+                        (count (draw-log-lines)))
+  (if (fs/file? log-path)
+    (fs/delete! log-path)
+    false)
+  (if (fs/file? crash-path)
+    (fs/delete! crash-path)
+    false)
+  (set! *draw-log-path* original-log)
+  (set! *draw-crash-path* original-crash)
+  (set! *draw-log-enabled?* original-enabled))

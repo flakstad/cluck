@@ -279,6 +279,8 @@ shortcuts are:
 - `shift`+drag pans the viewport
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
+- draw session logging writes to `build/cluck-draw.log`
+- crashes write a snapshot to `build/cluck-draw-crash.edn`
 State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
