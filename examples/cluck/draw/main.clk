@@ -27,6 +27,7 @@
 (def *draw-canvas-ready?* false)
 (def *draw-preview-ready?* false)
 (def *draw-brush-ready?* false)
+(def *draw-preview-point-count* 0)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
 (def *draw-current-stroke-color* false)
 
@@ -129,6 +130,11 @@
   "Disable draw session logging."
   []
   (set! *draw-log-enabled?* false))
+
+(defn draw-reset-preview-sync!
+  "Forget any cached active-stroke preview progress."
+  []
+  (set! *draw-preview-point-count* 0))
 
 (defn draw-set-log-path!
   "Override the draw session log path."
@@ -244,6 +250,7 @@
   "Install STATE and refresh the cached canvas if needed."
   [state]
   (set! *draw-state* (assoc state :canvas-dirty? true))
+  (draw-reset-preview-sync!)
   (draw-clear-preview!)
   (draw-log-entry! :set-state {:state (draw-state-snapshot *draw-state*)})
   (if *draw-running?*
@@ -881,6 +888,7 @@
     (if *draw-context*
       (set! *draw-context* (dissoc *draw-context* :preview :preview-width :preview-height)))
     (set! *draw-preview-ready?* false)
+    (draw-reset-preview-sync!)
     nil))
 
 (defn draw-clear-canvas!
@@ -1195,6 +1203,7 @@
 (defn draw-cancel-active-stroke-core!
   "Cancel the active stroke without recording history."
   [state]
+  (draw-reset-preview-sync!)
   (draw-clear-preview!)
   (let [state (assoc state
                      :pointer-down? false
@@ -1211,9 +1220,6 @@
                      (assoc state
                             :window-focused? false
                             :canvas-dirty? true))]
-    (if *draw-context*
-      (sdl/stop-text-input! (get *draw-context* :window))
-      nil)
     (draw-log-entry! :focus-lost {:state (draw-state-snapshot next-state)})
     next-state))
 
@@ -1224,9 +1230,6 @@
                           :window-focused? true
                           :canvas-dirty? true
                           :pen-pressure 1.0)]
-    (if *draw-context*
-      (sdl/start-text-input! (get *draw-context* :window))
-      nil)
     (draw-log-entry! :focus-gained {:state (draw-state-snapshot next-state)})
     next-state))
 
@@ -1298,19 +1301,17 @@
   "Start a new stroke from DESC."
   [state desc]
   (let [point (draw-event-point state desc)]
-      (let [state (draw-push-history! state)
-            stroke (draw-stroke-record [point]
-                                       (draw-stroke-color state)
-                                       (get state :brush-size))
-            next-state (assoc state
-                              :pointer-down? true
-                              :active-stroke stroke
-                              :mouse-x (nth point 0)
-                              :mouse-y (nth point 1))]
+    (let [state (draw-push-history! state)
+          stroke (draw-stroke-record [point]
+                                     (draw-stroke-color state)
+                                     (get state :brush-size))
+          next-state (assoc state
+                            :pointer-down? true
+                            :active-stroke stroke
+                            :mouse-x (nth point 0)
+                            :mouse-y (nth point 1))]
+      (draw-reset-preview-sync!)
       (draw-clear-preview!)
-      (if (draw-preview-ready?)
-        (draw-preview-stroke! next-state stroke)
-        nil)
       (draw-log-entry! :stroke-start
                        {:point point
                         :state (draw-state-snapshot next-state)})
@@ -1322,10 +1323,7 @@
   (let [point (draw-event-point state desc)
         stroke (get state :active-stroke)]
     (if stroke
-        (let [points (get stroke :points)
-            previous (last points)
-            next-points (draw-append-stroke-point state stroke point)
-            appended? (> (count next-points) (count points))
+      (let [next-points (draw-append-stroke-point state stroke point)
             next-stroke (draw-stroke-record next-points
                                             (get stroke :color)
                                             (get stroke :size))
@@ -1333,13 +1331,6 @@
                               :mouse-x (nth point 0)
                               :mouse-y (nth point 1)
                               :active-stroke next-stroke)]
-        (if (and appended? (draw-preview-ready?))
-          (draw-preview-segment! next-state
-                                 previous
-                                 point
-                                 (get stroke :size)
-                                 (get stroke :color))
-          nil)
         next-state)
       (draw-start-stroke state desc))))
 
@@ -1364,6 +1355,7 @@
                            {:point point
                             :points (count (get finished :points))
                             :state (draw-state-snapshot next-state)})
+          (draw-reset-preview-sync!)
           (draw-clear-preview!)
           (if (draw-canvas-ready?)
             (draw-commit-stroke! next-state finished)
@@ -2045,6 +2037,60 @@
           (draw-render-stroke-segment! renderer state previous point size)))
       nil)))
 
+(defn draw-sync-preview!
+  "Render only the missing active-stroke segments into the preview texture."
+  [state]
+  (let [active (get state :active-stroke)]
+    (if (and active (draw-preview-ready?))
+      (let [points (get active :points)
+            total (count points)
+            rendered (if (and (integer? *draw-preview-point-count*)
+                              (>= *draw-preview-point-count* 0)
+                              (<= *draw-preview-point-count* total))
+                       *draw-preview-point-count*
+                       0)]
+        (if (= rendered 0)
+          (begin
+            (draw-clear-preview!)
+            (if (> total 0)
+              (draw-with-preview!
+                (lambda (renderer)
+                  (draw-with-stroke-color (get active :color)
+                    (lambda ()
+                      (draw-render-stroke-point! renderer
+                                                 state
+                                                 (first points)
+                                                 (get active :size))))))
+              nil)
+            (set! *draw-preview-point-count* (if (> total 0) 1 0)))
+          nil)
+        (if (< *draw-preview-point-count* total)
+          (draw-with-preview!
+            (lambda (renderer)
+              (draw-with-stroke-color (get active :color)
+                (lambda ()
+                  (let [previous (nth points (- *draw-preview-point-count* 1))
+                        remaining (drop *draw-preview-point-count* points)]
+                    (reduce (fn [prior point]
+                              (begin
+                                (draw-render-stroke-segment! renderer
+                                                             state
+                                                             prior
+                                                             point
+                                                             (get active :size))
+                                point))
+                            previous
+                            remaining))))))
+          nil)
+        (set! *draw-preview-point-count* total)
+        true)
+      (begin
+        (if (> *draw-preview-point-count* 0)
+          (draw-clear-preview!)
+          nil)
+        (draw-reset-preview-sync!)
+        false))))
+
 (defn draw-render-strokes!
   "Render all finished strokes and the active stroke."
   [ctx state]
@@ -2070,6 +2116,7 @@
         active (get state :active-stroke)]
     (if (draw-canvas-ready?)
       (begin
+        (draw-sync-preview! state)
         (sdl/render-texture! renderer canvas)
         (if (and active (draw-preview-ready?))
           (sdl/render-texture! renderer preview)
@@ -2274,8 +2321,8 @@
               (if (draw-canvas-ready?)
                 (draw-rebuild-canvas! state)
                 nil)
+              (draw-reset-preview-sync!)
               (draw-clear-preview!)
-              (sdl/start-text-input! (get *draw-context* :window))
               (sync-window-title!)
               ctx))))))))
 
@@ -2291,7 +2338,6 @@
       (draw-release-brush-texture!)
       (if *draw-context*
         (begin
-          (sdl/stop-text-input! (get *draw-context* :window))
           (sdl/close-context! *draw-context*)
           (set! *draw-context* nil)))
       (set! *draw-thread* nil)
