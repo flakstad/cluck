@@ -507,6 +507,45 @@
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
+               [{:kind :arrow
+                 :start [10.0 20.0 1.0]
+                 :end [40.0 60.0 1.0]
+                 :color [255 255 255]
+                 :size 2}])
+        selected (assoc base :selection [1])
+        handle (draw-find-selection-handle selected
+                                           (draw-world-point->screen-point selected
+                                                                           [10.0 20.0 1.0]))
+        resizing (draw-start-selection-resize selected
+                                              [10.0 20.0 1.0]
+                                              [10.0 20.0]
+                                              :mouse
+                                              :start)
+        moved (draw-extend-selection-resize resizing
+                                            [5.0 15.0 1.0]
+                                            [5.0 15.0])
+        finished (draw-finish-selection-resize moved
+                                               [5.0 15.0 1.0]
+                                               [5.0 15.0])
+        resized-arrow (first (get finished :elements))
+        restored (first (get (draw-undo-stroke-core! finished) :elements))]
+    (draw-tools-assert-str= "selection handle hits arrow start"
+                            ":start"
+                            (pr-str handle))
+    (draw-tools-assert-str= "selection resize moves arrow start"
+                            "[5.0 15.0 1.0]"
+                            (pr-str (get resized-arrow :start)))
+    (draw-tools-assert-str= "selection resize keeps arrow end"
+                            "[40.0 60.0 1.0]"
+                            (pr-str (get resized-arrow :end)))
+    (draw-tools-assert-false "selection resize clears on finish for arrow"
+                             (get finished :active-selection-resize))
+    (draw-tools-assert-str= "undo restores arrow start after handle drag"
+                            "[10.0 20.0 1.0]"
+                            (pr-str (get restored :start))))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
                [{:kind :frame
                  :x 10.0
                  :y 20.0

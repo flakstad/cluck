@@ -58,6 +58,22 @@
                          (pr-str (draw-event-point state
                                                   "SDL_EVENT_MOUSE_MOTION x=14.0 y=24.0"))))
 
+(let [state (assoc (default-state)
+                   :view-x 100.0
+                   :view-y 200.0
+                   :view-anchor-x 320.0
+                   :view-anchor-y 180.0
+                   :zoom 4.0)
+      world [105.0 203.0 1.0]
+      screen (draw-world-point->screen-point state world)
+      roundtrip (draw-screen-point->world-point state screen)]
+  (draw-view-assert-str= "anchored view converts world to screen"
+                         "[340 192 1.0]"
+                         (pr-str screen))
+  (draw-view-assert-str= "anchored view roundtrip keeps world point"
+                         (pr-str world)
+                         (pr-str roundtrip)))
+
 (let [screen-rect (draw-world-rect->screen-rect
                     (assoc (default-state)
                            :zoom 0.05)
@@ -78,6 +94,12 @@
       zoomed (draw-handle-view-key! state "=")]
   (draw-view-assert-true "ctrl plus changes zoom"
                          (> (draw-view-zoom zoomed) 1.0))
+  (draw-view-assert-num= "ctrl plus stores zoom anchor x"
+                         100.0
+                         (draw-view-anchor-x zoomed))
+  (draw-view-assert-num= "ctrl plus stores zoom anchor y"
+                         50.0
+                         (draw-view-anchor-y zoomed))
   (draw-view-assert-str= "ctrl plus keeps pointer anchored"
                          "[100 50 1.0]"
                          (pr-str (draw-world-point->screen-point zoomed anchor))))
@@ -133,6 +155,22 @@
                          "[400 280 1.0]"
                          (pr-str (draw-world-point->screen-point zoom-c world))))
 
+(let [base (assoc (default-state)
+                  :view-x 1234.0
+                  :view-y -5678.0
+                  :view-anchor-x 300.0
+                  :view-anchor-y 200.0
+                  :zoom 3.0)
+      world (draw-screen-point->world-point base [412.0 256.0 1.0])
+      zoom-a (draw-zoom-at-core! base 4.0 412.0 256.0)
+      zoom-b (draw-zoom-at-core! zoom-a -2.0 412.0 256.0)]
+  (draw-view-assert-str= "anchored repeated zoom keeps world under cursor after zoom a"
+                         "[412 256 1.0]"
+                         (pr-str (draw-world-point->screen-point zoom-a world)))
+  (draw-view-assert-str= "anchored repeated zoom keeps world under cursor after zoom b"
+                         "[412 256 1.0]"
+                         (pr-str (draw-world-point->screen-point zoom-b world))))
+
 (let [panning (draw-pan-core! (assoc (default-state)
                                      :panning? true
                                      :pan-last-x 10.0
@@ -146,6 +184,23 @@
                          (draw-view-x panning))
   (draw-view-assert-num= "pan drag updates view-y"
                          18.0
+                         (draw-view-y panning)))
+
+(let [panning (draw-pan-core! (assoc (default-state)
+                                     :panning? true
+                                     :pan-last-x 10.0
+                                     :pan-last-y 20.0
+                                     :view-x 100.0
+                                     :view-y 200.0
+                                     :view-anchor-x 320.0
+                                     :view-anchor-y 180.0
+                                     :zoom 4.0)
+                              [26.0 32.0])]
+  (draw-view-assert-num= "anchored pan drag updates view-x"
+                         96.0
+                         (draw-view-x panning))
+  (draw-view-assert-num= "anchored pan drag updates view-y"
+                         197.0
                          (draw-view-y panning)))
 
 (let [state (assoc (default-state)

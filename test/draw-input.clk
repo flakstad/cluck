@@ -131,6 +131,20 @@
   (draw-input-assert-true "tool panel selection lines mention rotate handle"
                           (draw-input-has-line? lines "handles: corners resize, top rotates")))
 
+(let [state (assoc (draw-sync-elements
+                     (draw-set-tool-core! (default-state) :select)
+                     [{:kind :arrow
+                       :start [10.0 20.0 1.0]
+                       :end [40.0 60.0 1.0]
+                       :color [255 255 255]
+                       :size 2}])
+                    :selection [1])
+      lines (draw-tool-panel-selection-lines state)]
+  (draw-input-assert-true "tool panel selection lines mention arrow move"
+                          (draw-input-has-line? lines "actions: move arrow"))
+  (draw-input-assert-true "tool panel selection lines mention arrow handles"
+                          (draw-input-has-line? lines "handles: drag endpoints")))
+
 (let [mouse-point (draw-event-point (default-state)
                                     "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")]
   (draw-input-assert-str= "mouse point pressure defaults to 1"
@@ -250,6 +264,79 @@
   (draw-input-assert-true "ctrl plus zooms"
                           (> (draw-view-zoom zoomed) 1.0)))
 
+(let [base (assoc (default-state)
+                  :mouse-screen-x 320.0
+                  :mouse-screen-y 180.0)
+      zoomed (draw-input-copy-state
+               (draw-apply-input-event! base
+                                        {:kind :key-down
+                                         :key "="
+                                         :desc "SDL_EVENT_KEY_DOWN key=="
+                                         :ctrl? true}))
+      space-down (draw-input-copy-state
+                   (draw-apply-input-event! zoomed
+                                            {:kind :key-down
+                                             :key "Space"
+                                             :desc "SDL_EVENT_KEY_DOWN key=Space"
+                                             :ctrl? false}))
+      panning (draw-input-copy-state
+                (draw-apply-input-event! space-down
+                                         {:kind :mouse-down
+                                          :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=320.0 y=180.0"
+                                          :mouse-x 320.0
+                                          :mouse-y 180.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      dragged (draw-input-copy-state
+                (draw-apply-input-event! panning
+                                         {:kind :mouse-motion
+                                          :desc "SDL_EVENT_MOUSE_MOTION x=360.0 y=210.0"
+                                          :mouse-x 360.0
+                                          :mouse-y 210.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      pan-finished (draw-input-copy-state
+                     (draw-apply-input-event! dragged
+                                              {:kind :mouse-up
+                                               :desc "SDL_EVENT_MOUSE_BUTTON_UP x=360.0 y=210.0"
+                                               :mouse-x 360.0
+                                               :mouse-y 210.0
+                                               :pressure 1.0
+                                               :shift? false}))
+      ready (draw-input-copy-state
+              (draw-apply-input-event! pan-finished
+                                       {:kind :key-up
+                                        :key "Space"
+                                        :desc "SDL_EVENT_KEY_UP key=Space"
+                                        :ctrl? false}))
+      start-screen [460.0 260.0 1.0]
+      end-screen [520.0 320.0 1.0]
+      expected-start (draw-screen-point->world-point ready start-screen)
+      expected-end (draw-screen-point->world-point ready end-screen)
+      started (draw-input-copy-state
+                (draw-apply-input-event! ready
+                                         {:kind :mouse-down
+                                          :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=460.0 y=260.0"
+                                          :mouse-x 460.0
+                                          :mouse-y 260.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! started
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP x=520.0 y=320.0"
+                                           :mouse-x 520.0
+                                           :mouse-y 320.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      stroke (first (get finished :strokes))]
+  (draw-input-assert-str= "zoom pan draw keeps transformed start point"
+                          (pr-str expected-start)
+                          (pr-str (first (get stroke :points))))
+  (draw-input-assert-str= "zoom pan draw keeps transformed end point"
+                          (pr-str expected-end)
+                          (pr-str (last (get stroke :points)))))
+
 (let [panel-on (draw-apply-input-event! (default-state)
                                         {:kind :key-down
                                          :key "Tab"
@@ -271,6 +358,31 @@
   (draw-input-assert-str= "tool panel click selects rectangle tool"
                           "rectangle"
                           (draw-tool-mode clicked)))
+
+(let [base (assoc (default-state) :tool-panel? true :title "Panel Button Save")
+      save-button (nth (draw-tool-panel-buttons base) 5)
+      load-button (nth (draw-tool-panel-buttons base) 6)
+      saved (draw-input-copy-state
+              (draw-apply-input-event! base
+                                       {:kind :mouse-down
+                                        :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel-save"
+                                        :mouse-x (+ (get save-button :x) 4)
+                                        :mouse-y (+ (get save-button :y) 4)
+                                        :pressure 1.0
+                                        :shift? false}))
+      loaded (draw-input-copy-state
+               (draw-apply-input-event! (assoc saved :title "Mutated")
+                                        {:kind :mouse-down
+                                         :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel-load"
+                                         :mouse-x (+ (get load-button :x) 4)
+                                         :mouse-y (+ (get load-button :y) 4)
+                                         :pressure 1.0
+                                         :shift? false}))]
+  (draw-input-assert-true "tool panel save button writes state file"
+                          (fs/exists? (draw-state-file-path)))
+  (draw-input-assert-str= "tool panel load button restores saved title"
+                          "Panel Button Save"
+                          (get loaded :title)))
 
 (let [path (draw-state-file-path)
       saved (draw-apply-input-event! (assoc (default-state) :title "Panel Save")
@@ -337,6 +449,19 @@
                                        [(+ (get rect :x) 2.0)
                                         (+ (get rect :y) 2.0)])]
   (draw-input-assert-str= "rotation handle uses crosshair cursor"
+                          "crosshair"
+                          (name (draw-desired-cursor-kind hovered))))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :arrow
+               :start [10.0 20.0 1.0]
+               :end [40.0 60.0 1.0]
+               :color [255 255 255]
+               :size 2}])
+      selected (assoc base :selection [1])
+      hovered (draw-sync-pointer-state selected [10.0 20.0 1.0] [10.0 20.0])]
+  (draw-input-assert-str= "arrow handle uses crosshair cursor"
                           "crosshair"
                           (name (draw-desired-cursor-kind hovered))))
 
@@ -462,6 +587,50 @@
                           50.0
                           (get box :height))
   (draw-input-assert-false "selection handle mouse-up clears resize"
+                           (get finished :active-selection-resize)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :arrow
+               :start [10.0 20.0 1.0]
+               :end [40.0 60.0 1.0]
+               :color [255 255 255]
+               :size 2}])
+      selected (assoc base :selection [1])
+      resize-start (draw-input-copy-state
+                     (draw-apply-input-event! selected
+                                              {:kind :mouse-down
+                                               :desc "SDL_EVENT_MOUSE_BUTTON_DOWN arrow-start"
+                                               :mouse-x 10.0
+                                               :mouse-y 20.0
+                                               :pressure 1.0
+                                               :shift? false}))
+      resized (draw-input-copy-state
+                (draw-apply-input-event! resize-start
+                                         {:kind :mouse-motion
+                                          :desc "SDL_EVENT_MOUSE_MOTION arrow-start"
+                                          :mouse-x 5.0
+                                          :mouse-y 15.0
+                                          :pressure 1.0
+                                          :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! resized
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP arrow-start"
+                                           :mouse-x 5.0
+                                           :mouse-y 15.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      arrow (first (get finished :elements))]
+  (draw-input-assert-true "arrow handle mouse-down starts resize"
+                          (get resize-start :active-selection-resize))
+  (draw-input-assert-str= "arrow handle drag updates start"
+                          "[5.0 15.0 1.0]"
+                          (pr-str (get arrow :start)))
+  (draw-input-assert-str= "arrow handle drag keeps end"
+                          "[40.0 60.0 1.0]"
+                          (pr-str (get arrow :end)))
+  (draw-input-assert-false "arrow handle mouse-up clears resize"
                            (get finished :active-selection-resize)))
 
 (let [base (draw-sync-elements
