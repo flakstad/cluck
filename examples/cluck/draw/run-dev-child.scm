@@ -1,0 +1,30 @@
+(import (chicken file)
+        (chicken load)
+        (chicken process-context))
+
+(define (script-root)
+  (let loop ((i (- (string-length (program-name)) 1)))
+    (if (< i 0)
+        (string-append (current-directory) "/")
+        (if (char=? (string-ref (program-name) i) #\/)
+            (substring (program-name) 0 (+ i 1))
+            (loop (- i 1))))))
+
+(define (append-bootstrap-log path line)
+  (handle-exceptions _ #f
+    (with-output-to-file path
+      (lambda ()
+        (display line)
+        (newline))
+      #:append)))
+
+(let ((root (script-root)))
+  (append-bootstrap-log (string-append root "../../build/cluck-draw-child.log")
+                        "child-bootstrap: enter run-dev-child.scm")
+  (load (string-append root "../../../src/cluck-init.scm"))
+  (append-bootstrap-log (string-append root "../../build/cluck-draw-child.log")
+                        "child-bootstrap: loaded cluck-init.scm")
+  (load-file (string-append root "dev.clk"))
+  (append-bootstrap-log (string-append root "../../build/cluck-draw-child.log")
+                        "child-bootstrap: loaded dev.clk")
+  (draw-child-main))

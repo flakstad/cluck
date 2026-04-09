@@ -26,6 +26,7 @@
     (create-directory (string-append root "../build")))
   (load (string-append root "../src/cluck-init.scm"))
   (load-file (string-append root "../examples/cluck/draw/dev.clk"))
+  (draw-disable-supervision!)
   (load-file (string-append root "draw-replay-script.clk"))
   (let ((args (command-line-arguments))
         (rounds 1)

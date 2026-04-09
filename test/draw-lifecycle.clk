@@ -20,6 +20,7 @@
       (draw-life-fail label "truthy value" (pr-str value))))
 
 (draw-life-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
+(draw-disable-supervision!)
 (draw-life-assert-true "start-dev! opens a context" (start-dev!))
 (draw-life-assert-true "current-state exists" (current-state))
 (draw-life-assert-true "undo while running" (draw-undo-stroke! (current-state)))

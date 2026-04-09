@@ -1,0 +1,132 @@
+;; Focused draw logging probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-log-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-log-fail label expected actual)
+  (error (string-append "draw logging test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (str actual))))
+
+(define (draw-log-assert-true label value)
+  (if value
+      (draw-log-pass label)
+      (draw-log-fail label "truthy value" (pr-str value))))
+
+(define (draw-log-assert-num= label expected actual)
+  (if (= expected actual)
+      (draw-log-pass label)
+      (draw-log-fail label expected actual)))
+
+(define (draw-log-assert-str-contains label hay needle)
+  (if (str/includes? hay needle)
+      (draw-log-pass label)
+      (draw-log-fail label needle hay)))
+
+(let [original-log *draw-log-path*
+      original-crash *draw-crash-path*
+      original-heartbeat *draw-heartbeat-path*
+      original-stall *draw-stall-path*
+      original-sample *draw-stall-sample-path*
+      original-watchdog *draw-watchdog-enabled?*
+      original-enabled *draw-log-enabled?*
+      log-path (fs/path (current-directory) "build" "cluck-draw-test.log")
+      crash-path (fs/path (current-directory) "build" "cluck-draw-crash-test.edn")
+      heartbeat-path (fs/path (current-directory) "build" "cluck-draw-heartbeat-test.edn")
+      stall-path (fs/path (current-directory) "build" "cluck-draw-stall-test.edn")
+      sample-path (fs/path (current-directory) "build" "cluck-draw-stall-test.sample")]
+  (draw-set-log-path! log-path)
+  (draw-set-crash-path! crash-path)
+  (set! *draw-heartbeat-path* heartbeat-path)
+  (set! *draw-stall-path* stall-path)
+  (set! *draw-stall-sample-path* sample-path)
+  (draw-enable-watchdog!)
+  (draw-enable-logging!)
+  (draw-clear-log!)
+  (draw-clear-watchdog-files!)
+  (if (fs/file? crash-path)
+    (fs/delete! crash-path)
+    false)
+  (draw-log-assert-num= "log starts empty"
+                        0
+                        (count (draw-log-lines)))
+  (draw-log-entry! :note {:hello "world"})
+  (draw-log-assert-num= "log writes one line"
+                        1
+                        (count (draw-log-lines)))
+  (draw-log-assert-num= "log tail one line"
+                        1
+                        (count (draw-log-tail 1)))
+  (draw-log-assert-str-contains "log line includes note kind"
+                                (first (draw-log-lines))
+                                ":kind :note")
+  (let [snapshot (draw-state-snapshot (default-state))]
+    (draw-log-assert-num= "snapshot brush size"
+                          2
+                          (get snapshot :brush-size))
+    (draw-log-assert-num= "snapshot strokes"
+                          0
+                          (get snapshot :strokes)))
+  (draw-write-heartbeat! :test (default-state))
+  (draw-log-assert-true "heartbeat file exists"
+                        (fs/file? heartbeat-path))
+  (draw-log-assert-str-contains "heartbeat file includes phase"
+                                (fs/slurp heartbeat-path)
+                                ":phase :test")
+  (let [status (draw-watchdog-status)]
+    (draw-log-assert-true "watchdog enabled"
+                          (get status :enabled?))
+    (draw-log-assert-str-contains "watchdog heartbeat path"
+                                  (pr-str status)
+                                  "cluck-draw-heartbeat-test.edn"))
+  (let [state (draw-apply-and-log-input-event!
+                (default-state)
+                {:kind :key-down
+                 :desc "SDL_EVENT_KEY_DOWN key=d"
+                 :key "d"}
+                :test)]
+    (draw-log-assert-str-contains "input log includes source"
+                                  (last (draw-log-lines))
+                                  ":source :test")
+    (draw-log-assert-true "input logging toggled debug"
+                          (get state :debug-panel?)))
+  (set! *draw-state* (default-state))
+  (draw-write-crash-report! "boom")
+  (draw-log-assert-true "crash report exists"
+                        (fs/file? crash-path))
+  (draw-log-assert-str-contains "crash report includes boom"
+                                (fs/slurp crash-path)
+                                "boom")
+  (draw-disable-logging!)
+  (draw-log-entry! :disabled {:ignored true})
+  (draw-log-assert-num= "disabled logging stops new lines"
+                        2
+                        (count (draw-log-lines)))
+  (if (fs/file? log-path)
+    (fs/delete! log-path)
+    false)
+  (if (fs/file? crash-path)
+    (fs/delete! crash-path)
+    false)
+  (if (fs/file? heartbeat-path)
+    (fs/delete! heartbeat-path)
+    false)
+  (if (fs/file? stall-path)
+    (fs/delete! stall-path)
+    false)
+  (if (fs/file? sample-path)
+    (fs/delete! sample-path)
+    false)
+  (set! *draw-log-path* original-log)
+  (set! *draw-crash-path* original-crash)
+  (set! *draw-heartbeat-path* original-heartbeat)
+  (set! *draw-stall-path* original-stall)
+  (set! *draw-stall-sample-path* original-sample)
+  (set! *draw-watchdog-enabled?* original-watchdog)
+  (set! *draw-log-enabled?* original-enabled))

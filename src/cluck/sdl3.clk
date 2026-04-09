@@ -8,7 +8,8 @@
 
 (import (chicken foreign))
 
-(foreign-declare "#include <SDL3/SDL.h>
+(foreign-declare "#include <math.h>
+#include <SDL3/SDL.h>
 
 static SDL_Event cluck_last_event;
 static int cluck_have_last_event = 0;
@@ -212,6 +213,183 @@ static SDL_Texture *cluck_create_canvas_texture(SDL_Renderer *renderer, int widt
   return texture;
 }
 
+static SDL_Texture *cluck_create_soft_brush_texture(SDL_Renderer *renderer, int diameter, float hardness) {
+  if (diameter < 4) {
+    diameter = 4;
+  }
+  if (hardness < 0.0f) {
+    hardness = 0.0f;
+  }
+  if (hardness > 1.0f) {
+    hardness = 1.0f;
+  }
+
+  SDL_Surface *surface = SDL_CreateSurface(diameter, diameter, SDL_PIXELFORMAT_RGBA8888);
+  if (!surface) {
+    return NULL;
+  }
+
+  const SDL_PixelFormatDetails *details = SDL_GetPixelFormatDetails(surface->format);
+  SDL_Palette *palette = SDL_GetSurfacePalette(surface);
+  Uint32 *pixels = (Uint32 *)surface->pixels;
+  int pitch = surface->pitch / (int)sizeof(Uint32);
+  float radius = ((float)diameter - 1.0f) * 0.5f;
+  float inner = radius * hardness;
+  float outer = radius;
+
+  for (int y = 0; y < diameter; ++y) {
+    for (int x = 0; x < diameter; ++x) {
+      float dx = (float)x - radius;
+      float dy = (float)y - radius;
+      float dist = sqrtf(dx * dx + dy * dy);
+      Uint8 alpha = 0;
+
+      if (dist <= inner) {
+        alpha = 255;
+      }
+      else if (dist < outer) {
+        float t = (dist - inner) / (outer - inner);
+        float v = 1.0f - t;
+        alpha = (Uint8)(255.0f * v * v);
+      }
+
+      pixels[y * pitch + x] = SDL_MapRGBA(details, palette, 255, 255, 255, alpha);
+    }
+  }
+
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+  SDL_DestroySurface(surface);
+  if (texture) {
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+  }
+  return texture;
+}
+
+static SDL_Texture *cluck_create_soft_strip_texture(SDL_Renderer *renderer, int width, int height, float hardness) {
+  if (width < 4) {
+    width = 4;
+  }
+  if (height < 4) {
+    height = 4;
+  }
+  if (hardness < 0.0f) {
+    hardness = 0.0f;
+  }
+  if (hardness > 1.0f) {
+    hardness = 1.0f;
+  }
+
+  SDL_Surface *surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA8888);
+  if (!surface) {
+    return NULL;
+  }
+
+  const SDL_PixelFormatDetails *details = SDL_GetPixelFormatDetails(surface->format);
+  SDL_Palette *palette = SDL_GetSurfacePalette(surface);
+  Uint32 *pixels = (Uint32 *)surface->pixels;
+  int pitch = surface->pitch / (int)sizeof(Uint32);
+  float radius = ((float)height - 1.0f) * 0.5f;
+  float inner = radius * hardness;
+  float outer = radius;
+
+  for (int y = 0; y < height; ++y) {
+    float dy = fabsf((float)y - radius);
+    Uint8 alpha = 0;
+
+    if (dy <= inner) {
+      alpha = 255;
+    }
+    else if (dy < outer) {
+      float t = (dy - inner) / (outer - inner);
+      float v = 1.0f - t;
+      alpha = (Uint8)(255.0f * v * v);
+    }
+
+    Uint32 pixel = SDL_MapRGBA(details, palette, 255, 255, 255, alpha);
+    for (int x = 0; x < width; ++x) {
+      pixels[y * pitch + x] = pixel;
+    }
+  }
+
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+  SDL_DestroySurface(surface);
+  if (texture) {
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+  }
+  return texture;
+}
+
+static bool cluck_render_soft_segment(SDL_Renderer *renderer,
+                                      SDL_Texture *strip,
+                                      SDL_Texture *brush,
+                                      float x1,
+                                      float y1,
+                                      float size1,
+                                      Uint8 alpha1,
+                                      float x2,
+                                      float y2,
+                                      float size2,
+                                      Uint8 alpha2,
+                                      Uint8 r,
+                                      Uint8 g,
+                                      Uint8 b) {
+  if (!renderer || !strip || !brush) {
+    return false;
+  }
+
+  float dx = x2 - x1;
+  float dy = y2 - y1;
+  float length = sqrtf(dx * dx + dy * dy);
+  float start_size = size1 > 1.0f ? size1 : 1.0f;
+  float end_size = size2 > 1.0f ? size2 : 1.0f;
+  float thickness = (start_size + end_size) * 0.5f;
+  if (thickness < 1.0f) {
+    thickness = 1.0f;
+  }
+
+  SDL_SetTextureColorMod(strip, r, g, b);
+  SDL_SetTextureColorMod(brush, r, g, b);
+
+  if (length > 0.5f) {
+    SDL_FRect rect;
+    SDL_FPoint center;
+    double angle = atan2((double)dy, (double)dx) * (180.0 / M_PI);
+    Uint8 segment_alpha = (Uint8)(((int)alpha1 + (int)alpha2) / 2);
+
+    rect.x = x1;
+    rect.y = y1 - (thickness * 0.5f);
+    rect.w = length;
+    rect.h = thickness;
+    center.x = 0.0f;
+    center.y = thickness * 0.5f;
+
+    SDL_SetTextureAlphaMod(strip, segment_alpha);
+    SDL_RenderTextureRotated(renderer, strip, NULL, &rect, angle, &center, SDL_FLIP_NONE);
+  }
+
+  SDL_FRect start_rect;
+  start_rect.x = x1 - (start_size * 0.5f);
+  start_rect.y = y1 - (start_size * 0.5f);
+  start_rect.w = start_size;
+  start_rect.h = start_size;
+  SDL_SetTextureAlphaMod(brush, alpha1);
+  SDL_RenderTexture(renderer, brush, NULL, &start_rect);
+
+  if (length > 0.5f) {
+    SDL_FRect end_rect;
+    end_rect.x = x2 - (end_size * 0.5f);
+    end_rect.y = y2 - (end_size * 0.5f);
+    end_rect.w = end_size;
+    end_rect.h = end_size;
+    SDL_SetTextureAlphaMod(brush, alpha2);
+    SDL_RenderTexture(renderer, brush, NULL, &end_rect);
+  }
+
+  return true;
+}
+
 static bool cluck_set_render_target(SDL_Renderer *renderer, SDL_Texture *texture) {
   return SDL_SetRenderTarget(renderer, texture);
 }
@@ -222,6 +400,23 @@ static bool cluck_clear_render_target(SDL_Renderer *renderer) {
 
 static bool cluck_render_texture(SDL_Renderer *renderer, SDL_Texture *texture) {
   return SDL_RenderTexture(renderer, texture, NULL, NULL);
+}
+
+static bool cluck_render_texture_at(SDL_Renderer *renderer, SDL_Texture *texture, float x, float y, float w, float h) {
+  SDL_FRect rect;
+  rect.x = x;
+  rect.y = y;
+  rect.w = w;
+  rect.h = h;
+  return SDL_RenderTexture(renderer, texture, NULL, &rect);
+}
+
+static bool cluck_set_texture_color_mod(SDL_Texture *texture, Uint8 r, Uint8 g, Uint8 b) {
+  return SDL_SetTextureColorMod(texture, r, g, b);
+}
+
+static bool cluck_set_texture_alpha_mod(SDL_Texture *texture, Uint8 a) {
+  return SDL_SetTextureAlphaMod(texture, a);
 }
 
 static void cluck_destroy_texture(SDL_Texture *texture) {
@@ -370,6 +565,16 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
     "SDL_Texture *texture = cluck_create_canvas_texture((SDL_Renderer *)renderer, width, height);"
     "C_return(texture);"))
 
+(define sdl-create-soft-brush-texture
+  (foreign-lambda* c-pointer ((c-pointer renderer) (int diameter) (float hardness))
+    "SDL_Texture *texture = cluck_create_soft_brush_texture((SDL_Renderer *)renderer, diameter, hardness);"
+    "C_return(texture);"))
+
+(define sdl-create-soft-strip-texture
+  (foreign-lambda* c-pointer ((c-pointer renderer) (int width) (int height) (float hardness))
+    "SDL_Texture *texture = cluck_create_soft_strip_texture((SDL_Renderer *)renderer, width, height, hardness);"
+    "C_return(texture);"))
+
 (define sdl-set-render-target!
   (foreign-lambda* bool ((c-pointer renderer) (c-pointer texture))
     "C_return(cluck_set_render_target((SDL_Renderer *)renderer, (SDL_Texture *)texture));"))
@@ -381,6 +586,40 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (define sdl-render-texture!
   (foreign-lambda* bool ((c-pointer renderer) (c-pointer texture))
     "C_return(cluck_render_texture((SDL_Renderer *)renderer, (SDL_Texture *)texture));"))
+
+(define sdl-render-texture-at!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (c-pointer texture)
+                         (float x)
+                         (float y)
+                         (float w)
+                         (float h))
+    "C_return(cluck_render_texture_at((SDL_Renderer *)renderer, (SDL_Texture *)texture, x, y, w, h));"))
+
+(define sdl-render-soft-segment!
+  (foreign-lambda* bool ((c-pointer renderer)
+                         (c-pointer strip)
+                         (c-pointer brush)
+                         (float x1)
+                         (float y1)
+                         (float size1)
+                         (unsigned-int alpha1)
+                         (float x2)
+                         (float y2)
+                         (float size2)
+                         (unsigned-int alpha2)
+                         (unsigned-int r)
+                         (unsigned-int g)
+                         (unsigned-int b))
+    "C_return(cluck_render_soft_segment((SDL_Renderer *)renderer, (SDL_Texture *)strip, (SDL_Texture *)brush, x1, y1, size1, alpha1, x2, y2, size2, alpha2, r, g, b));"))
+
+(define sdl-set-texture-color-mod!
+  (foreign-lambda* bool ((c-pointer texture) (unsigned-int r) (unsigned-int g) (unsigned-int b))
+    "C_return(cluck_set_texture_color_mod((SDL_Texture *)texture, r, g, b));"))
+
+(define sdl-set-texture-alpha-mod!
+  (foreign-lambda* bool ((c-pointer texture) (unsigned-int a))
+    "C_return(cluck_set_texture_alpha_mod((SDL_Texture *)texture, a));"))
 
 (define sdl-destroy-texture!
   (foreign-lambda void "cluck_destroy_texture" c-pointer))
@@ -529,6 +768,14 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
   [renderer width height]
   (sdl-create-canvas-texture renderer width height))
 
+(defn create-soft-brush-texture
+  [renderer diameter hardness]
+  (sdl-create-soft-brush-texture renderer diameter hardness))
+
+(defn create-soft-strip-texture
+  [renderer width height hardness]
+  (sdl-create-soft-strip-texture renderer width height hardness))
+
 (defn set-render-target!
   [renderer texture]
   (sdl-set-render-target! renderer texture))
@@ -540,6 +787,35 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (defn render-texture!
   [renderer texture]
   (sdl-render-texture! renderer texture))
+
+(defn render-texture-at!
+  [renderer texture x y w h]
+  (sdl-render-texture-at! renderer texture x y w h))
+
+(defn render-soft-segment!
+  [renderer strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]
+  (sdl-render-soft-segment! renderer
+                            strip
+                            brush
+                            x1
+                            y1
+                            size1
+                            alpha1
+                            x2
+                            y2
+                            size2
+                            alpha2
+                            r
+                            g
+                            b))
+
+(defn set-texture-color-mod!
+  [texture r g b]
+  (sdl-set-texture-color-mod! texture r g b))
+
+(defn set-texture-alpha-mod!
+  [texture alpha]
+  (sdl-set-texture-alpha-mod! texture alpha))
 
 (defn destroy-texture!
   [texture]

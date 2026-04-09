@@ -7,12 +7,16 @@
   (:require [cluck.sdl3 :as sdl]
             [cluck.fs :as fs]
             [cluck.io :as io]
+            [cluck.process :as proc]
             [cluck.edn :as edn]
             [cluck.math :as math]
             [cluck.string :as str]))
 
 (import srfi-18
-        (chicken time))
+        (prefix (chicken file) cfile:)
+        (chicken time)
+        (prefix (chicken process) cproc:)
+        (prefix (chicken process-context posix) posix:))
 
 (def *draw-state* nil)
 (def *draw-context* nil)
@@ -20,13 +24,67 @@
 (def *draw-thread* nil)
 (def *draw-render-fn* nil)
 (def *draw-last-error* false)
+(def *draw-log-enabled?* true)
+(def *draw-log-path* false)
+(def *draw-crash-path* false)
+(def *draw-heartbeat-path* false)
+(def *draw-stall-path* false)
+(def *draw-stall-sample-path* false)
+(def *draw-watchdog-enabled?* true)
+(def *draw-watchdog-pid* false)
+(def *draw-last-heartbeat-at* 0)
+(def *draw-last-state-sync-at* 0)
+(def *draw-child-mode?* false)
+(def *draw-supervision-enabled?* true)
+(def *draw-supervisor-thread* nil)
+(def *draw-child-pid* false)
+(def *draw-control-seq* 0)
+(def *draw-last-control-seq* 0)
 (def *draw-canvas-ready?* false)
+(def *draw-preview-ready?* false)
+(def *draw-brush-ready?* false)
+(def *draw-strip-ready?* false)
+(def *draw-preview-point-count* 0)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
 (def *draw-current-stroke-color* false)
 
 (defn draw-recent-events-limit
   []
   8)
+
+(defn draw-debug-event-lines-limit
+  []
+  4)
+
+(defn draw-preview-segment-budget
+  "Return the maximum number of new stroke points to preview in one frame."
+  []
+  24)
+
+(defn draw-heartbeat-interval-ms
+  "Return the minimum spacing between heartbeat file writes."
+  []
+  250)
+
+(defn draw-watchdog-stale-ms
+  "Return how long the heartbeat may stay stale before a stall is recorded."
+  []
+  5000)
+
+(defn draw-watchdog-poll-ms
+  "Return how often the external stall watcher checks the heartbeat."
+  []
+  500)
+
+(defn draw-state-sync-interval-ms
+  "Return the minimum spacing between full state-file writes."
+  []
+  250)
+
+(defn draw-supervisor-poll-ms
+  "Return how often the parent supervisor checks the child."
+  []
+  1000)
 
 (defn init-video!
   []
@@ -76,6 +134,7 @@
    :mouse-x 0
    :mouse-y 0
    :pointer-down? false
+   :pointer-source false
    :panning? false
    :pan-last-x 0
    :pan-last-y 0
@@ -94,6 +153,66 @@
   []
   (fs/path (current-directory) "build" "cluck-draw-state.edn"))
 
+(defn draw-log-file-path
+  "Return the path used for the draw session log."
+  []
+  (or *draw-log-path*
+      (fs/path (current-directory) "build" "cluck-draw.log")))
+
+(defn draw-crash-file-path
+  "Return the path used for the latest crash snapshot."
+  []
+  (or *draw-crash-path*
+      (fs/path (current-directory) "build" "cluck-draw-crash.edn")))
+
+(defn draw-heartbeat-file-path
+  "Return the path used for draw loop heartbeats."
+  []
+  (or *draw-heartbeat-path*
+      (fs/path (current-directory) "build" "cluck-draw-heartbeat.edn")))
+
+(defn draw-stall-file-path
+  "Return the path used for detected draw stalls."
+  []
+  (or *draw-stall-path*
+      (fs/path (current-directory) "build" "cluck-draw-stall.edn")))
+
+(defn draw-stall-sample-file-path
+  "Return the path used for detected draw stall samples."
+  []
+  (or *draw-stall-sample-path*
+      (fs/path (current-directory) "build" "cluck-draw-stall.sample")))
+
+(defn draw-watchdog-script-path
+  "Return the watchdog script used to capture draw stalls."
+  []
+  (fs/path (current-directory) "examples" "cluck" "draw" "watchdog.sh"))
+
+(defn draw-child-runner-path
+  "Return the child-runner script used by the supervisor process."
+  []
+  (fs/path (current-directory) "examples" "cluck" "draw" "run-dev-child.scm"))
+
+(defn draw-control-file-path
+  "Return the control file used by the supervised child."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-control.edn"))
+
+(defn draw-child-stdout-path
+  "Return the file used for child stdout/stderr capture."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-child.log"))
+
+(defn draw-process-id
+  "Return the current process id."
+  []
+  (posix:current-process-id))
+
+(defn draw-wall-clock-ms
+  "Return the current wall clock in milliseconds."
+  []
+  (* (current-seconds) 1000))
+
 (defn draw-ensure-parent-directory!
   "Ensure PATH's parent directory exists before writing a save file."
   [path]
@@ -102,14 +221,375 @@
       (create-directory dir)
       dir)))
 
+(defn draw-write-file-atomic!
+  "Write TEXT to PATH using a temporary file and rename."
+  [path text]
+  (let [target (fs/path path)
+        temp (str target ".tmp")]
+    (draw-ensure-parent-directory! target)
+    (io/spit temp text)
+    (cfile:rename-file temp target true)
+    target))
+
+(defn draw-enable-logging!
+  "Enable draw session logging."
+  []
+  (set! *draw-log-enabled?* true))
+
+(defn draw-disable-logging!
+  "Disable draw session logging."
+  []
+  (set! *draw-log-enabled?* false))
+
+(defn draw-reset-preview-sync!
+  "Forget any cached active-stroke preview progress."
+  []
+  (set! *draw-preview-point-count* 0))
+
+(defn draw-set-log-path!
+  "Override the draw session log path."
+  [path]
+  (set! *draw-log-path* (fs/path path)))
+
+(defn draw-set-crash-path!
+  "Override the draw crash snapshot path."
+  [path]
+  (set! *draw-crash-path* (fs/path path)))
+
+(defn draw-enable-watchdog!
+  "Enable the external draw watchdog."
+  []
+  (set! *draw-watchdog-enabled?* true))
+
+(defn draw-disable-watchdog!
+  "Disable the external draw watchdog."
+  []
+  (set! *draw-watchdog-enabled?* false))
+
+(defn draw-watchdog-status
+  "Return the current watchdog configuration and paths."
+  []
+  {:enabled? *draw-watchdog-enabled?*
+   :pid *draw-watchdog-pid*
+   :heartbeat (draw-heartbeat-file-path)
+   :stall (draw-stall-file-path)
+   :sample (draw-stall-sample-file-path)
+   :stale-ms (draw-watchdog-stale-ms)
+   :poll-ms (draw-watchdog-poll-ms)})
+
+(defn draw-enable-supervision!
+  "Enable the supervised child-process development mode."
+  []
+  (set! *draw-supervision-enabled?* true))
+
+(defn draw-disable-supervision!
+  "Disable the supervised child-process development mode."
+  []
+  (set! *draw-supervision-enabled?* false))
+
+(defn draw-supervised-mode?
+  "Return true when the current process should supervise a child draw window."
+  []
+  (and *draw-supervision-enabled?*
+       (not *draw-child-mode?*)))
+
+(defn draw-supervisor-status
+  "Return the current supervised-child status."
+  []
+  {:enabled? (draw-supervised-mode?)
+   :child-mode? *draw-child-mode?*
+   :child-pid *draw-child-pid*
+   :supervisor-thread? (if *draw-supervisor-thread* true false)
+   :control-seq *draw-control-seq*
+   :last-control-seq *draw-last-control-seq*
+   :state-path (draw-state-file-path)
+   :control-path (draw-control-file-path)
+   :child-log (draw-child-stdout-path)
+   :heartbeat (draw-heartbeat-file-path)})
+
+(defn draw-clear-log!
+  "Delete the current draw log file when it exists."
+  []
+  (let [path (draw-log-file-path)]
+    (if (fs/file? path)
+      (fs/delete! path)
+      false)
+    path))
+
+(defn draw-clear-watchdog-files!
+  "Delete prior heartbeat and stall artifacts."
+  []
+  (let [paths [(draw-heartbeat-file-path)
+               (draw-stall-file-path)
+               (draw-stall-sample-file-path)]]
+    (let [heartbeat (first paths)
+          stall (nth paths 1)
+          sample (nth paths 2)]
+      (if (fs/file? heartbeat)
+        (fs/delete! heartbeat)
+        false)
+      (if (fs/file? stall)
+        (fs/delete! stall)
+        false)
+      (if (fs/file? sample)
+        (fs/delete! sample)
+        false))
+    paths))
+
+(defn draw-clear-control-file!
+  "Delete any prior supervised-child control file."
+  []
+  (let [path (draw-control-file-path)]
+    (if (fs/file? path)
+      (fs/delete! path)
+      false)
+    path))
+
+(defn draw-log-lines
+  "Return all current draw log lines."
+  []
+  (let [path (draw-log-file-path)]
+    (if (fs/file? path)
+      (io/read-lines path)
+      [])))
+
+(defn draw-log-tail
+  "Return the last COUNT draw log lines."
+  [n]
+  (let [lines (draw-log-lines)
+        total (count lines)
+        limit (if (and n (> n 0)) n 0)]
+    (if (> total limit)
+      (vec (drop (- total limit) lines))
+      (vec lines))))
+
+(defn draw-state-snapshot
+  "Return a compact diagnostic snapshot for STATE."
+  [state]
+  (if state
+    {:frame (get state :frame)
+     :mouse-x (or (get state :mouse-x) 0.0)
+     :mouse-y (or (get state :mouse-y) 0.0)
+     :view-x (draw-view-x state)
+     :view-y (draw-view-y state)
+     :zoom (draw-view-zoom state)
+     :pressure (or (get state :pen-pressure) 1.0)
+     :pointer-down? (get state :pointer-down?)
+     :panning? (get state :panning?)
+     :window-focused? (get state :window-focused?)
+     :tool (draw-tool-mode state)
+     :brush-size (get state :brush-size)
+     :strokes (count (get state :strokes))
+     :active-points (if (get state :active-stroke)
+                      (count (get (get state :active-stroke) :points))
+                      0)
+     :history (count (get state :history))
+     :canvas-dirty? (get state :canvas-dirty?)
+     :last-key (or (get state :last-key) "")
+     :last-text (or (get state :last-text) "")
+     :last-event (or (get state :last-event) "")}
+    nil))
+
+(defn draw-read-state-file
+  "Read the latest full draw state from disk when available."
+  []
+  (let [path (draw-state-file-path)]
+    (if (fs/file? path)
+      (handle-exceptions _ false
+        (edn/read-string (io/slurp path)))
+      false)))
+
+(defn draw-heartbeat-payload
+  "Return the external heartbeat payload for STATE at PHASE."
+  [phase state]
+  {:at (draw-wall-clock-ms)
+   :phase phase
+   :pid (draw-process-id)
+   :running? *draw-running?*
+   :watchdog? *draw-watchdog-enabled?*
+   :state (draw-state-snapshot state)})
+
+(defn draw-write-heartbeat!
+  "Write a heartbeat for PHASE and STATE when enough time has elapsed."
+  [phase state]
+  (let [now (draw-wall-clock-ms)
+        force? (or (equal? phase :start)
+                   (equal? phase :stop)
+                   (equal? phase :crash))
+        due? (or force?
+                 (= *draw-last-heartbeat-at* 0)
+                 (>= (- now *draw-last-heartbeat-at*)
+                     (draw-heartbeat-interval-ms)))]
+    (if due?
+      (let [path (draw-heartbeat-file-path)
+            payload (draw-heartbeat-payload phase state)]
+        (draw-write-file-atomic! path (pr-str payload))
+        (set! *draw-last-heartbeat-at* now)
+        payload)
+      false)))
+
+(defn draw-write-state-file!
+  "Write STATE to the shared state file when enough time has elapsed."
+  [state force?]
+  (let [now (draw-wall-clock-ms)
+        due? (or force?
+                 (= *draw-last-state-sync-at* 0)
+                 (>= (- now *draw-last-state-sync-at*)
+                     (draw-state-sync-interval-ms)))]
+    (if due?
+      (let [path (draw-state-file-path)]
+        (draw-write-file-atomic! path (pr-str state))
+        (set! *draw-last-state-sync-at* now)
+        path)
+      false)))
+
+(defn draw-log-entry!
+  "Append a diagnostic KIND/PAYLOAD entry to the draw session log."
+  [kind payload]
+  (if *draw-log-enabled?*
+    (let [path (draw-log-file-path)
+          entry {:at (current-process-milliseconds)
+                 :kind kind
+                 :payload payload}
+          line (pr-str entry)]
+      (draw-ensure-parent-directory! path)
+      (proc/system (format "printf '%%s\\n' %s >> %s"
+                           (proc/qs line)
+                           (proc/qs path)))
+      line)
+    nil))
+
+(defn draw-write-crash-report!
+  "Write a full crash report for EXN."
+  [exn]
+  (let [path (draw-crash-file-path)
+        report {:at (current-process-milliseconds)
+                :error (format "%s" exn)
+                :state (draw-state-snapshot *draw-state*)
+                :recent-events (if *draw-state* (get *draw-state* :recent-events) [])
+                :last-error (if *draw-last-error*
+                              (format "%s" *draw-last-error*)
+                              "")}]
+    (draw-write-file-atomic! path (pr-str report))
+    path))
+
+(defn draw-stop-watchdog!
+  "Stop the external draw watchdog when one is running."
+  []
+  (let [pid *draw-watchdog-pid*]
+    (set! *draw-watchdog-pid* false)
+    (if pid
+      (proc/system
+        (format "kill %s >/dev/null 2>&1 || true"
+                (proc/qs (str pid))))
+      0)
+    nil))
+
+(defn draw-child-alive?
+  "Return true when PID still exists."
+  [pid]
+  (and pid
+       (zero? (proc/system
+                (format "kill -0 %s >/dev/null 2>&1"
+                        (proc/qs (str pid)))))))
+
+(defn draw-write-control-command!
+  "Write an OP/PAYLOAD command for the supervised child."
+  [op payload]
+    (let [seq (+ *draw-control-seq* 1)
+        command {:seq seq
+                 :op op
+                 :payload payload}
+        path (draw-control-file-path)]
+    (set! *draw-control-seq* seq)
+    (draw-write-file-atomic! path (pr-str command))
+    command))
+
+(defn draw-read-control-command
+  "Read the latest supervised-child control command when present."
+  []
+  (let [path (draw-control-file-path)]
+    (if (fs/file? path)
+      (handle-exceptions _ false
+        (edn/read-string (io/slurp path)))
+      false)))
+
+(defn draw-control-command-pending
+  "Return the next unprocessed control command when present."
+  []
+  (let [command (draw-read-control-command)]
+    (if command
+      (let [seq (or (get command :seq) 0)]
+        (if (> seq *draw-last-control-seq*)
+          command
+          false))
+      false)))
+
+(defn draw-start-watchdog!
+  "Start the external draw watchdog if it is enabled."
+  []
+  (if (not *draw-watchdog-enabled?*)
+    nil
+    (let [script (draw-watchdog-script-path)]
+      (if (not (fs/file? script))
+        nil
+        (begin
+          (draw-stop-watchdog!)
+          (draw-write-heartbeat! :start *draw-state*)
+          (let [launcher
+                  (format "%s %s %s %s %s %s %s %s >/dev/null 2>&1 & echo $!"
+                          (proc/qs script)
+                          (proc/qs (str (draw-process-id)))
+                          (proc/qs (draw-heartbeat-file-path))
+                          (proc/qs (draw-stall-file-path))
+                          (proc/qs (draw-stall-sample-file-path))
+                          (proc/qs (draw-log-file-path))
+                          (proc/qs (str (draw-watchdog-stale-ms)))
+                          (proc/qs (str (draw-watchdog-poll-ms))))
+                command (format "/bin/sh -c %s"
+                                (proc/qs launcher))
+                result (proc/sh command)]
+            (if (zero? (get result :exit))
+              (let [pid-text (str/trim (get result :out))]
+                (if (str/blank? pid-text)
+                  nil
+                  (begin
+                    (set! *draw-watchdog-pid* (parse-long pid-text))
+                    *draw-watchdog-pid*)))
+              nil)))))))
+
+(defn draw-dump-state!
+  "Write the current full draw state to PATH, or the default state file."
+  [path]
+  (let [target (if path
+                 (fs/path path)
+                 (draw-state-file-path))]
+    (draw-write-file-atomic! target (pr-str (current-state)))
+    target))
+
+(defn dump-current-state!
+  "Write the current full draw state to the default dump file."
+  []
+  (draw-dump-state! false))
+
 (defn draw-set-state-core!
   "Install STATE and refresh the cached canvas if needed."
   [state]
-  (set! *draw-state* (assoc state :canvas-dirty? true))
-  (if *draw-running?*
-    nil
-    (draw-render-current!))
-  *draw-state*)
+  (let [next-state (assoc state :canvas-dirty? true)]
+    (if (draw-supervised-mode?)
+      (begin
+        (set! *draw-state* next-state)
+        (draw-write-control-command! :set-state next-state)
+        next-state)
+      (begin
+        (set! *draw-state* next-state)
+        (draw-reset-preview-sync!)
+        (draw-clear-preview!)
+        (draw-log-entry! :set-state {:state (draw-state-snapshot *draw-state*)})
+        (if *draw-running?*
+          nil
+          (draw-render-current!))
+        *draw-state*))))
 
 (defn draw-load-state-core!
   "Install STATE after loading it from disk."
@@ -188,7 +668,9 @@
   []
   (draw-with-lock
     (lambda ()
-      (draw-render-current!))))
+      (if (draw-supervised-mode?)
+        (draw-write-control-command! :redraw {:reason :repl})
+        (draw-render-current!)))))
 
 (defn draw-render-current!
   "Render the current state if the draw context is live."
@@ -196,6 +678,7 @@
   (if (and *draw-running?* *draw-context* *draw-state*)
     (let [state (draw-sync-canvas! *draw-state*)]
       (set! *draw-state* state)
+      (draw-ensure-preview! state)
       (sync-window-title!)
       (render-frame *draw-context* state)
       *draw-state*)
@@ -204,7 +687,10 @@
 (defn current-state
   "Return the current draw state."
   []
-  *draw-state*)
+  (if (draw-supervised-mode?)
+    (or (draw-read-state-file)
+        *draw-state*)
+    *draw-state*))
 
 (defn reset-state!
   "Reset the current draw state to the default."
@@ -227,7 +713,7 @@
     (lambda ()
       (let [save-path (fs/path path)]
         (draw-ensure-parent-directory! save-path)
-        (io/spit save-path (pr-str *draw-state*))
+        (io/spit save-path (pr-str (current-state)))
         save-path))))
 
 (defn save-canvas!
@@ -265,7 +751,7 @@
   (draw-with-lock
     (lambda ()
       (draw-ensure-parent-directory! path)
-      (io/spit path (pr-str *draw-state*))
+      (io/spit path (pr-str (current-state)))
       path)))
 
 (defn save-canvas!
@@ -302,22 +788,16 @@
   [title]
   (draw-with-lock
     (lambda ()
-      (set! *draw-state* (assoc *draw-state* :title title))
-      (if *draw-running?*
-        nil
-        (draw-render-current!))
-      *draw-state*)))
+      (draw-set-state-core! (assoc (or (current-state) (default-state))
+                                   :title title)))))
 
 (defn set-background!
   "Update the current background color to a [R G B] vector."
   [color]
   (draw-with-lock
     (lambda ()
-      (set! *draw-state* (assoc *draw-state* :background color))
-      (if *draw-running?*
-        nil
-        (draw-render-current!))
-      *draw-state*)))
+      (draw-set-state-core! (assoc (or (current-state) (default-state))
+                                   :background color)))))
 
 (defn set-render-fn!
   "Install a custom render function of (lambda [ctx state] ...)."
@@ -338,9 +818,13 @@
     (str/starts-with? desc "SDL_EVENT_QUIT") :quit
     (str/starts-with? desc "SDL_EVENT_WINDOW_CLOSE_REQUESTED") :quit
     (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_GAINED") :focus-gained
-    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_ENTER") :focus-gained
     (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_LOST") :focus-lost
-    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_LEAVE") :focus-lost
+    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_ENTER") :mouse-enter
+    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_LEAVE") :mouse-leave
+    (str/starts-with? desc "SDL_EVENT_FINGER_MOTION") :finger-motion
+    (str/starts-with? desc "SDL_EVENT_FINGER_DOWN") :finger-down
+    (str/starts-with? desc "SDL_EVENT_FINGER_UP") :finger-up
+    (str/starts-with? desc "SDL_EVENT_FINGER_CANCELED") :finger-canceled
     (str/starts-with? desc "SDL_EVENT_KEY_DOWN") :key-down
     (str/starts-with? desc "SDL_EVENT_KEY_UP") :key-up
     (str/starts-with? desc "SDL_EVENT_TEXT_INPUT") :text-input
@@ -366,6 +850,34 @@
       (vec (drop (- total limit) events))
       (vec events))))
 
+(defn draw-truncate-text
+  "Clamp TEXT to at most LIMIT characters for live debug rendering."
+  [text limit]
+  (let [text (or text "")
+        limit (if (and limit (> limit 4)) limit 4)]
+    (if (> (count text) limit)
+      (str (substring text 0 (- limit 3)) "...")
+      text)))
+
+(defn draw-compact-event-text
+  "Return a shorter event description suitable for the debug panel."
+  [text]
+  (draw-truncate-text text 88))
+
+(defn draw-truncate-text
+  "Clamp TEXT to at most LIMIT characters for live debug rendering."
+  [text limit]
+  (let [text (or text "")
+        limit (if (and limit (> limit 4)) limit 4)]
+    (if (> (count text) limit)
+      (str (substring text 0 (- limit 3)) "...")
+      text)))
+
+(defn draw-compact-event-text
+  "Return a shorter event description suitable for the debug panel."
+  [text]
+  (draw-truncate-text text 88))
+
 (defn draw-pen-event-kind?
   "Return true when KIND carries live pen pressure."
   [kind]
@@ -379,9 +891,15 @@
 (defn draw-event-pressure
   "Return the pen pressure for DESC when one is available."
   [state desc]
-  (if (draw-pen-event-kind? (draw-event-kind desc))
-    (or (get state :pen-pressure) 1.0)
-    1.0))
+  (let [kind (draw-event-kind desc)
+        live-pressure (sdl/event-pen-pressure)]
+    (if (draw-pen-event-kind? kind)
+      (if (draw-kind=? kind :pen-axis)
+        live-pressure
+        (or (get state :pen-pressure)
+            live-pressure
+            1.0))
+      1.0)))
 
 (defn draw-event-point
   "Return the [x y pressure] coordinate for DESC."
@@ -447,6 +965,7 @@
            :pan-last-x (nth screen-point 0)
            :pan-last-y (nth screen-point 1)
            :pointer-down? false
+           :pointer-source false
            :active-stroke false
            :mouse-x (nth world-point 0)
            :mouse-y (nth world-point 1)
@@ -485,6 +1004,7 @@
   (assoc state
          :panning? false
          :pointer-down? false
+         :pointer-source false
          :canvas-dirty? true))
 
 (defn draw-event-key-label
@@ -515,6 +1035,7 @@
   "Clear the last recorded draw error."
   []
   (set! *draw-last-error* false)
+  (draw-log-entry! :clear-error {:state (draw-state-snapshot *draw-state*)})
   false)
 
 (defn draw-with-stroke-color
@@ -534,13 +1055,179 @@
   []
   (if *draw-context*
     (get *draw-context* :canvas)
-    nil))
+    false))
 
 (defn draw-canvas-ready?
   "Return true when the cached canvas texture is available."
   []
   (and *draw-canvas-ready?*
        (sdl/pointer-ready? (draw-canvas))))
+
+(defn draw-preview
+  "Return the active-stroke preview texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :preview)
+    false))
+
+(defn draw-preview-ready?
+  "Return true when the active-stroke preview texture is available."
+  []
+  (and *draw-preview-ready?*
+       (sdl/pointer-ready? (draw-preview))))
+
+(defn draw-brush-texture
+  "Return the cached brush texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :brush-texture)
+    false))
+
+(defn draw-brush-texture-ready?
+  "Return true when the cached brush texture is available."
+  []
+  (and *draw-brush-ready?*
+       (sdl/pointer-ready? (draw-brush-texture))))
+
+(defn draw-strip-texture
+  "Return the cached strip texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :strip-texture)
+    false))
+
+(defn draw-strip-texture-ready?
+  "Return true when the cached strip texture is available."
+  []
+  (and *draw-strip-ready?*
+       (sdl/pointer-ready? (draw-strip-texture))))
+
+(defn draw-brush-texture-diameter
+  "Return the canonical brush stamp diameter."
+  []
+  128)
+
+(defn draw-brush-hardness
+  "Return the default brush hardness used by the stamp texture."
+  []
+  0.65)
+
+(defn draw-strip-texture-width
+  "Return the canonical width for the soft strip texture."
+  []
+  64)
+
+(defn draw-strip-texture-height
+  "Return the canonical height for the soft strip texture."
+  []
+  64)
+
+(defn draw-strip-hardness
+  "Return the default strip hardness used by the segment body texture."
+  []
+  0.75)
+
+(defn draw-ensure-brush-texture!
+  "Create or refresh the brush stamp texture."
+  [state]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        diameter (draw-brush-texture-diameter)
+        current (draw-brush-texture)
+        current-diameter (if *draw-context* (get *draw-context* :brush-texture-diameter) nil)]
+    (if (and (draw-brush-texture-ready?)
+             (= current-diameter diameter))
+      *draw-context*
+      (begin
+        (if (draw-brush-texture-ready?)
+          (begin
+            (sdl/destroy-texture! current)
+            (set! *draw-context*
+                  (dissoc *draw-context* :brush-texture :brush-texture-diameter))
+            (set! *draw-brush-ready?* false))
+          nil)
+        (if renderer
+          (let [texture (sdl/create-soft-brush-texture renderer
+                                                       diameter
+                                                       (draw-brush-hardness))]
+            (if texture
+              (let [ctx (assoc *draw-context*
+                               :brush-texture texture
+                               :brush-texture-diameter diameter)]
+                (set! *draw-context* ctx)
+                (set! *draw-brush-ready?* true)
+                ctx)
+              (begin
+                (set! *draw-brush-ready?* false)
+                *draw-context*)))
+          *draw-context*)))))
+
+(defn draw-release-brush-texture!
+  "Destroy the cached brush stamp texture and clear it from the draw context."
+  []
+  (let [brush (draw-brush-texture)]
+    (if (draw-brush-texture-ready?)
+      (sdl/destroy-texture! brush))
+    (if *draw-context*
+      (set! *draw-context* (dissoc *draw-context* :brush-texture :brush-texture-diameter)))
+    (set! *draw-brush-ready?* false)
+    nil))
+
+(defn draw-ensure-strip-texture!
+  "Create or refresh the strip texture used for stroke bodies."
+  [state]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        width (draw-strip-texture-width)
+        height (draw-strip-texture-height)
+        current (draw-strip-texture)
+        current-width (if *draw-context* (get *draw-context* :strip-texture-width) nil)
+        current-height (if *draw-context* (get *draw-context* :strip-texture-height) nil)]
+    (if (and (draw-strip-texture-ready?)
+             (= current-width width)
+             (= current-height height))
+      *draw-context*
+      (begin
+        (if (draw-strip-texture-ready?)
+          (begin
+            (sdl/destroy-texture! current)
+            (set! *draw-context*
+                  (dissoc *draw-context*
+                          :strip-texture
+                          :strip-texture-width
+                          :strip-texture-height))
+            (set! *draw-strip-ready?* false))
+          nil)
+        (if renderer
+          (let [texture (sdl/create-soft-strip-texture renderer
+                                                       width
+                                                       height
+                                                       (draw-strip-hardness))]
+            (if texture
+              (let [ctx (assoc *draw-context*
+                               :strip-texture texture
+                               :strip-texture-width width
+                               :strip-texture-height height)]
+                (set! *draw-context* ctx)
+                (set! *draw-strip-ready?* true)
+                ctx)
+              (begin
+                (set! *draw-strip-ready?* false)
+                *draw-context*)))
+          *draw-context*)))))
+
+(defn draw-release-strip-texture!
+  "Destroy the cached strip texture and clear it from the draw context."
+  []
+  (let [strip (draw-strip-texture)]
+    (if (draw-strip-texture-ready?)
+      (sdl/destroy-texture! strip))
+    (if *draw-context*
+      (set! *draw-context*
+            (dissoc *draw-context*
+                    :strip-texture
+                    :strip-texture-width
+                    :strip-texture-height)))
+    (set! *draw-strip-ready?* false)
+    nil))
 
 (defn draw-ensure-canvas!
   "Create or resize the cached canvas texture to match STATE."
@@ -577,6 +1264,41 @@
                 *draw-context*)))
           *draw-context*)))))
 
+(defn draw-ensure-preview!
+  "Create or resize the active-stroke preview texture to match STATE."
+  [state]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) nil)
+        width (get state :width)
+        height (get state :height)
+        preview (draw-preview)
+        preview-width (if *draw-context* (get *draw-context* :preview-width) nil)
+        preview-height (if *draw-context* (get *draw-context* :preview-height) nil)]
+    (if (and (draw-preview-ready?)
+             (= preview-width width)
+             (= preview-height height))
+      *draw-context*
+      (begin
+        (if (draw-preview-ready?)
+          (begin
+            (sdl/destroy-texture! preview)
+            (set! *draw-context* (dissoc *draw-context* :preview :preview-width :preview-height))
+            (set! *draw-preview-ready?* false))
+          nil)
+        (if renderer
+          (let [texture (sdl/create-canvas-texture renderer width height)]
+            (if texture
+              (let [ctx (assoc *draw-context*
+                               :preview texture
+                               :preview-width width
+                               :preview-height height)]
+                (set! *draw-context* ctx)
+                (set! *draw-preview-ready?* true)
+                ctx)
+              (begin
+                (set! *draw-preview-ready?* false)
+                *draw-context*)))
+          *draw-context*)))))
+
 (defn draw-with-canvas!
   "Run THUNK with the canvas texture bound as the SDL render target."
   [thunk]
@@ -585,6 +1307,19 @@
     (if (and renderer (draw-canvas-ready?))
       (begin
         (sdl/set-render-target! renderer canvas)
+        (thunk renderer)
+        (sdl/clear-render-target! renderer)
+        true)
+      false)))
+
+(defn draw-with-preview!
+  "Run THUNK with the preview texture bound as the SDL render target."
+  [thunk]
+  (let [renderer (if *draw-context* (get *draw-context* :renderer) false)
+        preview (draw-preview)]
+    (if (and renderer (draw-preview-ready?))
+      (begin
+        (sdl/set-render-target! renderer preview)
         (thunk renderer)
         (sdl/clear-render-target! renderer)
         true)
@@ -601,10 +1336,31 @@
     (set! *draw-canvas-ready?* false)
     nil))
 
+(defn draw-release-preview!
+  "Destroy the active-stroke preview texture and clear it from the draw context."
+  []
+  (let [preview (draw-preview)]
+    (if (draw-preview-ready?)
+      (sdl/destroy-texture! preview))
+    (if *draw-context*
+      (set! *draw-context* (dissoc *draw-context* :preview :preview-width :preview-height)))
+    (set! *draw-preview-ready?* false)
+    (draw-reset-preview-sync!)
+    nil))
+
 (defn draw-clear-canvas!
   "Clear the cached canvas texture."
   []
   (draw-with-canvas!
+    (lambda (renderer)
+      (sdl/set-draw-color! renderer 0 0 0 0)
+      (sdl/render-clear! renderer)
+      nil)))
+
+(defn draw-clear-preview!
+  "Clear the active-stroke preview texture."
+  []
+  (draw-with-preview!
     (lambda (renderer)
       (sdl/set-draw-color! renderer 0 0 0 0)
       (sdl/render-clear! renderer)
@@ -631,9 +1387,6 @@
                   acc))
               nil
               (get state :strokes))
-      (if (get state :active-stroke)
-        (draw-render-stroke! renderer state (get state :active-stroke))
-        nil)
       nil)))
 
 (defn draw-history-limit
@@ -644,7 +1397,11 @@
 (defn draw-history-snapshot
   "Return a history snapshot for STATE."
   [state]
-  (edn/read-string (pr-str (dissoc state :history))))
+  {:strokes (edn/read-string (pr-str (get state :strokes)))
+   :brush-size (get state :brush-size)
+   :brush-color (edn/read-string (pr-str (get state :brush-color)))
+   :background (edn/read-string (pr-str (get state :background)))
+   :eraser? (if (truthy? (get state :eraser?)) true false)})
 
 (defn draw-history-trim
   "Trim HISTORY to the configured size."
@@ -675,11 +1432,19 @@
       (let [total (count history)
             snapshot (nth history (- total 1))
             prior-history (if (> total 1)
-                            (vec (drop (- total 1) history))
+                            (vec (take (- total 1) history))
                             [])]
-        (assoc snapshot
+        (assoc state
                :history prior-history
-               :strokes (vec (get snapshot :strokes)))))))
+               :strokes (vec (get snapshot :strokes))
+               :brush-size (get snapshot :brush-size)
+               :brush-color (get snapshot :brush-color)
+               :background (get snapshot :background)
+               :eraser? (if (get snapshot :eraser?) true false)
+               :active-stroke false
+               :pointer-down? false
+               :pointer-source false
+               :panning? false)))))
 
 (defn draw-tool-mode
   "Return the current tool mode label."
@@ -698,11 +1463,14 @@
 (defn draw-set-brush-size-core!
   "Set the brush size and return to brush mode, recording undo history."
   [state size]
-  (let [state (draw-push-history! state)]
-    (assoc state
-           :brush-size size
-           :eraser? false
-           :canvas-dirty? true)))
+  (let [state (draw-push-history! state)
+        next-state (assoc state
+                          :brush-size size
+                          :eraser? false)]
+    (draw-log-entry! :brush-size
+                     {:size size
+                      :state (draw-state-snapshot next-state)})
+    next-state))
 
 (defn draw-set-brush-size!
   "Set the brush size and return to brush mode, recording undo history."
@@ -718,10 +1486,13 @@
 (defn draw-toggle-eraser-core!
   "Toggle eraser mode for STATE and record undo history."
   [state]
-  (let [state (draw-push-history! state)]
-    (assoc state
-           :eraser? (not (get state :eraser?))
-           :canvas-dirty? true)))
+  (let [state (draw-push-history! state)
+        next-state (assoc state
+                          :eraser? (not (get state :eraser?)))]
+    (draw-log-entry! :eraser-toggle
+                     {:eraser? (get next-state :eraser?)
+                      :state (draw-state-snapshot next-state)})
+    next-state))
 
 (defn draw-toggle-eraser!
   "Toggle eraser mode for STATE and record undo history."
@@ -738,13 +1509,16 @@
   "Clear all finished and active strokes from STATE and record undo history."
   [state]
   (let [state (draw-push-history! state)]
-    (let [state (assoc state
-                       :strokes []
-                       :active-stroke false
-                       :pointer-down? false
-                       :panning? false
-                       :canvas-dirty? true)]
-      state)))
+    (draw-clear-preview!)
+    (let [next-state (assoc state
+                            :strokes []
+                            :active-stroke false
+                            :pointer-down? false
+                            :panning? false
+                            :canvas-dirty? true)]
+      (draw-log-entry! :clear
+                       {:state (draw-state-snapshot next-state)})
+      next-state)))
 
 (defn draw-clear-strokes!
   "Clear all finished and active strokes from STATE and record undo history."
@@ -760,8 +1534,11 @@
 (defn draw-undo-stroke-core!
   "Undo the most recent draw action."
   [state]
-  (let [state (draw-restore-history! state)]
-    (assoc state :canvas-dirty? true)))
+  (draw-clear-preview!)
+  (let [next-state (assoc (draw-restore-history! state) :canvas-dirty? true)]
+    (draw-log-entry! :undo
+                     {:state (draw-state-snapshot next-state)})
+    next-state))
 
 (defn draw-undo-stroke!
   "Undo the most recent draw action."
@@ -885,14 +1662,24 @@
   (set! *draw-last-error* exn)
   (set! *draw-running?* false)
   (set! *draw-thread* nil)
+  (draw-write-state-file! *draw-state* true)
+  (draw-write-heartbeat! :crash *draw-state*)
+  (draw-stop-watchdog!)
+  (draw-log-entry! :crash
+                   {:error (format "%s" exn)
+                    :state (draw-state-snapshot *draw-state*)})
+  (draw-write-crash-report! exn)
   (println (format "Cluck Draw crashed: %s" exn))
   exn)
 
 (defn draw-cancel-active-stroke-core!
   "Cancel the active stroke without recording history."
   [state]
+  (draw-reset-preview-sync!)
+  (draw-clear-preview!)
   (let [state (assoc state
                      :pointer-down? false
+                     :pointer-source false
                      :active-stroke false
                      :panning? false
                      :pen-pressure 1.0
@@ -902,33 +1689,109 @@
 (defn draw-focus-lost-core!
   "Record that the window lost focus and cancel any active stroke."
   [state]
-  (draw-cancel-active-stroke-core!
-    (assoc state
-           :window-focused? false
-           :canvas-dirty? true)))
+  (let [next-state (draw-cancel-active-stroke-core!
+                     (assoc state
+                            :window-focused? false
+                            :canvas-dirty? true))]
+    (draw-log-entry! :focus-lost {:state (draw-state-snapshot next-state)})
+    next-state))
 
 (defn draw-focus-gained-core!
   "Record that the window regained focus."
   [state]
-  (assoc state
-         :window-focused? true
-         :pen-pressure 1.0))
+  (let [next-state (assoc state
+                          :window-focused? true
+                          :canvas-dirty? true
+                          :pen-pressure 1.0)]
+    (draw-log-entry! :focus-gained {:state (draw-state-snapshot next-state)})
+    next-state))
+
+(defn draw-mouse-leave-core!
+  "Handle the pointer leaving the window without changing focus state."
+  [state]
+  (draw-cancel-active-stroke-core! state))
+
+(defn draw-mouse-enter-core!
+  "Handle the pointer entering the window without changing focus state."
+  [state]
+  state)
+
+(defn draw-stroke-record
+  "Build a fresh stroke map."
+  [points color size]
+  {:points points
+   :color color
+   :size size})
+
+(defn draw-segment-stroke
+  "Build a fresh temporary stroke for incremental canvas commits."
+  [stroke points]
+  (draw-stroke-record points
+                      (get stroke :color)
+                      (get stroke :size)))
+
+(defn draw-point-screen-distance
+  "Return the screen-space distance between A and B."
+  [state a b]
+  (let [screen-a (draw-world-point->screen-point state a)
+        screen-b (draw-world-point->screen-point state b)
+        dx (- (nth screen-b 0) (nth screen-a 0))
+        dy (- (nth screen-b 1) (nth screen-a 1))]
+    (math/sqrt (+ (* dx dx) (* dy dy)))))
+
+(defn draw-min-point-spacing
+  "Return the minimum screen-space spacing between active stroke samples."
+  [state point size]
+  (let [stamp (draw-point-screen-size state point size)
+        spacing (/ stamp 2.0)]
+    (if (> spacing 1.0)
+      spacing
+      1.0)))
+
+(defn draw-replace-last
+  "Return ITEMS with the final element replaced by VALUE."
+  [items value]
+  (let [total (count items)]
+    (if (<= total 1)
+      [value]
+      (conj (vec (take (- total 1) items)) value))))
+
+(defn draw-append-stroke-point
+  "Append POINT on STROKE when it is far enough from the prior sample."
+  [state stroke point]
+  (let [points (get stroke :points)
+        size (get stroke :size)]
+    (if (empty? points)
+      [point]
+      (let [previous (last points)
+            distance (draw-point-screen-distance state previous point)
+            spacing (draw-min-point-spacing state point size)]
+        (if (>= distance spacing)
+          (conj points point)
+          points)))))
 
 (defn draw-start-stroke
   "Start a new stroke from DESC."
   [state desc]
   (let [point (draw-event-point state desc)]
-      (let [state (draw-push-history! state)
+    (let [state (draw-push-history! state)
+          stroke (draw-stroke-record [point]
+                                     (draw-stroke-color state)
+                                     (get state :brush-size))
           next-state (assoc state
                             :pointer-down? true
-                            :active-stroke {:points [point]
-                                            :color (draw-stroke-color state)
-                                            :size (get state :brush-size)}
+                            :pointer-source (if (str/starts-with? desc "SDL_EVENT_PEN_")
+                                              :pen
+                                              :mouse)
+                            :active-stroke stroke
                             :mouse-x (nth point 0)
                             :mouse-y (nth point 1))]
-      (if (draw-canvas-ready?)
-        (draw-commit-stroke! next-state (get next-state :active-stroke))
-        nil)
+      (draw-reset-preview-sync!)
+      (draw-clear-preview!)
+      (draw-preview-stroke! next-state stroke)
+      (draw-log-entry! :stroke-start
+                       {:point point
+                        :state (draw-state-snapshot next-state)})
       next-state)))
 
 (defn draw-extend-stroke
@@ -937,18 +1800,23 @@
   (let [point (draw-event-point state desc)
         stroke (get state :active-stroke)]
     (if stroke
-        (let [points (get stroke :points)
-            previous (last points)
-            next-stroke (assoc stroke
-                               :points (conj points point))
+      (let [points (get stroke :points)
+            next-points (draw-append-stroke-point state stroke point)
+            appended? (> (count next-points) (count points))
+            previous (if (empty? points) nil (last points))
+            next-stroke (draw-stroke-record next-points
+                                            (get stroke :color)
+                                            (get stroke :size))
             next-state (assoc state
                               :mouse-x (nth point 0)
                               :mouse-y (nth point 1)
                               :active-stroke next-stroke)]
-        (if (draw-canvas-ready?)
-          (draw-commit-stroke! next-state
-                               (assoc stroke
-                                      :points [previous point]))
+        (if (and appended? previous)
+          (draw-preview-segment! next-state
+                                 previous
+                                 point
+                                 (get stroke :size)
+                                 (get stroke :color))
           nil)
         next-state)
       (draw-start-stroke state desc))))
@@ -960,26 +1828,45 @@
         stroke (get state :active-stroke)]
     (if stroke
         (let [points (get stroke :points)
-              previous (last points)
-              finished (assoc stroke
-                              :points (conj points point))
+              finished-points (draw-append-stroke-point state stroke point)
+              finished (draw-stroke-record finished-points
+                                           (get stroke :color)
+                                           (get stroke :size))
               next-state (assoc state
                                 :pointer-down? false
+                                :pointer-source false
                                 :mouse-x (nth point 0)
                                 :mouse-y (nth point 1)
                                 :active-stroke false
                                 :strokes (conj (get state :strokes) finished))]
-          (if (draw-canvas-ready?)
-            (draw-commit-stroke! next-state
-                                 (assoc stroke
-                                        :points [previous point]))
-            nil)
+          (draw-log-entry! :stroke-finish
+                           {:point point
+                            :points (count (get finished :points))
+                            :state (draw-state-snapshot next-state)})
+          (if (and (draw-preview-ready?)
+                   (draw-canvas-ready?))
+            (begin
+              (draw-with-canvas!
+                (lambda (renderer)
+                  (sdl/render-texture! renderer (draw-preview))
+                  nil))
+              (draw-clear-preview!))
+            (if (draw-canvas-ready?)
+              (draw-commit-stroke! next-state finished)
+              nil))
+          (draw-reset-preview-sync!)
           next-state)
       (assoc state
              :pointer-down? false
+             :pointer-source false
              :mouse-x (nth point 0)
              :mouse-y (nth point 1)
              :active-stroke false))))
+
+(defn draw-pen-owned-pointer?
+  "Return true when STATE says the active pointer source is the pen."
+  [state]
+  (draw-kind=? (get state :pointer-source) :pen))
 
 (defn draw-kind=?
   "Compare two keyword event kinds by name."
@@ -1045,7 +1932,9 @@
     state
     [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
      (or (get event :mouse-y) (get event :wheel-mouse-y) 0)
-     (or (get event :pressure) 1.0)]))
+     (or (get event :pressure)
+         (get state :pen-pressure)
+         1.0)]))
 
 (defn draw-build-input-event
   "Build a synthetic event map for DESC using the current SDL event state."
@@ -1063,6 +1952,66 @@
      :wheel-y (sdl/event-wheel-y)
      :wheel-mouse-x (sdl/event-wheel-mouse-x)
      :wheel-mouse-y (sdl/event-wheel-mouse-y)}))
+
+(defn draw-synthetic-pen-mouse-event?
+  "Return true when EVENT is SDL's synthetic mouse mirror of pen input."
+  [event]
+  (let [kind (get event :kind)
+        desc (or (get event :desc) "")]
+    (and (or (draw-kind=? kind :mouse-motion)
+             (draw-kind=? kind :mouse-down)
+             (draw-kind=? kind :mouse-up))
+         (str/includes? desc "which=4294967294"))))
+
+(defn draw-ignorable-input-event?
+  "Return true when EVENT should be discarded before it reaches app logic."
+  [event]
+  (let [kind (get event :kind)]
+    (or (draw-synthetic-pen-mouse-event? event)
+        (draw-kind=? kind :finger-motion)
+        (draw-kind=? kind :finger-down)
+        (draw-kind=? kind :finger-up)
+        (draw-kind=? kind :finger-canceled))))
+
+(defn draw-loggable-event?
+  "Return true when EVENT is useful in the persistent draw log."
+  [event]
+  (let [kind (get event :kind)]
+    (or (draw-kind=? kind :key-down)
+        (draw-kind=? kind :key-up)
+        (draw-kind=? kind :mouse-down)
+        (draw-kind=? kind :mouse-up)
+        (draw-kind=? kind :pen-down)
+        (draw-kind=? kind :pen-up)
+        (draw-kind=? kind :pen-button-down)
+        (draw-kind=? kind :pen-button-up)
+        (draw-kind=? kind :mouse-wheel)
+        (draw-kind=? kind :focus-lost)
+        (draw-kind=? kind :focus-gained)
+        (draw-kind=? kind :mouse-enter)
+        (draw-kind=? kind :mouse-leave)
+        (draw-kind=? kind :text-input)
+        (draw-kind=? kind :text-editing)
+        (draw-kind=? kind :quit))))
+
+(defn draw-apply-and-log-input-event!
+  "Apply EVENT to STATE and emit a diagnostic log entry when relevant."
+  [state event source]
+  (if (draw-ignorable-input-event? event)
+    state
+    (let [next-state (draw-apply-input-event! state event)]
+      (if (draw-loggable-event? event)
+        (draw-log-entry! :input
+                         {:source source
+                          :kind (get event :kind)
+                          :desc (or (get event :desc) "")
+                          :key (or (get event :key) "")
+                          :text (or (get event :text) "")
+                          :pressure (or (get event :pressure) 1.0)
+                          :shift? (get event :shift?)
+                          :state (draw-state-snapshot next-state)})
+        nil)
+      next-state)))
 
 (defn draw-handle-wheel-event!
   "Apply mouse-wheel zoom from EVENT to STATE."
@@ -1103,13 +2052,17 @@
       (draw-kind=? kind :mouse-wheel)
       (draw-handle-wheel-event! state event)
 
-      (or (draw-kind=? kind :focus-lost)
-          (draw-kind=? kind :mouse-leave))
+      (draw-kind=? kind :focus-lost)
       (draw-focus-lost-core! state)
 
-      (or (draw-kind=? kind :focus-gained)
-          (draw-kind=? kind :mouse-enter))
+      (draw-kind=? kind :focus-gained)
       (draw-focus-gained-core! state)
+
+      (draw-kind=? kind :mouse-leave)
+      (draw-mouse-leave-core! state)
+
+      (draw-kind=? kind :mouse-enter)
+      (draw-mouse-enter-core! state)
 
       (draw-kind=? kind :text-input)
       (assoc state
@@ -1119,7 +2072,9 @@
       (or (draw-kind=? kind :mouse-motion)
           (draw-kind=? kind :mouse-down)
           (draw-kind=? kind :mouse-up))
-      (let [state (assoc state :pen-pressure 1.0)]
+      (if (draw-pen-owned-pointer? state)
+        state
+        (let [state (assoc state :pen-pressure 1.0)]
         (cond
         (and (draw-kind=? kind :mouse-down)
              (get event :shift?))
@@ -1154,7 +2109,7 @@
         (let [point (draw-input-event-point state event)]
           (assoc state
                  :mouse-x (nth point 0)
-                 :mouse-y (nth point 1)))))
+                 :mouse-y (nth point 1))))))
 
       (or (draw-kind=? kind :pen-motion)
           (draw-kind=? kind :pen-down)
@@ -1222,7 +2177,9 @@
 (defn draw-record-input!
   "Record the latest SDL event description in STATE."
   [state desc]
-  (draw-apply-input-event! state (draw-build-input-event state desc)))
+  (draw-apply-and-log-input-event! state
+                                   (draw-build-input-event state desc)
+                                   :sdl))
 
 (defn draw-simulate-input!
   "Apply a synthetic input EVENT to the current draw state."
@@ -1230,8 +2187,9 @@
   (draw-with-lock
     (lambda ()
       (set! *draw-state*
-            (draw-apply-input-event! (or *draw-state* (default-state))
-                                     event))
+            (draw-apply-and-log-input-event! (or *draw-state* (default-state))
+                                             event
+                                             :simulated))
       (if *draw-running?*
         (draw-render-current!)
         nil)
@@ -1244,7 +2202,7 @@
     (lambda ()
       (set! *draw-state*
             (reduce (lambda (state event)
-                      (draw-apply-input-event! state event))
+                      (draw-apply-and-log-input-event! state event :replay))
                     (or *draw-state* (default-state))
                     events))
       (if *draw-running?*
@@ -1319,43 +2277,45 @@
 (defn mouse-position
   "Return the current mouse position from the draw state."
   []
-  {:x (get *draw-state* :mouse-x)
-   :y (get *draw-state* :mouse-y)})
+  (let [state (or (current-state) (default-state))]
+    {:x (get state :mouse-x)
+     :y (get state :mouse-y)}))
 
 (defn recent-events
   "Return the recent SDL event log."
   []
-  (get *draw-state* :recent-events))
+  (get (or (current-state) (default-state)) :recent-events))
 
 (defn last-key-event
   "Return the last key event description."
   []
-  (get *draw-state* :last-key))
+  (get (or (current-state) (default-state)) :last-key))
 
 (defn last-input-event
   "Return the last SDL event description."
   []
-  (get *draw-state* :last-event))
+  (get (or (current-state) (default-state)) :last-event))
 
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
-          (or (get *draw-state* :mouse-x) 0.0)
-          (or (get *draw-state* :mouse-y) 0.0)
-          (draw-view-x *draw-state*)
-          (draw-view-y *draw-state*)
-          (draw-view-zoom *draw-state*)
-          (or (get *draw-state* :last-key) "")
-          (or (get *draw-state* :last-text) "")
-          (or (get *draw-state* :last-event) "")
-          (count (get *draw-state* :strokes))
-          (count (get *draw-state* :history))
-          (draw-tool-mode *draw-state*)
-          (get *draw-state* :brush-size)
-          (if (get *draw-state* :debug-panel?) "on" "off")
-          (if (get *draw-state* :window-focused?) "on" "off")
-          (or (get *draw-state* :pen-pressure) 1.0)))
+  (let [state (or (current-state) (default-state))]
+    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+            (or (get state :mouse-x) 0.0)
+            (or (get state :mouse-y) 0.0)
+            (draw-view-x state)
+            (draw-view-y state)
+            (draw-view-zoom state)
+            (or (get state :last-key) "")
+            (or (get state :last-text) "")
+            (or (get state :last-event) "")
+            (count (get state :strokes))
+            (count (get state :history))
+            (draw-tool-mode state)
+            (get state :brush-size)
+            (if (get state :debug-panel?) "on" "off")
+            (if (get state :window-focused?) "on" "off")
+            (or (get state :pen-pressure) 1.0))))
 
 (defn sync-window-title!
   "Update the SDL window title from the current state."
@@ -1365,27 +2325,77 @@
                            (describe-state *draw-state*))
     nil))
 
-(defn draw-drain-input!
-  "Drain pending SDL input events into the current state."
-  [quit?]
-  (if (sdl/poll-event!)
-    (let [desc (sdl/event-description)
-          kind (draw-event-kind desc)]
-      (set! *draw-state* (draw-record-input! *draw-state* desc))
-      (if (draw-kind=? kind :quit)
-        (begin
-          (set! *draw-running?* false)
-          (draw-drain-input! true))
-        (draw-drain-input! quit?)))
-    (begin
-      (set! *draw-state* (draw-bump-frame! *draw-state*))
-      (sync-window-title!)
+(defn draw-input-batch-limit
+  "Return the maximum number of SDL events to process in one frame."
+  []
+  64)
+
+(defn draw-drain-input-batch!
+  "Drain at most REMAINING SDL input events into the current state."
+  [remaining quit?]
+  (if (<= remaining 0)
+    quit?
+    (if (sdl/poll-event!)
+      (let [desc (sdl/event-description)
+            event (draw-build-input-event *draw-state* desc)
+            kind (get event :kind)]
+        (if (draw-ignorable-input-event? event)
+          (draw-drain-input-batch! remaining quit?)
+          (begin
+            (set! *draw-state*
+                  (draw-apply-and-log-input-event! *draw-state* event :sdl))
+            (if (draw-kind=? kind :quit)
+              (begin
+                (set! *draw-running?* false)
+                (draw-drain-input-batch! (- remaining 1) true))
+              (draw-drain-input-batch! (- remaining 1) quit?)))))
       quit?)))
 
 (defn draw-poll-input!
   "Drain pending SDL input events into the current state."
   []
-  (draw-drain-input! false))
+  (let [quit? (draw-drain-input-batch! (draw-input-batch-limit) false)]
+    (set! *draw-state* (draw-bump-frame! *draw-state*))
+    (sync-window-title!)
+    quit?))
+
+(defn draw-apply-control-command!
+  "Apply a supervisor control COMMAND to STATE inside the child process."
+  [state command]
+  (let [op (get command :op)
+        payload (get command :payload)
+        next-state
+          (cond
+            (equal? op :set-state)
+            (assoc payload :canvas-dirty? true)
+
+            (equal? op :redraw)
+            (assoc state :canvas-dirty? true)
+
+            (equal? op :stop)
+            (begin
+              (set! *draw-running?* false)
+              state)
+
+            :else
+            state)]
+    (draw-log-entry! :control
+                     {:op op
+                      :state (draw-state-snapshot next-state)})
+    next-state))
+
+(defn draw-poll-control!
+  "Apply the latest pending supervisor control command in child mode."
+  []
+  (if *draw-child-mode?*
+    (let [command (draw-control-command-pending)]
+      (if command
+        (begin
+          (set! *draw-last-control-seq* (or (get command :seq) *draw-last-control-seq*))
+          (set! *draw-state* (draw-apply-control-command! *draw-state* command))
+          command)
+        false))
+    false))
 
 (defn describe-state
   "Return a short human-readable summary of STATE."
@@ -1424,11 +2434,19 @@
     (nth point 2)
     1.0))
 
+(defn draw-normalize-pressure
+  "Map raw pen pressure into a more useful visual range for drawing."
+  [pressure]
+  (let [raw (draw-clamp (or pressure 1.0) 0.0 1.0)
+        scaled (draw-clamp (/ raw 0.68) 0.0 1.0)]
+    (math/sqrt scaled)))
+
 (defn draw-point-size
   "Scale BASE-SIZE by POINT pressure."
   [point base-size]
-  (let [scaled (draw-exact-int (math/ceiling (* base-size
-                                                 (draw-point-pressure point))))]
+  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
+        scaled (draw-exact-int (math/ceiling (* base-size
+                                                (+ 0.5 (* 1.5 pressure)))))]
     (if (> scaled 0)
       scaled
       1)))
@@ -1436,7 +2454,7 @@
 (defn draw-point-alpha
   "Scale the stroke alpha by POINT pressure."
   [point]
-  (let [pressure (draw-point-pressure point)
+  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
         alpha (draw-exact-int (math/ceiling (+ 72 (* 183 pressure))))]
     (if (> alpha 255)
       255
@@ -1459,113 +2477,85 @@
                          (nth color 2)
                          alpha)))
 
-(defn draw-render-thick-line-step!
-  "Draw offset copies of a line segment to approximate a thick stroke."
-  [renderer x1 y1 x2 y2 nx ny radius offset]
-  (if (> offset radius)
-    nil
-    (begin
-      (let [shift (draw-exact-int offset)
-            ox (draw-exact-int (math/round (* nx shift)))
-            oy (draw-exact-int (math/round (* ny shift)))]
-        (sdl/render-line! renderer
-                          (+ x1 ox)
-                          (+ y1 oy)
-                          (+ x2 ox)
-                          (+ y2 oy))
-        (if (> offset 0)
-          (sdl/render-line! renderer
-                            (- x1 ox)
-                            (- y1 oy)
-                            (- x2 ox)
-                            (- y2 oy))
-          nil))
-      (draw-render-thick-line-step! renderer x1 y1 x2 y2 nx ny radius (+ offset 1)))))
-
-(defn draw-render-thick-line!
-  "Render a rounded thick line between SCREEN-A and SCREEN-B."
-  [renderer screen-a screen-b radius]
-  (let [x1 (draw-exact-int (math/round (nth screen-a 0)))
-        y1 (draw-exact-int (math/round (nth screen-a 1)))
-        x2 (draw-exact-int (math/round (nth screen-b 0)))
-        y2 (draw-exact-int (math/round (nth screen-b 1)))
-        dx (- x2 x1)
-        dy (- y2 y1)
-        length (math/sqrt (+ (* dx dx) (* dy dy)))]
-    (if (<= length 0)
-      (sdl/render-line! renderer x1 y1 x2 y2)
-      (let [nx (/ (- dy) length)
-            ny (/ dx length)]
-        (draw-render-thick-line-step! renderer x1 y1 x2 y2 nx ny radius 0)))))
-
-(defn draw-render-brush-rows!
-  "Render the filled disc rows for POINT with RADIUS."
-  [renderer x y radius dy]
-  (if (> dy radius)
-    nil
-    (let [span (draw-exact-int (math/floor (math/sqrt (- (* radius radius)
-                                                         (* dy dy)))))]
-      (sdl/render-line! renderer
-                        (- x span)
-                        (+ y dy)
-                        (+ x span)
-                        (+ y dy))
-      (draw-render-brush-rows! renderer x y radius (+ dy 1)))))
-
-(defn draw-render-brush!
-  "Render a circular brush at POINT."
-  [renderer point size]
-  (let [x (nth point 0)
-        y (nth point 1)
-        radius (draw-brush-radius size)]
-    (draw-render-brush-rows! renderer x y radius (- radius))))
-
-(defn draw-render-stroke-point-step!
-  "Sample a line segment between A and B with pressure-aware brushes."
-  [renderer state x1 y1 p1 dx dy dp size steps i]
-  (if (> i steps)
-    nil
-    (let [x (+ x1 (/ (* dx i) steps))
-          y (+ y1 (/ (* dy i) steps))
-          pressure (+ p1 (/ (* dp i) steps))]
-      (draw-render-stroke-brush! renderer state [x y pressure] size)
-      (draw-render-stroke-point-step! renderer state x1 y1 p1 dx dy dp size steps (+ i 1)))))
+(defn draw-render-soft-brush!
+  "Render the soft brush texture at POINT with SIZE."
+  [renderer state point size]
+  (let [brush (draw-brush-texture)
+        color (draw-stroke-color-value)
+        screen-point (draw-world-point->screen-point state point)
+        stamp-size (draw-point-screen-size state point size)
+        alpha (draw-point-alpha point)]
+    (if (draw-brush-texture-ready?)
+      (begin
+        (sdl/set-texture-color-mod! brush
+                                    (nth color 0)
+                                    (nth color 1)
+                                    (nth color 2))
+        (sdl/set-texture-alpha-mod! brush alpha)
+        (sdl/render-texture-at! renderer
+                                brush
+                                (- (nth screen-point 0) (/ stamp-size 2.0))
+                                (- (nth screen-point 1) (/ stamp-size 2.0))
+                                stamp-size
+                                stamp-size)
+        true)
+      (begin
+        (draw-set-stroke-color! renderer alpha)
+        (sdl/render-fill-rect! renderer
+                               (- (nth screen-point 0) (/ stamp-size 2.0))
+                               (- (nth screen-point 1) (/ stamp-size 2.0))
+                               stamp-size
+                               stamp-size)
+        false))))
 
 (defn draw-render-stroke-point!
   "Render a single stroke sample at POINT."
   [renderer state point size]
-  (draw-render-stroke-brush! renderer state point size))
+  (draw-render-soft-brush! renderer state point size))
 
-(defn draw-render-stroke-brush!
-  "Render a single stroke sample at POINT."
-  [renderer state point size]
-  (let [screen-point (draw-world-point->screen-point state point)
-        base-size (draw-point-screen-size state point size)
-        alpha (draw-point-alpha point)]
-    (draw-set-stroke-color! renderer alpha)
-    (draw-render-brush! renderer screen-point base-size)))
+(defn draw-render-soft-segment!
+  "Render a smooth segment from A to B using the compiled SDL helper."
+  [renderer state a b size]
+  (let [brush (draw-brush-texture)
+        strip (draw-strip-texture)
+        color (draw-stroke-color-value)
+        screen-a (draw-world-point->screen-point state a)
+        screen-b (draw-world-point->screen-point state b)
+        size-a (draw-point-screen-size state a size)
+        size-b (draw-point-screen-size state b size)
+        alpha-a (draw-point-alpha a)
+        alpha-b (draw-point-alpha b)]
+    (if (and (draw-brush-texture-ready?)
+             (draw-strip-texture-ready?))
+      (sdl/render-soft-segment! renderer
+                                strip
+                                brush
+                                (nth screen-a 0)
+                                (nth screen-a 1)
+                                size-a
+                                alpha-a
+                                (nth screen-b 0)
+                                (nth screen-b 1)
+                                size-b
+                                alpha-b
+                                (nth color 0)
+                                (nth color 1)
+                                (nth color 2))
+      (begin
+        (draw-set-stroke-color! renderer (if (> alpha-a alpha-b) alpha-a alpha-b))
+        (sdl/render-line! renderer
+                          (nth screen-a 0)
+                          (nth screen-a 1)
+                          (nth screen-b 0)
+                          (nth screen-b 1))
+        (draw-render-soft-brush! renderer state a size)
+        (draw-render-soft-brush! renderer state b size)
+        true))))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
   [renderer state a b size]
-  (let [x1 (nth a 0)
-        y1 (nth a 1)
-        p1 (draw-point-pressure a)
-        x2 (nth b 0)
-        y2 (nth b 1)
-        p2 (draw-point-pressure b)
-        radius-a (draw-brush-radius (draw-point-size a size))
-        radius-b (draw-brush-radius (draw-point-size b size))
-        radius (if (< radius-a radius-b) radius-b radius-a)
-        screen-a (draw-world-point->screen-point state a)
-        screen-b (draw-world-point->screen-point state b)
-        alpha (draw-exact-int (math/round (/ (+ (draw-point-alpha a)
-                                                (draw-point-alpha b))
-                                             2)))]
-    (draw-set-stroke-color! renderer alpha)
-    (draw-render-thick-line! renderer screen-a screen-b radius)
-    (draw-render-brush! renderer screen-a radius-a)
-    (draw-render-brush! renderer screen-b radius-b)))
+  (draw-render-soft-segment! renderer state a b size))
 
 (defn draw-render-stroke-segments!
   "Render a line strip from POINTS."
@@ -1573,14 +2563,12 @@
   (let [total (count points)]
     (if (<= total 1)
       nil
-      (begin
-        (reduce (fn [previous point]
-                  (begin
-                    (draw-render-stroke-segment! renderer state previous point size)
-                    point))
-                (first points)
-                (rest points))
-        nil))))
+      (reduce (fn [previous point]
+                (begin
+                  (draw-render-stroke-segment! renderer state previous point size)
+                  point))
+              (first points)
+              (rest points)))))
 
 (defn draw-render-stroke!
   "Render a stroke map."
@@ -1592,8 +2580,99 @@
       nil
       (draw-with-stroke-color color
         (lambda ()
-          (draw-render-stroke-point! renderer state (first points) size)
-          (draw-render-stroke-segments! renderer state points size))))))
+          (if (<= (count points) 1)
+            (draw-render-stroke-point! renderer state (first points) size)
+            (draw-render-stroke-segments! renderer state points size)))))))
+
+(defn draw-preview-stroke!
+  "Render STROKE into the preview texture."
+  [state stroke]
+  (draw-with-preview!
+    (lambda (renderer)
+      (draw-render-stroke! renderer state stroke)
+      nil)))
+
+(defn draw-preview-segment!
+  "Render just the newest segment from PREVIOUS to POINT into the preview texture."
+  [state previous point size color]
+  (draw-with-preview!
+    (lambda (renderer)
+      (draw-with-stroke-color color
+        (lambda ()
+          (draw-render-stroke-segment! renderer state previous point size)))
+      nil)))
+
+(defn draw-preview-batch-render!
+  "Render active stroke points from START-INDEX up to END-INDEX."
+  [renderer state points start-index end-index size]
+  (if (>= start-index end-index)
+    nil
+    (let [previous (nth points (- start-index 1))
+          point (nth points start-index)]
+      (draw-render-stroke-segment! renderer state previous point size)
+      (draw-preview-batch-render! renderer
+                                  state
+                                  points
+                                  (+ start-index 1)
+                                  end-index
+                                  size))))
+
+(defn draw-sync-preview!
+  "Render only the missing active-stroke segments into the preview texture."
+  [state]
+  (let [active (get state :active-stroke)]
+    (if (and active (draw-preview-ready?))
+      (let [points (get active :points)
+            total (count points)
+            rendered (if (and (integer? *draw-preview-point-count*)
+                              (>= *draw-preview-point-count* 0)
+                              (<= *draw-preview-point-count* total))
+                       *draw-preview-point-count*
+                       0)]
+        (if (= rendered 0)
+          (begin
+            (draw-clear-preview!)
+            (if (> total 0)
+              (draw-with-preview!
+                (lambda (renderer)
+                  (draw-with-stroke-color (get active :color)
+                    (lambda ()
+                      (draw-render-stroke-point! renderer
+                                                 state
+                                                 (first points)
+                                                 (get active :size))))))
+              nil)
+            (set! *draw-preview-point-count* (if (> total 0) 1 0)))
+          nil)
+        (if (< *draw-preview-point-count* total)
+          (let [end-index (if (> (+ *draw-preview-point-count*
+                                    (draw-preview-segment-budget))
+                                 total)
+                            total
+                            (+ *draw-preview-point-count*
+                               (draw-preview-segment-budget)))
+                batch-count (- end-index *draw-preview-point-count*)]
+            (if (> batch-count 0)
+              (draw-with-preview!
+                (lambda (renderer)
+                  (draw-with-stroke-color (get active :color)
+                    (lambda ()
+                      (draw-preview-batch-render! renderer
+                                                  state
+                                                  points
+                                                  *draw-preview-point-count*
+                                                  end-index
+                                                  (get active :size))))))
+              nil)
+            (set! *draw-preview-point-count* end-index))
+          nil)
+        true)
+      (begin
+        (if (> *draw-preview-point-count* 0)
+          (draw-clear-preview!)
+          nil)
+        (draw-reset-preview-sync!)
+        false))))
 
 (defn draw-render-strokes!
   "Render all finished strokes and the active stroke."
@@ -1615,9 +2694,20 @@
   "Render the cached canvas texture, or fall back to stroke replay."
   [ctx state]
   (let [renderer (get ctx :renderer)
-        canvas (if ctx (get ctx :canvas) nil)]
+        canvas (if ctx (get ctx :canvas) nil)
+        preview (if ctx (get ctx :preview) nil)
+        active (get state :active-stroke)]
     (if (draw-canvas-ready?)
-      (sdl/render-texture! renderer canvas)
+      (begin
+        (sdl/render-texture! renderer canvas)
+        (if (and active (draw-preview-ready?))
+          (sdl/render-texture! renderer preview)
+          (if active
+            (draw-render-stroke! renderer state active)
+            nil))
+        (if (and (not active) (draw-preview-ready?))
+          nil
+          nil))
       (draw-render-strokes! ctx state))))
 
 (defn draw-render-debug-panel!
@@ -1625,8 +2715,7 @@
   [renderer state]
   (let [mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)
-        recent (reverse (take (draw-recent-events-limit)
-                              (get state :recent-events)))]
+        recent-lines (draw-debug-event-lines state)]
     (sdl/set-draw-color! renderer 245 245 245 255)
     (sdl/render-debug-text! renderer 12 12 (describe-state state))
     (sdl/render-debug-text! renderer 12 28
@@ -1660,21 +2749,28 @@
     (sdl/render-debug-text! renderer 12 140
                             (format "last key: %s" (or (get state :last-key) "")))
     (sdl/render-debug-text! renderer 12 156
-                            (format "last key desc: %s" (or (get state :last-key-desc) "")))
+                            (format "last key desc: %s"
+                                    (draw-compact-event-text
+                                      (or (get state :last-key-desc) ""))))
     (sdl/render-debug-text! renderer 12 172
-                            (format "last text: %s" (or (get state :last-text) "")))
+                            (format "last text: %s"
+                                    (draw-truncate-text (or (get state :last-text) "") 48)))
     (sdl/render-debug-text! renderer 12 188
-                            (format "last event: %s" (or (get state :last-event) "")))
+                            (format "last event: %s"
+                                    (draw-compact-event-text
+                                      (or (get state :last-event) ""))))
     (sdl/render-debug-text! renderer 12 204
                             (format "last error: %s"
                                     (if *draw-last-error*
-                                      (format "%s" *draw-last-error*)
+                                      (draw-truncate-text (format "%s" *draw-last-error*) 88)
                                       "")))
-    (when (not (empty? recent))
-      (sdl/render-debug-text! renderer 12 220
-                              (format "recent: %s"
-                                      (str/join " | " recent))))
-    (draw-render-debug-lines! renderer 236 (draw-debug-control-lines))
+    (when (not (empty? recent-lines))
+      (sdl/render-debug-text! renderer 12 220 "recent events:")
+      (draw-render-debug-lines! renderer 236 recent-lines))
+    (draw-render-debug-lines!
+      renderer
+      (+ 236 (* 16 (count recent-lines)))
+      (draw-debug-control-lines))
     nil))
 
 (defn draw-debug-control-lines
@@ -1689,8 +2785,20 @@
    "  1/2/3: brush size"
    "  d: debug panel   0: reset view"
    "  repl: save-canvas!, load-canvas!, restart-dev!"
+   "  repl: (draw-log-tail 20), draw-clear-log!, dump-current-state!"
    "  repl: draw-simulate-input!, draw-replay-live!"
    "  repl: draw-replay-benchmark!, draw-replay-live-benchmark!"])
+
+(defn draw-debug-event-lines
+  "Return compact recent event lines for the debug overlay."
+  [state]
+  (let [recent (reverse (take (draw-debug-event-lines-limit)
+                              (get state :recent-events)))]
+    (map-indexed (fn [index line]
+                   (format "  %d: %s"
+                           (+ index 1)
+                           (draw-compact-event-text line)))
+                 recent)))
 
 (defn draw-render-debug-lines!
   "Render LINES in the debug overlay starting at Y."
@@ -1709,11 +2817,9 @@
         mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)
         pressure (or (get state :pen-pressure) 1.0)
-        marker-point [mouse-x mouse-y pressure]
-        marker-size (draw-point-screen-size state marker-point 3)
-        screen-point (draw-world-point->screen-point state marker-point)]
+        marker-point [mouse-x mouse-y pressure]]
     (sdl/set-draw-color! renderer 220 180 90 255)
-    (draw-render-brush! renderer screen-point marker-size)
+    (draw-render-stroke-point! renderer state marker-point 3)
     (if (get state :debug-panel?)
       (draw-render-debug-panel! renderer state)
       nil)
@@ -1724,10 +2830,15 @@
   []
   (draw-with-lock
     (lambda ()
+      (draw-write-heartbeat! :poll *draw-state*)
+      (draw-poll-control!)
       (draw-poll-input!)
-      (if (or (not *draw-state*)
-              (get *draw-state* :window-focused?))
-        (draw-render-current!)
+      (draw-write-heartbeat! :render *draw-state*)
+      (if *draw-state*
+        (let [state (draw-render-current!)]
+          (draw-write-state-file! state false)
+          (draw-write-heartbeat! :idle state)
+          state)
         *draw-state*))))
 
 (defn default-render-frame
@@ -1759,8 +2870,11 @@
   []
   (draw-with-lock
     (lambda ()
-      (draw-poll-input!)
-      (draw-render-current!))))
+      (if (draw-supervised-mode?)
+        (draw-write-control-command! :redraw {:reason :manual})
+        (begin
+          (draw-poll-input!)
+          (draw-render-current!))))))
 
 (defn draw-loop
   "Render until the window is closed or the loop is stopped."
@@ -1784,59 +2898,95 @@
     (lambda ()
       (if (and *draw-running?* *draw-context*)
         *draw-context*
-        (if (not (init-video!))
         (begin
-          (println (format "SDL init failed: %s" (last-error)))
-          nil)
-        (let [state (if *draw-state*
-                      (assoc *draw-state*
-                             :window-focused? true
-                             :pen-pressure 1.0)
-                      (default-state))
-              ctx (sdl/open-context (get state :title)
-                                    (get state :width)
-                                    (get state :height))]
-          (if (nil? ctx)
+          (if *draw-child-mode?*
+            (draw-log-entry! :child-start-enter
+                             {:state (draw-state-snapshot *draw-state*)})
+            nil)
+          (if (not (init-video!))
             (begin
-              (println (format "SDL window failed: %s" (last-error)))
-              (shutdown!)
-              nil)
-            (begin
-              (set! *draw-state* state)
-              (set! *draw-context* ctx)
-              (set! *draw-running?* true)
-              (draw-ensure-canvas! state)
-              (if (draw-canvas-ready?)
-                (draw-rebuild-canvas! state)
+              (if *draw-child-mode?*
+                (draw-log-entry! :child-init-video-failed {:error (last-error)})
                 nil)
-              (sdl/start-text-input! (get *draw-context* :window))
-              (sync-window-title!)
-              ctx))))))))
+              (println (format "SDL init failed: %s" (last-error)))
+              nil)
+            (let [state (if *draw-state*
+                          (assoc *draw-state*
+                                 :window-focused? true
+                                 :pen-pressure 1.0)
+                          (default-state))
+                  ctx (sdl/open-context (get state :title)
+                                        (get state :width)
+                                        (get state :height))]
+              (if (nil? ctx)
+                (begin
+                  (if *draw-child-mode?*
+                    (draw-log-entry! :child-open-context-failed {:error (last-error)})
+                    nil)
+                  (println (format "SDL window failed: %s" (last-error)))
+                  (shutdown!)
+                  nil)
+                (begin
+                  (if *draw-child-mode?*
+                    (draw-log-entry! :child-open-context-ok {:title (get state :title)})
+                    nil)
+                  (set! *draw-state* state)
+                  (set! *draw-context* ctx)
+                  (set! *draw-running?* true)
+                  (set! *draw-last-heartbeat-at* 0)
+                  (draw-clear-watchdog-files!)
+                  (draw-log-entry! :start
+                                   {:state (draw-state-snapshot state)
+                                    :log (draw-log-file-path)
+                                    :crash (draw-crash-file-path)
+                                    :heartbeat (draw-heartbeat-file-path)
+                                    :stall (draw-stall-file-path)})
+                  (draw-ensure-canvas! state)
+                  (draw-ensure-preview! state)
+                  (draw-ensure-brush-texture! state)
+                  (draw-ensure-strip-texture! state)
+                  (if (draw-canvas-ready?)
+                    (draw-rebuild-canvas! state)
+                    nil)
+                  (draw-reset-preview-sync!)
+                  (draw-clear-preview!)
+                  (draw-write-state-file! state true)
+                  (draw-write-heartbeat! :start state)
+                  (draw-start-watchdog!)
+                  (sync-window-title!)
+                  ctx)))))))))
 
-(defn stop!
-  "Stop the draw loop and close the SDL context."
+(defn draw-stop-local!
+  "Stop the local draw loop and close the SDL context."
   []
   (draw-with-lock
     (lambda ()
+      (draw-write-state-file! *draw-state* true)
+      (draw-write-heartbeat! :stop *draw-state*)
+      (draw-log-entry! :stop {:state (draw-state-snapshot *draw-state*)})
       (set! *draw-running?* false)
+      (draw-stop-watchdog!)
       (draw-release-canvas!)
+      (draw-release-preview!)
+      (draw-release-brush-texture!)
+      (draw-release-strip-texture!)
       (if *draw-context*
         (begin
-          (sdl/stop-text-input! (get *draw-context* :window))
           (sdl/close-context! *draw-context*)
           (set! *draw-context* nil)))
       (set! *draw-thread* nil)
+      (set! *draw-last-heartbeat-at* 0)
       (shutdown!)
       nil)))
 
-(defn start-dev!
-  "Start the SDL window and background loop for REPL-driven development."
+(defn draw-start-local-dev!
+  "Start the SDL window and background loop in the current process."
   []
   (if (and *draw-running?* *draw-context*)
     *draw-context*
     (begin
       (when *draw-context*
-        (stop!))
+        (draw-stop-local!))
       (draw-clear-error!)
       (let [ctx (start!)]
       (if ctx
@@ -1851,9 +3001,185 @@
           ctx)
         nil)))))
 
+(defn draw-supervisor-launch-child!
+  "Start the child draw process and return its pid."
+  []
+  (let [root (current-directory)
+        runner (draw-child-runner-path)
+        child-log (draw-child-stdout-path)
+        launcher (format "cd %s && exec csi -q -s %s > %s 2>&1"
+                         (proc/qs root)
+                         (proc/qs runner)
+                         (proc/qs child-log))
+        pid (cproc:process-run "/bin/sh" (list "-c" launcher))]
+    (set! *draw-child-pid* pid)
+    pid))
+
+(defn draw-supervisor-stop-child!
+  "Stop the supervised child process when it is running."
+  []
+  (let [pid *draw-child-pid*]
+    (set! *draw-child-pid* false)
+    (if pid
+      (proc/system
+        (format "kill %s >/dev/null 2>&1 || true"
+                (proc/qs (str pid))))
+      0)
+    nil))
+
+(defn draw-heartbeat-age-ms
+  "Return the age of the child heartbeat in milliseconds, or false."
+  []
+  (let [path (draw-heartbeat-file-path)]
+    (if (fs/file? path)
+      (let [heartbeat (edn/read-string (io/slurp path))
+            at (or (get heartbeat :at) 0)]
+        (if (> at 0)
+          (- (draw-wall-clock-ms) at)
+          false))
+      false)))
+
+(defn draw-wait-for-child-ready!
+  "Wait until the supervised child writes its first heartbeat, or time out."
+  [deadline-ms]
+  (cond
+    (fs/file? (draw-heartbeat-file-path))
+    true
+
+    (not *draw-running?*)
+    false
+
+    (and *draw-child-pid*
+         (not (draw-child-alive? *draw-child-pid*)))
+    false
+
+    (> (draw-wall-clock-ms) deadline-ms)
+    false
+
+    :else
+    (begin
+      (thread-sleep! 0.1)
+      (draw-wait-for-child-ready! deadline-ms))))
+
+(defn draw-start-supervisor-loop!
+  "Start the parent-side thread that restarts a dead or stale child."
+  []
+  (set! *draw-thread* nil)
+  (set! *draw-supervisor-thread*
+        (make-thread
+          (lambda ()
+            (handle-exceptions exn
+              (draw-log-entry! :supervisor-crash
+                               {:error (format "%s" exn)
+                                :state (draw-state-snapshot *draw-state*)})
+              (let loop ()
+                (if (draw-supervised-mode?)
+                  (begin
+                    (let [pid *draw-child-pid*
+                          age (draw-heartbeat-age-ms)]
+                      (cond
+                        (not pid)
+                        (begin
+                          (draw-log-entry! :supervisor-restart {:reason :missing-pid})
+                          (draw-supervisor-launch-child!))
+
+                        (not (draw-child-alive? pid))
+                        (begin
+                          (draw-log-entry! :supervisor-restart {:reason :child-exit :pid pid})
+                          (draw-supervisor-launch-child!))
+
+                        (and age (> age (draw-watchdog-stale-ms)))
+                        (begin
+                          (draw-log-entry! :supervisor-restart
+                                           {:reason :stale-heartbeat
+                                            :pid pid
+                                            :age-ms age})
+                          (draw-supervisor-stop-child!)
+                          (draw-supervisor-launch-child!))
+
+                        :else
+                        nil))
+                    (thread-sleep! (/ (draw-supervisor-poll-ms) 1000.0))
+                    (loop))
+                  nil))))
+          "cluck-draw-supervisor"))
+  (thread-start! *draw-supervisor-thread*)
+  *draw-supervisor-thread*)
+
+(defn draw-stop-supervisor-loop!
+  "Stop the parent-side supervisor thread."
+  []
+  (let [thread *draw-supervisor-thread*]
+    (set! *draw-supervisor-thread* nil)
+    (if thread
+      (thread-terminate! thread)
+      false)
+    nil))
+
+(defn draw-start-supervised-dev!
+  "Start the draw child process and the parent supervisor thread."
+  []
+  (draw-with-lock
+    (lambda ()
+      (set! *draw-state* (or *draw-state* (default-state)))
+      (set! *draw-running?* true)
+      (set! *draw-control-seq* 0)
+      (set! *draw-last-control-seq* 0)
+      (set! *draw-last-heartbeat-at* 0)
+      (set! *draw-last-state-sync-at* 0)
+      (draw-clear-error!)
+      (draw-clear-control-file!)
+      (draw-clear-watchdog-files!)
+      (draw-write-state-file! *draw-state* true)
+      (draw-log-entry! :supervised-start
+                       {:state (draw-state-snapshot *draw-state*)
+                        :child-log (draw-child-stdout-path)
+                        :control (draw-control-file-path)})
+      (let [pid (draw-supervisor-launch-child!)]
+        (if pid
+          (let [deadline (+ (draw-wall-clock-ms) 15000)]
+            (begin
+              (draw-start-supervisor-loop!)
+              (if (draw-wait-for-child-ready! deadline)
+                {:pid pid :mode :supervised}
+                (begin
+                  (draw-log-entry! :supervised-start-failed
+                                   {:pid pid
+                                    :child-log (draw-child-stdout-path)
+                                    :heartbeat (draw-heartbeat-file-path)})
+                  (set! *draw-running?* false)
+                  (draw-stop-supervisor-loop!)
+                  (draw-supervisor-stop-child!)
+                  false))))
+          (begin
+            (set! *draw-running?* false)
+            false))))))
+
+(defn stop!
+  "Stop the supervised child or the local draw loop."
+  []
+  (if (draw-supervised-mode?)
+    (draw-with-lock
+      (lambda ()
+        (draw-log-entry! :supervised-stop {:state (draw-state-snapshot (current-state))})
+        (set! *draw-running?* false)
+        (draw-write-control-command! :stop {})
+        (draw-stop-supervisor-loop!)
+        (draw-supervisor-stop-child!)
+        nil))
+    (draw-stop-local!)))
+
+(defn start-dev!
+  "Start the draw app in supervised mode, or locally when supervision is disabled."
+  []
+  (if (draw-supervised-mode?)
+    (draw-start-supervised-dev!)
+    (draw-start-local-dev!)))
+
 (defn restart-dev!
   "Restart the development window after a crash or reset."
   []
+  (draw-log-entry! :restart {:state (draw-state-snapshot *draw-state*)})
   (stop!)
   (reset-state!)
   (draw-clear-error!)
@@ -1871,6 +3197,28 @@
           (run-loop ctx state))
         nil))
     nil))
+
+(defn draw-child-main
+  "Run the draw window in child-process mode."
+  []
+  (set! *draw-child-mode?* true)
+  (set! *draw-supervision-enabled?* false)
+  (draw-log-entry! :child-main-enter {:cwd (current-directory)})
+  (set! *draw-state* (or (draw-read-state-file)
+                         *draw-state*
+                         (default-state)))
+  (set! *draw-last-control-seq* 0)
+  (draw-clear-error!)
+  (let [ctx (start!)]
+    (if ctx
+      (begin
+        (draw-log-entry! :child-main-started {:state (draw-state-snapshot *draw-state*)})
+        (render-now!)
+        (run-loop ctx *draw-state*)
+        (draw-stop-local!))
+      (begin
+        (draw-log-entry! :child-main-start-returned-nil {:error (last-error)})
+        nil))))
 
 (defn main
   "Open a window and run the minimal SDL3 loop."
@@ -1908,14 +3256,22 @@
               nil)))))))
 
 (comment
+  
+  (load-file "examples/cluck/draw/dev.clk")
+  (draw-clear-log!)
+  (draw-clear-watchdog-files!)
+  (start-dev!)
+
+  (draw-log-tail 50)
+  (dump-current-state!)
+  (draw-watchdog-status)
+
   (default-state)
   (describe-state (default-state))
   (draw-clear-strokes! (default-state))
   (draw-undo-stroke! (default-state))
   (draw-set-brush-size! (default-state) 6)
   (draw-toggle-eraser! (default-state))
-  (load-file "examples/cluck/draw/dev.clk")
-  (start-dev!)
   (restart-dev!)
   (draw-toggle-debug-panel! (current-state))
   (main ["--help"]))
