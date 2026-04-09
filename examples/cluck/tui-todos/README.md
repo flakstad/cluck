@@ -10,6 +10,11 @@ It provides a split-pane terminal UI with:
 - on-disk persistence in `build/tui-todos.sqlite3`
 - a small seed dataset on first launch
 
+What is in place:
+- `main.clk` with the TUI, prompts, and SQLite-backed note model
+- `run.scm` for source-mode runs
+- `run-standalone.scm` for a compiled launcher
+
 The app uses these eggs:
 - `ncurses`
 - `sqlite3`
@@ -25,6 +30,27 @@ Run it from the repository root:
 ```bash
 csi -q -s examples/cluck/tui-todos/run.scm
 ```
+
+Build a native binary from the same app:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/tui-todos-standalone examples/cluck/tui-todos/run-standalone.scm -L -lncurses -L -lsqlite3
+```
+
+The extra `-L` flags pass the native `ncurses` and `sqlite3` libraries through
+to the linker for this egg-backed example.
+
+Then run the compiled binary:
+
+```bash
+./build/tui-todos-standalone
+./build/tui-todos-standalone build/my-tui-todos.sqlite3
+```
+
+The standalone binary behaves like source mode:
+- with no args it opens `build/tui-todos.sqlite3`
+- with one arg it uses that database path instead
+- it creates `build/` in the current working directory on first launch when you use the default path
 
 For a fast noninteractive regression check, run:
 

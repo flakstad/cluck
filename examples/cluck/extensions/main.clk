@@ -11,8 +11,8 @@
 (def *extension-paths* [])
 (def *report-hooks* [])
 
-(define *project-name* "Flakstad Software")
-(define *project-items*
+(def *project-name* "Flakstad Software")
+(def *project-items*
   [{:id "CLK-101"
     :title "Refresh documentation"
     :status "doing"
@@ -46,12 +46,10 @@
 (defn apply-report-hooks
   "Apply registered report hooks in load order."
   [model]
-  (##core#let loop ((remaining *report-hooks*)
-                    (current model))
-    (if (empty? remaining)
-        current
-        (loop (rest remaining)
-              ((first remaining) current)))))
+  (reduce (fn [current hook]
+            (hook current))
+          model
+          *report-hooks*))
 
 (defn loaded-extension-paths
   "Return the extension file paths loaded by the latest run."
@@ -61,7 +59,7 @@
 (defn loadable-extension-file?
   "Return true when PATH points at a supported extension source file."
   [path]
-  (##core#let ((ext (str/lower-case (fs/extension path))))
+  (let [ext (str/lower-case (fs/extension path))]
     (or (string=? ext "scm")
         (string=? ext "clk"))))
 
@@ -72,7 +70,7 @@
       (error (format "extension file does not exist: %s" path))
       (if (not (loadable-extension-file? path))
           (error (format "extension file must end in .scm or .clk: %s" path))
-          (##core#let ((saved-ns (current-ns)))
+          (let [saved-ns (current-ns)]
             (dynamic-wind
               (lambda ()
                 (cluck-set-current-ns! 'cluck.examples.extensions))
@@ -86,12 +84,8 @@
 (defn load-extension-sources!
   "Load each extension source file in PATHS."
   [paths]
-  (##core#let loop ((remaining paths))
-    (if (empty? remaining)
-        *extension-paths*
-        (begin
-          (load-extension-source! (first remaining))
-          (loop (rest remaining))))))
+  (for-each load-extension-source! paths)
+  *extension-paths*)
 
 (defn project-item-status
   [item]
@@ -124,49 +118,19 @@
 
 (defn project-open-items
   [items]
-  (##core#let loop ((remaining items)
-                    (acc '()))
-    (if (empty? remaining)
-        (reverse acc)
-        (##core#let ((item (first remaining)))
-          (loop (rest remaining)
-                (if (project-item-open? item)
-                    (cons item acc)
-                    acc))))))
+  (filter project-item-open? items))
 
 (defn project-done-items
   [items]
-  (##core#let loop ((remaining items)
-                    (acc '()))
-    (if (empty? remaining)
-        (reverse acc)
-        (##core#let ((item (first remaining)))
-          (loop (rest remaining)
-                (if (project-item-done? item)
-                    (cons item acc)
-                    acc))))))
+  (filter project-item-done? items))
 
 (defn project-high-priority-open-items
   [items]
-  (##core#let loop ((remaining items)
-                    (acc '()))
-    (if (empty? remaining)
-        (reverse acc)
-        (##core#let ((item (first remaining)))
-          (loop (rest remaining)
-                (if (project-item-high-priority-open? item)
-                    (cons item acc)
-                    acc))))))
+  (filter project-item-high-priority-open? items))
 
 (defn project-item-titles
   [items]
-  (##core#let loop ((remaining items)
-                    (acc '()))
-    (if (empty? remaining)
-        (reverse acc)
-        (##core#let ((item (first remaining)))
-          (loop (rest remaining)
-                (cons (project-item-title item) acc))))))
+  (map project-item-title items))
 
 (defn report-list-string
   [items]
@@ -176,29 +140,11 @@
 
 (defn report-summary-line
   [items]
-  (##core#let loop ((remaining items)
-                    (total 0)
-                    (open-count 0)
-                    (doing-count 0)
-                    (done-count 0))
-    (if (empty? remaining)
-        (format "%d items total, %d open, %d doing, %d done"
-                total
-                open-count
-                doing-count
-                done-count)
-        (##core#let ((item (first remaining)))
-          (loop (rest remaining)
-                (+ total 1)
-                (if (project-item-open? item)
-                    (+ open-count 1)
-                    open-count)
-                (if (project-item-doing? item)
-                    (+ doing-count 1)
-                    doing-count)
-                (if (project-item-done? item)
-                    (+ done-count 1)
-                    done-count))))))
+  (format "%d items total, %d open, %d doing, %d done"
+          (count items)
+          (count (project-open-items items))
+          (count (filter project-item-doing? items))
+          (count (project-done-items items))))
 
 (defn focus-note
   [items]
@@ -217,13 +163,13 @@
 (defn report-model
   []
   (apply-report-hooks
-   (hash-map :project *project-name*
-             :items *project-items*
-             :summary (report-summary-line *project-items*)
-             :open-items (project-item-titles (project-open-items *project-items*))
-             :done-items (project-item-titles (project-done-items *project-items*))
-             :focus-items []
-             :attention-note #f)))
+   {:project *project-name*
+    :items *project-items*
+    :summary (report-summary-line *project-items*)
+    :open-items (project-item-titles (project-open-items *project-items*))
+    :done-items (project-item-titles (project-done-items *project-items*))
+    :focus-items []
+    :attention-note #f}))
 
 (defn report-project-name
   [model]

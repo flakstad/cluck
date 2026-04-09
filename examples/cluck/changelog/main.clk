@@ -11,6 +11,9 @@
 (def cluck-changelog-kind-order
   ["feat" "fix" "docs" "refactor" "perf" "test" "build" "ci" "chore" "style" "revert" "other"])
 
+(def cluck-changelog-known-kinds
+  #{"feat" "fix" "docs" "refactor" "perf" "test" "build" "ci" "chore" "style" "revert"})
+
 (defn changelog-default-range
   "Return the default Git range for the changelog summary."
   []
@@ -19,20 +22,14 @@
 (defn changelog-kind-known?
   "Return true when KIND is a recognized changelog category."
   [kind]
-  (##core#let loop ((kinds cluck-changelog-kind-order))
-    (if (empty? kinds)
-        false
-        (let [candidate (first kinds)]
-          (if (string=? kind candidate)
-              true
-              (loop (rest kinds)))))))
+  (contains? cluck-changelog-known-kinds kind))
 
 (defn changelog-subject-kind
   "Return the conventional-commit kind for SUBJECT, or other."
   [subject]
   (let [text (str/trim subject)
         len (string-length text)]
-    (##core#let loop ((idx 0))
+    (let loop ((idx 0))
       (if (>= idx len)
           "other"
           (let [ch (string-ref text idx)]
@@ -64,8 +61,7 @@
 (defn changelog-entries
   "Parse Git log TEXT into a vector of changelog entries."
   [text]
-  (filterv (fn [entry] (if entry true false))
-           (mapv changelog-parse-line (str/split-lines text))))
+  (vec (keep changelog-parse-line (str/split-lines text))))
 
 (defn changelog-kind-label
   "Return a display label for KIND."
@@ -117,12 +113,12 @@
 (defn print-entry-group
   "Print one changelog group."
   [entries]
-  (##core#let loop ((remaining entries))
-    (if (empty? remaining)
-        nil
-        (begin
-          (print-entry (first remaining))
-          (loop (rest remaining))))))
+  (reduce (fn [ignored entry]
+            (print-entry entry)
+            nil)
+          nil
+          entries)
+  nil)
 
 (defn print-summary
   "Print a grouped changelog summary."
@@ -132,19 +128,18 @@
   (println (format "Range: %s" range))
   (println (format "Commits: %d" (count entries)))
   (println "")
-  (##core#let loop ((kinds cluck-changelog-kind-order)
-                    (printed false))
-    (if (empty? kinds)
-        printed
-        (let [kind (first kinds)
-              group (changelog-group-entries entries kind)]
-          (if (empty? group)
-              (loop (rest kinds) printed)
-              (begin
-                (println (format "%s (%d)" (changelog-kind-label kind) (count group)))
-                (print-entry-group group)
-                (println "")
-                (loop (rest kinds) true)))))))
+  (reduce
+   (fn [ignored kind]
+     (let [group (changelog-group-entries entries kind)]
+       (if (empty? group)
+           nil
+           (begin
+             (println (format "%s (%d)" (changelog-kind-label kind) (count group)))
+             (print-entry-group group)
+             (println "")))))
+   nil
+   cluck-changelog-kind-order)
+  nil)
 
 (defn main
   "Print a changelog summary for an optional Git RANGE."

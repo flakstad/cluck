@@ -49,19 +49,7 @@
         "pragma foreign_keys = on;"))
 
 (def sql-create-table
-  (str/join
-   ""
-   ["create table if not exists entries ("
-    " id integer primary key autoincrement,"
-    " title text not null,"
-    " kind text not null default 'note',"
-    " priority integer not null default 3,"
-    " status text not null default 'open',"
-    " pinned integer not null default 0,"
-    " body text not null default '',"
-    " created_at text not null default (strftime('%Y-%m-%d %H:%M:%S', 'now')),"
-    " updated_at text not null default (strftime('%Y-%m-%d %H:%M:%S', 'now'))"
-    ");"]))
+  "create table if not exists entries ( id integer primary key autoincrement, title text not null, kind text not null default 'note', priority integer not null default 3, status text not null default 'open', pinned integer not null default 0, body text not null default '', created_at text not null default (strftime('%Y-%m-%d %H:%M:%S', 'now')), updated_at text not null default (strftime('%Y-%m-%d %H:%M:%S', 'now')));")
 
 (def sql-create-index-kind
   "create index if not exists entries_kind_idx on entries(kind, updated_at desc, id desc);")
@@ -73,60 +61,25 @@
   "select count(*) from entries;")
 
 (def sql-query-notes
-  (str/join
-   ""
-   ["select id, title, kind, priority, status, pinned, body, created_at, updated_at "
-    "from entries "
-    "where (? = 'all' or kind = ?) "
-    "and (? = '' or lower(title) like ? or lower(kind) like ? or lower(body) like ?) "
-    "order by (status <> 'open') asc, pinned desc, priority asc, updated_at desc, id desc;"]))
+  "select id, title, kind, priority, status, pinned, body, created_at, updated_at from entries where (? = 'all' or kind = ?) and (? = '' or lower(title) like ? or lower(kind) like ? or lower(body) like ?) order by (status <> 'open') asc, pinned desc, priority asc, updated_at desc, id desc;")
 
 (def sql-insert-note
-  (str/join
-   ""
-   ["insert into entries "
-    "(title, kind, priority, status, pinned, body, created_at, updated_at) "
-    "values (?, ?, ?, ?, ?, ?, "
-    "strftime('%Y-%m-%d %H:%M:%S', 'now'), "
-    "strftime('%Y-%m-%d %H:%M:%S', 'now'));"]))
+  "insert into entries (title, kind, priority, status, pinned, body, created_at, updated_at) values (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%S', 'now'), strftime('%Y-%m-%d %H:%M:%S', 'now'));")
 
 (def sql-update-note
-  (str/join
-   ""
-   ["update entries set "
-    "title = ?, "
-    "kind = ?, "
-    "priority = ?, "
-    "body = ?, "
-    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
-    "where id = ?;"]))
+  "update entries set title = ?, kind = ?, priority = ?, body = ?, updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') where id = ?;")
 
 (def sql-delete-note
   "delete from entries where id = ?;")
 
 (def sql-toggle-status
-  (str/join
-   ""
-   ["update entries set "
-    "status = case status when 'open' then 'done' else 'open' end, "
-    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
-    "where id = ?;"]))
+  "update entries set status = case status when 'open' then 'done' else 'open' end, updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') where id = ?;")
 
 (def sql-toggle-pinned
-  (str/join
-   ""
-   ["update entries set "
-    "pinned = case pinned when 0 then 1 else 0 end, "
-    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
-    "where id = ?;"]))
+  "update entries set pinned = case pinned when 0 then 1 else 0 end, updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') where id = ?;")
 
 (def sql-set-priority
-  (str/join
-   ""
-   ["update entries set "
-    "priority = ?, "
-    "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') "
-    "where id = ?;"]))
+  "update entries set priority = ?, updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now') where id = ?;")
 
 (defn blank? [text]
   (str/blank? (or text "")))
@@ -150,14 +103,14 @@
       (<= limit 0) ""
       (<= len limit) value
       (<= limit 3) (substring value 0 limit)
-      :else (str/join "" [(substring value 0 (- limit 3)) "..."]))))
+      :else (str (substring value 0 (- limit 3)) "..."))))
 
 (defn pad-right [text width]
   (let [limit width
         trimmed (truncate-text text limit)
         fill (- limit (string-length trimmed))]
     (cond
-      (> fill 0) (str/join "" [trimmed (repeat-char #\space fill)])
+      (> fill 0) (str trimmed (repeat-char #\space fill))
       :else trimmed)))
 
 (defn known-kind? [kind]
@@ -278,16 +231,15 @@
         status (if (note-done? note) "x" " ")
         kind (truncate-text (get note :kind) 6)
         title (get note :title)
-        raw (str/join ""
-                      [marker
-                       pinned
-                       status
-                       " ["
-                       (number->string (get note :priority))
-                       "] "
-                       (pad-right kind 6)
-                       " "
-                       title])]
+        raw (str marker
+                 pinned
+                 status
+                 " ["
+                 (number->string (get note :priority))
+                 "] "
+                 (pad-right kind 6)
+                 " "
+                 title)]
     (pad-right raw width)))
 
 (defn safe-cursor! [visible?]
@@ -309,13 +261,12 @@
            visible (cond
                      (<= available 0) ""
                      :else (substring text start end))
-           line (str/join ""
-                          [prompt-text
-                           " "
-                           visible
-                           (repeat-char #\space
-                                        (max 0 (- available
-                                                  (string-length visible))))])]
+           line (str prompt-text
+                     " "
+                     visible
+                     (repeat-char #\space
+                                  (max 0 (- available
+                                            (string-length visible)))))]
        (nc/mvaddstr row 0 (repeat-char #\space safe-cols))
        (nc/mvaddstr row 0 line)
        (nc/move row (min safe-cols (+ prompt-col (- cursor start))))
@@ -353,9 +304,8 @@
           (let [current (deref cursor)
                 value (deref text)]
             (reset! text
-                    (str/join ""
-                              [(substring value 0 (- current 1))
-                               (substring value current (string-length value))]))
+                    (str (substring value 0 (- current 1))
+                         (substring value current (string-length value))))
             (reset! cursor (- current 1))))
         (prompt-line-loop! prompt text cursor))
       (or (= key nc/KEY_DC) (= key 4))
@@ -364,9 +314,8 @@
           (let [current (deref cursor)
                 value (deref text)]
             (reset! text
-                    (str/join ""
-                              [(substring value 0 current)
-                               (substring value (+ current 1) (string-length value))]))))
+                    (str (substring value 0 current)
+                         (substring value (+ current 1) (string-length value))))))
         (prompt-line-loop! prompt text cursor))
       (and (>= key 32) (<= key 126))
       (begin
@@ -374,10 +323,9 @@
               value (deref text)
               ch (integer->char key)]
           (reset! text
-                  (str/join ""
-                            [(substring value 0 current)
-                             (str ch)
-                             (substring value current (string-length value))]))
+                  (str (substring value 0 current)
+                       (str ch)
+                       (substring value current (string-length value))))
           (reset! cursor (+ current 1)))
         (prompt-line-loop! prompt text cursor))
       (= key nc/KEY_RESIZE)
@@ -497,7 +445,7 @@
 (defn fetch-notes [conn kind-filter search-text]
   (let [needle (cond
                  (blank? search-text) ""
-                 :else (str/join "" ["%" (str/lower-case (str/trim search-text)) "%"]))
+                 :else (str "%" (str/lower-case (str/trim search-text)) "%"))
         kind (cond
                (blank? kind-filter) "all"
                :else kind-filter)]

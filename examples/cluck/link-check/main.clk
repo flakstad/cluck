@@ -9,7 +9,7 @@
             [cluck.string :as str]))
 
 (def cluck-link-markdown-extensions
-  ["md" "markdown" "mdown"])
+  #{"md" "markdown" "mdown"})
 
 (def cluck-link-ignored-prefixes
   ["build/" ".git/" ".worktrees/"])
@@ -17,33 +17,25 @@
 (defn link-ignored-path?
   "Return true when PATH should be skipped by the directory walk."
   [path]
-  (##core#let loop ((prefixes cluck-link-ignored-prefixes))
-    (if (empty? prefixes)
-        false
-        (let [prefix (first prefixes)]
-          (if (or (str/starts-with? path prefix)
-                  (str/includes? path (str "/" prefix)))
-              true
-              (loop (rest prefixes)))))))
+  (not
+   (empty?
+    (filter (fn [prefix]
+              (or (str/starts-with? path prefix)
+                  (str/includes? path (str "/" prefix))))
+            cluck-link-ignored-prefixes))))
 
 (defn link-markdown-file?
   "Return true when PATH looks like a Markdown file worth scanning."
   [path]
   (let [ext (str/lower-case (fs/extension path))]
     (and (not (link-ignored-path? path))
-         (##core#let loop ((extensions cluck-link-markdown-extensions))
-           (if (empty? extensions)
-               false
-               (let [candidate (first extensions)]
-                 (if (string=? ext candidate)
-                     true
-                     (loop (rest extensions)))))))))
+         (contains? cluck-link-markdown-extensions ext))))
 
 (defn link-target-cut-index
   "Return the index where a link target should stop."
   [text]
   (let [len (count text)]
-    (##core#let loop ((idx 0))
+    (let loop ((idx 0))
       (if (>= idx len)
           len
           (let [ch (string-ref text idx)]
@@ -80,7 +72,7 @@
   "Return the start index of the next Markdown link in LINE from START, or nil."
   [line start]
   (let [len (string-length line)]
-    (##core#let loop ((idx start))
+    (let loop ((idx start))
       (if (>= (+ idx 1) len)
           nil
           (if (and (char=? (string-ref line idx) #\])
@@ -92,7 +84,7 @@
   "Return the end index of a Markdown link target in LINE from START, or nil."
   [line start]
   (let [len (string-length line)]
-    (##core#let loop ((idx start))
+    (let loop ((idx start))
       (cond
         (>= idx len) nil
         (char=? (string-ref line idx) #\)) idx
@@ -101,7 +93,7 @@
 (defn scan-line
   "Scan LINE from PATH and return broken-link matches."
   [path line-number line]
-  (##core#let loop ((start 0) (acc '()))
+  (let loop ((start 0) (acc '()))
     (let [open (link-start-index line start)]
       (if open
           (let [target-start (+ open 2)
@@ -127,32 +119,23 @@
 (defn scan-file
   "Scan PATH and return a list of broken Markdown link matches."
   [path]
-  (let [lines (fs/read-lines path)]
-    (##core#let loop ((remaining lines)
-                      (line-number 1)
-                      (acc '()))
-      (if (empty? remaining)
-          acc
-          (let [line (first remaining)
-                next-acc (append acc (scan-line path line-number line))]
-            (loop (rest remaining)
-                  (+ line-number 1)
-                  next-acc))))))
+  (reduce append
+          '()
+          (map-indexed (fn [idx line]
+                         (scan-line path (+ idx 1) line))
+                       (fs/read-lines path))))
 
 (defn scan-targets
   "Return broken Markdown link matches for a list of files."
   [files]
-  (##core#let loop ((remaining files)
-                    (acc '()))
-    (if (empty? remaining)
-        acc
-        (let [path (first remaining)]
-          (if (fs/directory? path)
-              (error "Directory targets must be expanded before calling cluck.examples.link-check/main" path)
-              (let [next-acc (if (link-markdown-file? path)
-                               (append acc (scan-file path))
-                               acc)]
-                (loop (rest remaining) next-acc)))))))
+  (reduce (fn [acc path]
+            (if (fs/directory? path)
+                (error "Directory targets must be expanded before calling cluck.examples.link-check/main" path)
+                (if (link-markdown-file? path)
+                    (append acc (scan-file path))
+                    acc)))
+          '()
+          files))
 
 (defn print-match
   "Print one broken Markdown link match."
@@ -167,12 +150,8 @@
 (defn print-matches
   "Print all broken Markdown link matches."
   [matches]
-  (##core#let loop ((remaining matches))
-    (if (empty? remaining)
-        nil
-        (begin
-          (print-match (first remaining))
-          (loop (rest remaining))))))
+  (for-each print-match matches)
+  nil)
 
 (defn print-report
   "Print a Markdown link report for MATCHES."

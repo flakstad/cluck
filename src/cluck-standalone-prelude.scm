@@ -485,7 +485,9 @@
       (list `(let* ,bindings ,@body))))
 
 (define (cluck-standalone-split-docstring parts)
-  (if (and (pair? parts) (string? (car parts)))
+  (if (and (pair? parts)
+           (pair? (cdr parts))
+           (string? (car parts)))
       (cons (car parts) (cdr parts))
       (cons #f parts)))
 
@@ -500,6 +502,36 @@
          (define ,name ,value)
          (cluck-intern! (current-ns) ',name ,name)
          ,name)))
+
+(define (cluck-standalone-let-binding-pair-list? bindings)
+  (if (null? bindings)
+      #t
+      (if (and (pair? (car bindings))
+               (pair? (cdr (car bindings)))
+               (null? (cddr (car bindings))))
+          (cluck-standalone-let-binding-pair-list? (cdr bindings))
+          #f)))
+
+(define (cluck-standalone-let-binding-pair-names bindings)
+  (let loop ((xs bindings) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((binding (car xs)))
+          (loop (cdr xs) (cons (car binding) acc))))))
+
+(define (cluck-standalone-let-binding-pair-values bindings)
+  (let loop ((xs bindings) (acc '()))
+    (if (null? xs)
+        (reverse acc)
+        (let ((binding (car xs)))
+          (loop (cdr xs) (cons (cadr binding) acc))))))
+
+(define (cluck-standalone-expand-named-let name bindings body)
+  (let* ((names (cluck-standalone-let-binding-pair-names bindings))
+         (values (cluck-standalone-let-binding-pair-values bindings))
+         (params (list->vector names)))
+    `(letrec ((,name (fn ,params ,@body)))
+       (,name ,@values))))
 
 (define (cluck-standalone-parse-let-bindings bindings)
   (let ((xs (cluck-standalone-vector-form->list bindings)))
@@ -613,6 +645,10 @@
 (define cluck-wrap-body cluck-standalone-wrap-body)
 (define cluck-split-docstring cluck-standalone-split-docstring)
 (define cluck-def-expansion cluck-standalone-def-expansion)
+(define cluck-let-binding-pair-list? cluck-standalone-let-binding-pair-list?)
+(define cluck-let-binding-pair-names cluck-standalone-let-binding-pair-names)
+(define cluck-let-binding-pair-values cluck-standalone-let-binding-pair-values)
+(define cluck-expand-named-let cluck-standalone-expand-named-let)
 (define cluck-parse-let-bindings cluck-standalone-parse-let-bindings)
 (define cluck-ns-require-spec->forms cluck-standalone-ns-require-spec->forms)
 (define cluck-refer-clojure-directive->exclude

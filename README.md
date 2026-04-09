@@ -299,6 +299,7 @@ Another egg-backed example lives in:
 
 - [`examples/cluck/tui-todos/main.clk`](./examples/cluck/tui-todos/main.clk)
 - [`examples/cluck/tui-todos/run.scm`](./examples/cluck/tui-todos/run.scm)
+- [`examples/cluck/tui-todos/run-standalone.scm`](./examples/cluck/tui-todos/run-standalone.scm)
 
 It uses `ncurses` and `sqlite3` to build a split-pane terminal app with list
 navigation, a detail pane, search, kind filtering, add/edit/delete actions,
@@ -319,6 +320,25 @@ csi -q -s examples/cluck/tui-todos/run.scm
 
 The app seeds a few starter entries on first launch and keeps its data under
 `build/` so it stays local to the checkout.
+
+Build a native binary for the same app with:
+
+```bash
+csc -static -deployed -k -v -O2 -strip -o build/tui-todos-standalone examples/cluck/tui-todos/run-standalone.scm -L -lncurses -L -lsqlite3
+```
+
+The extra `-L` flags pass the native `ncurses` and `sqlite3` libraries through
+to the linker for this egg-backed example.
+
+Then run it with either the default database path or an explicit file:
+
+```bash
+./build/tui-todos-standalone
+./build/tui-todos-standalone build/my-tui-todos.sqlite3
+```
+
+The standalone launcher uses the same TUI and creates `build/` in the current
+working directory on first launch when you keep the default database path.
 
 ## Smoke tests
 
