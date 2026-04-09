@@ -540,13 +540,13 @@
                          :pressure 1.0
                          :shift? false}))
       frame-element (first (get frame-created :elements))]
-  (draw-input-assert-str= "frame tool creates frame element"
-                          ":frame"
+  (draw-input-assert-str= "legacy frame tool creates rectangle element"
+                          ":box"
                           (pr-str (get frame-element :kind)))
-  (draw-input-assert-num= "frame tool stores frame width"
+  (draw-input-assert-num= "legacy frame tool stores width"
                           30.0
                           (get frame-element :width))
-  (draw-input-assert-num= "frame tool stores frame height"
+  (draw-input-assert-num= "legacy frame tool stores height"
                           30.0
                           (get frame-element :height)))
 

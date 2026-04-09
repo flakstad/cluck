@@ -239,35 +239,35 @@
                             0
                             (count (get undone :elements))))
 
-  (let [frame-tool (draw-set-tool-core! (default-state) :frame)
-        started (draw-start-frame frame-tool
-                                  [10.0 20.0 1.0]
-                                  [10.0 20.0])
-        extended (draw-extend-frame started
-                                    [60.0 90.0 1.0]
-                                    [60.0 90.0])
-        finished (draw-finish-frame extended
-                                    [60.0 90.0 1.0]
-                                    [60.0 90.0])
+  (let [legacy-frame-tool (draw-set-tool-core! (default-state) :frame)
+        started (draw-start-box legacy-frame-tool
+                                [10.0 20.0 1.0]
+                                [10.0 20.0])
+        extended (draw-extend-box started
+                                  [60.0 90.0 1.0]
+                                  [60.0 90.0])
+        finished (draw-finish-box extended
+                                  [60.0 90.0 1.0]
+                                  [60.0 90.0])
         finished-snapshot (edn/read-string (pr-str finished))
         element (first (get finished-snapshot :elements))
         undone (draw-undo-stroke! finished)]
-    (draw-tools-assert-str= "finished frame keeps tool mode"
-                            "frame"
+    (draw-tools-assert-str= "legacy frame tool maps to rectangle mode"
+                            "rectangle"
                             (draw-tool-mode finished-snapshot))
-    (draw-tools-assert-num= "frame finish adds element"
+    (draw-tools-assert-num= "legacy frame tool still adds element"
                             1
                             (count (get finished-snapshot :elements)))
-    (draw-tools-assert-str= "frame finish element kind"
-                            ":frame"
+    (draw-tools-assert-str= "legacy frame tool creates rectangle element"
+                            ":box"
                             (pr-str (get element :kind)))
-    (draw-tools-assert-num= "frame finish width"
+    (draw-tools-assert-num= "legacy frame tool width"
                             50.0
                             (get element :width))
-    (draw-tools-assert-num= "frame finish height"
+    (draw-tools-assert-num= "legacy frame tool height"
                             70.0
                             (get element :height))
-    (draw-tools-assert-num= "undo removes frame element"
+    (draw-tools-assert-num= "undo removes rectangle from legacy frame tool"
                             0
                             (count (get undone :elements))))
 
@@ -524,16 +524,19 @@
         finished (draw-finish-selection-drag moved
                                              [25.0 35.0 1.0]
                                              [25.0 35.0])
-        moved-frame (first (get finished :elements))]
-    (draw-tools-assert-num= "selection can hit frame elements"
+        moved-box (first (get finished :elements))]
+    (draw-tools-assert-num= "selection can hit legacy frame elements"
                             1
                             (count (draw-selected-element-ids selected)))
-    (draw-tools-assert-num= "selection drag moves frame x"
+    (draw-tools-assert-str= "legacy frame normalizes to rectangle"
+                            ":box"
+                            (pr-str (get moved-box :kind)))
+    (draw-tools-assert-num= "selection drag moves legacy frame x"
                             20.0
-                            (get moved-frame :x))
-    (draw-tools-assert-num= "selection drag moves frame y"
+                            (get moved-box :x))
+    (draw-tools-assert-num= "selection drag moves legacy frame y"
                             30.0
-                            (get moved-frame :y)))
+                            (get moved-box :y)))
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)

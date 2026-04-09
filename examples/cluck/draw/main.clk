@@ -507,14 +507,15 @@
    :size (or (get element :size) 1)})
 
 (defn draw-normalize-frame-element
-  "Return ELEMENT in canonical frame-element form."
+  "Upgrade a legacy frame ELEMENT into canonical rectangle form."
   [element]
   {:id (get element :id)
-   :kind :frame
+   :kind :box
    :x (or (get element :x) 0.0)
    :y (or (get element :y) 0.0)
    :width (or (get element :width) 0.0)
    :height (or (get element :height) 0.0)
+   :rotation 0.0
    :color (get element :color)
    :size (or (get element :size) 1)})
 
@@ -1926,13 +1927,11 @@
       (if (draw-kind=? (or (get state :tool) :ink)
                        :arrow)
         "arrow"
-        (if (draw-kind=? (or (get state :tool) :ink) :frame)
-          "frame"
-          (if (draw-kind=? (or (get state :tool) :ink) :text)
-            "text"
-            (if (draw-kind=? (or (get state :tool) :ink) :select)
-              "select"
-              "ink")))))))
+        (if (draw-kind=? (or (get state :tool) :ink) :text)
+          "text"
+          (if (draw-kind=? (or (get state :tool) :ink) :select)
+            "select"
+            "ink"))))))
 
 (defn draw-next-element-id
   "Return the next canvas element id for STATE."
@@ -1959,7 +1958,7 @@
   "Set the current primary tool without recording history."
   [state tool]
   (assoc state
-         :tool tool
+         :tool (if (draw-kind=? tool :frame) :box tool)
          :eraser? false))
 
 (defn draw-box-tool?

@@ -313,7 +313,8 @@ binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
 The current structured-object milestone is intentionally small: ink, text, rectangle,
-arrow, and compatibility frame elements now coexist as first-class canvas elements, and the
+and arrow now coexist as first-class canvas elements, while older frame data is normalized
+to rectangles on load, and the
 selection tool can now pick, shift-add, move existing elements, show a group bounds rectangle,
 resize a single selected rectangle through corner handles, rotate it through a top handle, and expose a first
 clickable in-window tool panel with save/load controls. The next
