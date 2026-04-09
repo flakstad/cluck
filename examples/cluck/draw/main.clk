@@ -152,6 +152,7 @@
    :strokes []
    :active-stroke false
    :active-box false
+   :active-arrow false
    :last-key ""
    :last-text ""
    :last-event ""
@@ -399,6 +400,7 @@
                       (count (get (get state :active-stroke) :points))
                       0)
      :active-box? (if (get state :active-box) true false)
+     :active-arrow? (if (get state :active-arrow) true false)
      :history (count (get state :history))
      :canvas-dirty? (get state :canvas-dirty?)
      :last-key (or (get state :last-key) "")
@@ -434,6 +436,11 @@
   [element]
   (draw-kind=? (draw-element-kind element) :box))
 
+(defn draw-arrow-element?
+  "Return true when ELEMENT is an arrow."
+  [element]
+  (draw-kind=? (draw-element-kind element) :arrow))
+
 (defn draw-normalize-ink-element
   "Return ELEMENT in canonical ink-element form."
   [element]
@@ -455,12 +462,39 @@
    :color (get element :color)
    :size (or (get element :size) 1)})
 
+(defn draw-normalize-arrow-point
+  "Return POINT in canonical [x y pressure] form."
+  [point]
+  [(or (nth point 0) 0.0)
+   (or (nth point 1) 0.0)
+   (or (if (> (count point) 2) (nth point 2) 1.0) 1.0)])
+
+(defn draw-normalize-arrow-element
+  "Return ELEMENT in canonical arrow-element form."
+  [element]
+  {:id (get element :id)
+   :kind :arrow
+   :start (draw-normalize-arrow-point
+            (or (get element :start)
+                [(or (get element :x1) 0.0)
+                 (or (get element :y1) 0.0)
+                 1.0]))
+   :end (draw-normalize-arrow-point
+          (or (get element :end)
+              [(or (get element :x2) 0.0)
+               (or (get element :y2) 0.0)
+               1.0]))
+   :color (get element :color)
+   :size (or (get element :size) 1)})
+
 (defn draw-normalize-element
   "Return ELEMENT in canonical element form."
   [element]
   (if (draw-box-element? element)
     (draw-normalize-box-element element)
-    (draw-normalize-ink-element element)))
+    (if (draw-arrow-element? element)
+      (draw-normalize-arrow-element element)
+      (draw-normalize-ink-element element))))
 
 (defn draw-legacy-strokes->elements
   "Upgrade legacy stroke maps into ink elements."
@@ -1735,6 +1769,7 @@
                  :active-selection-drag false
                  :active-stroke false
                  :active-box false
+                 :active-arrow false
                  :pointer-down? false
                  :pointer-source false
                  :panning? false)
@@ -1747,9 +1782,12 @@
     "eraser"
     (if (draw-kind=? (or (get state :tool) :ink) :box)
       "box"
-      (if (draw-kind=? (or (get state :tool) :ink) :select)
-        "select"
-        "ink"))))
+      (if (draw-kind=? (or (get state :tool) :ink)
+                       :arrow)
+        "arrow"
+        (if (draw-kind=? (or (get state :tool) :ink) :select)
+          "select"
+          "ink")))))
 
 (defn draw-next-element-id
   "Return the next canvas element id for STATE."
@@ -1783,6 +1821,11 @@
   "Return true when STATE is currently in box mode."
   [state]
   (draw-kind=? (or (get state :tool) :ink) :box))
+
+(defn draw-arrow-tool?
+  "Return true when STATE is currently in arrow mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :arrow))
 
 (defn draw-selection-tool?
   "Return true when STATE is currently in selection mode."
@@ -1865,6 +1908,7 @@
                               :active-selection-drag false
                               :active-stroke false
                               :active-box false
+                              :active-arrow false
                               :pointer-down? false
                               :panning? false
                               :canvas-dirty? true)
@@ -1914,6 +1958,7 @@
       (string=? key "i") (draw-set-tool-core! state :ink)
       (string=? key "v") (draw-set-tool-core! state :select)
       (string=? key "b") (draw-set-tool-core! state :box)
+      (string=? key "a") (draw-set-tool-core! state :arrow)
       (string=? key "e") (draw-toggle-eraser-core! state)
       (string=? key "1") (draw-set-brush-size-core! state 2)
       (string=? key "2") (draw-set-brush-size-core! state 6)
@@ -2027,6 +2072,7 @@
                      :active-selection-drag false
                      :active-stroke false
                      :active-box false
+                     :active-arrow false
                      :panning? false
                      :pen-pressure 1.0
                      :canvas-dirty? true)]
@@ -2173,7 +2219,9 @@
        :y (- (get element :y) padding)
        :width (+ (get element :width) (* padding 2.0))
        :height (+ (get element :height) (* padding 2.0))}
-      (draw-point-bounds (get element :points) padding))))
+      (if (draw-arrow-element? element)
+        (draw-point-bounds [(get element :start) (get element :end)] padding)
+        (draw-point-bounds (get element :points) padding)))))
 
 (defn draw-point-in-bounds?
   "Return true when POINT lies within BOUNDS."
@@ -2226,6 +2274,28 @@
    :color (draw-selection-color)
    :size (draw-selection-outline-size)})
 
+(defn draw-arrow-record
+  "Build a fresh active-arrow record."
+  [start end color size]
+  {:start start
+   :end end
+   :color color
+   :size size})
+
+(defn draw-arrow-length
+  "Return the world-space length of ARROW."
+  [arrow]
+  (let [start (get arrow :start)
+        end (get arrow :end)
+        dx (- (nth end 0) (nth start 0))
+        dy (- (nth end 1) (nth start 1))]
+    (math/sqrt (+ (* dx dx) (* dy dy)))))
+
+(defn draw-arrow-visible?
+  "Return true when ARROW is long enough to commit."
+  [arrow]
+  (>= (draw-arrow-length arrow) (draw-box-min-size)))
+
 (defn draw-translate-point
   "Offset POINT by DX and DY, preserving pressure."
   [point dx dy]
@@ -2245,13 +2315,20 @@
      :height (get element :height)
      :color (get element :color)
      :size (get element :size)}
-    {:id (get element :id)
-     :kind :ink
-     :points (vec (map (fn [point]
-                         (draw-translate-point point dx dy))
-                       (get element :points)))
-     :color (get element :color)
-     :size (get element :size)}))
+    (if (draw-arrow-element? element)
+      {:id (get element :id)
+       :kind :arrow
+       :start (draw-translate-point (get element :start) dx dy)
+       :end (draw-translate-point (get element :end) dx dy)
+       :color (get element :color)
+       :size (get element :size)}
+      {:id (get element :id)
+       :kind :ink
+       :points (vec (map (fn [point]
+                           (draw-translate-point point dx dy))
+                         (get element :points)))
+       :color (get element :color)
+       :size (get element :size)})))
 
 (defn draw-translate-selected-elements
   "Return ELEMENTS with IDS translated by DX and DY."
@@ -2275,6 +2352,7 @@
              :pointer-source (if element pointer-source false)
              :active-stroke false
              :active-box false
+             :active-arrow false
              :active-selection-drag (if element
                                       {:ids ids
                                        :anchor point
@@ -2388,6 +2466,9 @@
                      (assoc state
                             :pointer-down? true
                             :pointer-source pointer-source
+                            :active-selection-drag false
+                            :active-box false
+                            :active-arrow false
                             :active-stroke stroke)
                      point
                      screen-point)]
@@ -2483,7 +2564,26 @@
              :pointer-down? true
              :pointer-source :box
              :active-stroke false
+             :active-arrow false
              :active-box active-box)
+      point
+      screen-point)))
+
+(defn draw-start-arrow
+  "Start an arrow drag from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [state (draw-push-history! state)
+        active-arrow (draw-arrow-record point
+                                        point
+                                        (draw-stroke-color state)
+                                        (get state :brush-size))]
+    (draw-sync-pointer-state
+      (assoc state
+             :pointer-down? true
+             :pointer-source :arrow
+             :active-stroke false
+             :active-box false
+             :active-arrow active-arrow)
       point
       screen-point)))
 
@@ -2501,6 +2601,21 @@
         point
         screen-point)
       (draw-start-box state point screen-point))))
+
+(defn draw-extend-arrow
+  "Update the active arrow drag to WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [active-arrow (get state :active-arrow)]
+    (if active-arrow
+      (draw-sync-pointer-state
+        (assoc state
+               :active-arrow (draw-arrow-record (get active-arrow :start)
+                                                point
+                                                (get active-arrow :color)
+                                                (get active-arrow :size)))
+        point
+        screen-point)
+      (draw-start-arrow state point screen-point))))
 
 (defn draw-finish-box
   "Commit the active box drag when it is large enough."
@@ -2532,6 +2647,39 @@
                :pointer-down? false
                :pointer-source false
                :active-box false)
+        point
+        screen-point))))
+
+(defn draw-finish-arrow
+  "Commit the active arrow drag when it is large enough."
+  [state point screen-point]
+  (let [active-arrow (get state :active-arrow)]
+    (if active-arrow
+      (let [arrow (draw-arrow-record (get active-arrow :start)
+                                     point
+                                     (get active-arrow :color)
+                                     (get active-arrow :size))
+            next-state (draw-sync-pointer-state
+                         (assoc state
+                                :pointer-down? false
+                                :pointer-source false
+                                :active-arrow false
+                                :canvas-dirty? true)
+                         point
+                         screen-point)
+            next-state (if (draw-arrow-visible? arrow)
+                         (draw-append-element next-state
+                                              (assoc arrow :kind :arrow))
+                         next-state)]
+        (draw-log-entry! :arrow-finish
+                         {:arrow (if (draw-arrow-visible? arrow) arrow false)
+                          :state (draw-state-snapshot next-state)})
+        next-state)
+      (draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-arrow false)
         point
         screen-point))))
 
@@ -2764,7 +2912,9 @@
                 (draw-start-selection-drag state point screen-point :mouse)
                 (if (draw-box-tool? state)
                   (draw-start-box state point screen-point)
-                  (draw-start-stroke state point screen-point :mouse))))
+                  (if (draw-arrow-tool? state)
+                    (draw-start-arrow state point screen-point)
+                    (draw-start-stroke state point screen-point :mouse)))))
 
             (and (draw-kind=? kind :mouse-up)
                  (get state :panning?))
@@ -2777,7 +2927,9 @@
                 (draw-finish-selection-drag state point screen-point)
                 (if (get state :active-box)
                   (draw-finish-box state point screen-point)
-                  (draw-finish-stroke state point screen-point))))
+                  (if (get state :active-arrow)
+                    (draw-finish-arrow state point screen-point)
+                    (draw-finish-stroke state point screen-point)))))
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2789,7 +2941,9 @@
                 (draw-extend-selection-drag state point screen-point)
                 (if (get state :active-box)
                   (draw-extend-box state point screen-point)
-                  (draw-extend-stroke state point screen-point))))
+                  (if (get state :active-arrow)
+                    (draw-extend-arrow state point screen-point)
+                    (draw-extend-stroke state point screen-point)))))
 
             :else
             (let [point (draw-input-event-point state event)
@@ -2815,7 +2969,9 @@
               (draw-start-selection-drag state point screen-point :pen)
               (if (draw-box-tool? state)
                 (draw-start-box state point screen-point)
-                (draw-start-stroke state point screen-point :pen))))
+                (if (draw-arrow-tool? state)
+                  (draw-start-arrow state point screen-point)
+                  (draw-start-stroke state point screen-point :pen)))))
 
           (and (or (draw-kind=? kind :pen-up)
                    (draw-kind=? kind :pen-button-up))
@@ -2830,7 +2986,9 @@
               (draw-finish-selection-drag state point screen-point)
               (if (get state :active-box)
                 (draw-finish-box state point screen-point)
-                (draw-finish-stroke state point screen-point))))
+                (if (get state :active-arrow)
+                  (draw-finish-arrow state point screen-point)
+                  (draw-finish-stroke state point screen-point)))))
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2842,7 +3000,9 @@
               (draw-extend-selection-drag state point screen-point)
               (if (get state :active-box)
                 (draw-extend-box state point screen-point)
-                (draw-extend-stroke state point screen-point))))
+                (if (get state :active-arrow)
+                  (draw-extend-arrow state point screen-point)
+                  (draw-extend-stroke state point screen-point)))))
 
           :else
           (let [point (draw-input-event-point state event)
@@ -3309,12 +3469,57 @@
     (draw-render-box-edge! renderer state color size c d)
     (draw-render-box-edge! renderer state color size d a)))
 
+(defn draw-arrow-head-length
+  "Return the world-space arrowhead length for SIZE in STATE."
+  [state size]
+  (let [screen-length (max 12.0 (* size 4.0))]
+    (/ screen-length (draw-view-zoom state))))
+
+(defn draw-arrow-head-width
+  "Return the world-space arrowhead width for SIZE in STATE."
+  [state size]
+  (* (draw-arrow-head-length state size) 0.55))
+
+(defn draw-render-arrow!
+  "Render an arrow element."
+  [renderer state arrow]
+  (let [start (get arrow :start)
+        end (get arrow :end)
+        size (get arrow :size)
+        color (get arrow :color)
+        dx (- (nth end 0) (nth start 0))
+        dy (- (nth end 1) (nth start 1))
+        length (math/sqrt (+ (* dx dx) (* dy dy)))]
+    (if (<= length 0.0)
+      (draw-with-stroke-color color
+        (lambda ()
+          (draw-render-stroke-point! renderer state end size)))
+      (let [ux (/ dx length)
+            uy (/ dy length)
+            head-length (draw-arrow-head-length state size)
+            head-width (draw-arrow-head-width state size)
+            back-x (- (nth end 0) (* ux head-length))
+            back-y (- (nth end 1) (* uy head-length))
+            left [(+ back-x (* (- uy) head-width))
+                  (+ back-y (* ux head-width))
+                  1.0]
+            right [(- back-x (* (- uy) head-width))
+                   (- back-y (* ux head-width))
+                   1.0]]
+        (draw-with-stroke-color color
+          (lambda ()
+            (draw-render-stroke-segment! renderer state start end size)
+            (draw-render-stroke-segment! renderer state left end size)
+            (draw-render-stroke-segment! renderer state right end size)))))))
+
 (defn draw-render-element!
   "Render a committed canvas element."
   [renderer state element]
   (if (draw-box-element? element)
     (draw-render-box! renderer state element)
-    (draw-render-stroke! renderer state element)))
+    (if (draw-arrow-element? element)
+      (draw-render-arrow! renderer state element)
+      (draw-render-stroke! renderer state element))))
 
 (defn draw-render-active-box!
   "Render the current active box preview."
@@ -3322,6 +3527,13 @@
   (draw-render-box! renderer
                     state
                     (draw-box-element active-box)))
+
+(defn draw-render-active-arrow!
+  "Render the current active arrow preview."
+  [renderer state active-arrow]
+  (draw-render-arrow! renderer
+                      state
+                      (assoc active-arrow :kind :arrow)))
 
 (defn draw-render-selection!
   "Render selection outlines for the currently selected elements."
@@ -3436,7 +3648,8 @@
   (let [renderer (get ctx :renderer)
         elements (get state :elements)
         active-stroke (get state :active-stroke)
-        active-box (get state :active-box)]
+        active-box (get state :active-box)
+        active-arrow (get state :active-arrow)]
     (reduce (fn [acc element]
               (begin
                 (draw-render-element! renderer state element)
@@ -3449,6 +3662,9 @@
     (if active-box
       (draw-render-active-box! renderer state active-box)
       nil)
+    (if active-arrow
+      (draw-render-active-arrow! renderer state active-arrow)
+      nil)
     (draw-render-selection! renderer state)))
 
 (defn draw-render-canvas!
@@ -3458,7 +3674,8 @@
         canvas (if ctx (get ctx :canvas) nil)
         preview (if ctx (get ctx :preview) nil)
         active (get state :active-stroke)
-        active-box (get state :active-box)]
+        active-box (get state :active-box)
+        active-arrow (get state :active-arrow)]
     (if (draw-canvas-ready?)
       (begin
         (sdl/render-texture! renderer canvas)
@@ -3469,6 +3686,9 @@
             nil))
         (if active-box
           (draw-render-active-box! renderer state active-box)
+          nil)
+        (if active-arrow
+          (draw-render-active-arrow! renderer state active-arrow)
           nil)
         (draw-render-selection! renderer state)
         (if (and (not active) (draw-preview-ready?))
@@ -3492,12 +3712,13 @@
                                     (draw-view-y state)
                                     (draw-view-zoom state)))
     (sdl/render-debug-text! renderer 12 60
-                            (format "pointer: %s ink: %d box: %s"
+                            (format "pointer: %s ink: %d box: %s arrow: %s"
                                     (if (get state :pointer-down?) "down" "up")
                                     (if (get state :active-stroke)
                                       (count (get (get state :active-stroke) :points))
                                       0)
-                                    (if (get state :active-box) "active" "idle")))
+                                    (if (get state :active-box) "active" "idle")
+                                    (if (get state :active-arrow) "active" "idle")))
     (sdl/render-debug-text! renderer 12 76
                             (format "pan: %s"
                                     (if (get state :panning?) "on" "off")))
@@ -3550,7 +3771,7 @@
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
    "  drag: draw / select"
-   "  i: ink   v: select   b: box"
+   "  i: ink   v: select   b: box   a: arrow"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"

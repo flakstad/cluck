@@ -111,6 +111,7 @@
 
   (let [box-state (draw-handle-tool-key! (default-state) "b")
         select-state (draw-handle-tool-key! (default-state) "v")
+        arrow-state (draw-handle-tool-key! (default-state) "a")
         box-snapshot (edn/read-string (pr-str box-state))
         ink-state (draw-handle-tool-key! box-state "i")]
     (draw-tools-assert-str= "box tool key preset"
@@ -119,6 +120,9 @@
     (draw-tools-assert-str= "selection tool key preset"
                             "select"
                             (draw-tool-mode select-state))
+    (draw-tools-assert-str= "arrow tool key preset"
+                            "arrow"
+                            (draw-tool-mode arrow-state))
     (draw-tools-assert-str= "ink tool key preset"
                             "ink"
                             (draw-tool-mode ink-state)))
@@ -191,6 +195,38 @@
                             0
                             (count (get undone :elements))))
 
+  (let [arrow-tool (draw-set-tool-core! (default-state) :arrow)
+        started (draw-start-arrow arrow-tool
+                                  [10.0 20.0 1.0]
+                                  [10.0 20.0])
+        extended (draw-extend-arrow started
+                                    [50.0 70.0 1.0]
+                                    [50.0 70.0])
+        finished (draw-finish-arrow extended
+                                    [50.0 70.0 1.0]
+                                    [50.0 70.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        element (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)]
+    (draw-tools-assert-str= "finished arrow keeps tool mode"
+                            "arrow"
+                            (draw-tool-mode finished-snapshot))
+    (draw-tools-assert-num= "arrow finish adds element"
+                            1
+                            (count (get finished-snapshot :elements)))
+    (draw-tools-assert-str= "arrow finish element kind"
+                            ":arrow"
+                            (pr-str (get element :kind)))
+    (draw-tools-assert-str= "arrow finish start point"
+                            "[10.0 20.0 1.0]"
+                            (pr-str (get element :start)))
+    (draw-tools-assert-str= "arrow finish end point"
+                            "[50.0 70.0 1.0]"
+                            (pr-str (get element :end)))
+    (draw-tools-assert-num= "undo removes arrow element"
+                            0
+                            (count (get undone :elements))))
+
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
                [{:kind :box
@@ -239,6 +275,34 @@
     (draw-tools-assert-num= "selection can hit ink elements"
                             1
                             (count (draw-selected-element-ids ink-hit))))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :arrow
+                 :start [10.0 20.0 1.0]
+                 :end [40.0 60.0 1.0]
+                 :color [255 255 255]
+                 :size 2}])
+        selected (draw-start-selection-drag base
+                                            [15.0 25.0 1.0]
+                                            [15.0 25.0]
+                                            :mouse)
+        moved (draw-extend-selection-drag selected
+                                          [25.0 35.0 1.0]
+                                          [25.0 35.0])
+        finished (draw-finish-selection-drag moved
+                                             [25.0 35.0 1.0]
+                                             [25.0 35.0])
+        moved-arrow (first (get finished :elements))]
+    (draw-tools-assert-num= "selection can hit arrow elements"
+                            1
+                            (count (draw-selected-element-ids selected)))
+    (draw-tools-assert-str= "selection drag moves arrow start"
+                            "[20.0 30.0 1.0]"
+                            (pr-str (get moved-arrow :start)))
+    (draw-tools-assert-str= "selection drag moves arrow end"
+                            "[50.0 70.0 1.0]"
+                            (pr-str (get moved-arrow :end))))
 
   (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
                                    [255 255 255]
