@@ -128,7 +128,7 @@
       (handle-exceptions exn
         (begin
           (draw-dev-release-build-lock! root)
-          (abort exn))
+          (error (format "SDL3 dev library build failed: %s" exn)))
         (begin
           (if (draw-dev-library-stale? root)
             (if (not (zero? (proc/system (draw-dev-library-build-command root))))
