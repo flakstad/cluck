@@ -26,6 +26,7 @@ What is in place:
 - tool shortcuts for `i` ink, `t` text, `r` rectangle, `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
+  - the default file format is EDN
 - viewport shortcuts for the infinite canvas:
   - `ctrl` + `+` / `=` zoom in at the pointer
   - `ctrl` + `-` zoom out at the pointer
@@ -101,6 +102,7 @@ While the window is live:
 - use `ctrl` + `+` / `-` to zoom around the cursor
 - the viewport now supports a much larger bounded world and deeper zoom range, while keeping pointer-anchored zoom stable in the focused view tests
 - press `ctrl+s` to save and `ctrl+o` to load from the default save path
+- the tool panel now shows the default save filename and the EDN format directly in the window
 - hold `space` and drag to pan the viewport
 - zoomed drawing keeps brush width visually stable on screen, so zooming in lets you place finer world-space detail
 - cursor shape now reflects the current interaction mode, including selection move/resize and tool-panel button hover

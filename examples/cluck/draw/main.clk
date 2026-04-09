@@ -2710,11 +2710,24 @@
   (let [width (draw-tool-panel-width)
         x (- (or (get state :width) 1280) width 12)
         y 12
-        height 238]
+        height 304]
     {:x x
      :y y
      :width width
      :height height}))
+
+(defn draw-save-format-label
+  "Return the default on-disk canvas format label."
+  []
+  "EDN")
+
+(defn draw-tool-panel-info-lines
+  "Return the footer metadata and shortcut lines for the tool panel."
+  [state]
+  [(format "file: %s" (fs/basename (draw-state-file-path)))
+   (format "format: %s" (draw-save-format-label))
+   "TAB toggle  CTRL+S save"
+   "CTRL+O load"])
 
 (defn draw-tool-panel-buttons
   "Return clickable tool panel buttons for STATE."
@@ -4956,7 +4969,8 @@
   "Render the toggleable in-window tool panel."
   [renderer state]
   (let [panel (draw-tool-panel-rect state)
-        buttons (draw-tool-panel-buttons state)]
+        buttons (draw-tool-panel-buttons state)
+        info-lines (draw-tool-panel-info-lines state)]
     (sdl/set-draw-color! renderer 18 20 26 228)
     (sdl/render-fill-rect! renderer
                            (get panel :x)
@@ -4979,14 +4993,15 @@
             nil
             buttons)
     (sdl/set-draw-color! renderer 210 210 210 255)
-    (sdl/render-debug-text! renderer
-                            (+ (get panel :x) 10)
-                            (+ (get panel :y) 212)
-                            "TAB toggle  CTRL+S save")
-    (sdl/render-debug-text! renderer
-                            (+ (get panel :x) 10)
-                            (+ (get panel :y) 228)
-                            "CTRL+O load")
+    (reduce (fn [next-y line]
+              (begin
+                (sdl/render-debug-text! renderer
+                                        (+ (get panel :x) 10)
+                                        next-y
+                                        line)
+                (+ next-y 16)))
+            (+ (get panel :y) 228)
+            info-lines)
     nil))
 
 (defn draw-render-debug-panel!

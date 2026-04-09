@@ -304,6 +304,7 @@ shortcuts are:
 - zoomed drawing keeps brush width visually stable on screen, so zooming in gives finer world-space detail
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
+- the tool panel shows the default save filename and the `EDN` format in-window
 - draw session logging writes to `build/cluck-draw.log`
 - crashes write a snapshot to `build/cluck-draw-crash.edn`
 - `draw-supervisor-status` reports the current child/supervisor state
