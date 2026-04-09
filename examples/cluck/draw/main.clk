@@ -2416,6 +2416,28 @@
     [(get element :id)]
     []))
 
+(defn draw-selection-add-id
+  "Return SELECTION with ELEMENT-ID appended when it is not already present."
+  [selection element-id]
+  (if (or (not element-id)
+          (draw-selection-has-id? selection element-id))
+    (vec selection)
+    (conj (vec selection) element-id)))
+
+(defn draw-selection-next-ids
+  "Return the next selection ids after hitting ELEMENT."
+  [state element extend-selection?]
+  (let [current (draw-selected-element-ids state)]
+    (if extend-selection?
+      (if element
+        (draw-selection-add-id current (get element :id))
+        current)
+      (if element
+        (if (draw-selection-has-id? current (get element :id))
+          current
+          [(get element :id)])
+        []))))
+
 (defn draw-selection-color
   "Return the overlay color used for selected elements."
   []
@@ -2520,11 +2542,11 @@
              element))
          elements)))
 
-(defn draw-start-selection-drag
-  "Select the topmost element under POINT and begin a drag when present."
-  [state point screen-point pointer-source]
+(defn draw-start-selection-interaction
+  "Update selection from POINT and begin a drag when an element was hit."
+  [state point screen-point pointer-source extend-selection?]
   (let [element (draw-find-hit-element state point)
-        ids (draw-selection-ids element)]
+        ids (draw-selection-next-ids state element extend-selection?)]
     (draw-sync-pointer-state
       (assoc state
              :selection ids
@@ -2544,6 +2566,15 @@
                                       false))
       point
       screen-point)))
+
+(defn draw-start-selection-drag
+  "Select the topmost element under POINT and begin a drag when present."
+  [state point screen-point pointer-source]
+  (draw-start-selection-interaction state
+                                    point
+                                    screen-point
+                                    pointer-source
+                                    false))
 
 (defn draw-extend-selection-drag
   "Move the current selection by the drag delta from its anchor."
@@ -3233,7 +3264,11 @@
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
               (if (draw-selection-tool? state)
-                (draw-start-selection-drag state point screen-point :mouse)
+                (draw-start-selection-interaction state
+                                                 point
+                                                 screen-point
+                                                 :mouse
+                                                 (if (get event :shift?) true false))
                 (if (draw-box-tool? state)
                   (draw-start-box state point screen-point)
                   (if (draw-arrow-tool? state)
@@ -3302,7 +3337,11 @@
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
             (if (draw-selection-tool? state)
-              (draw-start-selection-drag state point screen-point :pen)
+              (draw-start-selection-interaction state
+                                               point
+                                               screen-point
+                                               :pen
+                                               (if (get event :shift?) true false))
               (if (draw-box-tool? state)
                 (draw-start-box state point screen-point)
                 (if (draw-arrow-tool? state)
@@ -4218,6 +4257,7 @@
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
    "  drag: draw / select"
+   "  shift+click: add to selection"
    "  i: ink   t: text   v: select   b: box   a: arrow   f: frame"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"

@@ -411,6 +411,57 @@
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
+               [{:kind :box
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}
+                {:kind :box
+                 :x 70.0
+                 :y 90.0
+                 :width 20.0
+                 :height 30.0
+                 :color [255 255 255]
+                 :size 2}])
+        first (draw-start-selection-interaction base
+                                                [15.0 25.0 1.0]
+                                                [15.0 25.0]
+                                                :mouse
+                                                false)
+        second (draw-start-selection-interaction first
+                                                 [75.0 95.0 1.0]
+                                                 [75.0 95.0]
+                                                 :mouse
+                                                 true)
+        moved (draw-extend-selection-drag second
+                                          [85.0 105.0 1.0]
+                                          [85.0 105.0])
+        finished (draw-finish-selection-drag moved
+                                             [85.0 105.0 1.0]
+                                             [85.0 105.0])
+        elements (get finished :elements)
+        moved-first (nth elements 0)
+        moved-second (nth elements 1)]
+    (draw-tools-assert-num= "shift selection adds second element"
+                            2
+                            (count (draw-selected-element-ids second)))
+    (draw-tools-assert-num= "multi-select drag moves first box x"
+                            20.0
+                            (get moved-first :x))
+    (draw-tools-assert-num= "multi-select drag moves first box y"
+                            30.0
+                            (get moved-first :y))
+    (draw-tools-assert-num= "multi-select drag moves second box x"
+                            80.0
+                            (get moved-second :x))
+    (draw-tools-assert-num= "multi-select drag moves second box y"
+                            100.0
+                            (get moved-second :y)))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
                [{:kind :text
                  :x 20.0
                  :y 30.0
