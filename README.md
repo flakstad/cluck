@@ -243,7 +243,8 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
  tracks mouse, pen, and recent keyboard input, and supports a mixed ink/object
- canvas with a soft pressure-sensitive brush and a first box tool:
+ canvas with a soft pressure-sensitive brush, a first box tool, and a first
+ selection tool:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
@@ -271,11 +272,13 @@ like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 while the window stays open. Use the mouse wheel to zoom around the cursor,
 hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
 pointer, drag with the mouse or pen to paint
-ink, and switch to the box tool when you want a structured object. Press `d`
-to toggle the debug panel on demand. The current tool
+ink, switch to the box tool when you want a structured object, and switch to
+selection mode when you want to move existing elements. Press `d` to toggle
+the debug panel on demand. The current tool
 shortcuts are:
 
 - `i` ink tool
+- `v` selection tool
 - `b` box tool
 - `u` undo the last action
 - `c` clear the canvas
@@ -297,8 +300,9 @@ binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
 The current structured-object milestone is intentionally small: ink and box
-elements now coexist as first-class canvas elements, while selection and the
-rest of the object toolset are still the next steps.
+elements now coexist as first-class canvas elements, and a first selection
+tool can pick and move existing elements. The next steps are broader selection
+work and the rest of the object toolset like arrows, text, and frames.
 
 In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. The REPL
 starts with no window and does not load SDL automatically. When you want the

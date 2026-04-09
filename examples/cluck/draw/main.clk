@@ -147,6 +147,8 @@
    :history []
    :elements []
    :next-element-id 1
+   :selection []
+   :active-selection-drag false
    :strokes []
    :active-stroke false
    :active-box false
@@ -391,6 +393,7 @@
      :tool (draw-tool-mode state)
      :brush-size (get state :brush-size)
      :elements (count (get state :elements))
+     :selection (count (or (get state :selection) []))
      :strokes (count (get state :strokes))
      :active-points (if (get state :active-stroke)
                       (count (get (get state :active-stroke) :points))
@@ -487,6 +490,31 @@
           []
           elements))
 
+(defn draw-selection-has-id?
+  "Return true when SELECTION contains ELEMENT-ID."
+  [selection element-id]
+  (if (empty? selection)
+    false
+    (truthy?
+      (some (fn [selected-id]
+              (if (= selected-id element-id)
+                true
+                false))
+            selection))))
+
+(defn draw-normalize-selection
+  "Return SELECTION filtered down to ids present in ELEMENTS."
+  [selection elements]
+  (let [selection (or selection [])]
+    (vec
+      (filter (fn [element-id]
+                (draw-selection-has-id?
+                  (map (fn [element]
+                         (get element :id))
+                       elements)
+                  element-id))
+              selection))))
+
 (defn draw-max-element-id
   "Return the highest element id present in ELEMENTS."
   [elements]
@@ -515,9 +543,14 @@
   [state elements]
   (let [elements (draw-elements-with-ids elements)
         strokes (vec (draw-elements->strokes elements))
+        selection (draw-normalize-selection (get state :selection) elements)
         next-id (+ 1 (draw-max-element-id elements))]
     (assoc state
            :elements elements
+           :selection selection
+           :active-selection-drag (if (empty? selection)
+                                    false
+                                    (get state :active-selection-drag))
            :strokes strokes
            :next-element-id next-id)))
 
@@ -529,7 +562,13 @@
                 (assoc state :elements (draw-legacy-strokes->elements (get state :strokes))))
         state (if (contains? state :tool)
                 state
-                (assoc state :tool :ink))]
+                (assoc state :tool :ink))
+        state (if (contains? state :selection)
+                state
+                (assoc state :selection []))
+        state (if (contains? state :active-selection-drag)
+                state
+                (assoc state :active-selection-drag false))]
     (draw-sync-elements state (get state :elements))))
 
 (defn draw-heartbeat-payload
@@ -1692,6 +1731,8 @@
                  :background (get snapshot :background)
                  :tool (or (get snapshot :tool) :ink)
                  :eraser? (if (get snapshot :eraser?) true false)
+                 :selection []
+                 :active-selection-drag false
                  :active-stroke false
                  :active-box false
                  :pointer-down? false
@@ -1706,7 +1747,9 @@
     "eraser"
     (if (draw-kind=? (or (get state :tool) :ink) :box)
       "box"
-      "ink")))
+      (if (draw-kind=? (or (get state :tool) :ink) :select)
+        "select"
+        "ink"))))
 
 (defn draw-next-element-id
   "Return the next canvas element id for STATE."
@@ -1740,6 +1783,23 @@
   "Return true when STATE is currently in box mode."
   [state]
   (draw-kind=? (or (get state :tool) :ink) :box))
+
+(defn draw-selection-tool?
+  "Return true when STATE is currently in selection mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :select))
+
+(defn draw-selected-element-ids
+  "Return the current selected element ids from STATE."
+  [state]
+  (or (get state :selection) []))
+
+(defn draw-selected?
+  "Return true when ELEMENT is selected in STATE."
+  [state element]
+  (draw-selection-has-id?
+    (draw-selected-element-ids state)
+    (get element :id)))
 
 (defn draw-stroke-color
   "Return the active stroke color for STATE."
@@ -1801,6 +1861,8 @@
     (draw-clear-preview!)
     (let [next-state (draw-sync-elements
                        (assoc state
+                              :selection []
+                              :active-selection-drag false
                               :active-stroke false
                               :active-box false
                               :pointer-down? false
@@ -1850,6 +1912,7 @@
       (string=? key "c") (draw-clear-strokes-core! state)
       (string=? key "u") (draw-undo-stroke-core! state)
       (string=? key "i") (draw-set-tool-core! state :ink)
+      (string=? key "v") (draw-set-tool-core! state :select)
       (string=? key "b") (draw-set-tool-core! state :box)
       (string=? key "e") (draw-toggle-eraser-core! state)
       (string=? key "1") (draw-set-brush-size-core! state 2)
@@ -1961,6 +2024,7 @@
   (let [state (assoc state
                      :pointer-down? false
                      :pointer-source false
+                     :active-selection-drag false
                      :active-stroke false
                      :active-box false
                      :panning? false
@@ -2052,6 +2116,219 @@
   [box]
   (and (>= (get box :width) (draw-box-min-size))
        (>= (get box :height) (draw-box-min-size))))
+
+(defn draw-selection-screen-padding
+  "Return the screen-space padding used for hit testing and selection outlines."
+  []
+  8.0)
+
+(defn draw-selection-world-padding
+  "Return the world-space selection padding for STATE."
+  [state]
+  (/ (draw-selection-screen-padding)
+     (draw-view-zoom state)))
+
+(defn draw-point-bounds
+  "Return bounds for POINTS expanded by PADDING."
+  [points padding]
+  (if (empty? points)
+    false
+    (let [point (first points)
+          x (nth point 0)
+          y (nth point 1)
+          initial {:x x :y y :right x :bottom y}
+          bounds (reduce (lambda (current next-point)
+                           (let [px (nth next-point 0)
+                                 py (nth next-point 1)]
+                             {:x (if (< px (get current :x))
+                                   px
+                                   (get current :x))
+                              :y (if (< py (get current :y))
+                                   py
+                                   (get current :y))
+                              :right (if (> px (get current :right))
+                                       px
+                                       (get current :right))
+                              :bottom (if (> py (get current :bottom))
+                                        py
+                                        (get current :bottom))}))
+                         initial
+                         (rest points))]
+      {:x (- (get bounds :x) padding)
+       :y (- (get bounds :y) padding)
+       :width (+ (- (get bounds :right)
+                    (get bounds :x))
+                 (* padding 2.0))
+       :height (+ (- (get bounds :bottom)
+                     (get bounds :y))
+                  (* padding 2.0))})))
+
+(defn draw-element-bounds
+  "Return world-space bounds for ELEMENT, expanded for selection."
+  [state element]
+  (let [padding (+ (draw-selection-world-padding state)
+                   (or (get element :size) 1.0))]
+    (if (draw-box-element? element)
+      {:x (- (get element :x) padding)
+       :y (- (get element :y) padding)
+       :width (+ (get element :width) (* padding 2.0))
+       :height (+ (get element :height) (* padding 2.0))}
+      (draw-point-bounds (get element :points) padding))))
+
+(defn draw-point-in-bounds?
+  "Return true when POINT lies within BOUNDS."
+  [point bounds]
+  (and bounds
+       (>= (nth point 0) (get bounds :x))
+       (>= (nth point 1) (get bounds :y))
+       (<= (nth point 0) (+ (get bounds :x) (get bounds :width)))
+       (<= (nth point 1) (+ (get bounds :y) (get bounds :height)))))
+
+(defn draw-find-hit-element
+  "Return the topmost element under POINT, or false."
+  [state point]
+  (let [elements (get state :elements)
+        total (count elements)]
+    (let loop ((index (- total 1)))
+      (if (< index 0)
+        false
+        (let [element (nth elements index)]
+          (if (draw-point-in-bounds? point
+                                     (draw-element-bounds state element))
+            element
+            (loop (- index 1))))))))
+
+(defn draw-selection-ids
+  "Return a normalized single-selection vector for ELEMENT."
+  [element]
+  (if element
+    [(get element :id)]
+    []))
+
+(defn draw-selection-color
+  "Return the overlay color used for selected elements."
+  []
+  [120 180 255])
+
+(defn draw-selection-outline-size
+  "Return the stroke size used for selection outlines."
+  []
+  2)
+
+(defn draw-selection-outline-element
+  "Build a box-shaped outline element from BOUNDS."
+  [bounds]
+  {:kind :box
+   :x (get bounds :x)
+   :y (get bounds :y)
+   :width (get bounds :width)
+   :height (get bounds :height)
+   :color (draw-selection-color)
+   :size (draw-selection-outline-size)})
+
+(defn draw-translate-point
+  "Offset POINT by DX and DY, preserving pressure."
+  [point dx dy]
+  [(+ (nth point 0) dx)
+   (+ (nth point 1) dy)
+   (draw-point-pressure point)])
+
+(defn draw-translate-element
+  "Return ELEMENT moved by DX and DY."
+  [element dx dy]
+  (if (draw-box-element? element)
+    {:id (get element :id)
+     :kind :box
+     :x (+ (get element :x) dx)
+     :y (+ (get element :y) dy)
+     :width (get element :width)
+     :height (get element :height)
+     :color (get element :color)
+     :size (get element :size)}
+    {:id (get element :id)
+     :kind :ink
+     :points (vec (map (fn [point]
+                         (draw-translate-point point dx dy))
+                       (get element :points)))
+     :color (get element :color)
+     :size (get element :size)}))
+
+(defn draw-translate-selected-elements
+  "Return ELEMENTS with IDS translated by DX and DY."
+  [elements ids dx dy]
+  (vec
+    (map (fn [element]
+           (if (draw-selection-has-id? ids (get element :id))
+             (draw-translate-element element dx dy)
+             element))
+         elements)))
+
+(defn draw-start-selection-drag
+  "Select the topmost element under POINT and begin a drag when present."
+  [state point screen-point pointer-source]
+  (let [element (draw-find-hit-element state point)
+        ids (draw-selection-ids element)]
+    (draw-sync-pointer-state
+      (assoc state
+             :selection ids
+             :pointer-down? (if element true false)
+             :pointer-source (if element pointer-source false)
+             :active-stroke false
+             :active-box false
+             :active-selection-drag (if element
+                                      {:ids ids
+                                       :anchor point
+                                       :original-elements (edn/read-string
+                                                            (pr-str (get state :elements)))
+                                       :moved? false}
+                                      false))
+      point
+      screen-point)))
+
+(defn draw-extend-selection-drag
+  "Move the current selection by the drag delta from its anchor."
+  [state point screen-point]
+  (let [drag (get state :active-selection-drag)]
+    (if drag
+      (let [anchor (get drag :anchor)
+            dx (- (nth point 0) (nth anchor 0))
+            dy (- (nth point 1) (nth anchor 1))
+            moved? (or (get drag :moved?)
+                       (not (= dx 0.0))
+                       (not (= dy 0.0)))
+            state (if (and moved?
+                           (not (get drag :moved?)))
+                    (draw-push-history! state)
+                    state)
+            next-elements (if moved?
+                            (draw-translate-selected-elements
+                              (get drag :original-elements)
+                              (get drag :ids)
+                              dx
+                              dy)
+                            (get drag :original-elements))
+            next-drag (assoc drag :moved? moved?)
+            next-state (draw-sync-pointer-state
+                         (draw-sync-elements
+                           (assoc state
+                                  :active-selection-drag next-drag
+                                  :canvas-dirty? moved?)
+                           next-elements)
+                         point
+                         screen-point)]
+        next-state)
+      (draw-sync-pointer-state state point screen-point))))
+
+(defn draw-finish-selection-drag
+  "Finish the current selection drag and leave the selection active."
+  [state point screen-point]
+  (draw-sync-pointer-state
+    (assoc state
+           :pointer-down? false
+           :pointer-source false
+           :active-selection-drag false)
+    point
+    screen-point))
 
 (defn draw-segment-stroke
   "Build a fresh temporary stroke for incremental canvas commits."
@@ -2483,9 +2760,11 @@
             (draw-kind=? kind :mouse-down)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (if (draw-box-tool? state)
-                (draw-start-box state point screen-point)
-                (draw-start-stroke state point screen-point :mouse)))
+              (if (draw-selection-tool? state)
+                (draw-start-selection-drag state point screen-point :mouse)
+                (if (draw-box-tool? state)
+                  (draw-start-box state point screen-point)
+                  (draw-start-stroke state point screen-point :mouse))))
 
             (and (draw-kind=? kind :mouse-up)
                  (get state :panning?))
@@ -2494,9 +2773,11 @@
             (draw-kind=? kind :mouse-up)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (if (get state :active-box)
-                (draw-finish-box state point screen-point)
-                (draw-finish-stroke state point screen-point)))
+              (if (get state :active-selection-drag)
+                (draw-finish-selection-drag state point screen-point)
+                (if (get state :active-box)
+                  (draw-finish-box state point screen-point)
+                  (draw-finish-stroke state point screen-point))))
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2504,9 +2785,11 @@
             (get state :pointer-down?)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)]
-              (if (get state :active-box)
-                (draw-extend-box state point screen-point)
-                (draw-extend-stroke state point screen-point)))
+              (if (get state :active-selection-drag)
+                (draw-extend-selection-drag state point screen-point)
+                (if (get state :active-box)
+                  (draw-extend-box state point screen-point)
+                  (draw-extend-stroke state point screen-point))))
 
             :else
             (let [point (draw-input-event-point state event)
@@ -2528,9 +2811,11 @@
           (draw-kind=? kind :pen-down)
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (if (draw-box-tool? state)
-              (draw-start-box state point screen-point)
-              (draw-start-stroke state point screen-point :pen)))
+            (if (draw-selection-tool? state)
+              (draw-start-selection-drag state point screen-point :pen)
+              (if (draw-box-tool? state)
+                (draw-start-box state point screen-point)
+                (draw-start-stroke state point screen-point :pen))))
 
           (and (or (draw-kind=? kind :pen-up)
                    (draw-kind=? kind :pen-button-up))
@@ -2541,9 +2826,11 @@
               (draw-kind=? kind :pen-button-up))
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (if (get state :active-box)
-              (draw-finish-box state point screen-point)
-              (draw-finish-stroke state point screen-point)))
+            (if (get state :active-selection-drag)
+              (draw-finish-selection-drag state point screen-point)
+              (if (get state :active-box)
+                (draw-finish-box state point screen-point)
+                (draw-finish-stroke state point screen-point))))
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
@@ -2551,9 +2838,11 @@
           (get state :pointer-down?)
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)]
-            (if (get state :active-box)
-              (draw-extend-box state point screen-point)
-              (draw-extend-stroke state point screen-point)))
+            (if (get state :active-selection-drag)
+              (draw-extend-selection-drag state point screen-point)
+              (if (get state :active-box)
+                (draw-extend-box state point screen-point)
+                (draw-extend-stroke state point screen-point))))
 
           :else
           (let [point (draw-input-event-point state event)
@@ -2703,7 +2992,7 @@
   "Return a short textual summary of the current input state."
   []
   (let [state (or (current-state) (default-state))]
-    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
             (or (get state :mouse-x) 0.0)
             (or (get state :mouse-y) 0.0)
             (draw-view-x state)
@@ -2713,6 +3002,7 @@
             (or (get state :last-text) "")
             (or (get state :last-event) "")
             (count (get state :elements))
+            (count (draw-selected-element-ids state))
             (count (get state :strokes))
             (count (get state :history))
             (draw-tool-mode state)
@@ -2804,7 +3094,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -2817,6 +3107,7 @@
           (or (get state :last-key) "")
           (or (get state :last-text) "")
           (count (get state :elements))
+          (count (draw-selected-element-ids state))
           (count (get state :strokes))
           (count (get state :history))
           (draw-tool-mode state)
@@ -3032,6 +3323,23 @@
                     state
                     (draw-box-element active-box)))
 
+(defn draw-render-selection!
+  "Render selection outlines for the currently selected elements."
+  [renderer state]
+  (reduce (fn [acc element]
+            (begin
+              (if (draw-selected? state element)
+                (let [bounds (draw-element-bounds state element)]
+                  (if bounds
+                    (draw-render-box! renderer
+                                      state
+                                      (draw-selection-outline-element bounds))
+                    nil))
+                nil)
+              acc))
+          nil
+          (get state :elements)))
+
 (defn draw-preview-stroke!
   "Render STROKE into the preview texture."
   [state stroke]
@@ -3140,7 +3448,8 @@
       nil)
     (if active-box
       (draw-render-active-box! renderer state active-box)
-      nil)))
+      nil)
+    (draw-render-selection! renderer state)))
 
 (defn draw-render-canvas!
   "Render the cached canvas texture, or fall back to stroke replay."
@@ -3161,6 +3470,7 @@
         (if active-box
           (draw-render-active-box! renderer state active-box)
           nil)
+        (draw-render-selection! renderer state)
         (if (and (not active) (draw-preview-ready?))
           nil
           nil))
@@ -3192,11 +3502,12 @@
                             (format "pan: %s"
                                     (if (get state :panning?) "on" "off")))
     (sdl/render-debug-text! renderer 12 92
-                            (format "tool: %s size: %d color: %s elements: %d"
+                            (format "tool: %s size: %d color: %s elements: %d selection: %d"
                                     (draw-tool-mode state)
                                     (get state :brush-size)
                                     (pr-str (draw-stroke-color state))
-                                    (count (get state :elements))))
+                                    (count (get state :elements))
+                                    (count (draw-selected-element-ids state))))
     (sdl/render-debug-text! renderer 12 108
                             (format "undo history: %d"
                                     (count (get state :history))))
@@ -3238,8 +3549,8 @@
    "  wheel: zoom at pointer"
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
-   "  drag: draw"
-   "  i: ink   b: box"
+   "  drag: draw / select"
+   "  i: ink   v: select   b: box"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"

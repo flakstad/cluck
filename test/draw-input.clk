@@ -79,9 +79,9 @@
   (draw-input-assert-true "debug panel lists space pan"
                           (draw-input-has-line? lines "  space+drag: pan"))
   (draw-input-assert-true "debug panel lists draw"
-                          (draw-input-has-line? lines "  drag: draw"))
+                          (draw-input-has-line? lines "  drag: draw / select"))
   (draw-input-assert-true "debug panel lists tools"
-                          (draw-input-has-line? lines "  i: ink   b: box"))
+                          (draw-input-has-line? lines "  i: ink   v: select   b: box"))
   (draw-input-assert-true "debug panel lists pressure"
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
@@ -207,6 +207,52 @@
                                        :ctrl? true})]
   (draw-input-assert-true "ctrl plus zooms"
                           (> (draw-view-zoom zoomed) 1.0)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :box
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
+               :color [255 255 255]
+               :size 2}])
+      selected (draw-input-copy-state
+                 (draw-apply-input-event! base
+                                          {:kind :mouse-down
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=15.0 y=25.0"
+                                           :mouse-x 15.0
+                                           :mouse-y 25.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      moved (draw-input-copy-state
+              (draw-apply-input-event! selected
+                                       {:kind :mouse-motion
+                                        :desc "SDL_EVENT_MOUSE_MOTION x=25.0 y=35.0"
+                                        :mouse-x 25.0
+                                        :mouse-y 35.0
+                                        :pressure 1.0
+                                        :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! moved
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP x=25.0 y=35.0"
+                                           :mouse-x 25.0
+                                           :mouse-y 35.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      moved-box (first (get finished :elements))]
+  (draw-input-assert-num= "selection mouse-down picks one element"
+                          1
+                          (count (draw-selected-element-ids selected)))
+  (draw-input-assert-num= "selection mouse drag moves element x"
+                          20.0
+                          (get moved-box :x))
+  (draw-input-assert-num= "selection mouse drag moves element y"
+                          30.0
+                          (get moved-box :y))
+  (draw-input-assert-false "selection mouse-up clears active drag"
+                           (get finished :active-selection-drag)))
 
 (let [pen-state (draw-apply-and-log-input-event!
                   (default-state)
