@@ -1361,7 +1361,7 @@
   "Return the minimum screen-space spacing between active stroke samples."
   [state point size]
   (let [stamp (draw-point-screen-size state point size)
-        spacing (/ stamp 3.0)]
+        spacing (/ stamp 2.0)]
     (if (> spacing 1.0)
       spacing
       1.0)))
@@ -1386,7 +1386,9 @@
             spacing (draw-min-point-spacing state point size)]
         (if (>= distance spacing)
           (conj points point)
-          points)))))
+          (if (> (count points) 1)
+            (draw-replace-last points point)
+            points))))))
 
 (defn draw-start-stroke
   "Start a new stroke from DESC."
