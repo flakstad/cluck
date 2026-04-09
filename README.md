@@ -241,8 +241,8 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
  tracks mouse, pen, and recent keyboard input, and supports a mixed ink/object
- canvas with a soft pressure-sensitive brush, a first box tool, and a first
- selection tool:
+ canvas with a soft pressure-sensitive brush, a first box tool, a first
+ selection tool, and a first arrow tool:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
@@ -278,6 +278,7 @@ shortcuts are:
 - `i` ink tool
 - `v` selection tool
 - `b` box tool
+- `a` arrow tool
 - `u` undo the last action
 - `c` clear the canvas
 - `e` eraser
@@ -297,10 +298,10 @@ State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
-The current structured-object milestone is intentionally small: ink and box
-elements now coexist as first-class canvas elements, and a first selection
-tool can pick and move existing elements. The next steps are broader selection
-work and the rest of the object toolset like arrows, text, and frames.
+The current structured-object milestone is intentionally small: ink, box, and
+arrow elements now coexist as first-class canvas elements, and a first
+selection tool can pick and move existing elements. The next steps are broader
+selection work and the rest of the object toolset like text and frames.
 
 In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. The REPL
 starts with no window and does not load SDL automatically. When you want the

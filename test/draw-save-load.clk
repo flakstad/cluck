@@ -55,7 +55,12 @@
                    :width 50.0
                    :height 60.0
                    :color [4 5 6]
-                   :size 3}])]
+                   :size 3}
+                  {:kind :arrow
+                   :start [90.0 100.0 1.0]
+                   :end [120.0 140.0 1.0]
+                   :color [7 8 9]
+                   :size 2}])]
   (dynamic-wind
     (lambda ()
       (set-state! original)
@@ -77,7 +82,7 @@
                                   ":box"
                                   (pr-str (get (current-state) :tool)))
       (draw-save-load-assert-num= "load restored element count"
-                                  2
+                                  3
                                   (count (get (current-state) :elements)))
       (draw-save-load-assert-num= "load restored stroke count"
                                   1

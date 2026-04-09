@@ -81,7 +81,7 @@
   (draw-input-assert-true "debug panel lists draw"
                           (draw-input-has-line? lines "  drag: draw / select"))
   (draw-input-assert-true "debug panel lists tools"
-                          (draw-input-has-line? lines "  i: ink   v: select   b: box"))
+                          (draw-input-has-line? lines "  i: ink   v: select   b: box   a: arrow"))
   (draw-input-assert-true "debug panel lists pressure"
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
