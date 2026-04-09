@@ -1,0 +1,53 @@
+;; Pure draw stroke sampling helpers.
+
+(ns cluck.examples.draw.stroke
+  (:require [cluck.examples.draw.geometry :as draw.geometry]
+            [cluck.examples.draw.view :as draw.view]
+            [cluck.math :as math]))
+
+(defn draw-segment-stroke
+  "Build a fresh temporary stroke for incremental canvas commits."
+  [stroke points]
+  (draw.geometry/draw-stroke-record points
+                                    (get stroke :color)
+                                    (get stroke :size)))
+
+(defn draw-point-screen-distance
+  "Return the screen-space distance between A and B."
+  [state a b]
+  (let [screen-a (draw.view/draw-world-point->screen-point state a)
+        screen-b (draw.view/draw-world-point->screen-point state b)
+        dx (- (nth screen-b 0) (nth screen-a 0))
+        dy (- (nth screen-b 1) (nth screen-a 1))]
+    (math/sqrt (+ (* dx dx) (* dy dy)))))
+
+(defn draw-min-point-spacing
+  "Return the minimum screen-space spacing between active stroke samples."
+  [state point size]
+  (let [stamp (draw.view/draw-point-screen-size state point size)
+        spacing (/ stamp 2.0)]
+    (if (> spacing 1.0)
+      spacing
+      1.0)))
+
+(defn draw-replace-last
+  "Return ITEMS with the final element replaced by VALUE."
+  [items value]
+  (let [total (count items)]
+    (if (<= total 1)
+      [value]
+      (conj (vec (take (- total 1) items)) value))))
+
+(defn draw-append-stroke-point
+  "Append POINT on STROKE when it is far enough from the prior sample."
+  [state stroke point]
+  (let [points (get stroke :points)
+        size (get stroke :size)]
+    (if (empty? points)
+      [point]
+      (let [previous (last points)
+            distance (draw-point-screen-distance state previous point)
+            spacing (draw-min-point-spacing state point size)]
+        (if (>= distance spacing)
+          (conj points point)
+          points)))))

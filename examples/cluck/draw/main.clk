@@ -13,6 +13,7 @@
             [cluck.examples.draw.geometry :as draw-geometry]
             [cluck.examples.draw.selection :as draw-selection]
             [cluck.examples.draw.edit :as draw-edit]
+            [cluck.examples.draw.stroke :as draw-stroke]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
             [cluck.io :as io]
@@ -211,6 +212,12 @@
 (def draw-finish-selection-drag draw-edit/draw-finish-selection-drag)
 (def draw-finish-selection-rotate draw-edit/draw-finish-selection-rotate)
 (def draw-finish-selection-resize draw-edit/draw-finish-selection-resize)
+
+(def draw-segment-stroke draw-stroke/draw-segment-stroke)
+(def draw-point-screen-distance draw-stroke/draw-point-screen-distance)
+(def draw-min-point-spacing draw-stroke/draw-min-point-spacing)
+(def draw-replace-last draw-stroke/draw-replace-last)
+(def draw-append-stroke-point draw-stroke/draw-append-stroke-point)
 
 (def draw-history-limit draw-history/draw-history-limit)
 (def draw-history-snapshot draw-history/draw-history-snapshot)
@@ -1630,53 +1637,6 @@
         screen-point)
 
       :else base-state)))
-
-(defn draw-segment-stroke
-  "Build a fresh temporary stroke for incremental canvas commits."
-  [stroke points]
-  (draw-stroke-record points
-                      (get stroke :color)
-                      (get stroke :size)))
-
-(defn draw-point-screen-distance
-  "Return the screen-space distance between A and B."
-  [state a b]
-  (let [screen-a (draw-world-point->screen-point state a)
-        screen-b (draw-world-point->screen-point state b)
-        dx (- (nth screen-b 0) (nth screen-a 0))
-        dy (- (nth screen-b 1) (nth screen-a 1))]
-    (math/sqrt (+ (* dx dx) (* dy dy)))))
-
-(defn draw-min-point-spacing
-  "Return the minimum screen-space spacing between active stroke samples."
-  [state point size]
-  (let [stamp (draw-point-screen-size state point size)
-        spacing (/ stamp 2.0)]
-    (if (> spacing 1.0)
-      spacing
-      1.0)))
-
-(defn draw-replace-last
-  "Return ITEMS with the final element replaced by VALUE."
-  [items value]
-  (let [total (count items)]
-    (if (<= total 1)
-      [value]
-      (conj (vec (take (- total 1) items)) value))))
-
-(defn draw-append-stroke-point
-  "Append POINT on STROKE when it is far enough from the prior sample."
-  [state stroke point]
-  (let [points (get stroke :points)
-        size (get stroke :size)]
-    (if (empty? points)
-      [point]
-      (let [previous (last points)
-            distance (draw-point-screen-distance state previous point)
-            spacing (draw-min-point-spacing state point size)]
-        (if (>= distance spacing)
-          (conj points point)
-          points)))))
 
 (defn draw-start-stroke
   "Start a new stroke from WORLD-POINT and SCREEN-POINT."
