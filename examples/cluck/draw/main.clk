@@ -1412,9 +1412,7 @@
             spacing (draw-min-point-spacing state point size)]
         (if (>= distance spacing)
           (conj points point)
-          (if (> (count points) 1)
-            (draw-replace-last points point)
-            points))))))
+          points)))))
 
 (defn draw-start-stroke
   "Start a new stroke from DESC."
@@ -1434,6 +1432,7 @@
                             :mouse-y (nth point 1))]
       (draw-reset-preview-sync!)
       (draw-clear-preview!)
+      (draw-preview-stroke! next-state stroke)
       (draw-log-entry! :stroke-start
                        {:point point
                         :state (draw-state-snapshot next-state)})
@@ -1445,7 +1444,10 @@
   (let [point (draw-event-point state desc)
         stroke (get state :active-stroke)]
     (if stroke
-      (let [next-points (draw-append-stroke-point state stroke point)
+      (let [points (get stroke :points)
+            next-points (draw-append-stroke-point state stroke point)
+            appended? (> (count next-points) (count points))
+            previous (if (empty? points) nil (last points))
             next-stroke (draw-stroke-record next-points
                                             (get stroke :color)
                                             (get stroke :size))
@@ -1453,6 +1455,13 @@
                               :mouse-x (nth point 0)
                               :mouse-y (nth point 1)
                               :active-stroke next-stroke)]
+        (if (and appended? previous)
+          (draw-preview-segment! next-state
+                                 previous
+                                 point
+                                 (get stroke :size)
+                                 (get stroke :color))
+          nil)
         next-state)
       (draw-start-stroke state desc))))
 
@@ -1463,7 +1472,7 @@
         stroke (get state :active-stroke)]
     (if stroke
         (let [points (get stroke :points)
-              finished-points (conj points point)
+              finished-points (draw-append-stroke-point state stroke point)
               finished (draw-stroke-record finished-points
                                            (get stroke :color)
                                            (get stroke :size))
@@ -1478,11 +1487,18 @@
                            {:point point
                             :points (count (get finished :points))
                             :state (draw-state-snapshot next-state)})
+          (if (and (draw-preview-ready?)
+                   (draw-canvas-ready?))
+            (begin
+              (draw-with-canvas!
+                (lambda (renderer)
+                  (sdl/render-texture! renderer (draw-preview))
+                  nil))
+              (draw-clear-preview!))
+            (if (draw-canvas-ready?)
+              (draw-commit-stroke! next-state finished)
+              nil))
           (draw-reset-preview-sync!)
-          (draw-clear-preview!)
-          (if (draw-canvas-ready?)
-            (draw-commit-stroke! next-state finished)
-            nil)
           next-state)
       (assoc state
              :pointer-down? false
@@ -2287,7 +2303,6 @@
         active (get state :active-stroke)]
     (if (draw-canvas-ready?)
       (begin
-        (draw-sync-preview! state)
         (sdl/render-texture! renderer canvas)
         (if (and active (draw-preview-ready?))
           (sdl/render-texture! renderer preview)

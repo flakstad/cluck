@@ -157,8 +157,8 @@
     (draw-tools-assert-num= "close trailing sample keeps point count stable"
                             2
                             (count points))
-    (draw-tools-assert-str= "close trailing sample updates live endpoint"
-                            "[21.0 10.0 1.0]"
+    (draw-tools-assert-str= "close trailing sample keeps committed endpoint"
+                            "[20.0 10.0 1.0]"
                             (pr-str (last points))))
 
   (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
