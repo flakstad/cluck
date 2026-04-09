@@ -45,7 +45,7 @@
       state (draw-replay-benchmark! (draw-replay-script) 1)
       elapsed (- (current-process-milliseconds) start)]
   (draw-replay-assert-true "replay namespace exists" (find-ns 'cluck.examples.draw))
-  (draw-replay-assert-true "replay stroke count" (= 1 (count (get state :strokes))))
+  (draw-replay-assert-true "replay stroke count" (= 2 (count (get state :strokes))))
   (draw-replay-assert-zoom>1 "replay zoom changes" state)
   (draw-replay-assert-true "replay debug panel toggles" (get state :debug-panel?))
   (draw-replay-assert-true "replay focus regains"

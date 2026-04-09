@@ -110,15 +110,19 @@
                             (str (get tool-state :brush-size))))
 
   (let [box-state (draw-handle-tool-key! (default-state) "b")
+        rect-state (draw-handle-tool-key! (default-state) "r")
         text-state (draw-handle-tool-key! (default-state) "t")
         select-state (draw-handle-tool-key! (default-state) "v")
         arrow-state (draw-handle-tool-key! (default-state) "a")
         frame-state (draw-handle-tool-key! (default-state) "f")
         box-snapshot (edn/read-string (pr-str box-state))
         ink-state (draw-handle-tool-key! box-state "i")]
-    (draw-tools-assert-str= "box tool key preset"
-                            "box"
+    (draw-tools-assert-str= "rectangle tool key preset"
+                            "rectangle"
                             (draw-tool-mode box-snapshot))
+    (draw-tools-assert-str= "rectangle alias key preset"
+                            "rectangle"
+                            (draw-tool-mode rect-state))
     (draw-tools-assert-str= "text tool key preset"
                             "text"
                             (draw-tool-mode text-state))
@@ -128,8 +132,8 @@
     (draw-tools-assert-str= "arrow tool key preset"
                             "arrow"
                             (draw-tool-mode arrow-state))
-    (draw-tools-assert-str= "frame tool key preset"
-                            "frame"
+    (draw-tools-assert-str= "frame tool key ignored from active tool surface"
+                            "ink"
                             (draw-tool-mode frame-state))
     (draw-tools-assert-str= "ink tool key preset"
                             "ink"
@@ -181,8 +185,8 @@
         finished-snapshot (edn/read-string (pr-str finished))
         element (first (get finished-snapshot :elements))
         undone (draw-undo-stroke! finished)]
-    (draw-tools-assert-str= "finished box switches tool mode stays box"
-                            "box"
+    (draw-tools-assert-str= "finished rectangle switches tool mode stays rectangle"
+                            "rectangle"
                             (draw-tool-mode finished-snapshot))
     (draw-tools-assert-num= "box finish adds element"
                             1
