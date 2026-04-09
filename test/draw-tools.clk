@@ -30,31 +30,34 @@
       (draw-tools-fail label expected actual)))
 
 (define (draw-tools-base-state)
-  {:title "Cluck Draw"
-   :width 1280
-   :height 720
-  :background [24 24 28]
-  :brush-color [245 245 245]
-  :brush-size 2
-  :pen-pressure 1.0
-  :window-focused? true
-  :eraser? false
-  :running? true
-   :frame 0
-   :mouse-x 0
-   :mouse-y 0
-   :pointer-down? false
-   :debug-panel? false
-   :history []
-   :strokes [[1 2] [3 4]]
-   :active-stroke false
-   :last-key ""
-   :last-text ""
-   :last-event ""
-   :recent-events []})
+  (draw-normalize-state
+    {:title "Cluck Draw"
+     :width 1280
+     :height 720
+     :background [24 24 28]
+     :brush-color [245 245 245]
+     :brush-size 2
+     :pen-pressure 1.0
+     :window-focused? true
+     :eraser? false
+     :running? true
+     :frame 0
+     :mouse-x 0
+     :mouse-y 0
+     :pointer-down? false
+     :debug-panel? false
+     :history []
+     :strokes [{:points [[1 2 1.0] [3 4 1.0]]
+                :color [245 245 245]
+                :size 2}]
+     :active-stroke false
+     :last-key ""
+     :last-text ""
+     :last-event ""
+     :recent-events []}))
 
 (draw-tools-assert-true "describe-state includes tool"
-                        (str/includes? (describe-state (default-state)) "tool brush"))
+                        (str/includes? (describe-state (default-state)) "tool ink"))
 (draw-tools-assert-true "describe-state includes undo count"
                         (str/includes? (describe-state (default-state)) "undo 0"))
 (draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
@@ -67,7 +70,7 @@
     (draw-tools-assert-num= "clear adds undo history" 1 (count (get cleared :history)))
     (let [restored (draw-undo-stroke! cleared)]
       (draw-tools-assert-num= "undo restores strokes after clear"
-                              2
+                              1
                               (count (get restored :strokes)))))
 
   (let [size-state (draw-set-brush-size! (default-state) 6)]
@@ -93,13 +96,23 @@
                                  (not (get clear-by-key :pointer-down?))))
     (let [undo-by-key (draw-handle-tool-key! clear-by-key "u")]
       (draw-tools-assert-num= "undo key dispatch"
-                              2
+                              1
                               (count (get undo-by-key :strokes)))))
 
   (let [tool-state (draw-handle-tool-key! (default-state) "3")]
     (draw-tools-assert-str= "brush size key preset"
                             "12"
                             (str (get tool-state :brush-size))))
+
+  (let [box-state (draw-handle-tool-key! (default-state) "b")
+        box-snapshot (edn/read-string (pr-str box-state))
+        ink-state (draw-handle-tool-key! box-state "i")]
+    (draw-tools-assert-str= "box tool key preset"
+                            "box"
+                            (draw-tool-mode box-snapshot))
+    (draw-tools-assert-str= "ink tool key preset"
+                            "ink"
+                            (draw-tool-mode ink-state)))
 
   (let [base (default-state)
         one (draw-start-stroke base [10.0 10.0 1.0] [10.0 10.0] :mouse)
@@ -133,6 +146,41 @@
     (draw-tools-assert-num= "brush change keeps stroke point history"
                             3
                             (count (get resized-stroke :points))))
+
+  (let [box-tool (draw-set-tool-core! (default-state) :box)
+        started (draw-start-box box-tool
+                                [10.0 20.0 1.0]
+                                [10.0 20.0])
+        extended (draw-extend-box started
+                                  [40.0 70.0 1.0]
+                                  [40.0 70.0])
+        finished (draw-finish-box extended
+                                  [40.0 70.0 1.0]
+                                  [40.0 70.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        element (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)]
+    (draw-tools-assert-str= "finished box switches tool mode stays box"
+                            "box"
+                            (draw-tool-mode finished-snapshot))
+    (draw-tools-assert-num= "box finish adds element"
+                            1
+                            (count (get finished-snapshot :elements)))
+    (draw-tools-assert-str= "box finish element kind"
+                            ":box"
+                            (pr-str (get element :kind)))
+    (draw-tools-assert-num= "box finish width"
+                            30.0
+                            (get element :width))
+    (draw-tools-assert-num= "box finish height"
+                            50.0
+                            (get element :height))
+    (draw-tools-assert-num= "box finish does not add stroke view"
+                            0
+                            (count (get finished-snapshot :strokes)))
+    (draw-tools-assert-num= "undo removes box element"
+                            0
+                            (count (get undone :elements))))
 
   (let [stroke (draw-stroke-record [[10.0 10.0 1.0]]
                                    [255 255 255]
