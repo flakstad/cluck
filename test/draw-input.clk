@@ -167,3 +167,39 @@
                           (get left :window-focused?))
   (draw-input-assert-false "mouse leave clears active stroke"
                            (get left :active-stroke)))
+
+(let [original-poll sdl/poll-event!
+      original-desc sdl/event-description
+      original-record draw-record-input!
+      original-sync sync-window-title!
+      events 0
+      recorded 0]
+  (set! *draw-state* (default-state))
+  (set! sdl/poll-event!
+        (lambda ()
+          (if (< events 100)
+            (begin
+              (set! events (+ events 1))
+              true)
+            false)))
+  (set! sdl/event-description
+        (lambda ()
+          "SDL_EVENT_PEN_MOTION x=12.0 y=34.0"))
+  (set! draw-record-input!
+        (lambda (state desc)
+          (set! recorded (+ recorded 1))
+          state))
+  (set! sync-window-title!
+        (lambda ()
+          true))
+  (draw-poll-input!)
+  (draw-input-assert-num= "input drain respects batch limit"
+                          (draw-input-batch-limit)
+                          recorded)
+  (draw-input-assert-num= "input drain still bumps frame"
+                          1
+                          (get *draw-state* :frame))
+  (set! sdl/poll-event! original-poll)
+  (set! sdl/event-description original-desc)
+  (set! draw-record-input! original-record)
+  (set! sync-window-title! original-sync))

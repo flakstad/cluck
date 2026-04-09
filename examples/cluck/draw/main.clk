@@ -1713,27 +1713,34 @@
                            (describe-state *draw-state*))
     nil))
 
-(defn draw-drain-input!
-  "Drain pending SDL input events into the current state."
-  [quit?]
-  (if (sdl/poll-event!)
-    (let [desc (sdl/event-description)
-          kind (draw-event-kind desc)]
-      (set! *draw-state* (draw-record-input! *draw-state* desc))
-      (if (draw-kind=? kind :quit)
-        (begin
-          (set! *draw-running?* false)
-          (draw-drain-input! true))
-        (draw-drain-input! quit?)))
-    (begin
-      (set! *draw-state* (draw-bump-frame! *draw-state*))
-      (sync-window-title!)
+(defn draw-input-batch-limit
+  "Return the maximum number of SDL events to process in one frame."
+  []
+  64)
+
+(defn draw-drain-input-batch!
+  "Drain at most REMAINING SDL input events into the current state."
+  [remaining quit?]
+  (if (<= remaining 0)
+    quit?
+    (if (sdl/poll-event!)
+      (let [desc (sdl/event-description)
+            kind (draw-event-kind desc)]
+        (set! *draw-state* (draw-record-input! *draw-state* desc))
+        (if (draw-kind=? kind :quit)
+          (begin
+            (set! *draw-running?* false)
+            (draw-drain-input-batch! (- remaining 1) true))
+          (draw-drain-input-batch! (- remaining 1) quit?)))
       quit?)))
 
 (defn draw-poll-input!
   "Drain pending SDL input events into the current state."
   []
-  (draw-drain-input! false))
+  (let [quit? (draw-drain-input-batch! (draw-input-batch-limit) false)]
+    (set! *draw-state* (draw-bump-frame! *draw-state*))
+    (sync-window-title!)
+    quit?))
 
 (defn describe-state
   "Return a short human-readable summary of STATE."
