@@ -1,0 +1,108 @@
+;; Cluck Ro CLI spike.
+;;
+;; This first slice captures the root command surface and prints the canonical
+;; top-level help text. Command handling will expand slice by slice under tests.
+
+(ns cluck.examples.ro.app
+  (:require [cluck.string :as str]))
+
+(def root-help-lines
+  (list
+   "ro"
+   ""
+   "usage:"
+   "  ro                        # start the TUI"
+   "  ro help                   # show this help"
+   "  ro <item-id>              # shortcut for: ro items show <item-id>"
+   "  ro docs [topic]"
+   "  ro completion <bash|zsh|fish>"
+   "  ro init"
+   "  ro identity ..."
+   "  ro doctor [--fail]"
+   "  ro reindex"
+   "  ro events list [--limit N]"
+   "  ro agent start <item-id>"
+   "  ro status                 # workspace status"
+   "  ro sync status"
+   "  ro sync remotes"
+   "  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]"
+   "  ro sync pull"
+   "  ro sync reindex"
+   "  ro sync push [--message <msg>] [--pull=false]"
+   "  ro sync resolve"
+   "  ro workspace current"
+   "  ro workspace list"
+   "  ro projects create --name <name> [--use]"
+   "  ro projects list"
+   "  ro projects archive <project-id> [--unarchive]"
+   "  ro projects use <project-id>"
+   "  ro projects current"
+   "  ro outlines create --project <project-id> --name <name>"
+   "  ro outlines list [--project <project-id>]"
+   "  ro outlines show <outline-id>"
+   "  ro outlines archive <outline-id> [--unarchive]"
+   "  ro outlines status ..."
+   "  ro items create --title <title> [--parent <item-id> | --outline <outline-id> | --project <project-id>]"
+   "  ro items copy <item-id> [--project <project-id>] [--outline <outline-id>] [--parent <item-id>|none]"
+   "  ro items show <item-id>"
+   "  ro items list [--project <project-id>] [--outline <outline-id>] [--status <status>]"
+   "  ro items set-status <item-id> --status <status> [--note \"...\"]"
+   "  ro items set-assign <item-id> [--actor <actor-id> | --clear]"
+   "  ro items claim <item-id> [--take-assigned]"
+   "  ro items events <item-id> [--limit N]"
+   "  ro items archive <item-id>"
+   "  ro items ready"
+   "  ro tasks                  # alias for item commands"
+   "  ro capture [--hotkey] [--no-output] [--exit-0-on-cancel]"
+   "  ro comments list <item-id> [--limit N] [--offset N]"
+   "  ro comments add <item-id> --body \"...\" [--reply-to <comment-id>] [--discuss]"
+   "  ro discuss list <item-id> [--state open|resolved|all] [--limit N] [--offset N]"
+   "  ro discuss show <discussion-id>"
+   "  ro discuss start <item-id> (--body \"...\" | --comment <comment-id>)"
+   "  ro discuss promote <item-id> --comment <comment-id>"
+   "  ro discuss resolve <discussion-id> [--body \"...\"]"
+   "  ro discuss reopen <discussion-id> [--body \"...\"]"
+   "  ro deps add <item-id> --blocks <item-id> | --related <item-id>"
+   "  ro deps list [<item-id>]"
+   "  ro deps tree <item-id>"
+   "  ro deps cycles"
+   "  ro attachments add <entity-id> <path> [--kind item|comment] [--title \"...\"] [--alt \"...\"] [--max-mb N] [--link|--copy]"
+   "  ro attachments list <entity-id>"
+   "  ro attachments open <attachment-id> [--print-path]"
+   "  ro attachments export <attachment-id> <dest-path>"
+   "  ro worklog list <item-id> [--limit N] [--offset N]"
+   "  ro worklog add <item-id> --body \"...\""
+   "  ro clock status"
+   "  ro clock in <item-id>"
+   "  ro clock out [--body \"...\"]"
+   "  ro agenda"
+   ""
+   "global flags:"
+   "  --workspace <name>  Select workspace"
+   "  --pretty            Pretty-print JSON output"))
+
+(def root-help-text
+  (str/join "\n" root-help-lines))
+
+(def root-help-output
+  (string-append root-help-text "\n"))
+
+(defn help-request?
+  [args]
+  (if (empty? args)
+      true
+      (let [command (first args)]
+        (or (string=? command "help")
+            (string=? command "--help")
+            (string=? command "-h")))))
+
+(defn print-help
+  []
+  (display root-help-output)
+  root-help-output)
+
+(defn main
+  [args]
+  (if (help-request? args)
+      (print-help)
+      (error "ro CLI commands are not implemented yet" args)))

@@ -1,0 +1,12 @@
+;; Thin entry point for the Ro CLI spike.
+;;
+;; `run.scm` and `run-standalone.scm` load `src/app.clk` before this namespace
+;; is invoked.
+
+(ns cluck.examples.ro)
+
+(defn main [args]
+  (let [app-main (ns-resolve 'cluck.examples.ro.app 'main)]
+    (if app-main
+        (app-main args)
+        (error "cluck.examples.ro.app is not loaded"))))

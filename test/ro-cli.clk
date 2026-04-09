@@ -1,0 +1,56 @@
+;; CLI contract tests for the Ro spike.
+
+(ns cluck.test.ro-cli
+  (:require [cluck.process :as proc]
+            [cluck.test.support :refer [assert-str=
+                                        assert-num=
+                                        assert-true
+                                        capture-output]]))
+
+(def app-help-request? (ns-resolve 'cluck.examples.ro.app 'help-request?))
+(def app-root-help-output (ns-resolve 'cluck.examples.ro.app 'root-help-output))
+(def app-main (ns-resolve 'cluck.examples.ro.app 'main))
+
+(defn run-cluck-ro
+  [args]
+  (proc/exec "csi" (append (list "-q" "-s" "examples/cluck/ro/run.scm")
+                           args)))
+
+(defn run-odin-ro
+  [args]
+  (proc/exec "ro" args))
+
+(assert-true "help request empty args" (app-help-request? '()))
+(assert-true "help request help" (app-help-request? '("help")))
+(assert-true "help request --help" (app-help-request? '("--help")))
+(assert-true "help request -h" (app-help-request? '("-h")))
+(assert-true "help request rejects item commands"
+             (not (app-help-request? '("items"))))
+
+(assert-str= "main prints root help on no args"
+             app-root-help-output
+             (capture-output (lambda () (app-main '()))))
+(assert-str= "main prints root help on help"
+             app-root-help-output
+             (capture-output (lambda () (app-main '("help")))))
+(assert-str= "main prints root help on --help"
+             app-root-help-output
+             (capture-output (lambda () (app-main '("--help")))))
+
+(let [cluck (run-cluck-ro '("help"))
+      odin (run-odin-ro '("help"))]
+  (assert-num= "help exit parity"
+               (get odin :exit)
+               (get cluck :exit))
+  (assert-str= "help output parity"
+               (get odin :out)
+               (get cluck :out)))
+
+(let [cluck (run-cluck-ro '("--help"))
+      odin (run-odin-ro '("--help"))]
+  (assert-num= "--help exit parity"
+               (get odin :exit)
+               (get cluck :exit))
+  (assert-str= "--help output parity"
+               (get odin :out)
+               (get cluck :out)))
