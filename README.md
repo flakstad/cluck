@@ -243,8 +243,8 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
  tracks mouse, pen, and recent keyboard input, and supports a mixed ink/object
- canvas with a soft pressure-sensitive brush, a first box tool, a first
- selection tool, a first arrow tool, a first frame tool, and a first text tool:
+ canvas with a soft pressure-sensitive brush, a first rectangle tool, a first
+ selection tool, a first arrow tool, and a first text tool:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`src/cluck/sdl3.clk`](./src/cluck/sdl3.clk)
@@ -272,7 +272,7 @@ like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 while the window stays open. Use the mouse wheel to zoom around the cursor,
 hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
 pointer, drag with the mouse or pen to paint
-ink, switch to the box tool when you want a structured object, and switch to
+ink, switch to the rectangle tool when you want a structured object, and switch to
 selection mode when you want to move existing elements. Press `d` to toggle
 the debug panel on demand. The current tool
 shortcuts are:
@@ -280,9 +280,8 @@ shortcuts are:
 - `i` ink tool
 - `t` text tool
 - `v` selection tool
-- `b` box tool
+- `r` rectangle tool (`b` still works as a legacy alias)
 - `a` arrow tool
-- `f` frame tool
 - `u` undo the last action
 - `c` clear the canvas
 - `e` eraser
@@ -293,6 +292,7 @@ shortcuts are:
 - `0` reset the viewport
 - wheel zooms around the cursor
 - `space`+drag pans the viewport
+- zoomed drawing keeps brush width visually stable on screen, so zooming in gives finer world-space detail
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
 - draw session logging writes to `build/cluck-draw.log`
@@ -302,8 +302,8 @@ State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
-The current structured-object milestone is intentionally small: ink, text, box,
-arrow, and frame elements now coexist as first-class canvas elements, and a
+The current structured-object milestone is intentionally small: ink, text, rectangle,
+arrow, and compatibility frame elements now coexist as first-class canvas elements, and a
 first selection tool can pick, shift-add, and move existing elements. The next
 steps are broader selection work like lasso/grouping and deeper text editing
 rather than just placement.

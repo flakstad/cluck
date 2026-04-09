@@ -938,12 +938,10 @@
      (draw-point-pressure point)]))
 
 (defn draw-point-screen-size
-  "Scale BASE-SIZE by POINT pressure and STATE zoom."
+  "Scale BASE-SIZE by POINT pressure in screen space."
   [state point base-size]
-  (let [zoom (draw-view-zoom state)
-        scaled (draw-exact-int (math/ceiling (* base-size
-                                                 (draw-point-pressure point)
-                                                 zoom)))]
+  (let [scaled (draw-exact-int (math/ceiling (* base-size
+                                                 (draw-point-pressure point))))]
     (if (> scaled 0)
       scaled
       1)))
@@ -1360,6 +1358,34 @@
     (or (string=? key "-")
         (str/includes? key "minus")
         (str/includes? key "keypad -"))))
+
+(defn draw-pan-left-key?
+  "Return true when KEY should pan the viewport left."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "h")
+        (string=? key "left"))))
+
+(defn draw-pan-right-key?
+  "Return true when KEY should pan the viewport right."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "l")
+        (string=? key "right"))))
+
+(defn draw-pan-up-key?
+  "Return true when KEY should pan the viewport up."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "k")
+        (string=? key "up"))))
+
+(defn draw-pan-down-key?
+  "Return true when KEY should pan the viewport down."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "j")
+        (string=? key "down"))))
 
 (defn draw-reset-view-key?
   "Return true when KEY resets the viewport."
@@ -1830,7 +1856,7 @@
   (if (get state :eraser?)
     "eraser"
     (if (draw-kind=? (or (get state :tool) :ink) :box)
-      "box"
+      "rectangle"
       (if (draw-kind=? (or (get state :tool) :ink)
                        :arrow)
         "arrow"
@@ -2023,9 +2049,9 @@
       (string=? key "i") (draw-set-tool-core! state :ink)
       (string=? key "t") (draw-set-tool-core! state :text)
       (string=? key "v") (draw-set-tool-core! state :select)
+      (string=? key "r") (draw-set-tool-core! state :box)
       (string=? key "b") (draw-set-tool-core! state :box)
       (string=? key "a") (draw-set-tool-core! state :arrow)
-      (string=? key "f") (draw-set-tool-core! state :frame)
       (string=? key "e") (draw-toggle-eraser-core! state)
       (string=? key "1") (draw-set-brush-size-core! state 2)
       (string=? key "2") (draw-set-brush-size-core! state 6)
@@ -2058,8 +2084,7 @@
                                                          (or (get state :pen-pressure) 1.0)])]
         (draw-sync-pointer-state next-state world-point screen-point))
 
-      (or (string=? key "h")
-          (str/includes? key "left"))
+      (draw-pan-left-key? key)
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-x (draw-clamp-view-coordinate
@@ -2068,8 +2093,7 @@
                               :canvas-dirty? true)]
         next-state)
 
-      (or (string=? key "l")
-          (str/includes? key "right"))
+      (draw-pan-right-key? key)
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-x (draw-clamp-view-coordinate
@@ -2078,8 +2102,7 @@
                               :canvas-dirty? true)]
         next-state)
 
-      (or (string=? key "k")
-          (str/includes? key "up"))
+      (draw-pan-up-key? key)
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-y (draw-clamp-view-coordinate
@@ -2088,8 +2111,7 @@
                               :canvas-dirty? true)]
         next-state)
 
-      (or (string=? key "j")
-          (str/includes? key "down"))
+      (draw-pan-down-key? key)
       (let [step (draw-pan-step)
             next-state (assoc state
                               :view-y (draw-clamp-view-coordinate
@@ -2458,6 +2480,33 @@
    :height (get bounds :height)
    :color (draw-selection-color)
    :size (draw-selection-outline-size)})
+
+(defn draw-world-rect->screen-rect
+  "Convert a world-space rectangle to a visible screen-space rectangle."
+  [state x y width height]
+  (let [zoom (draw-view-zoom state)
+        vx (draw-view-x state)
+        vy (draw-view-y state)
+        left-world (min x (+ x width))
+        right-world (max x (+ x width))
+        top-world (min y (+ y height))
+        bottom-world (max y (+ y height))
+        raw-left (* (- left-world vx) zoom)
+        raw-right (* (- right-world vx) zoom)
+        raw-top (* (- top-world vy) zoom)
+        raw-bottom (* (- bottom-world vy) zoom)
+        left (draw-exact-int (math/floor (min raw-left raw-right)))
+        right (draw-exact-int (math/ceiling (max raw-left raw-right)))
+        top (draw-exact-int (math/floor (min raw-top raw-bottom)))
+        bottom (draw-exact-int (math/ceiling (max raw-top raw-bottom)))
+        visible-right (if (> right left) right (+ left 1))
+        visible-bottom (if (> bottom top) bottom (+ top 1))]
+    {:x left
+     :y top
+     :width (- visible-right left)
+     :height (- visible-bottom top)
+     :right visible-right
+     :bottom visible-bottom}))
 
 (defn draw-arrow-record
   "Build a fresh active-arrow record."
@@ -3838,6 +3887,57 @@
                                    [(nth b 0) (nth b 1) 1.0]
                                    size))))
 
+(defn draw-render-screen-soft-segment!
+  "Render a soft segment directly in screen coordinates."
+  [renderer color size x1 y1 x2 y2]
+  (let [brush (draw-brush-texture)
+        strip (draw-strip-texture)
+        alpha 255]
+    (draw-with-stroke-color color
+      (lambda ()
+        (if (and (draw-brush-texture-ready?)
+                 (draw-strip-texture-ready?))
+          (sdl/render-soft-segment! renderer
+                                    strip
+                                    brush
+                                    x1
+                                    y1
+                                    size
+                                    alpha
+                                    x2
+                                    y2
+                                    size
+                                    alpha
+                                    (nth color 0)
+                                    (nth color 1)
+                                    (nth color 2))
+          (begin
+            (draw-set-stroke-color! renderer alpha)
+            (sdl/render-line! renderer x1 y1 x2 y2)
+            (sdl/render-fill-rect! renderer
+                                   (- x1 (/ size 2.0))
+                                   (- y1 (/ size 2.0))
+                                   size
+                                   size)
+            (sdl/render-fill-rect! renderer
+                                   (- x2 (/ size 2.0))
+                                   (- y2 (/ size 2.0))
+                                   size
+                                   size)
+            true))))))
+
+(defn draw-render-screen-rect!
+  "Render a rectangle outline directly in screen coordinates."
+  [renderer x y width height color size]
+  (let [left x
+        top y
+        right (+ x width)
+        bottom (+ y height)]
+    (draw-render-screen-soft-segment! renderer color size left top right top)
+    (draw-render-screen-soft-segment! renderer color size right top right bottom)
+    (draw-render-screen-soft-segment! renderer color size right bottom left bottom)
+    (draw-render-screen-soft-segment! renderer color size left bottom left top)))
+
 (defn draw-render-box!
   "Render a box element."
   [renderer state box]
@@ -3846,15 +3946,15 @@
         width (get box :width)
         height (get box :height)
         color (get box :color)
-        size (get box :size)
-        a [x y]
-        b [(+ x width) y]
-        c [(+ x width) (+ y height)]
-        d [x (+ y height)]]
-    (draw-render-box-edge! renderer state color size a b)
-    (draw-render-box-edge! renderer state color size b c)
-    (draw-render-box-edge! renderer state color size c d)
-    (draw-render-box-edge! renderer state color size d a)))
+        size (max 1 (draw-exact-int (or (get box :size) 1)))
+        screen-rect (draw-world-rect->screen-rect state x y width height)]
+    (draw-render-screen-rect! renderer
+                              (get screen-rect :x)
+                              (get screen-rect :y)
+                              (get screen-rect :width)
+                              (get screen-rect :height)
+                              color
+                              size)))
 
 (defn draw-frame-tab-width
   "Return the width of the frame header tab in world space."
@@ -3882,16 +3982,17 @@
         size (get frame :size)
         tab-width (draw-frame-tab-width state frame)
         tab-height (draw-frame-tab-height state frame)
+        screen-rect (draw-world-rect->screen-rect state x y width height)
         a [x y]
-        b [(+ x width) y]
-        c [(+ x width) (+ y height)]
-        d [x (+ y height)]
         tab-right (+ x tab-width)
         tab-bottom (+ y tab-height)]
-    (draw-render-box-edge! renderer state color size a b)
-    (draw-render-box-edge! renderer state color size b c)
-    (draw-render-box-edge! renderer state color size c d)
-    (draw-render-box-edge! renderer state color size d a)
+    (draw-render-screen-rect! renderer
+                              (get screen-rect :x)
+                              (get screen-rect :y)
+                              (get screen-rect :width)
+                              (get screen-rect :height)
+                              color
+                              size)
     (if (> tab-width 0.0)
       (begin
         (draw-render-box-edge! renderer state color size a [tab-right y])
@@ -4196,14 +4297,13 @@
                                     (draw-view-y state)
                                     (draw-view-zoom state)))
     (sdl/render-debug-text! renderer 12 60
-                            (format "pointer: %s ink: %d box: %s arrow: %s frame: %s text: %s"
+                            (format "pointer: %s ink: %d rectangle: %s arrow: %s text: %s"
                                     (if (get state :pointer-down?) "down" "up")
                                     (if (get state :active-stroke)
                                       (count (get (get state :active-stroke) :points))
                                       0)
                                     (if (get state :active-box) "active" "idle")
                                     (if (get state :active-arrow) "active" "idle")
-                                    (if (get state :active-frame) "active" "idle")
                                     (if (get state :active-text) "active" "idle")))
     (sdl/render-debug-text! renderer 12 76
                             (format "pan: %s"
@@ -4258,7 +4358,7 @@
    "  space+drag: pan"
    "  drag: draw / select"
    "  shift+click: add to selection"
-   "  i: ink   t: text   v: select   b: box   a: arrow   f: frame"
+   "  i: ink   t: text   v: select   r: rectangle   a: arrow"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"
