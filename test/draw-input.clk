@@ -95,6 +95,17 @@
                           "[12.0 34.0 0.5]"
                           (pr-str pen-point)))
 
+(let [original-pen-pressure sdl/event-pen-pressure]
+  (set! sdl/event-pen-pressure
+        (lambda ()
+          0.37))
+  (let [event (draw-build-input-event (default-state)
+                                      "SDL_EVENT_PEN_AXIS x=12.0 y=34.0")]
+    (draw-input-assert-num= "pen axis event reads live SDL pressure"
+                            0.37
+                            (get event :pressure)))
+  (set! sdl/event-pen-pressure original-pen-pressure))
+
 (draw-input-assert-true "pressure scales brush size"
                         (< (draw-point-size [10 20 0.25] 4)
                            (draw-point-size [10 20 1.0] 4)))

@@ -537,9 +537,15 @@
 (defn draw-event-pressure
   "Return the pen pressure for DESC when one is available."
   [state desc]
-  (if (draw-pen-event-kind? (draw-event-kind desc))
-    (or (get state :pen-pressure) 1.0)
-    1.0))
+  (let [kind (draw-event-kind desc)
+        live-pressure (sdl/event-pen-pressure)]
+    (if (draw-pen-event-kind? kind)
+      (if (draw-kind=? kind :pen-axis)
+        live-pressure
+        (or (get state :pen-pressure)
+            live-pressure
+            1.0))
+      1.0)))
 
 (defn draw-event-point
   "Return the [x y pressure] coordinate for DESC."
