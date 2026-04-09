@@ -251,6 +251,7 @@ The SDL3 example is a minimal drawing app scaffold that now opens a window,
 - [`src/cluck/examples/draw/state.clk`](./src/cluck/examples/draw/state.clk)
 - [`src/cluck/examples/draw/view.clk`](./src/cluck/examples/draw/view.clk)
 - [`src/cluck/examples/draw/panel.clk`](./src/cluck/examples/draw/panel.clk)
+- [`src/cluck/examples/draw/input.clk`](./src/cluck/examples/draw/input.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
 It uses direct C interop through `cluck.examples.draw.sdl3`, but the application logic stays

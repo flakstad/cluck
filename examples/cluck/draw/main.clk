@@ -11,6 +11,7 @@
             [cluck.examples.draw.panel :as draw-panel]
             [cluck.examples.draw.geometry :as draw-geometry]
             [cluck.examples.draw.selection :as draw-selection]
+            [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
             [cluck.io :as io]
             [cluck.process :as proc]
@@ -190,9 +191,41 @@
 (def draw-desired-cursor-kind draw-selection/draw-desired-cursor-kind)
 (def draw-clear-active-interactions draw-selection/draw-clear-active-interactions)
 
-(defn draw-recent-events-limit
-  []
-  8)
+(def draw-recent-events-limit draw-input/draw-recent-events-limit)
+(def draw-input-batch-limit draw-input/draw-input-batch-limit)
+(def draw-event-kind draw-input/draw-event-kind)
+(def draw-trim-events draw-input/draw-trim-events)
+(def draw-pen-owned-pointer? draw-input/draw-pen-owned-pointer?)
+(def draw-nonblank draw-input/draw-nonblank)
+(def draw-event-token draw-input/draw-event-token)
+(def draw-event-token-value draw-input/draw-event-token-value)
+(def draw-event-coordinate draw-input/draw-event-coordinate)
+(def draw-event-pressure draw-input/draw-event-pressure)
+(def draw-event-point draw-input/draw-event-point)
+(def draw-event-screen-point draw-input/draw-event-screen-point)
+(def draw-event-key-label draw-input/draw-event-key-label)
+(def draw-toggle-debug-panel! draw-input/draw-toggle-debug-panel!)
+(def draw-toggle-debug-panel-key? draw-input/draw-toggle-debug-panel-key?)
+(def draw-toggle-tool-panel! draw-input/draw-toggle-tool-panel!)
+(def draw-toggle-tool-panel-key? draw-input/draw-toggle-tool-panel-key?)
+(def draw-space-key? draw-input/draw-space-key?)
+(def draw-control-key? draw-input/draw-control-key?)
+(def draw-save-shortcut-key? draw-input/draw-save-shortcut-key?)
+(def draw-load-shortcut-key? draw-input/draw-load-shortcut-key?)
+(def draw-plus-key? draw-input/draw-plus-key?)
+(def draw-minus-key? draw-input/draw-minus-key?)
+(def draw-pan-left-key? draw-input/draw-pan-left-key?)
+(def draw-pan-right-key? draw-input/draw-pan-right-key?)
+(def draw-pan-up-key? draw-input/draw-pan-up-key?)
+(def draw-pan-down-key? draw-input/draw-pan-down-key?)
+(def draw-reset-view-key? draw-input/draw-reset-view-key?)
+(def draw-apply-key-modifier-state draw-input/draw-apply-key-modifier-state)
+(def draw-input-event-screen-point draw-input/draw-input-event-screen-point)
+(def draw-input-event-point draw-input/draw-input-event-point)
+(def draw-build-input-event draw-input/draw-build-input-event)
+(def draw-synthetic-pen-mouse-event? draw-input/draw-synthetic-pen-mouse-event?)
+(def draw-ignorable-input-event? draw-input/draw-ignorable-input-event?)
+(def draw-loggable-event? draw-input/draw-loggable-event?)
 
 (defn draw-debug-event-lines-limit
   []
@@ -821,45 +854,6 @@
   (set! *draw-render-fn* nil)
   nil)
 
-(defn draw-event-kind
-  "Classify the SDL event description string DESC."
-  [desc]
-  (cond
-    (str/starts-with? desc "SDL_EVENT_QUIT") :quit
-    (str/starts-with? desc "SDL_EVENT_WINDOW_CLOSE_REQUESTED") :quit
-    (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_GAINED") :focus-gained
-    (str/starts-with? desc "SDL_EVENT_WINDOW_FOCUS_LOST") :focus-lost
-    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_ENTER") :mouse-enter
-    (str/starts-with? desc "SDL_EVENT_WINDOW_MOUSE_LEAVE") :mouse-leave
-    (str/starts-with? desc "SDL_EVENT_FINGER_MOTION") :finger-motion
-    (str/starts-with? desc "SDL_EVENT_FINGER_DOWN") :finger-down
-    (str/starts-with? desc "SDL_EVENT_FINGER_UP") :finger-up
-    (str/starts-with? desc "SDL_EVENT_FINGER_CANCELED") :finger-canceled
-    (str/starts-with? desc "SDL_EVENT_KEY_DOWN") :key-down
-    (str/starts-with? desc "SDL_EVENT_KEY_UP") :key-up
-    (str/starts-with? desc "SDL_EVENT_TEXT_INPUT") :text-input
-    (str/starts-with? desc "SDL_EVENT_TEXT_EDITING") :text-editing
-    (str/starts-with? desc "SDL_EVENT_MOUSE_MOTION") :mouse-motion
-    (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_DOWN") :mouse-down
-    (str/starts-with? desc "SDL_EVENT_MOUSE_BUTTON_UP") :mouse-up
-    (str/starts-with? desc "SDL_EVENT_MOUSE_WHEEL") :mouse-wheel
-    (str/starts-with? desc "SDL_EVENT_PEN_MOTION") :pen-motion
-    (str/starts-with? desc "SDL_EVENT_PEN_DOWN") :pen-down
-    (str/starts-with? desc "SDL_EVENT_PEN_UP") :pen-up
-    (str/starts-with? desc "SDL_EVENT_PEN_BUTTON_DOWN") :pen-button-down
-    (str/starts-with? desc "SDL_EVENT_PEN_BUTTON_UP") :pen-button-up
-    (str/starts-with? desc "SDL_EVENT_PEN_AXIS") :pen-axis
-    :else :other))
-
-(defn draw-trim-events
-  "Keep only the newest few entries from EVENTS."
-  [events]
-  (let [limit (draw-recent-events-limit)
-        total (count events)]
-    (if (> total limit)
-      (vec (drop (- total limit) events))
-      (vec events))))
-
 (defn draw-truncate-text
   "Clamp TEXT to at most LIMIT characters for live debug rendering."
   [text limit]
@@ -887,44 +881,6 @@
   "Return a shorter event description suitable for the debug panel."
   [text]
   (draw-truncate-text text 88))
-
-(defn draw-pen-event-kind?
-  "Return true when KIND carries live pen pressure."
-  [kind]
-  (or (draw-kind=? kind :pen-motion)
-      (draw-kind=? kind :pen-down)
-      (draw-kind=? kind :pen-up)
-      (draw-kind=? kind :pen-button-down)
-      (draw-kind=? kind :pen-button-up)
-      (draw-kind=? kind :pen-axis)))
-
-(defn draw-event-pressure
-  "Return the pen pressure for DESC when one is available."
-  [state desc]
-  (let [kind (draw-event-kind desc)
-        live-pressure (sdl/event-pen-pressure)]
-    (if (draw-pen-event-kind? kind)
-      (if (draw-kind=? kind :pen-axis)
-        live-pressure
-        (or (get state :pen-pressure)
-            live-pressure
-            1.0))
-      1.0)))
-
-(defn draw-event-point
-  "Return the [x y pressure] coordinate for DESC."
-  [state desc]
-  (draw-screen-point->world-point
-    state
-    [(draw-event-coordinate desc "x=")
-     (draw-event-coordinate desc "y=")
-     (draw-event-pressure state desc)]))
-
-(defn draw-event-screen-point
-  "Return the raw [x y] screen coordinate for DESC."
-  [desc]
-  [(draw-event-coordinate desc "x=")
-   (draw-event-coordinate desc "y=")])
 
 (defn draw-wheel-zoom-factor
   "Return the multiplicative zoom factor for a wheel delta."
@@ -1030,135 +986,6 @@
          :pointer-down? false
          :pointer-source false
          :canvas-dirty? true))
-
-(defn draw-event-key-label
-  "Return the normalized key label for the current SDL key event."
-  [desc]
-  (let [key (str/trim (sdl/event-key-name))]
-    (if (str/blank? key)
-      desc
-      key)))
-
-(defn draw-toggle-debug-panel!
-  "Toggle the in-window debug panel."
-  [state]
-  (assoc state
-         :debug-panel? (not (get state :debug-panel?))))
-
-(defn draw-toggle-debug-panel-key?
-  "Return true when KEY should toggle the debug panel."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "d")
-        (string=? key "f1")
-        (str/includes? key "key=d")
-        (str/includes? key "sdlk_d")
-        (str/includes? key "scancode_d"))))
-
-(defn draw-toggle-tool-panel!
-  "Toggle the in-window tool panel."
-  [state]
-  (assoc state
-         :tool-panel? (not (get state :tool-panel?))))
-
-(defn draw-toggle-tool-panel-key?
-  "Return true when KEY should toggle the tool panel."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "tab")
-        (str/includes? key "tab"))))
-
-(defn draw-space-key?
-  "Return true when KEY names the space bar."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "space")
-        (str/includes? key "space"))))
-
-(defn draw-control-key?
-  "Return true when KEY names a control key."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (str/includes? key "ctrl")
-        (str/includes? key "control"))))
-
-(defn draw-save-shortcut-key?
-  "Return true when KEY should save the current canvas with Ctrl."
-  [key]
-  (string=? (str/lower-case (or key "")) "s"))
-
-(defn draw-load-shortcut-key?
-  "Return true when KEY should load the current canvas with Ctrl."
-  [key]
-  (string=? (str/lower-case (or key "")) "o"))
-
-(defn draw-plus-key?
-  "Return true when KEY names a plus/equals zoom-in key."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "+")
-        (string=? key "=")
-        (str/includes? key "plus")
-        (str/includes? key "keypad +"))))
-
-(defn draw-minus-key?
-  "Return true when KEY names a minus zoom-out key."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "-")
-        (str/includes? key "minus")
-        (str/includes? key "keypad -"))))
-
-(defn draw-pan-left-key?
-  "Return true when KEY should pan the viewport left."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "h")
-        (string=? key "left"))))
-
-(defn draw-pan-right-key?
-  "Return true when KEY should pan the viewport right."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "l")
-        (string=? key "right"))))
-
-(defn draw-pan-up-key?
-  "Return true when KEY should pan the viewport up."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "k")
-        (string=? key "up"))))
-
-(defn draw-pan-down-key?
-  "Return true when KEY should pan the viewport down."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "j")
-        (string=? key "down"))))
-
-(defn draw-reset-view-key?
-  "Return true when KEY resets the viewport."
-  [key]
-  (let [key (str/lower-case (or key ""))]
-    (or (string=? key "0")
-        (str/includes? key "kp0"))))
-
-(defn draw-apply-key-modifier-state
-  "Update persistent navigation modifiers from EVENT."
-  [state event]
-  (let [kind (get event :kind)
-        key (str/lower-case (or (get event :key) ""))]
-    (let [state (if (draw-space-key? key)
-                  (assoc state :space-down? (draw-kind=? kind :key-down))
-                  state)
-          state (if (draw-control-key? key)
-                  (assoc state :ctrl-down? (draw-kind=? kind :key-down))
-                  state)]
-      (if (and (draw-kind=? kind :key-down)
-               (get event :ctrl?))
-        (assoc state :ctrl-down? true)
-        state))))
 
 (defn draw-clear-error!
   "Clear the last recorded draw error."
@@ -2713,126 +2540,11 @@
         point
         screen-point))))
 
-(defn draw-pen-owned-pointer?
-  "Return true when STATE says the active pointer source is the pen."
-  [state]
-  (draw-kind=? (get state :pointer-source) :pen))
-
-(defn draw-nonblank
-  "Return VALUE when it contains visible text, otherwise FALLBACK."
-  [value fallback]
-  (if (str/blank? value)
-    fallback
-    value))
-
-(defn draw-event-token
-  "Return the text after LABEL in DESC, or nil when LABEL is missing."
-  [desc label]
-  (let [parts (str/split desc label)]
-    (if (> (count parts) 1)
-      (nth parts 1)
-      nil)))
-
-(defn draw-event-token-value
-  "Return the first raw value token after LABEL in DESC."
-  [desc label]
-  (let [tail (draw-event-token desc label)]
-    (if (str/blank? tail)
-      nil
-      (let [token (first (str/split tail " "))]
-        (first (str/split token ")"))))))
-
-(defn draw-event-coordinate
-  "Parse the first integer coordinate after LABEL in DESC."
-  [desc label]
-  (let [token (draw-event-token-value desc label)]
-    (if (str/blank? token)
-      0
-      (let [whole (first (str/split token "."))]
-        (parse-long whole)))))
-
 (defn draw-bump-frame!
   "Advance the frame counter in STATE."
   [state]
   (assoc state
          :frame (+ (get state :frame) 1)))
-
-(defn draw-input-event-screen-point
-  "Return the raw [x y] screen coordinate from EVENT."
-  [event]
-  [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
-   (or (get event :mouse-y) (get event :wheel-mouse-y) 0)])
-
-(defn draw-input-event-point
-  "Return the [x y pressure] world coordinate from EVENT."
-  [state event]
-  (draw-screen-point->world-point
-    state
-    [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
-     (or (get event :mouse-y) (get event :wheel-mouse-y) 0)
-     (or (get event :pressure)
-         (get state :pen-pressure)
-         1.0)]))
-
-(defn draw-build-input-event
-  "Build a synthetic event map for DESC using the current SDL event state."
-  [state desc]
-  (let [kind (draw-event-kind desc)]
-    {:kind kind
-     :desc desc
-     :key (draw-event-key-label desc)
-     :text (draw-nonblank (sdl/event-text-input) desc)
-     :text-edit (draw-nonblank (sdl/event-text-editing) desc)
-     :mouse-x (draw-event-coordinate desc "x=")
-     :mouse-y (draw-event-coordinate desc "y=")
-     :pressure (draw-event-pressure state desc)
-     :shift? (sdl/mod-shift-pressed?)
-     :ctrl? (sdl/mod-ctrl-pressed?)
-     :wheel-y (sdl/event-wheel-y)
-     :wheel-mouse-x (sdl/event-wheel-mouse-x)
-     :wheel-mouse-y (sdl/event-wheel-mouse-y)}))
-
-(defn draw-synthetic-pen-mouse-event?
-  "Return true when EVENT is SDL's synthetic mouse mirror of pen input."
-  [event]
-  (let [kind (get event :kind)
-        desc (or (get event :desc) "")]
-    (and (or (draw-kind=? kind :mouse-motion)
-             (draw-kind=? kind :mouse-down)
-             (draw-kind=? kind :mouse-up))
-         (str/includes? desc "which=4294967294"))))
-
-(defn draw-ignorable-input-event?
-  "Return true when EVENT should be discarded before it reaches app logic."
-  [event]
-  (let [kind (get event :kind)]
-    (or (draw-synthetic-pen-mouse-event? event)
-        (draw-kind=? kind :finger-motion)
-        (draw-kind=? kind :finger-down)
-        (draw-kind=? kind :finger-up)
-        (draw-kind=? kind :finger-canceled))))
-
-(defn draw-loggable-event?
-  "Return true when EVENT is useful in the persistent draw log."
-  [event]
-  (let [kind (get event :kind)]
-    (or (draw-kind=? kind :key-down)
-        (draw-kind=? kind :key-up)
-        (draw-kind=? kind :mouse-down)
-        (draw-kind=? kind :mouse-up)
-        (draw-kind=? kind :pen-down)
-        (draw-kind=? kind :pen-up)
-        (draw-kind=? kind :pen-button-down)
-        (draw-kind=? kind :pen-button-up)
-        (draw-kind=? kind :mouse-wheel)
-        (draw-kind=? kind :focus-lost)
-        (draw-kind=? kind :focus-gained)
-        (draw-kind=? kind :mouse-enter)
-        (draw-kind=? kind :mouse-leave)
-        (draw-kind=? kind :text-input)
-        (draw-kind=? kind :text-editing)
-        (draw-kind=? kind :quit))))
-
 (defn draw-apply-and-log-input-event!
   "Apply EVENT to STATE and emit a diagnostic log entry when relevant."
   [state event source]
@@ -3300,11 +3012,6 @@
     (sdl/set-window-title! (get *draw-context* :window)
                            (describe-state *draw-state*))
     nil))
-
-(defn draw-input-batch-limit
-  "Return the maximum number of SDL events to process in one frame."
-  []
-  64)
 
 (defn draw-drain-input-batch!
   "Drain at most REMAINING SDL input events into the current state."
