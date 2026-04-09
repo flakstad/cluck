@@ -19,11 +19,12 @@ What is in place:
 - a first connector tool: `a` drag-to-create arrows
 - a first text tool: `t` click to place text elements
 - an on-demand debug panel toggled with `d`
+- a toggleable in-window tool panel with clickable buttons, toggled with `tab`
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
 - tool shortcuts for `i` ink, `t` text, `r` rectangle, `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
-  state to `build/cluck-draw-state.edn` by default
+  state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
 - viewport shortcuts for the infinite canvas:
   - `ctrl` + `+` / `=` zoom in at the pointer
   - `ctrl` + `-` zoom out at the pointer
@@ -51,7 +52,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default
 5. if the draw child crashes or stalls, call `(restart-dev!)` to restart it without killing the REPL
-6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `t` to place text, press `r` to switch into drag-to-create rectangle mode (`b` still works as a legacy alias), press `a` for drag-to-create arrows, and press `v` to switch into selection mode for moving existing elements; press `d` to toggle the debug panel
+6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `t` to place text, press `r` to switch into drag-to-create rectangle mode (`b` still works as a legacy alias), press `a` for drag-to-create arrows, and press `v` to switch into selection mode for moving existing elements; press `d` to toggle the debug panel and `tab` to toggle the tool panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
@@ -81,11 +82,13 @@ starts a fresh one from the current REPL state.
 
 While the window is live:
 - press `d` to toggle the debug panel
+- press `tab` to toggle the in-window tool panel
 - press `i` for the ink tool
 - press `t` for the text tool, then click to place a text element
 - press `v` for the selection tool, then click or drag selected elements to move them
 - hold `shift` while clicking in selection mode to add another element to the active selection
 - drag a rectangle handle in selection mode to resize a selected rectangle
+- use the tool panel buttons to switch tools, and watch the panel summary for the current selection
 - press `r` for the rectangle tool, then drag to create a rectangle object (`b` still works as a legacy alias)
 - press `a` for the arrow tool, then drag to create a connector
 - press `u` to undo the last action, including clear or brush changes
@@ -94,6 +97,7 @@ While the window is live:
 - press `1`, `2`, or `3` to switch brush sizes
 - use the mouse wheel to zoom around the cursor
 - use `ctrl` + `+` / `-` to zoom around the cursor
+- press `ctrl+s` to save and `ctrl+o` to load from the default save path
 - hold `space` and drag to pan the viewport
 - zoomed drawing keeps brush width visually stable on screen, so zooming in lets you place finer world-space detail
 - call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state

@@ -144,6 +144,7 @@
    :ctrl-down? false
    :canvas-dirty? false
    :debug-panel? false
+   :tool-panel? false
    :history []
    :elements []
    :next-element-id 1
@@ -650,7 +651,10 @@
                 (assoc state :active-selection-drag false))
         state (if (contains? state :active-selection-resize)
                 state
-                (assoc state :active-selection-resize false))]
+                (assoc state :active-selection-resize false))
+        state (if (contains? state :tool-panel?)
+                state
+                (assoc state :tool-panel? false))]
     (draw-sync-elements state (get state :elements))))
 
 (defn draw-heartbeat-payload
@@ -849,6 +853,40 @@
   "Install STATE after loading it from disk."
   [state]
   (draw-set-state-core! state))
+
+(defn draw-save-canvas-core!
+  "Write STATE to the default draw save file and return STATE."
+  [state]
+  (let [path (draw-state-file-path)]
+    (draw-ensure-parent-directory! path)
+    (io/spit path (pr-str state))
+    (draw-log-entry! :save
+                     {:path path
+                      :state (draw-state-snapshot state)})
+    state))
+
+(defn draw-load-canvas-core!
+  "Load draw state from the default save file and return the next state."
+  [state]
+  (let [path (draw-state-file-path)]
+    (if (fs/exists? path)
+      (let [loaded (draw-normalize-state
+                     (edn/read-string (io/slurp path)))
+            next-state (assoc loaded
+                              :debug-panel? (if (get state :debug-panel?) true false)
+                              :tool-panel? (if (get state :tool-panel?) true false)
+                              :window-focused? (if (contains? state :window-focused?)
+                                                 (get state :window-focused?)
+                                                 true)
+                              :running? (if (contains? state :running?)
+                                          (get state :running?)
+                                          true)
+                              :canvas-dirty? true)]
+        (draw-log-entry! :load
+                         {:path path
+                          :state (draw-state-snapshot next-state)})
+        next-state)
+      state)))
 
 (defn draw-view-zoom
   "Return the current zoom factor from STATE."
@@ -1335,6 +1373,19 @@
         (str/includes? key "sdlk_d")
         (str/includes? key "scancode_d"))))
 
+(defn draw-toggle-tool-panel!
+  "Toggle the in-window tool panel."
+  [state]
+  (assoc state
+         :tool-panel? (not (get state :tool-panel?))))
+
+(defn draw-toggle-tool-panel-key?
+  "Return true when KEY should toggle the tool panel."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (or (string=? key "tab")
+        (str/includes? key "tab"))))
+
 (defn draw-space-key?
   "Return true when KEY names the space bar."
   [key]
@@ -1348,6 +1399,16 @@
   (let [key (str/lower-case (or key ""))]
     (or (str/includes? key "ctrl")
         (str/includes? key "control"))))
+
+(defn draw-save-shortcut-key?
+  "Return true when KEY should save the current canvas with Ctrl."
+  [key]
+  (string=? (str/lower-case (or key "")) "s"))
+
+(defn draw-load-shortcut-key?
+  "Return true when KEY should load the current canvas with Ctrl."
+  [key]
+  (string=? (str/lower-case (or key "")) "o"))
 
 (defn draw-plus-key?
   "Return true when KEY names a plus/equals zoom-in key."
@@ -2603,6 +2664,171 @@
           :else false))
       false)))
 
+(defn draw-tool-panel-width
+  "Return the tool panel width in screen pixels."
+  []
+  184)
+
+(defn draw-tool-panel-padding
+  "Return the tool panel inner padding in screen pixels."
+  []
+  10)
+
+(defn draw-tool-panel-button-height
+  "Return the button height for tool panel buttons."
+  []
+  20)
+
+(defn draw-tool-panel-button-gap
+  "Return the vertical gap between tool panel buttons."
+  []
+  6)
+
+(defn draw-tool-panel-rect
+  "Return the tool panel screen rectangle for STATE."
+  [state]
+  (let [width (draw-tool-panel-width)
+        x (- (or (get state :width) 1280) width 12)
+        y 12
+        height 238]
+    {:x x
+     :y y
+     :width width
+     :height height}))
+
+(defn draw-tool-panel-buttons
+  "Return clickable tool panel buttons for STATE."
+  [state]
+  (let [panel (draw-tool-panel-rect state)
+        padding (draw-tool-panel-padding)
+        x (+ (get panel :x) padding)
+        width (- (get panel :width) (* padding 2))
+        height (draw-tool-panel-button-height)
+        gap (draw-tool-panel-button-gap)
+        y0 (+ (get panel :y) 40)]
+    [ {:id :tool-ink
+       :label "Ink"
+       :kind :tool
+       :tool :ink
+       :active? (draw-kind=? (or (get state :tool) :ink) :ink)
+       :x x :y y0 :width width :height height}
+      {:id :tool-select
+       :label "Select"
+       :kind :tool
+       :tool :select
+       :active? (draw-kind=? (or (get state :tool) :ink) :select)
+       :x x :y (+ y0 (* 1 (+ height gap))) :width width :height height}
+      {:id :tool-rectangle
+       :label "Rectangle"
+       :kind :tool
+       :tool :box
+       :active? (draw-kind=? (or (get state :tool) :ink) :box)
+       :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
+      {:id :tool-arrow
+       :label "Arrow"
+       :kind :tool
+       :tool :arrow
+       :active? (draw-kind=? (or (get state :tool) :ink) :arrow)
+       :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
+      {:id :tool-text
+       :label "Text"
+       :kind :tool
+       :tool :text
+       :active? (draw-kind=? (or (get state :tool) :ink) :text)
+       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
+      {:id :save
+       :label "Save"
+       :kind :save
+       :active? false
+       :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
+      {:id :load
+       :label "Load"
+       :kind :load
+       :active? false
+       :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}]))
+
+(defn draw-selection-summary
+  "Return a compact summary of the current selection."
+  [state]
+  (let [elements (draw-selected-elements state)
+        total (count elements)]
+    (if (= total 0)
+      "selected: none"
+      (if (= total 1)
+        (format "selected: %s"
+                (name (get (first elements) :kind)))
+        (let [counts (reduce (fn [current element]
+                               (let [kind (name (get element :kind))
+                                     prior (or (get current kind) 0)]
+                                 (assoc current kind (+ prior 1))))
+                             {}
+                             elements)
+              parts (map (fn [entry]
+                           (format "%d %s"
+                                   (nth entry 1)
+                                   (nth entry 0)))
+                         counts)]
+          (format "selected: %s"
+                  (str/join ", " parts)))))))
+
+(defn draw-tool-panel-hit?
+  "Return true when SCREEN-POINT lies inside the visible tool panel."
+  [state screen-point]
+  (and (get state :tool-panel?)
+       (draw-screen-point-in-rect? screen-point
+                                   (draw-tool-panel-rect state))))
+
+(defn draw-find-tool-panel-button
+  "Return the clicked tool-panel button for SCREEN-POINT, or false."
+  [state screen-point]
+  (if (get state :tool-panel?)
+    (let loop ((buttons (draw-tool-panel-buttons state)))
+      (if (empty? buttons)
+        false
+        (let [button (first buttons)]
+          (if (draw-screen-point-in-rect? screen-point button)
+            button
+            (loop (rest buttons))))))
+    false))
+
+(defn draw-clear-active-interactions
+  "Clear transient pointer interaction state from STATE."
+  [state]
+  (assoc state
+         :pointer-down? false
+         :pointer-source false
+         :panning? false
+         :active-selection-drag false
+         :active-selection-resize false
+         :active-stroke false
+         :active-box false
+         :active-arrow false
+         :active-frame false
+         :active-text false))
+
+(defn draw-apply-tool-panel-button
+  "Apply BUTTON from the tool panel to STATE."
+  [state button point screen-point]
+  (let [kind (get button :kind)
+        base-state (draw-sync-pointer-state
+                     (draw-clear-active-interactions state)
+                     point
+                     screen-point)]
+    (cond
+      (draw-kind=? kind :tool)
+      (draw-set-tool-core! base-state (get button :tool))
+
+      (draw-kind=? kind :save)
+      (draw-save-canvas-core! base-state)
+
+      (draw-kind=? kind :load)
+      (draw-sync-pointer-state
+        (draw-load-canvas-core! base-state)
+        point
+        screen-point)
+
+      :else base-state)))
+
 (defn draw-world-rect->screen-rect
   "Convert a world-space rectangle to a visible screen-space rectangle."
   [state x y width height]
@@ -3505,10 +3731,20 @@
                          :last-key-desc desc)
             state (draw-apply-key-modifier-state state event)]
         (if (draw-kind=? kind :key-down)
-          (let [state (draw-handle-view-key! state key-label)
-                state (draw-handle-tool-key! state key-label)]
-            (if (draw-toggle-debug-panel-key? key-label)
-              (draw-toggle-debug-panel! state)
+          (let [state (if (and (get state :ctrl-down?)
+                               (draw-save-shortcut-key? key-label))
+                        (draw-save-canvas-core! state)
+                        (if (and (get state :ctrl-down?)
+                                 (draw-load-shortcut-key? key-label))
+                          (draw-load-canvas-core! state)
+                          state))
+                state (draw-handle-view-key! state key-label)
+                state (draw-handle-tool-key! state key-label)
+                state (if (draw-toggle-debug-panel-key? key-label)
+                        (draw-toggle-debug-panel! state)
+                        state)]
+            (if (draw-toggle-tool-panel-key? key-label)
+              (draw-toggle-tool-panel! state)
               state))
           (if (and (draw-space-key? key-label)
                    (get state :panning?))
@@ -3549,10 +3785,15 @@
             (draw-kind=? kind :mouse-down)
             (let [point (draw-input-event-point state event)
                   screen-point (draw-input-event-screen-point event)
+                  panel-button (draw-find-tool-panel-button state screen-point)
                   resize-handle (if (draw-selection-tool? state)
                                   (draw-find-selection-handle state screen-point)
                                   false)]
-              (if (draw-selection-tool? state)
+              (if panel-button
+                (draw-apply-tool-panel-button state panel-button point screen-point)
+                (if (draw-tool-panel-hit? state screen-point)
+                  (draw-sync-pointer-state state point screen-point)
+                (if (draw-selection-tool? state)
                 (if resize-handle
                   (draw-start-selection-resize state
                                                point
@@ -3572,7 +3813,7 @@
                       (draw-start-frame state point screen-point)
                       (if (draw-text-tool? state)
                         (draw-start-text state point screen-point)
-                        (draw-start-stroke state point screen-point :mouse)))))))
+                        (draw-start-stroke state point screen-point :mouse)))))))))
 
             (and (draw-kind=? kind :mouse-up)
                  (get state :panning?))
@@ -3635,10 +3876,15 @@
           (draw-kind=? kind :pen-down)
           (let [point (draw-input-event-point state event)
                 screen-point (draw-input-event-screen-point event)
+                panel-button (draw-find-tool-panel-button state screen-point)
                 resize-handle (if (draw-selection-tool? state)
                                 (draw-find-selection-handle state screen-point)
                                 false)]
-            (if (draw-selection-tool? state)
+            (if panel-button
+              (draw-apply-tool-panel-button state panel-button point screen-point)
+              (if (draw-tool-panel-hit? state screen-point)
+                (draw-sync-pointer-state state point screen-point)
+              (if (draw-selection-tool? state)
               (if resize-handle
                 (draw-start-selection-resize state
                                              point
@@ -3658,7 +3904,7 @@
                     (draw-start-frame state point screen-point)
                     (if (draw-text-tool? state)
                       (draw-start-text state point screen-point)
-                      (draw-start-stroke state point screen-point :pen)))))))
+                      (draw-start-stroke state point screen-point :pen)))))))))
 
           (and (or (draw-kind=? kind :pen-up)
                    (draw-kind=? kind :pen-button-up))
@@ -4563,6 +4809,59 @@
           nil))
       (draw-render-elements! ctx state))))
 
+(defn draw-render-tool-panel-button!
+  "Render BUTTON from the in-window tool panel."
+  [renderer button]
+  (let [active? (get button :active?)
+        x (get button :x)
+        y (get button :y)
+        width (get button :width)
+        height (get button :height)]
+    (if active?
+      (sdl/set-draw-color! renderer 70 110 170 255)
+      (sdl/set-draw-color! renderer 46 50 60 235))
+    (sdl/render-fill-rect! renderer x y width height)
+    (sdl/set-draw-color! renderer 235 235 235 255)
+    (sdl/render-debug-text! renderer (+ x 8) (+ y 6) (get button :label))
+    nil))
+
+(defn draw-render-tool-panel!
+  "Render the toggleable in-window tool panel."
+  [renderer state]
+  (let [panel (draw-tool-panel-rect state)
+        buttons (draw-tool-panel-buttons state)]
+    (sdl/set-draw-color! renderer 18 20 26 228)
+    (sdl/render-fill-rect! renderer
+                           (get panel :x)
+                           (get panel :y)
+                           (get panel :width)
+                           (get panel :height))
+    (sdl/set-draw-color! renderer 235 235 235 255)
+    (sdl/render-debug-text! renderer
+                            (+ (get panel :x) 10)
+                            (+ (get panel :y) 10)
+                            "tool panel")
+    (sdl/render-debug-text! renderer
+                            (+ (get panel :x) 10)
+                            (+ (get panel :y) 26)
+                            (draw-selection-summary state))
+    (reduce (fn [acc button]
+              (begin
+                (draw-render-tool-panel-button! renderer button)
+                acc))
+            nil
+            buttons)
+    (sdl/set-draw-color! renderer 210 210 210 255)
+    (sdl/render-debug-text! renderer
+                            (+ (get panel :x) 10)
+                            (+ (get panel :y) 212)
+                            "TAB toggle  CTRL+S save")
+    (sdl/render-debug-text! renderer
+                            (+ (get panel :x) 10)
+                            (+ (get panel :y) 228)
+                            "CTRL+O load")
+    nil))
+
 (defn draw-render-debug-panel!
   "Render the on-demand debug panel."
   [renderer state]
@@ -4645,7 +4944,8 @@
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  1/2/3: brush size"
-   "  d: debug panel   0: reset view"
+   "  d: debug panel   tab: tool panel   0: reset view"
+   "  ctrl+s: save   ctrl+o: load"
    "  repl: save-canvas!, load-canvas!, restart-dev!"
    "  repl: (draw-log-tail 20), draw-clear-log!, dump-current-state!"
    "  repl: draw-simulate-input!, draw-replay-live!"
@@ -4682,6 +4982,9 @@
         marker-point [mouse-x mouse-y pressure]]
     (sdl/set-draw-color! renderer 220 180 90 255)
     (draw-render-stroke-point! renderer state marker-point 3)
+    (if (get state :tool-panel?)
+      (draw-render-tool-panel! renderer state)
+      nil)
     (if (get state :debug-panel?)
       (draw-render-debug-panel! renderer state)
       nil)

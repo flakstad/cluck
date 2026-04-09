@@ -272,7 +272,8 @@ hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
 pointer, drag with the mouse or pen to paint
 ink, switch to the rectangle tool when you want a structured object, and switch to
 selection mode when you want to move existing elements. Press `d` to toggle
-the debug panel on demand. The current tool
+the debug panel on demand, or `tab` to toggle the in-window tool panel with
+clickable buttons and a selection summary. The current tool
 shortcuts are:
 
 - `i` ink tool
@@ -284,8 +285,11 @@ shortcuts are:
 - `c` clear the canvas
 - `e` eraser
 - `1`/`2`/`3` brush sizes
+- `tab` toggles the tool panel
 - `ctrl` + `+` / `=` zoom in at the pointer
 - `ctrl` + `-` zoom out at the pointer
+- `ctrl+s` saves the canvas
+- `ctrl+o` loads the canvas
 - `h`/`j`/`k`/`l` pan left/down/up/right
 - `0` reset the viewport
 - wheel zooms around the cursor
@@ -303,7 +307,8 @@ dylib.
 The current structured-object milestone is intentionally small: ink, text, rectangle,
 arrow, and compatibility frame elements now coexist as first-class canvas elements, and the
 selection tool can now pick, shift-add, move existing elements, show a group bounds rectangle,
-and resize a single selected rectangle through corner handles. The next
+resize a single selected rectangle through corner handles, and expose a first
+clickable in-window tool panel with save/load controls. The next
 steps are broader selection work like lasso/grouping and deeper text editing
 rather than just placement.
 

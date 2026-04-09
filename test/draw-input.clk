@@ -90,6 +90,10 @@
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
                           (draw-input-has-line? lines "  u: undo   c: clear   e: eraser"))
+  (draw-input-assert-true "debug panel lists tool panel"
+                          (draw-input-has-line? lines "  d: debug panel   tab: tool panel   0: reset view"))
+  (draw-input-assert-true "debug panel lists save load shortcuts"
+                          (draw-input-has-line? lines "  ctrl+s: save   ctrl+o: load"))
   (draw-input-assert-true "debug panel lists repl helpers"
                           (draw-input-has-line? lines "  repl: save-canvas!, load-canvas!, restart-dev!")))
 
@@ -211,6 +215,45 @@
                                        :ctrl? true})]
   (draw-input-assert-true "ctrl plus zooms"
                           (> (draw-view-zoom zoomed) 1.0)))
+
+(let [panel-on (draw-apply-input-event! (default-state)
+                                        {:kind :key-down
+                                         :key "Tab"
+                                         :desc "SDL_EVENT_KEY_DOWN key=Tab"
+                                         :ctrl? false})]
+  (draw-input-assert-true "tab toggles tool panel on"
+                          (get panel-on :tool-panel?)))
+
+(let [base (assoc (default-state) :tool-panel? true)
+      button (nth (draw-tool-panel-buttons base) 2)
+      clicked (draw-input-copy-state
+                (draw-apply-input-event! base
+                                         {:kind :mouse-down
+                                          :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel"
+                                          :mouse-x (+ (get button :x) 4)
+                                          :mouse-y (+ (get button :y) 4)
+                                          :pressure 1.0
+                                          :shift? false}))]
+  (draw-input-assert-str= "tool panel click selects rectangle tool"
+                          "rectangle"
+                          (draw-tool-mode clicked)))
+
+(let [path (draw-state-file-path)
+      saved (draw-apply-input-event! (assoc (default-state) :title "Panel Save")
+                                     {:kind :key-down
+                                      :key "s"
+                                      :desc "SDL_EVENT_KEY_DOWN key=s"
+                                      :ctrl? true})
+      loaded (draw-apply-input-event! (assoc saved :title "Mutated")
+                                      {:kind :key-down
+                                       :key "o"
+                                       :desc "SDL_EVENT_KEY_DOWN key=o"
+                                       :ctrl? true})]
+  (draw-input-assert-true "ctrl save writes state file"
+                          (fs/exists? path))
+  (draw-input-assert-str= "ctrl load restores saved title"
+                          "Panel Save"
+                          (get loaded :title)))
 
 (let [base (draw-sync-elements
              (draw-set-tool-core! (default-state) :select)
