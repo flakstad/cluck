@@ -302,8 +302,9 @@ dylib.
 
 The current structured-object milestone is intentionally small: ink, text, box,
 arrow, and frame elements now coexist as first-class canvas elements, and a
-first selection tool can pick and move existing elements. The next steps are
-broader selection work and deeper text editing rather than just placement.
+first selection tool can pick, shift-add, and move existing elements. The next
+steps are broader selection work like lasso/grouping and deeper text editing
+rather than just placement.
 
 In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. The REPL
 starts with no window and does not load SDL automatically. When you want the

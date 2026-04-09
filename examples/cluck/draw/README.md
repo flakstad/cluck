@@ -14,7 +14,7 @@ What is in place:
 - freehand brush strokes while dragging, with a soft pressure-sensitive brush
 - mixed canvas elements, so ink and objects can coexist on the same canvas
 - a first structured object tool: `b` drag-to-create boxes
-- a first selection tool: `v` to select existing elements and drag them
+- a first selection tool: `v` to select existing elements, `shift`+click to add to the selection, and drag them
 - a first connector tool: `a` drag-to-create arrows
 - a first container tool: `f` drag-to-create frames
 - a first text tool: `t` click to place text elements
@@ -33,7 +33,7 @@ What is in place:
 - REPL state changes redraw the window immediately once the app is live
 
 What is not here yet:
-- advanced selection like lasso or multi-select
+- advanced selection like lasso and grouping
 - real text editing, resizing, and typography controls
 - input handling beyond quit events
 - textures, byte buffers, or asset loading
@@ -84,6 +84,7 @@ While the window is live:
 - press `i` for the ink tool
 - press `t` for the text tool, then click to place a text element
 - press `v` for the selection tool, then click or drag selected elements to move them
+- hold `shift` while clicking in selection mode to add another element to the active selection
 - press `b` for the box tool, then drag to create a rectangle object
 - press `a` for the arrow tool, then drag to create a connector
 - press `f` for the frame tool, then drag to create a container region
