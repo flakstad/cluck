@@ -1,0 +1,104 @@
+;; Draw tool and viewport command helpers.
+
+(ns cluck.examples.draw.commands
+  (:require [cluck.examples.draw.sdl3 :as sdl]
+            [cluck.examples.draw.input :as draw.input]
+            [cluck.examples.draw.view :as draw.view]
+            [cluck.string :as str]))
+
+(defn draw-handle-tool-key!
+  "Apply draw tool shortcuts for KEY to STATE using the supplied handlers."
+  [state key clear-strokes-core! undo-stroke-core! set-tool-core! toggle-eraser-core! set-brush-size-core!]
+  (let [key (str/lower-case (or key ""))]
+    (cond
+      (string=? key "c") (clear-strokes-core! state)
+      (string=? key "u") (undo-stroke-core! state)
+      (string=? key "i") (set-tool-core! state :ink)
+      (string=? key "t") (set-tool-core! state :text)
+      (string=? key "v") (set-tool-core! state :select)
+      (string=? key "r") (set-tool-core! state :box)
+      (string=? key "b") (set-tool-core! state :box)
+      (string=? key "a") (set-tool-core! state :arrow)
+      (string=? key "e") (toggle-eraser-core! state)
+      (string=? key "1") (set-brush-size-core! state 2)
+      (string=? key "2") (set-brush-size-core! state 6)
+      (string=? key "3") (set-brush-size-core! state 12)
+      :else state)))
+
+(defn draw-handle-view-key!
+  "Apply zoom and pan shortcuts for KEY to STATE."
+  [state key]
+  (let [key (str/lower-case (or key ""))]
+    (cond
+      (and (get state :ctrl-down?)
+           (draw.input/draw-plus-key? key))
+      (draw.view/draw-zoom-at-pointer-core! state 1.0)
+
+      (and (get state :ctrl-down?)
+           (draw.input/draw-minus-key? key))
+      (draw.view/draw-zoom-at-pointer-core! state -1.0)
+
+      (draw.input/draw-reset-view-key? key)
+      (let [screen-point (draw.view/draw-pointer-screen-anchor state)
+            next-state (assoc state
+                              :view-x 0.0
+                              :view-y 0.0
+                              :view-anchor-x 0.0
+                              :view-anchor-y 0.0
+                              :zoom 1.0
+                              :canvas-dirty? true)
+            world-point (draw.view/draw-screen-point->world-point next-state
+                                                                  [(nth screen-point 0)
+                                                                   (nth screen-point 1)
+                                                                   (or (get state :pen-pressure) 1.0)])]
+        (draw.view/draw-sync-pointer-state next-state world-point screen-point))
+
+      (draw.input/draw-pan-left-key? key)
+      (let [step (draw.view/draw-pan-step)
+            next-state (assoc state
+                              :view-x (draw.view/draw-clamp-view-coordinate
+                                        (- (draw.view/draw-view-x state)
+                                           (/ step (draw.view/draw-view-zoom state))))
+                              :canvas-dirty? true)]
+        next-state)
+
+      (draw.input/draw-pan-right-key? key)
+      (let [step (draw.view/draw-pan-step)
+            next-state (assoc state
+                              :view-x (draw.view/draw-clamp-view-coordinate
+                                        (+ (draw.view/draw-view-x state)
+                                           (/ step (draw.view/draw-view-zoom state))))
+                              :canvas-dirty? true)]
+        next-state)
+
+      (draw.input/draw-pan-up-key? key)
+      (let [step (draw.view/draw-pan-step)
+            next-state (assoc state
+                              :view-y (draw.view/draw-clamp-view-coordinate
+                                        (- (draw.view/draw-view-y state)
+                                           (/ step (draw.view/draw-view-zoom state))))
+                              :canvas-dirty? true)]
+        next-state)
+
+      (draw.input/draw-pan-down-key? key)
+      (let [step (draw.view/draw-pan-step)
+            next-state (assoc state
+                              :view-y (draw.view/draw-clamp-view-coordinate
+                                        (+ (draw.view/draw-view-y state)
+                                           (/ step (draw.view/draw-view-zoom state))))
+                              :canvas-dirty? true)]
+        next-state)
+
+      :else
+      state)))
+
+(defn draw-handle-wheel!
+  "Apply mouse-wheel zoom to STATE."
+  [state]
+  (let [delta (sdl/event-wheel-y)]
+    (if (= delta 0.0)
+      state
+      (draw.view/draw-zoom-at-core! state
+                                    delta
+                                    (sdl/event-wheel-mouse-x)
+                                    (sdl/event-wheel-mouse-y)))))

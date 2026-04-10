@@ -15,6 +15,7 @@
             [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.create :as draw-create]
             [cluck.examples.draw.status :as draw-status]
+            [cluck.examples.draw.commands :as draw-commands]
             [cluck.examples.draw.stroke :as draw-stroke]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
@@ -142,6 +143,9 @@
 (def draw-render-debug-lines! draw-status/draw-render-debug-lines!)
 (def draw-render-tool-panel-button-base! draw-status/draw-render-tool-panel-button!)
 (def draw-render-tool-panel-base! draw-status/draw-render-tool-panel!)
+
+(def draw-handle-view-key-base! draw-commands/draw-handle-view-key!)
+(def draw-handle-wheel-base! draw-commands/draw-handle-wheel!)
 
 (def draw-arrow-record draw-geometry/draw-arrow-record)
 (def draw-arrow-length draw-geometry/draw-arrow-length)
@@ -1415,99 +1419,23 @@
 (defn draw-handle-tool-key!
   "Apply draw tool shortcuts for KEY to STATE."
   [state key]
-  (let [key (str/lower-case (or key ""))]
-    (cond
-      (string=? key "c") (draw-clear-strokes-core! state)
-      (string=? key "u") (draw-undo-stroke-core! state)
-      (string=? key "i") (draw-set-tool-core! state :ink)
-      (string=? key "t") (draw-set-tool-core! state :text)
-      (string=? key "v") (draw-set-tool-core! state :select)
-      (string=? key "r") (draw-set-tool-core! state :box)
-      (string=? key "b") (draw-set-tool-core! state :box)
-      (string=? key "a") (draw-set-tool-core! state :arrow)
-      (string=? key "e") (draw-toggle-eraser-core! state)
-      (string=? key "1") (draw-set-brush-size-core! state 2)
-      (string=? key "2") (draw-set-brush-size-core! state 6)
-      (string=? key "3") (draw-set-brush-size-core! state 12)
-      :else state)))
+  (draw-commands/draw-handle-tool-key! state
+                                       key
+                                       draw-clear-strokes-core!
+                                       draw-undo-stroke-core!
+                                       draw-set-tool-core!
+                                       draw-toggle-eraser-core!
+                                       draw-set-brush-size-core!))
 
 (defn draw-handle-view-key!
   "Apply zoom and pan shortcuts for KEY to STATE."
   [state key]
-  (let [key (str/lower-case (or key ""))]
-    (cond
-      (and (get state :ctrl-down?)
-           (draw-plus-key? key))
-      (draw-zoom-at-pointer-core! state 1.0)
-
-      (and (get state :ctrl-down?)
-           (draw-minus-key? key))
-      (draw-zoom-at-pointer-core! state -1.0)
-
-      (draw-reset-view-key? key)
-      (let [screen-point (draw-pointer-screen-anchor state)
-            next-state (assoc state
-                              :view-x 0.0
-                              :view-y 0.0
-                              :view-anchor-x 0.0
-                              :view-anchor-y 0.0
-                              :zoom 1.0
-                              :canvas-dirty? true)
-            world-point (draw-screen-point->world-point next-state
-                                                        [(nth screen-point 0)
-                                                         (nth screen-point 1)
-                                                         (or (get state :pen-pressure) 1.0)])]
-        (draw-sync-pointer-state next-state world-point screen-point))
-
-      (draw-pan-left-key? key)
-      (let [step (draw-pan-step)
-            next-state (assoc state
-                              :view-x (draw-clamp-view-coordinate
-                                        (- (draw-view-x state)
-                                           (/ step (draw-view-zoom state))))
-                              :canvas-dirty? true)]
-        next-state)
-
-      (draw-pan-right-key? key)
-      (let [step (draw-pan-step)
-            next-state (assoc state
-                              :view-x (draw-clamp-view-coordinate
-                                        (+ (draw-view-x state)
-                                           (/ step (draw-view-zoom state))))
-                              :canvas-dirty? true)]
-        next-state)
-
-      (draw-pan-up-key? key)
-      (let [step (draw-pan-step)
-            next-state (assoc state
-                              :view-y (draw-clamp-view-coordinate
-                                        (- (draw-view-y state)
-                                           (/ step (draw-view-zoom state))))
-                              :canvas-dirty? true)]
-        next-state)
-
-      (draw-pan-down-key? key)
-      (let [step (draw-pan-step)
-            next-state (assoc state
-                              :view-y (draw-clamp-view-coordinate
-                                        (+ (draw-view-y state)
-                                           (/ step (draw-view-zoom state))))
-                              :canvas-dirty? true)]
-        next-state)
-
-      :else
-      state)))
+  (draw-handle-view-key-base! state key))
 
 (defn draw-handle-wheel!
   "Apply mouse-wheel zoom to STATE."
   [state]
-  (let [delta (sdl/event-wheel-y)]
-    (if (= delta 0.0)
-      state
-      (draw-zoom-at-core! state
-                          delta
-                          (sdl/event-wheel-mouse-x)
-                          (sdl/event-wheel-mouse-y)))))
+  (draw-handle-wheel-base! state))
 
 (defn draw-crash!
   "Record EXN as the last draw error and stop the background loop."
