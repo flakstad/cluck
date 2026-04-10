@@ -1,0 +1,58 @@
+;; Draw replay and benchmarking helpers.
+
+(ns cluck.examples.draw.replay)
+
+(defn draw-repeat-events!
+  "Replay EVENTS ROUNDS times starting from STATE via APPLY-INPUT-EVENT!."
+  [state events rounds apply-input-event!]
+  (if (<= rounds 0)
+    state
+    (draw-repeat-events! (reduce (lambda (next-state event)
+                                   (apply-input-event! next-state event))
+                                 state
+                                 events)
+                         events
+                         (- rounds 1)
+                         apply-input-event!)))
+
+(defn draw-replay-benchmark!
+  "Replay EVENTS and print the elapsed wall-clock time."
+  [state events rounds apply-input-event! current-ms describe-state]
+  (let [start (current-ms)
+        state (draw-repeat-events! state
+                                   events
+                                   rounds
+                                   apply-input-event!)
+        elapsed (- (current-ms) start)]
+    (println (format "draw replay: %d events x %d rounds in %d ms"
+                     (count events)
+                     rounds
+                     elapsed))
+    (println (format "draw state: %s" (describe-state state)))
+    state))
+
+(defn draw-repeat-live-events!
+  "Replay EVENTS ROUNDS times in the live window."
+  [state events rounds pause-ms replay-live!]
+  (if (<= rounds 0)
+    state
+    (begin
+      (replay-live! events pause-ms)
+      (draw-repeat-live-events! state
+                                events
+                                (- rounds 1)
+                                pause-ms
+                                replay-live!))))
+
+(defn draw-replay-live-benchmark!
+  "Replay EVENTS live and print the elapsed wall-clock time."
+  [state events rounds pause-ms repeat-live-events! current-ms describe-state]
+  (let [start (current-ms)
+        state (repeat-live-events! state events rounds pause-ms)
+        elapsed (- (current-ms) start)]
+    (println (format "draw live replay: %d events x %d rounds in %d ms"
+                     (count events)
+                     rounds
+                     elapsed))
+    (println (format "draw state: %s" (describe-state state)))
+    state))

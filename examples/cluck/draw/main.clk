@@ -16,6 +16,7 @@
             [cluck.examples.draw.create :as draw-create]
             [cluck.examples.draw.status :as draw-status]
             [cluck.examples.draw.commands :as draw-commands]
+            [cluck.examples.draw.replay :as draw-replay]
             [cluck.examples.draw.stroke :as draw-stroke]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
@@ -146,6 +147,11 @@
 
 (def draw-handle-view-key-base! draw-commands/draw-handle-view-key!)
 (def draw-handle-wheel-base! draw-commands/draw-handle-wheel!)
+
+(def draw-repeat-events-base! draw-replay/draw-repeat-events!)
+(def draw-replay-benchmark-base! draw-replay/draw-replay-benchmark!)
+(def draw-repeat-live-events-base! draw-replay/draw-repeat-live-events!)
+(def draw-replay-live-benchmark-base! draw-replay/draw-replay-live-benchmark!)
 
 (def draw-arrow-record draw-geometry/draw-arrow-record)
 (def draw-arrow-length draw-geometry/draw-arrow-length)
@@ -2034,29 +2040,20 @@
 (defn draw-repeat-events!
   "Replay EVENTS ROUNDS times starting from STATE."
   [state events rounds]
-  (if (<= rounds 0)
-    state
-    (draw-repeat-events! (reduce (lambda (next-state event)
-                                   (draw-apply-input-event! next-state event))
-                                 state
-                                 events)
-                         events
-                         (- rounds 1))))
+  (draw-repeat-events-base! state
+                            events
+                            rounds
+                            draw-apply-input-event!))
 
 (defn draw-replay-benchmark!
   "Replay EVENTS and print the elapsed wall-clock time."
   [events rounds]
-  (let [start (current-process-milliseconds)
-        state (draw-repeat-events! (or *draw-state* (default-state))
-                                   events
-                                   rounds)
-        elapsed (- (current-process-milliseconds) start)]
-    (println (format "draw replay: %d events x %d rounds in %d ms"
-                     (count events)
-                     rounds
-                     elapsed))
-    (println (format "draw state: %s" (describe-state state)))
-    state))
+  (draw-replay-benchmark-base! (or *draw-state* (default-state))
+                               events
+                               rounds
+                               draw-apply-input-event!
+                               current-process-milliseconds
+                               describe-state))
 
 (defn draw-replay-live!
   "Replay EVENTS in the live window, pausing PAUSE-MS milliseconds between events."
@@ -2076,24 +2073,27 @@
 (defn draw-repeat-live-events!
   "Replay EVENTS ROUNDS times in the live window."
   [events rounds pause-ms]
-  (if (<= rounds 0)
-    (or *draw-state* (default-state))
-    (begin
-      (draw-replay-live! events pause-ms)
-      (draw-repeat-live-events! events (- rounds 1) pause-ms))))
+  (draw-repeat-live-events-base! (or *draw-state* (default-state))
+                                 events
+                                 rounds
+                                 pause-ms
+                                 draw-replay-live!))
 
 (defn draw-replay-live-benchmark!
   "Replay EVENTS live and print the elapsed wall-clock time."
   [events rounds pause-ms]
-  (let [start (current-process-milliseconds)
-        state (draw-repeat-live-events! events rounds pause-ms)
-        elapsed (- (current-process-milliseconds) start)]
-    (println (format "draw live replay: %d events x %d rounds in %d ms"
-                     (count events)
-                     rounds
-                     elapsed))
-    (println (format "draw state: %s" (describe-state state)))
-    state))
+  (draw-replay-live-benchmark-base! (or *draw-state* (default-state))
+                                    events
+                                    rounds
+                                    pause-ms
+                                    (lambda (state events rounds pause-ms)
+                                      (draw-repeat-live-events-base! state
+                                                                     events
+                                                                     rounds
+                                                                     pause-ms
+                                                                     draw-replay-live!))
+                                    current-process-milliseconds
+                                    describe-state))
 
 (defn mouse-position
   "Return the current mouse position from the draw state."
