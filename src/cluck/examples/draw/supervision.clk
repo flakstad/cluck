@@ -1,0 +1,103 @@
+;; Parent-side child-process supervision helpers.
+
+(ns cluck.examples.draw.supervision
+  (:require [cluck.fs :as fs]
+            [cluck.process :as proc]))
+
+(import srfi-18
+        (prefix (chicken process) cproc:))
+
+(defn draw-supervisor-launch-child-base!
+  "Start the child draw process and return its pid."
+  [root runner child-log]
+  (let [launcher (format "cd %s && exec csi -q -s %s > %s 2>&1"
+                         (proc/qs root)
+                         (proc/qs runner)
+                         (proc/qs child-log))]
+    (cproc:process-run "/bin/sh" (list "-c" launcher))))
+
+(defn draw-supervisor-stop-child-base!
+  "Stop the supervised child process when it is running."
+  [pid]
+  (if pid
+    (proc/system
+      (format "kill %s >/dev/null 2>&1 || true"
+              (proc/qs (str pid))))
+    0)
+  nil)
+
+(defn draw-wait-for-child-ready-base!
+  "Wait until the supervised child writes its first heartbeat, or time out."
+  [heartbeat-path running? child-pid child-alive? wall-clock-ms deadline-ms]
+  (cond
+    (fs/file? heartbeat-path)
+    true
+
+    (not (running?))
+    false
+
+    (and child-pid
+         (not (child-alive? child-pid)))
+    false
+
+    (> (wall-clock-ms) deadline-ms)
+    false
+
+    :else
+    (begin
+      (thread-sleep! 0.1)
+      (draw-wait-for-child-ready-base! heartbeat-path
+                                       running?
+                                       child-pid
+                                       child-alive?
+                                       wall-clock-ms
+                                       deadline-ms))))
+
+(defn draw-start-supervisor-loop-base!
+  "Create the parent-side supervisor thread."
+  [supervised-mode? child-pid-fn heartbeat-age-ms child-alive? log-entry! launch-child! stop-child! stale-ms poll-ms state-snapshot current-state]
+  (make-thread
+    (lambda ()
+      (handle-exceptions exn
+        (log-entry! :supervisor-crash
+                    {:error (format "%s" exn)
+                     :state (state-snapshot (current-state))})
+        (let loop ()
+          (if (supervised-mode?)
+            (begin
+              (let [pid (child-pid-fn)
+                    age (heartbeat-age-ms)]
+                (cond
+                  (not pid)
+                  (begin
+                    (log-entry! :supervisor-restart {:reason :missing-pid})
+                    (launch-child!))
+
+                  (not (child-alive? pid))
+                  (begin
+                    (log-entry! :supervisor-restart {:reason :child-exit :pid pid})
+                    (launch-child!))
+
+                  (and age (> age stale-ms))
+                  (begin
+                    (log-entry! :supervisor-restart
+                                {:reason :stale-heartbeat
+                                 :pid pid
+                                 :age-ms age})
+                    (stop-child!)
+                    (launch-child!))
+
+                  :else
+                  nil))
+              (thread-sleep! (/ poll-ms 1000.0))
+              (loop))
+            nil))))
+    "cluck-draw-supervisor"))
+
+(defn draw-stop-supervisor-loop-base!
+  "Stop the parent-side supervisor thread."
+  [thread]
+  (if thread
+    (thread-terminate! thread)
+    false)
+  nil)

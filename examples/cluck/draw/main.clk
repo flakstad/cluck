@@ -16,6 +16,7 @@
             [cluck.examples.draw.canvas :as draw-canvas]
             [cluck.examples.draw.session :as draw-session]
             [cluck.examples.draw.runtime :as draw-runtime]
+            [cluck.examples.draw.supervision :as draw-supervision]
             [cluck.examples.draw.render :as draw-render]
             [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.create :as draw-create]
@@ -2700,14 +2701,9 @@
 (defn draw-supervisor-launch-child!
   "Start the child draw process and return its pid."
   []
-  (let [root (current-directory)
-        runner (draw-child-runner-path)
-        child-log (draw-child-stdout-path)
-        launcher (format "cd %s && exec csi -q -s %s > %s 2>&1"
-                         (proc/qs root)
-                         (proc/qs runner)
-                         (proc/qs child-log))
-        pid (cproc:process-run "/bin/sh" (list "-c" launcher))]
+  (let [pid (draw-supervision/draw-supervisor-launch-child-base! (current-directory)
+                                                                 (draw-child-runner-path)
+                                                                 (draw-child-stdout-path))]
     (set! *draw-child-pid* pid)
     pid))
 
@@ -2716,89 +2712,40 @@
   []
   (let [pid *draw-child-pid*]
     (set! *draw-child-pid* false)
-    (if pid
-      (proc/system
-        (format "kill %s >/dev/null 2>&1 || true"
-                (proc/qs (str pid))))
-      0)
+    (draw-supervision/draw-supervisor-stop-child-base! pid)
     nil))
 
 (defn draw-heartbeat-age-ms
   "Return the age of the child heartbeat in milliseconds, or false."
   []
-  (let [path (draw-heartbeat-file-path)]
-    (if (fs/file? path)
-      (let [heartbeat (edn/read-string (io/slurp path))
-            at (or (get heartbeat :at) 0)]
-        (if (> at 0)
-          (- (draw-wall-clock-ms) at)
-          false))
-      false)))
+  (draw-runtime/draw-heartbeat-age-ms (draw-heartbeat-file-path)))
 
 (defn draw-wait-for-child-ready!
   "Wait until the supervised child writes its first heartbeat, or time out."
   [deadline-ms]
-  (cond
-    (fs/file? (draw-heartbeat-file-path))
-    true
-
-    (not *draw-running?*)
-    false
-
-    (and *draw-child-pid*
-         (not (draw-child-alive? *draw-child-pid*)))
-    false
-
-    (> (draw-wall-clock-ms) deadline-ms)
-    false
-
-    :else
-    (begin
-      (thread-sleep! 0.1)
-      (draw-wait-for-child-ready! deadline-ms))))
+  (draw-supervision/draw-wait-for-child-ready-base! (draw-heartbeat-file-path)
+                                                    (lambda () *draw-running?*)
+                                                    *draw-child-pid*
+                                                    draw-child-alive?
+                                                    draw-wall-clock-ms
+                                                    deadline-ms))
 
 (defn draw-start-supervisor-loop!
   "Start the parent-side thread that restarts a dead or stale child."
   []
   (set! *draw-thread* nil)
   (set! *draw-supervisor-thread*
-        (make-thread
-          (lambda ()
-            (handle-exceptions exn
-              (draw-log-entry! :supervisor-crash
-                               {:error (format "%s" exn)
-                                :state (draw-state-snapshot *draw-state*)})
-              (let loop ()
-                (if (draw-supervised-mode?)
-                  (begin
-                    (let [pid *draw-child-pid*
-                          age (draw-heartbeat-age-ms)]
-                      (cond
-                        (not pid)
-                        (begin
-                          (draw-log-entry! :supervisor-restart {:reason :missing-pid})
-                          (draw-supervisor-launch-child!))
-
-                        (not (draw-child-alive? pid))
-                        (begin
-                          (draw-log-entry! :supervisor-restart {:reason :child-exit :pid pid})
-                          (draw-supervisor-launch-child!))
-
-                        (and age (> age (draw-watchdog-stale-ms)))
-                        (begin
-                          (draw-log-entry! :supervisor-restart
-                                           {:reason :stale-heartbeat
-                                            :pid pid
-                                            :age-ms age})
-                          (draw-supervisor-stop-child!)
-                          (draw-supervisor-launch-child!))
-
-                        :else
-                        nil))
-                    (thread-sleep! (/ (draw-supervisor-poll-ms) 1000.0))
-                    (loop))
-                  nil))))
-          "cluck-draw-supervisor"))
+        (draw-supervision/draw-start-supervisor-loop-base! draw-supervised-mode?
+                                                           (lambda () *draw-child-pid*)
+                                                           draw-heartbeat-age-ms
+                                                           draw-child-alive?
+                                                           draw-log-entry!
+                                                           draw-supervisor-launch-child!
+                                                           draw-supervisor-stop-child!
+                                                           (draw-watchdog-stale-ms)
+                                                           (draw-supervisor-poll-ms)
+                                                           draw-state-snapshot
+                                                           current-state))
   (thread-start! *draw-supervisor-thread*)
   *draw-supervisor-thread*)
 
@@ -2807,9 +2754,7 @@
   []
   (let [thread *draw-supervisor-thread*]
     (set! *draw-supervisor-thread* nil)
-    (if thread
-      (thread-terminate! thread)
-      false)
+    (draw-supervision/draw-stop-supervisor-loop-base! thread)
     nil))
 
 (defn draw-start-supervised-dev!
