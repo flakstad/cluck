@@ -2,7 +2,7 @@
 
 (ns cluck.examples.draw.commands
   (:require [cluck.examples.draw.sdl3 :as sdl]
-            [cluck.examples.draw.input :as draw.input]
+            [cluck.examples.draw.input :as draw-input]
             [cluck.examples.draw.view :as draw.view]
             [cluck.string :as str]))
 
@@ -31,14 +31,14 @@
   (let [key (str/lower-case (or key ""))]
     (cond
       (and (get state :ctrl-down?)
-           (draw.input/draw-plus-key? key))
+           (draw-input/draw-plus-key? key))
       (draw.view/draw-zoom-at-pointer-core! state 1.0)
 
       (and (get state :ctrl-down?)
-           (draw.input/draw-minus-key? key))
+           (draw-input/draw-minus-key? key))
       (draw.view/draw-zoom-at-pointer-core! state -1.0)
 
-      (draw.input/draw-reset-view-key? key)
+      (draw-input/draw-reset-view-key? key)
       (let [screen-point (draw.view/draw-pointer-screen-anchor state)
             next-state (assoc state
                               :view-x 0.0
@@ -53,7 +53,7 @@
                                                                    (or (get state :pen-pressure) 1.0)])]
         (draw.view/draw-sync-pointer-state next-state world-point screen-point))
 
-      (draw.input/draw-pan-left-key? key)
+      (draw-input/draw-pan-left-key? key)
       (let [step (draw.view/draw-pan-step)
             next-state (assoc state
                               :view-x (draw.view/draw-clamp-view-coordinate
@@ -62,7 +62,7 @@
                               :canvas-dirty? true)]
         next-state)
 
-      (draw.input/draw-pan-right-key? key)
+      (draw-input/draw-pan-right-key? key)
       (let [step (draw.view/draw-pan-step)
             next-state (assoc state
                               :view-x (draw.view/draw-clamp-view-coordinate
@@ -71,7 +71,7 @@
                               :canvas-dirty? true)]
         next-state)
 
-      (draw.input/draw-pan-up-key? key)
+      (draw-input/draw-pan-up-key? key)
       (let [step (draw.view/draw-pan-step)
             next-state (assoc state
                               :view-y (draw.view/draw-clamp-view-coordinate
@@ -80,7 +80,7 @@
                               :canvas-dirty? true)]
         next-state)
 
-      (draw.input/draw-pan-down-key? key)
+      (draw-input/draw-pan-down-key? key)
       (let [step (draw.view/draw-pan-step)
             next-state (assoc state
                               :view-y (draw.view/draw-clamp-view-coordinate

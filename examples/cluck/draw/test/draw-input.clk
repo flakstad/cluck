@@ -923,6 +923,18 @@
   (draw-input-assert-false "mouse leave clears active stroke"
                            (get left :active-stroke)))
 
+(let [state (draw-input-copy-state (default-state))
+      next (draw-handle-view-key! state "tab")]
+  (draw-input-assert-num= "tab key leaves zoom unchanged"
+                          1.0
+                          (draw-view-zoom next))
+  (draw-input-assert-num= "tab key leaves view-x unchanged"
+                          0.0
+                          (draw-view-x next))
+  (draw-input-assert-num= "tab key leaves view-y unchanged"
+                          0.0
+                          (draw-view-y next)))
+
   (let [original-poll sdl/poll-event!
         original-desc sdl/event-description
         original-build draw-build-input-event
