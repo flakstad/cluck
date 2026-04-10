@@ -935,6 +935,28 @@
                           0.0
                           (draw-view-y next)))
 
+(let [original-render-text sdl/render-debug-text!
+      original-set-color sdl/set-draw-color!]
+  (set! sdl/render-debug-text!
+        (lambda (renderer x y text)
+          true))
+  (set! sdl/set-draw-color!
+        (lambda (renderer r g b a)
+          true))
+  (draw-status/draw-render-debug-panel-base!
+    :dummy
+    (assoc (default-state)
+           :debug-panel? true)
+    (lambda (renderer state point size)
+      true)
+    (lambda (state)
+      :crosshair)
+    false)
+  (draw-input-assert-true "debug panel render path completes"
+                          true)
+  (set! sdl/render-debug-text! original-render-text)
+  (set! sdl/set-draw-color! original-set-color))
+
   (let [original-poll sdl/poll-event!
         original-desc sdl/event-description
         original-build draw-build-input-event

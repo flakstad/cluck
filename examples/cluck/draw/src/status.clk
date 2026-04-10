@@ -181,7 +181,7 @@
             info-lines)
     nil))
 
-(defn draw-render-debug-panel!
+(defn draw-render-debug-panel-base!
   "Render the on-demand debug panel."
   [renderer state render-stroke-point! desired-cursor-kind-fn last-error]
   (let [mouse-x (get state :mouse-x)
@@ -264,10 +264,11 @@
       (draw-render-tool-panel! renderer state)
       nil)
     (if (get state :debug-panel?)
-      (draw-render-debug-panel! renderer
-                                state
-                                render-stroke-point!
-                                desired-cursor-kind-fn
-                                last-error)
+      (draw-render-debug-panel-base!
+        renderer
+        state
+        render-stroke-point!
+        desired-cursor-kind-fn
+        last-error)
       nil)
     nil))

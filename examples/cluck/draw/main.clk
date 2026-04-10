@@ -2335,11 +2335,12 @@
 (defn draw-render-debug-panel!
   "Render the on-demand debug panel."
   [renderer state]
-  (draw-status/draw-render-debug-panel! renderer
-                                        state
-                                        draw-render-stroke-point!
-                                        draw-desired-cursor-kind
-                                        *draw-last-error*))
+  (draw-status/draw-render-debug-panel-base!
+    renderer
+    state
+    draw-render-stroke-point!
+    draw-desired-cursor-kind
+    *draw-last-error*))
 
 (defn draw-render-status!
   "Render the text overlay and mouse marker for STATE."
