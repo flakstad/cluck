@@ -1,0 +1,295 @@
+;; Higher-level draw element rendering helpers.
+
+(ns cluck.examples.draw.render
+  (:require [cluck.examples.draw.sdl3 :as sdl]
+            [cluck.examples.draw.state :as draw.state]
+            [cluck.examples.draw.view :as draw.view]
+            [cluck.examples.draw.geometry :as draw.geometry]
+            [cluck.examples.draw.selection :as draw.selection]
+            [cluck.math :as math]))
+
+(defn draw-box-screen-points
+  "Return BOX corner points in screen coordinates."
+  [state box]
+  (let [points (draw.geometry/draw-box-corner-points box)]
+    {:nw (draw.view/draw-world-point->screen-point state (get points :nw))
+     :ne (draw.view/draw-world-point->screen-point state (get points :ne))
+     :se (draw.view/draw-world-point->screen-point state (get points :se))
+     :sw (draw.view/draw-world-point->screen-point state (get points :sw))}))
+
+(defn draw-box-top-center-screen-point
+  "Return the midpoint of BOX's top edge in screen coordinates."
+  [state box]
+  (let [points (draw-box-screen-points state box)
+        nw (get points :nw)
+        ne (get points :ne)]
+    [(/ (+ (nth nw 0) (nth ne 0)) 2.0)
+     (/ (+ (nth nw 1) (nth ne 1)) 2.0)]))
+
+(defn draw-frame-tab-width
+  "Return the width of the frame header tab in world space."
+  [state frame]
+  (let [screen-width (max 28.0 72.0)
+        world-width (/ screen-width (draw.view/draw-view-zoom state))
+        usable (- (get frame :width) (* 2.0 (get frame :size)))]
+    (if (> usable world-width)
+      world-width
+      (max 0.0 usable))))
+
+(defn draw-frame-tab-height
+  "Return the height of the frame header tab in world space."
+  [state frame]
+  (/ 20.0 (draw.view/draw-view-zoom state)))
+
+(defn draw-arrow-head-length
+  "Return the world-space arrowhead length for SIZE in STATE."
+  [state size]
+  (let [screen-length (max 12.0 (* size 4.0))]
+    (/ screen-length (draw.view/draw-view-zoom state))))
+
+(defn draw-arrow-head-width
+  "Return the world-space arrowhead width for SIZE in STATE."
+  [state size]
+  (* (draw-arrow-head-length state size) 0.55))
+
+(defn draw-selection-marquee-bounds
+  "Return the current marquee-selection bounds when active."
+  [state]
+  (let [marquee (get state :active-selection-marquee)]
+    (if marquee
+      (draw.geometry/draw-selection-rect (get marquee :anchor)
+                                         (get marquee :point))
+      false)))
+
+(defn draw-render-box!
+  "Render a rectangle element."
+  [renderer state box render-screen-soft-segment!]
+  (let [points (draw-box-screen-points state box)
+        color (get box :color)
+        size (max 1 (draw.view/draw-exact-int (or (get box :size) 1)))
+        nw (get points :nw)
+        ne (get points :ne)
+        se (get points :se)
+        sw (get points :sw)]
+    (render-screen-soft-segment! renderer color size
+                                 (nth nw 0) (nth nw 1)
+                                 (nth ne 0) (nth ne 1))
+    (render-screen-soft-segment! renderer color size
+                                 (nth ne 0) (nth ne 1)
+                                 (nth se 0) (nth se 1))
+    (render-screen-soft-segment! renderer color size
+                                 (nth se 0) (nth se 1)
+                                 (nth sw 0) (nth sw 1))
+    (render-screen-soft-segment! renderer color size
+                                 (nth sw 0) (nth sw 1)
+                                 (nth nw 0) (nth nw 1))))
+
+(defn draw-render-frame!
+  "Render a legacy frame/container element."
+  [renderer state frame render-screen-rect! render-box-edge!]
+  (let [x (get frame :x)
+        y (get frame :y)
+        width (get frame :width)
+        height (get frame :height)
+        color (get frame :color)
+        size (get frame :size)
+        tab-width (draw-frame-tab-width state frame)
+        tab-height (draw-frame-tab-height state frame)
+        screen-rect (draw.view/draw-world-rect->screen-rect state x y width height)
+        a [x y]
+        tab-right (+ x tab-width)
+        tab-bottom (+ y tab-height)]
+    (render-screen-rect! renderer
+                         (get screen-rect :x)
+                         (get screen-rect :y)
+                         (get screen-rect :width)
+                         (get screen-rect :height)
+                         color
+                         size)
+    (if (> tab-width 0.0)
+      (begin
+        (render-box-edge! renderer state color size a [tab-right y])
+        (render-box-edge! renderer state color size [x tab-bottom] [tab-right tab-bottom])
+        (render-box-edge! renderer state color size [tab-right y] [tab-right tab-bottom]))
+      nil)))
+
+(defn draw-render-text!
+  "Render a text element using the built-in SDL debug font."
+  [renderer state text-element]
+  (let [screen-point (draw.view/draw-world-point->screen-point
+                       state
+                       [(get text-element :x)
+                        (get text-element :y)
+                        1.0])
+        color (or (get text-element :color) [245 245 245])
+        text (or (get text-element :text) (draw.geometry/draw-text-default-value))]
+    (sdl/set-draw-color! renderer
+                         (nth color 0)
+                         (nth color 1)
+                         (nth color 2)
+                         255)
+    (sdl/render-debug-text! renderer
+                            (nth screen-point 0)
+                            (nth screen-point 1)
+                            text)))
+
+(defn draw-render-arrow!
+  "Render an arrow element."
+  [renderer state arrow render-stroke-point! render-stroke-segment!]
+  (let [start (get arrow :start)
+        end (get arrow :end)
+        size (get arrow :size)
+        color (get arrow :color)
+        dx (- (nth end 0) (nth start 0))
+        dy (- (nth end 1) (nth start 1))
+        length (math/sqrt (+ (* dx dx) (* dy dy)))]
+    (if (<= length 0.0)
+      (render-stroke-point! renderer state end size)
+      (let [ux (/ dx length)
+            uy (/ dy length)
+            head-length (draw-arrow-head-length state size)
+            head-width (draw-arrow-head-width state size)
+            back-x (- (nth end 0) (* ux head-length))
+            back-y (- (nth end 1) (* uy head-length))
+            left [(+ back-x (* (- uy) head-width))
+                  (+ back-y (* ux head-width))
+                  1.0]
+            right [(- back-x (* (- uy) head-width))
+                   (- back-y (* ux head-width))
+                   1.0]]
+        (render-stroke-segment! renderer state start end size color)
+        (render-stroke-segment! renderer state left end size color)
+        (render-stroke-segment! renderer state right end size color)))))
+
+(defn draw-render-element!
+  "Render a committed canvas element."
+  [renderer state element render-box! render-arrow! render-frame! render-text! render-stroke!]
+  (if (draw.state/draw-box-element? element)
+    (render-box! renderer state element)
+    (if (draw.state/draw-arrow-element? element)
+      (render-arrow! renderer state element)
+      (if (draw.state/draw-frame-element? element)
+        (render-frame! renderer state element)
+        (if (draw.state/draw-text-element? element)
+          (render-text! renderer state element)
+          (render-stroke! renderer state element))))))
+
+(defn draw-render-active-box!
+  "Render the current active rectangle preview."
+  [renderer state active-box render-box!]
+  (render-box! renderer
+               state
+               (draw.geometry/draw-box-element active-box)))
+
+(defn draw-render-active-arrow!
+  "Render the current active arrow preview."
+  [renderer state active-arrow render-arrow!]
+  (render-arrow! renderer
+                 state
+                 (assoc active-arrow :kind :arrow)))
+
+(defn draw-render-active-frame!
+  "Render the current active legacy frame preview."
+  [renderer state active-frame render-frame!]
+  (render-frame! renderer
+                 state
+                 (draw.geometry/draw-frame-element active-frame)))
+
+(defn draw-render-active-text!
+  "Render the current active text preview."
+  [renderer state active-text render-text!]
+  (render-text! renderer
+                state
+                (draw.geometry/draw-text-element active-text)))
+
+(defn draw-render-selection-handles!
+  "Render editing handles for the currently selected editable element."
+  [renderer state render-screen-soft-segment!]
+  (let [element (draw.selection/draw-single-selected-element state)]
+    (if element
+      (let [rects (draw.geometry/draw-selection-handle-screen-rects state element)
+            color (draw.geometry/draw-selection-color)]
+        (if (draw.state/draw-box-element? element)
+          (let [rotate-point (draw.geometry/draw-rotation-handle-screen-point state element)
+                top-point (draw-box-top-center-screen-point state element)]
+            (render-screen-soft-segment! renderer
+                                         color
+                                         (draw.geometry/draw-selection-outline-size)
+                                         (nth top-point 0)
+                                         (nth top-point 1)
+                                         (nth rotate-point 0)
+                                         (nth rotate-point 1)))
+          nil)
+        (sdl/set-draw-color! renderer
+                             (nth color 0)
+                             (nth color 1)
+                             (nth color 2)
+                             255)
+        (reduce (fn [acc handle]
+                  (let [rect (get rects handle)]
+                    (if rect
+                      (sdl/render-fill-rect! renderer
+                                             (get rect :x)
+                                             (get rect :y)
+                                             (get rect :width)
+                                             (get rect :height))
+                      nil)
+                    acc))
+                nil
+                (if (draw.state/draw-box-element? element)
+                  [:nw :ne :se :sw :rotate]
+                  (if (draw.state/draw-arrow-element? element)
+                    [:start :end]
+                    []))))
+      nil)))
+
+(defn draw-render-selection!
+  "Render selection bounds and handles for the current selection."
+  [renderer state render-box! render-selection-handles!]
+  (let [bounds (draw.selection/draw-selection-bounds state)
+        marquee (draw-selection-marquee-bounds state)]
+    (if bounds
+      (begin
+        (render-box! renderer
+                     state
+                     (draw.geometry/draw-selection-outline-element bounds))
+        (render-selection-handles! renderer state))
+      nil)
+    (if marquee
+      (render-box! renderer
+                   state
+                   (draw.geometry/draw-selection-outline-element marquee))
+      nil)))
+
+(defn draw-render-elements!
+  "Render all committed elements plus active previews."
+  [ctx state render-element! render-stroke! render-active-box! render-active-arrow! render-active-frame! render-active-text! render-selection!]
+  (let [renderer (get ctx :renderer)
+        elements (get state :elements)
+        active-stroke (get state :active-stroke)
+        active-box (get state :active-box)
+        active-arrow (get state :active-arrow)
+        active-frame (get state :active-frame)
+        active-text (get state :active-text)]
+    (reduce (fn [acc element]
+              (begin
+                (render-element! renderer state element)
+                acc))
+            nil
+            elements)
+    (if active-stroke
+      (render-stroke! renderer state active-stroke)
+      nil)
+    (if active-box
+      (render-active-box! renderer state active-box)
+      nil)
+    (if active-arrow
+      (render-active-arrow! renderer state active-arrow)
+      nil)
+    (if active-frame
+      (render-active-frame! renderer state active-frame)
+      nil)
+    (if active-text
+      (render-active-text! renderer state active-text)
+      nil)
+    (render-selection! renderer state)))
