@@ -90,8 +90,8 @@
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  d: debug panel   tab: tool panel   0: reset view"
-   "  ctrl+s: save   ctrl+o: load"
-   "  repl: save-canvas!, load-canvas!, restart-dev!"
+   "  ctrl+n: new   ctrl+s: save   ctrl+shift+s: save as   ctrl+o: open"
+   "  repl: new-canvas!, open-canvas!, save-canvas!, save-canvas-as!, restart-dev!"
    "  repl: (draw-log-tail 20), draw-clear-log!, dump-current-state!"
    "  repl: draw-simulate-input!, draw-replay-live!"
    "  repl: draw-replay-benchmark!, draw-replay-live-benchmark!"])

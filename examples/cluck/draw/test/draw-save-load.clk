@@ -19,6 +19,11 @@
       (draw-save-load-pass label)
       (draw-save-load-fail label "truthy value" (pr-str value))))
 
+(define (draw-save-load-assert-false label value)
+  (if (not value)
+      (draw-save-load-pass label)
+      (draw-save-load-fail label "falsey value" (pr-str value))))
+
 (define (draw-save-load-assert-str= label expected actual)
   (if (string=? expected actual)
       (draw-save-load-pass label)
@@ -84,6 +89,9 @@
                                   (pr-str path)
                                   (pr-str (save-canvas-to! path))))
     (lambda ()
+      (draw-save-load-assert-false "saved file strips document path"
+                                   (contains? (edn/read-string (io/slurp path))
+                                              :file-path))
       (set-state! (default-state))
       (draw-save-load-assert-str= "load returns path"
                                   (pr-str path)
@@ -91,10 +99,13 @@
       (draw-save-load-assert-str= "load restored title"
                                   "Saved Draw"
                                   (get (current-state) :title))
-      (draw-save-load-assert-str= "load clears transient status note"
-                                  ""
+      (draw-save-load-assert-str= "load restored document path"
+                                  (pr-str path)
+                                  (pr-str (get (current-state) :file-path)))
+      (draw-save-load-assert-str= "load shows status note"
+                                  (format "opened %s" path)
                                   (get (current-state) :status-note))
-      (draw-save-load-assert-num= "load clears transient status note frame"
+      (draw-save-load-assert-num= "load sets transient status note frame"
                                   0
                                   (get (current-state) :status-note-frame))
       (draw-save-load-assert-num= "load restored brush size"

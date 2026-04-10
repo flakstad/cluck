@@ -109,13 +109,13 @@
   (draw-input-assert-true "debug panel lists tool panel"
                           (draw-input-has-line? lines "  d: debug panel   tab: tool panel   0: reset view"))
   (draw-input-assert-true "debug panel lists save load shortcuts"
-                          (draw-input-has-line? lines "  ctrl+s: save   ctrl+o: load"))
+                          (draw-input-has-line? lines "  ctrl+n: new   ctrl+s: save   ctrl+shift+s: save as   ctrl+o: open"))
   (draw-input-assert-true "debug panel lists repl helpers"
-                          (draw-input-has-line? lines "  repl: save-canvas!, load-canvas!, restart-dev!")))
+                          (draw-input-has-line? lines "  repl: new-canvas!, open-canvas!, save-canvas!, save-canvas-as!, restart-dev!")))
 
 (let [lines (draw-tool-panel-info-lines (default-state))]
   (draw-input-assert-true "tool panel lists save file"
-                          (draw-input-has-line? lines "file: cluck-draw-state.edn"))
+                          (draw-input-has-line? lines "file: cluck-draw-document.edn"))
   (draw-input-assert-true "tool panel lists edn format"
                           (draw-input-has-line? lines "format: EDN"))
   (draw-input-assert-true "tool panel lists brush sizes"
@@ -123,9 +123,11 @@
   (draw-input-assert-true "tool panel lists color swatches"
                           (draw-input-has-line? lines "brush/background swatches below"))
   (draw-input-assert-true "tool panel lists save shortcut"
-                          (draw-input-has-line? lines "TAB toggle  CTRL+S save"))
-  (draw-input-assert-true "tool panel lists load shortcut"
-                          (draw-input-has-line? lines "CTRL+O load")))
+                          (draw-input-has-line? lines "TAB toggle  CTRL+N new  CTRL+S save"))
+  (draw-input-assert-true "tool panel lists save-as shortcut"
+                          (draw-input-has-line? lines "CTRL+SHIFT+S save as"))
+  (draw-input-assert-true "tool panel lists open shortcut"
+                          (draw-input-has-line? lines "CTRL+O open")))
 
 (let [original-set-title sdl/set-window-title!
       captured false]
@@ -419,63 +421,138 @@
                           "rectangle"
                           (draw-tool-mode clicked)))
 
-(let [base (assoc (default-state) :tool-panel? true :title "Panel Button Save")
-      eraser-button (nth (draw-tool-panel-buttons base) 3)
-      save-button (nth (draw-tool-panel-buttons base) 4)
-      load-button (nth (draw-tool-panel-buttons base) 5)
-      erased (draw-input-copy-state
-               (draw-apply-input-event! base
-                                        {:kind :mouse-down
-                                         :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel-eraser"
-                                         :mouse-x (+ (get eraser-button :x) 4)
-                                         :mouse-y (+ (get eraser-button :y) 4)
-                                         :pressure 1.0
-                                         :shift? false}))
-      saved (draw-input-copy-state
-              (draw-apply-input-event! base
-                                       {:kind :mouse-down
-                                        :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel-save"
-                                        :mouse-x (+ (get save-button :x) 4)
-                                        :mouse-y (+ (get save-button :y) 4)
-                                        :pressure 1.0
-                                        :shift? false}))
-      loaded (draw-input-copy-state
-               (draw-apply-input-event! (assoc saved :title "Mutated")
-                                        {:kind :mouse-down
-                                         :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel-load"
-                                         :mouse-x (+ (get load-button :x) 4)
-                                         :mouse-y (+ (get load-button :y) 4)
-                                         :pressure 1.0
-                                         :shift? false}))]
-  (draw-input-assert-true "tool panel eraser toggles eraser mode"
-                          (get erased :eraser?))
-  (draw-input-assert-true "tool panel save button writes state file"
-                          (fs/exists? (draw-state-file-path)))
-  (draw-input-assert-true "tool panel save button shows feedback"
-                          (not (empty? (get saved :status-note))))
-  (draw-input-assert-true "tool panel load button shows feedback"
-                          (not (empty? (get loaded :status-note))))
-  (draw-input-assert-str= "tool panel load button restores saved title"
-                          "Panel Button Save"
-                          (get loaded :title)))
-
-(let [path (draw-state-file-path)
-      saved (draw-apply-input-event! (assoc (default-state) :title "Panel Save")
-                                     {:kind :key-down
-                                      :key "s"
-                                      :desc "SDL_EVENT_KEY_DOWN key=s"
-                                      :ctrl? true})
-      loaded (draw-apply-input-event! (assoc saved :title "Mutated")
-                                      {:kind :key-down
-                                       :key "o"
-                                       :desc "SDL_EVENT_KEY_DOWN key=o"
-                                       :ctrl? true})]
-  (draw-input-assert-true "ctrl save writes state file"
-                          (fs/exists? path))
-  (draw-input-assert-true "ctrl save shows feedback"
-                          (not (empty? (get saved :status-note))))
-  (draw-input-assert-true "ctrl load shows feedback"
-                          (not (empty? (get loaded :status-note)))))
+(let [path (fs/path (fs/temp-dir) "cluck-draw-ui-open-save.edn")
+      original-open draw-choose-open-path!
+      original-save draw-choose-save-path!]
+  (dynamic-wind
+    (lambda ()
+      (set! draw-choose-open-path! (lambda () path))
+      (set! draw-choose-save-path! (lambda () path)))
+    (lambda ()
+      (let [base (assoc (default-state)
+                        :tool-panel? true
+                        :title "Panel Button Save"
+                        :file-path path)
+            buttons (draw-tool-panel-buttons base)
+            new-button (draw-input-find-button-kind buttons :new)
+            save-button (draw-input-find-button-kind buttons :save)
+            save-as-button (draw-input-find-button-kind buttons :save-as)
+            open-button (draw-input-find-button-kind buttons :open)
+            eraser-button (draw-input-find-button-kind buttons :eraser)
+            new-state (draw-input-copy-state
+                        (draw-apply-tool-panel-button base
+                                                     new-button
+                                                     [0.0 0.0 1.0]
+                                                     [0.0 0.0]))
+            saved (draw-input-copy-state
+                    (draw-apply-tool-panel-button base
+                                                 save-button
+                                                 [0.0 0.0 1.0]
+                                                 [0.0 0.0]))
+            saved-as (draw-input-copy-state
+                       (draw-apply-tool-panel-button (assoc base :title "Mutated")
+                                                    save-as-button
+                                                    [0.0 0.0 1.0]
+                                                    [0.0 0.0]))
+            loaded (draw-input-copy-state
+                     (draw-apply-tool-panel-button
+                       (assoc (draw-input-copy-state saved-as) :title "Mutated Again")
+                       open-button
+                       [0.0 0.0 1.0]
+                       [0.0 0.0]))
+            erased (draw-input-copy-state
+                     (draw-apply-tool-panel-button base
+                                                  eraser-button
+                                                  [0.0 0.0 1.0]
+                                                  [0.0 0.0]))
+            ctrl-saved (draw-input-copy-state
+                         (draw-apply-input-event! (assoc base :title "Ctrl Save")
+                                                  {:kind :key-down
+                                                   :key "s"
+                                                   :desc "SDL_EVENT_KEY_DOWN key=s"
+                                                   :ctrl? true
+                                                   :shift? false}))
+            ctrl-saved-as (draw-input-copy-state
+                            (draw-apply-input-event! (assoc base :title "Ctrl Save As")
+                                                     {:kind :key-down
+                                                      :key "s"
+                                                      :desc "SDL_EVENT_KEY_DOWN key=s"
+                                                      :ctrl? true
+                                                      :shift? true}))
+            ctrl-loaded (draw-input-copy-state
+                          (draw-apply-input-event! (assoc ctrl-saved :title "Mutated")
+                                                   {:kind :key-down
+                                                    :key "o"
+                                                    :desc "SDL_EVENT_KEY_DOWN key=o"
+                                                    :ctrl? true
+                                                    :shift? false}))
+            ctrl-new (draw-input-copy-state
+                       (draw-apply-input-event! (assoc ctrl-saved :title "Mutated")
+                                                {:kind :key-down
+                                                 :key "n"
+                                                 :desc "SDL_EVENT_KEY_DOWN key=n"
+                                                 :ctrl? true
+                                                 :shift? false}))]
+        (draw-input-assert-true "tool panel includes new button"
+                                new-button)
+        (draw-input-assert-true "tool panel eraser toggles eraser mode"
+                                (get erased :eraser?))
+        (draw-input-assert-true "tool panel save button writes selected file"
+                                (fs/exists? path))
+        (draw-input-assert-str= "tool panel save button stores chosen file path"
+                                (pr-str path)
+                                (pr-str (get saved :file-path)))
+        (draw-input-assert-true "tool panel save button shows feedback"
+                                (not (empty? (get saved :status-note))))
+        (draw-input-assert-str= "tool panel save-as button keeps current title"
+                                "Mutated"
+                                (get saved-as :title))
+        (draw-input-assert-str= "tool panel save-as button stores chosen file path"
+                                (pr-str path)
+                                (pr-str (get saved-as :file-path)))
+        (draw-input-assert-true "tool panel save-as button shows feedback"
+                                (not (empty? (get saved-as :status-note))))
+        (draw-input-assert-str= "tool panel open button restores saved title"
+                                "Mutated"
+                                (get loaded :title))
+        (draw-input-assert-str= "tool panel open button restores chosen file path"
+                                (pr-str path)
+                                (pr-str (get loaded :file-path)))
+        (draw-input-assert-true "tool panel open button shows feedback"
+                                (not (empty? (get loaded :status-note))))
+        (draw-input-assert-str= "tool panel new button resets title"
+                                "Cluck Draw"
+                                (get new-state :title))
+        (draw-input-assert-true "ctrl save writes selected file"
+                                (fs/exists? path))
+        (draw-input-assert-str= "ctrl save stores chosen file path"
+                                (pr-str path)
+                                (pr-str (get ctrl-saved :file-path)))
+        (draw-input-assert-true "ctrl save shows feedback"
+                                (not (empty? (get ctrl-saved :status-note))))
+        (draw-input-assert-str= "ctrl save-as stores chosen file path"
+                                (pr-str path)
+                                (pr-str (get ctrl-saved-as :file-path)))
+        (draw-input-assert-true "ctrl save-as shows feedback"
+                                (not (empty? (get ctrl-saved-as :status-note))))
+        (draw-input-assert-str= "ctrl open restores latest saved title"
+                                "Ctrl Save As"
+                                (get ctrl-loaded :title))
+        (draw-input-assert-str= "ctrl open restores chosen file path"
+                                (pr-str path)
+                                (pr-str (get ctrl-loaded :file-path)))
+        (draw-input-assert-true "ctrl open shows feedback"
+                                (not (empty? (get ctrl-loaded :status-note))))
+        (draw-input-assert-str= "ctrl new resets title"
+                                "Cluck Draw"
+                                (get ctrl-new :title)))
+      nil)
+    (lambda ()
+      (set! draw-choose-open-path! original-open)
+      (set! draw-choose-save-path! original-save)
+      (if (fs/file? path)
+        (fs/delete! path)
+        false))))
 
 (let [cursor (draw-desired-cursor-kind (default-state))]
   (draw-input-assert-str= "ink tool uses crosshair cursor"

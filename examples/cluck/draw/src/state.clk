@@ -8,12 +8,18 @@
   []
   "Cluck Draw")
 
+(defn draw-document-file-path
+  "Return the default path used for document save/open dialogs."
+  []
+  (fs/path (current-directory) "build" "cluck-draw-document.edn"))
+
 (defn default-state
   "Return the starter app state."
   []
   {:title (draw-window-title)
    :width 1280
    :height 720
+   :file-path (draw-document-file-path)
    :background [24 24 28]
    :brush-color [245 245 245]
    :brush-size 2
@@ -158,7 +164,7 @@
   "Return STATE with transient UI-only fields removed."
   [state]
   (if state
-    (dissoc state :status-note :status-note-frame)
+    (dissoc state :status-note :status-note-frame :file-path)
     state))
 
 (defn draw-element-kind
@@ -434,7 +440,10 @@
                 (assoc state :tool-panel? false))
         state (if (contains? state :status-note)
                 state
-                (assoc state :status-note "" :status-note-frame 0))]
+                (assoc state :status-note "" :status-note-frame 0))
+        state (if (contains? state :file-path)
+                state
+                (assoc state :file-path (draw-document-file-path)))]
     (draw-sync-elements state (get state :elements))))
 
 (defn draw-next-element-id

@@ -68,6 +68,7 @@
 
 (def default-state draw-state/default-state)
 (def draw-state-file-path draw-state/draw-state-file-path)
+(def draw-document-file-path draw-state/draw-document-file-path)
 (def draw-window-title draw-state/draw-window-title)
 (def draw-kind=? draw-state/draw-kind=?)
 (def draw-tool-mode draw-state/draw-tool-mode)
@@ -298,7 +299,8 @@
 (def draw-space-key? draw-input/draw-space-key?)
 (def draw-control-key? draw-input/draw-control-key?)
 (def draw-save-shortcut-key? draw-input/draw-save-shortcut-key?)
-(def draw-load-shortcut-key? draw-input/draw-load-shortcut-key?)
+(def draw-open-shortcut-key? draw-input/draw-open-shortcut-key?)
+(def draw-new-shortcut-key? draw-input/draw-new-shortcut-key?)
 (def draw-plus-key? draw-input/draw-plus-key?)
 (def draw-minus-key? draw-input/draw-minus-key?)
 (def draw-pan-left-key? draw-input/draw-pan-left-key?)
@@ -313,6 +315,29 @@
 (def draw-synthetic-pen-mouse-event? draw-input/draw-synthetic-pen-mouse-event?)
 (def draw-ignorable-input-event? draw-input/draw-ignorable-input-event?)
 (def draw-loggable-event? draw-input/draw-loggable-event?)
+(defn draw-chooser-run!
+  "Run SCRIPT through osascript and return the selected path, or false."
+  [script]
+  (let [result (proc/sh (format "osascript -e %s"
+                                (proc/qs script)))]
+    (if (zero? (get result :exit))
+      (let [path (str/trim (get result :out))]
+        (if (empty? path)
+          false
+          path))
+      false)))
+
+(defn draw-choose-open-path!
+  "Return a file path selected by the user, or false when canceled."
+  []
+  (draw-chooser-run!
+    "POSIX path of (choose file with prompt \"Open Cluck Draw document\")"))
+
+(defn draw-choose-save-path!
+  "Return a file path selected by the user for Save As, or false when canceled."
+  []
+  (draw-chooser-run!
+    "POSIX path of (choose file name with prompt \"Save Cluck Draw document as\")"))
 
 (defn draw-preview-segment-budget
   "Return the maximum number of new stroke points to preview in one frame."
@@ -694,31 +719,67 @@
   [state]
   (draw-set-state-core! state))
 
+(defn draw-current-document-path
+  "Return the current document path, or the default document path."
+  [state]
+  (or (get state :file-path)
+      (draw-document-file-path)))
+
+(defn draw-save-canvas-core-to!
+  "Write STATE to PATH and return the next state."
+  [state path]
+  (let [save-path (fs/path path)
+        saved-state (draw-session/draw-save-canvas-core! (draw-persisted-state state)
+                                                         save-path
+                                                         draw-ensure-parent-directory!
+                                                         draw-state-snapshot
+                                                         draw-log-entry!)
+        next-state (assoc saved-state
+                          :file-path save-path)]
+    (draw-set-status-note next-state
+                          (format "saved %s" save-path))))
+
+(defn draw-load-canvas-core-from!
+  "Load draw state from PATH and return the next state."
+  [state path]
+  (let [load-path (fs/path path)]
+    (if (fs/file? load-path)
+      (let [loaded-state (draw-session/draw-load-canvas-core! state
+                                                              load-path
+                                                              draw-normalize-state
+                                                              draw-state-snapshot
+                                                              draw-log-entry!)
+            next-state (assoc loaded-state
+                              :file-path load-path)]
+        (draw-set-status-note next-state
+                              (format "opened %s" load-path)))
+      (draw-set-status-note (assoc state :file-path load-path)
+                            (format "missing %s" load-path)))))
+
+(defn draw-new-canvas-core!
+  "Reset STATE to a fresh blank canvas and return the next state."
+  [state]
+  (let [next-state (assoc (default-state)
+                          :debug-panel? (if (get state :debug-panel?) true false)
+                          :tool-panel? (if (get state :tool-panel?) true false)
+                          :window-focused? (if (contains? state :window-focused?)
+                                             (get state :window-focused?)
+                                             true)
+                          :running? (if (contains? state :running?)
+                                      (get state :running?)
+                                      true)
+                          :canvas-dirty? true)]
+    (draw-set-status-note next-state "new document")))
+
 (defn draw-save-canvas-core!
   "Write STATE to the default draw save file and return STATE."
   [state]
-  (let [path (draw-state-file-path)
-        saved-state (draw-session/draw-save-canvas-core! (draw-persisted-state state)
-                                                         path
-                                                         draw-ensure-parent-directory!
-                                                         draw-state-snapshot
-                                                         draw-log-entry!)]
-    (draw-set-status-note saved-state
-                          (format "saved %s" (fs/basename path)))))
+  (draw-save-canvas-core-to! state (draw-current-document-path state)))
 
 (defn draw-load-canvas-core!
   "Load draw state from the default save file and return the next state."
   [state]
-  (let [path (draw-state-file-path)
-        loaded-state (draw-session/draw-load-canvas-core! state
-                                                           path
-                                                           draw-normalize-state
-                                                           draw-state-snapshot
-                                                           draw-log-entry!)]
-    (draw-set-status-note loaded-state
-                          (if (fs/file? path)
-                            (format "loaded %s" (fs/basename path))
-                            (format "missing %s" (fs/basename path))))))
+  (draw-load-canvas-core-from! state (draw-current-document-path state)))
 
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
@@ -770,15 +831,15 @@
   [path]
   (draw-with-lock
     (lambda ()
-      (let [save-path (fs/path path)]
-        (draw-ensure-parent-directory! save-path)
-        (io/spit save-path (pr-str (draw-persisted-state (current-state))))
-        save-path))))
+      (let [next-state (draw-save-canvas-core-to! (or (current-state) (default-state))
+                                                  path)]
+        (draw-set-state-core! next-state)
+        (fs/path path)))))
 
 (defn save-canvas!
   "Write the current draw state to the default save file."
   []
-  (draw-save-state-to! (draw-state-file-path)))
+  (draw-save-state-to! (draw-current-document-path (or (current-state) (default-state)))))
 
 (defn save-canvas-to!
   "Write the current draw state to PATH."
@@ -790,19 +851,83 @@
   [path]
   (draw-with-lock
     (lambda ()
-      (draw-load-state-core!
-       (edn/read-string (io/slurp (fs/path path))))
-      (fs/path path))))
+      (let [next-state (draw-load-canvas-core-from! (or (current-state) (default-state))
+                                                    path)]
+        (draw-set-state-core! next-state)
+        (fs/path path)))))
 
 (defn load-canvas!
   "Load the current draw state from the default save file."
   []
-  (draw-load-state-from! (draw-state-file-path)))
+  (draw-load-state-from! (draw-current-document-path (or (current-state) (default-state)))))
 
 (defn load-canvas-from!
   "Load a draw state from PATH."
   [path]
   (draw-load-state-from! path))
+
+(defn draw-request-open-document!
+  "Launch an Open chooser for the current document."
+  [state]
+  (let [path (draw-current-document-path state)
+        chosen (draw-choose-open-path!)]
+    (if chosen
+      (begin
+        (draw-log-entry! :open-dialog
+                         {:path path
+                          :chosen chosen
+                          :state (draw-state-snapshot state)})
+        (draw-load-canvas-core-from! state chosen))
+      (draw-set-status-note state
+                            (format "open canceled %s" path)))))
+
+(defn draw-request-save-document-as!
+  "Launch a Save As chooser for the current document."
+  [state]
+  (let [path (draw-current-document-path state)
+        chosen (draw-choose-save-path!)]
+    (if chosen
+      (begin
+        (draw-log-entry! :save-dialog
+                         {:path path
+                          :chosen chosen
+                          :state (draw-state-snapshot state)})
+        (draw-save-canvas-core-to! state chosen))
+      (draw-set-status-note state
+                            (format "save canceled %s" path)))))
+
+(defn open-canvas!
+  "Open a document with a file dialog when possible, otherwise load the default document."
+  []
+  (draw-with-lock
+    (lambda ()
+      (if *draw-context*
+        (begin
+          (set! *draw-state* (draw-request-open-document! (or *draw-state* (default-state))))
+          *draw-state*)
+        (draw-load-state-from! (draw-current-document-path (or (current-state) (default-state))))))))
+
+(defn new-canvas!
+  "Reset the current canvas to a fresh blank document."
+  []
+  (draw-with-lock
+    (lambda ()
+      (if *draw-context*
+        (begin
+          (set! *draw-state* (draw-new-canvas-core! (or *draw-state* (default-state))))
+          *draw-state*)
+        (draw-new-canvas-core! (or (current-state) (default-state)))))))
+
+(defn save-canvas-as!
+  "Save the current document with a file dialog when possible, otherwise save the default document."
+  []
+  (draw-with-lock
+    (lambda ()
+      (if *draw-context*
+        (begin
+          (set! *draw-state* (draw-request-save-document-as! (or *draw-state* (default-state))))
+          *draw-state*)
+        (draw-save-state-to! (draw-current-document-path (or (current-state) (default-state))))))))
 
 (defn set-title!
   "Update the current window title."
@@ -1321,20 +1446,23 @@
       (draw-kind=? kind :eraser)
       (draw-toggle-eraser-core! base-state)
 
+      (draw-kind=? kind :new)
+      (draw-new-canvas-core! base-state)
+
+      (draw-kind=? kind :save)
+      (draw-save-canvas-core! base-state)
+
       (draw-kind=? kind :brush-color)
       (draw-set-brush-color-core! base-state (get button :color))
 
       (draw-kind=? kind :background-color)
       (draw-set-background-core! base-state (get button :color))
 
-      (draw-kind=? kind :save)
-      (draw-save-canvas-core! base-state)
+      (draw-kind=? kind :save-as)
+      (draw-request-save-document-as! base-state)
 
-      (draw-kind=? kind :load)
-      (draw-sync-pointer-state
-        (draw-load-canvas-core! base-state)
-        point
-        screen-point)
+      (draw-kind=? kind :open)
+      (draw-request-open-document! base-state)
 
       :else base-state)))
 
@@ -1494,12 +1622,17 @@
             state (draw-apply-key-modifier-state state event)]
         (if (draw-kind=? kind :key-down)
           (let [state (if (and (get state :ctrl-down?)
-                               (draw-save-shortcut-key? key-label))
-                        (draw-save-canvas-core! state)
+                               (draw-new-shortcut-key? key-label))
+                        (draw-new-canvas-core! state)
                         (if (and (get state :ctrl-down?)
-                                 (draw-load-shortcut-key? key-label))
-                          (draw-load-canvas-core! state)
-                          state))
+                                 (draw-save-shortcut-key? key-label))
+                          (if (get event :shift?)
+                            (draw-request-save-document-as! state)
+                            (draw-save-canvas-core! state))
+                          (if (and (get state :ctrl-down?)
+                                   (draw-open-shortcut-key? key-label))
+                            (draw-request-open-document! state)
+                            state)))
                 state (draw-handle-view-key! state key-label)
                 state (draw-handle-tool-key! state key-label)
                 state (if (draw-toggle-debug-panel-key? key-label)

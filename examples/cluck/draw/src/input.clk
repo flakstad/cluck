@@ -187,8 +187,13 @@
   [key]
   (string=? (str/lower-case (or key "")) "s"))
 
-(defn draw-load-shortcut-key?
-  "Return true when KEY should load the current canvas with Ctrl."
+(defn draw-new-shortcut-key?
+  "Return true when KEY should create a new canvas with Ctrl."
+  [key]
+  (string=? (str/lower-case (or key "")) "n"))
+
+(defn draw-open-shortcut-key?
+  "Return true when KEY should open a canvas with Ctrl."
   [key]
   (string=? (str/lower-case (or key "")) "o"))
 

@@ -95,13 +95,15 @@
 (defn draw-tool-panel-info-lines
   "Return the footer metadata and shortcut lines for the tool panel."
   [state]
-  [(format "file: %s" (fs/basename (draw.state/draw-state-file-path)))
+  [(format "file: %s" (fs/basename (or (get state :file-path)
+                                       (draw.state/draw-document-file-path))))
    (format "format: %s" (draw-save-format-label))
    "1 ink   2 select   3 rectangle   4 eraser"
    "ctrl+1/2/3 brush sizes"
    "brush/background swatches below"
-   "TAB toggle  CTRL+S save"
-   "CTRL+O load"])
+   "TAB toggle  CTRL+N new  CTRL+S save"
+   "CTRL+SHIFT+S save as"
+   "CTRL+O open"])
 
 (defn draw-tool-panel-section-label
   "Return a non-clickable tool panel section label."
@@ -179,17 +181,27 @@
                        :kind :eraser
                        :active? (if (get state :eraser?) true false)
                        :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
-                      {:id :save
+                      {:id :tool-new
+                       :label "New"
+                       :kind :new
+                       :active? false
+                       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
+                      {:id :tool-save
                        :label "Save"
                        :kind :save
                        :active? false
-                       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
-                      {:id :load
-                       :label "Load"
-                       :kind :load
+                       :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}
+                      {:id :save-as
+                       :label "Save As"
+                       :kind :save-as
                        :active? false
-                       :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}]
-        section-y (+ y0 (* 6 (+ height gap)))
+                       :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
+                      {:id :open
+                       :label "Open"
+                       :kind :open
+                       :active? false
+                       :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}]
+        section-y (+ y0 (* 8 (+ height gap)))
         brush-label (draw-tool-panel-section-label state
                                                    :brush-colors
                                                    "Brush colors"

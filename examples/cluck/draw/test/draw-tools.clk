@@ -86,10 +86,10 @@
 (let [noted (draw-tools-copy-state
               (assoc (default-state)
                      :frame 12
-                     :status-note "saved cluck-draw-state.edn"
+                     :status-note "saved cluck-draw-document.edn"
                      :status-note-frame 12))]
   (draw-tools-assert-str= "status note visible while fresh"
-                          "saved cluck-draw-state.edn"
+                          "saved cluck-draw-document.edn"
                           (draw-status-note-text noted))
   (let [expired (draw-tools-copy-state
                   (assoc (draw-tools-copy-state noted)
@@ -225,6 +225,44 @@
     (draw-tools-assert-str= "undo restores background color"
                             "[24 24 28]"
                             (pr-str (get undone-background :background)))))
+
+  (let [dirty (assoc (draw-sync-elements
+                       (assoc (default-state)
+                              :title "Dirty"
+                              :tool-panel? true
+                              :debug-panel? true)
+                       [{:kind :ink
+                         :points [[1 1 1.0] [2 2 1.0]]
+                         :color [1 2 3]
+                         :size 2}])
+                     :history [:old]
+                     :status-note "temp"
+                     :status-note-frame 12)
+        reset (draw-new-canvas-core! dirty)]
+    (draw-tools-assert-str= "new resets title"
+                            "Cluck Draw"
+                            (get reset :title))
+    (draw-tools-assert-num= "new clears elements"
+                            0
+                            (count (get reset :elements)))
+    (draw-tools-assert-num= "new clears strokes"
+                            0
+                            (count (get reset :strokes)))
+    (draw-tools-assert-num= "new clears history"
+                            0
+                            (count (get reset :history)))
+    (draw-tools-assert-true "new marks canvas dirty"
+                            (get reset :canvas-dirty?))
+    (draw-tools-assert-true "new preserves tool panel"
+                            (get reset :tool-panel?))
+    (draw-tools-assert-true "new preserves debug panel"
+                            (get reset :debug-panel?))
+    (draw-tools-assert-str= "new sets status note"
+                            "new document"
+                            (get reset :status-note))
+    (draw-tools-assert-str= "new resets document path"
+                            (pr-str (draw-document-file-path))
+                            (pr-str (get reset :file-path))))
 
   (let [panel-state (assoc (default-state) :tool-panel? true)
         buttons (draw-tool-panel-buttons panel-state)

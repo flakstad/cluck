@@ -8,11 +8,64 @@
 (import (chicken foreign))
 
 (foreign-declare "#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_dialog.h>
 
 static SDL_Event cluck_last_event;
 static int cluck_have_last_event = 0;
 static char cluck_last_event_description[512];
+static SDL_Mutex *cluck_file_dialog_mutex = NULL;
+static int cluck_file_dialog_ready_flag = 0;
+static int cluck_file_dialog_kind_value = 0;
+static char cluck_file_dialog_path_buffer[4096];
+
+static SDL_Mutex *cluck_ensure_file_dialog_mutex(void) {
+  if (!cluck_file_dialog_mutex) {
+    cluck_file_dialog_mutex = SDL_CreateMutex();
+  }
+  return cluck_file_dialog_mutex;
+}
+
+static void cluck_clear_file_dialog_state_locked(void) {
+  cluck_file_dialog_ready_flag = 0;
+  cluck_file_dialog_kind_value = 0;
+  cluck_file_dialog_path_buffer[0] = '\\0';
+}
+
+static void cluck_clear_file_dialog_state(void) {
+  SDL_Mutex *mutex = cluck_ensure_file_dialog_mutex();
+  if (mutex) {
+    SDL_LockMutex(mutex);
+    cluck_clear_file_dialog_state_locked();
+    SDL_UnlockMutex(mutex);
+  }
+  else {
+    cluck_clear_file_dialog_state_locked();
+  }
+}
+
+static void SDLCALL cluck_file_dialog_callback(void *userdata, const char * const *filelist, int filter) {
+  int kind = (int)(intptr_t)userdata;
+  SDL_Mutex *mutex = cluck_ensure_file_dialog_mutex();
+  (void)filter;
+  if (mutex) {
+    SDL_LockMutex(mutex);
+  }
+  cluck_file_dialog_ready_flag = 1;
+  cluck_file_dialog_kind_value = kind;
+  if (filelist && filelist[0]) {
+    snprintf(cluck_file_dialog_path_buffer, sizeof(cluck_file_dialog_path_buffer), \"%s\", filelist[0]);
+  }
+  else {
+    cluck_file_dialog_path_buffer[0] = '\\0';
+  }
+  if (mutex) {
+    SDL_UnlockMutex(mutex);
+  }
+}
 
 static int cluck_poll_event(void) {
   if (!SDL_PollEvent(&cluck_last_event)) {
@@ -147,6 +200,65 @@ static float cluck_event_pen_pressure(void) {
     return cluck_last_event.paxis.value;
   }
   return 1.0f;
+}
+
+bool cluck_show_open_file_dialog(SDL_Window *window, const char *default_location) {
+  cluck_clear_file_dialog_state();
+  SDL_ShowOpenFileDialog(cluck_file_dialog_callback,
+                         (void *)(intptr_t)1,
+                         window,
+                         NULL,
+                         0,
+                         default_location,
+                         false);
+  return true;
+}
+
+bool cluck_show_save_file_dialog(SDL_Window *window, const char *default_location) {
+  cluck_clear_file_dialog_state();
+  SDL_ShowSaveFileDialog(cluck_file_dialog_callback,
+                         (void *)(intptr_t)2,
+                         window,
+                         NULL,
+                         0,
+                         default_location);
+  return true;
+}
+
+bool cluck_file_dialog_ready(void) {
+  bool ready = false;
+  SDL_Mutex *mutex = cluck_ensure_file_dialog_mutex();
+  if (mutex) {
+    SDL_LockMutex(mutex);
+    ready = cluck_file_dialog_ready_flag != 0;
+    SDL_UnlockMutex(mutex);
+  }
+  else {
+    ready = cluck_file_dialog_ready_flag != 0;
+  }
+  return ready;
+}
+
+int cluck_file_dialog_kind(void) {
+  int kind = 0;
+  SDL_Mutex *mutex = cluck_ensure_file_dialog_mutex();
+  if (mutex) {
+    SDL_LockMutex(mutex);
+    kind = cluck_file_dialog_kind_value;
+    SDL_UnlockMutex(mutex);
+  }
+  else {
+    kind = cluck_file_dialog_kind_value;
+  }
+  return kind;
+}
+
+const char *cluck_file_dialog_path(void) {
+  return cluck_file_dialog_path_buffer;
+}
+
+void cluck_clear_file_dialog(void) {
+  cluck_clear_file_dialog_state();
 }
 
 static float cluck_event_wheel_y(void) {
