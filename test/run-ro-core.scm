@@ -26,7 +26,4 @@
   (load-file (string-append root "../examples/cluck/ro/core/doctor.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/reindex.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/route.clk"))
-  (load-file (string-append root "../examples/cluck/ro/bootstrap-core-aliases.scm"))
-  (load-file (string-append root "../examples/cluck/ro/src/app.clk"))
-  (load-file (string-append root "../examples/cluck/ro/main.clk"))
-  (load-file (string-append root "ro-cli.clk")))
+  (load-file (string-append root "ro-core.clk")))

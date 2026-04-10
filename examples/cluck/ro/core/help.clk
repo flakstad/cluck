@@ -1,0 +1,327 @@
+;; Pure help-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.help
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [json :as json]))
+
+(defn compact-json-step
+  [text i len in-string? escaped? acc]
+  (if (= i len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text i)]
+        (cond
+          escaped?
+          (compact-json-step text (+ i 1) len in-string? false (cons ch acc))
+
+          (char=? ch #\")
+          (compact-json-step text (+ i 1) len (not in-string?) false (cons ch acc))
+
+          (and in-string?
+               (char=? ch #\\))
+          (compact-json-step text (+ i 1) len true true (cons ch acc))
+
+          in-string?
+          (compact-json-step text (+ i 1) len true false (cons ch acc))
+
+          (char-whitespace? ch)
+          (compact-json-step text (+ i 1) len false false acc)
+
+          :else
+          (compact-json-step text (+ i 1) len false false (cons ch acc))))))
+
+(defn compact-json-text
+  [text]
+  (compact-json-step text 0 (string-length text) false false '()))
+
+(defn json-write-output
+  [value]
+  (string-append
+   (compact-json-text
+    (io/with-output-string
+     (fn [port]
+       (json/json-write value port))))
+   "\n"))
+
+(def commands-command-root-help-lines
+  (ns-resolve 'cluck.examples.ro.core.commands 'command-root-help-lines))
+
+(def commands-top-commands
+  (ns-resolve 'cluck.examples.ro.core.commands 'command-top-commands))
+
+(def root-help-lines
+  (append
+   (list
+    "ro"
+    ""
+    "usage:"
+    "  ro                        # start the TUI"
+    "  ro help                   # show this help"
+    "  ro <item-id>              # shortcut for: ro items show <item-id>")
+   (cdr commands-command-root-help-lines)
+   (list
+    ""
+    "global flags:"
+    "  --workspace <name>  Select workspace"
+    "  --pretty            Pretty-print JSON output")))
+
+(def root-help-text
+  (str/join "\n" root-help-lines))
+
+(def root-help-output
+  (string-append root-help-text "\n"))
+
+(def docs-help-lines
+  (list
+   "ro docs"
+   ""
+   "usage:"
+   "  ro docs"
+   "  ro docs <topic>"
+   "  ro docs <topic> --raw"))
+
+(def docs-help-text
+  (str/join "\n" docs-help-lines))
+
+(def docs-help-output
+  (string-append docs-help-text "\n"))
+
+(def docs-topics
+  (list "cli"
+        "getting-started"
+        "output-contract"
+        "storage"
+        "identity-ownership"
+        "agent-runtimes"
+        "sync"
+        "doctor-reindex"))
+
+(def docs-output
+  (json-write-output
+   (vector (cons 'data
+                 (vector (cons 'topics docs-topics))))))
+
+(def projects-help-lines
+  (list
+   "ro projects"
+   ""
+   "usage:"
+   "  ro projects create --name <name> [--use]"
+   "  ro projects list"
+   "  ro projects archive <project-id> [--unarchive]"
+   "  ro projects use <project-id>"
+   "  ro projects current"))
+
+(def projects-help-text
+  (str/join "\n" projects-help-lines))
+
+(def projects-help-output
+  (string-append projects-help-text "\n"))
+
+(def completion-top-commands
+  commands-top-commands)
+
+(def completion-top-command-line
+  (str/join " " completion-top-commands))
+
+(def completion-doc-topics-line
+  (str/join " " docs-topics))
+
+(def completion-help-lines
+  (list
+   "ro completion"
+   ""
+   "usage:"
+   "  ro completion <bash|zsh|fish>"))
+
+(def completion-help-text
+  (str/join "\n" completion-help-lines))
+
+(def completion-help-output
+  (string-append completion-help-text "\n"))
+
+(def completion-bash-lines
+  (list
+   "_ro_complete() {"
+   "  local cur cmd"
+   "  cur=\"${COMP_WORDS[COMP_CWORD]}\""
+   "  cmd=\"${COMP_WORDS[1]}\""
+   ""
+   "  if [[ ${COMP_CWORD} -eq 1 ]]; then"
+   (string-append "    COMPREPLY=( $(compgen -W \"" completion-top-command-line "\" -- \"$cur\") )")
+   "    return 0"
+   "  fi"
+   ""
+   "  case \"$cmd\" in"
+   (string-append "    docs) COMPREPLY=( $(compgen -W \"" completion-doc-topics-line "\" -- \"$cur\") ) ;;")
+   "    *) COMPREPLY=() ;;"
+   "  esac"
+   "}"
+   ""
+   "complete -F _ro_complete ro"))
+
+(def completion-bash-output
+  (string-append (str/join "\n" completion-bash-lines) "\n"))
+
+(def completion-zsh-lines
+  (list
+   "#compdef ro"
+   ""
+   "_ro() {"
+   "  local -a top docs_topics"
+   (string-append "  top=(" completion-top-command-line ")")
+   (string-append "  docs_topics=(" completion-doc-topics-line ")")
+   ""
+   "  if (( CURRENT == 2 )); then"
+   "    _describe 'command' top"
+   "    return"
+   "  fi"
+   ""
+   "  case ${words[2]} in"
+   "    docs) _describe 'docs topic' docs_topics ;;"
+   "  esac"
+   "}"
+   ""
+   "compdef _ro ro"))
+
+(def completion-zsh-output
+  (string-append (str/join "\n" completion-zsh-lines) "\n"))
+
+(def completion-fish-lines
+  (list
+   "complete -c ro -f"
+   (string-append "complete -c ro -n '__fish_use_subcommand' -a '" completion-top-command-line "'")
+   (string-append "complete -c ro -n '__fish_seen_subcommand_from docs' -a '" completion-doc-topics-line "'")))
+
+(def completion-fish-output
+  (string-append (str/join "\n" completion-fish-lines) "\n"))
+
+(def events-help-lines
+  (list
+   "ro events"
+   ""
+   "usage:"
+   "  ro events list [--limit N]"))
+
+(def events-help-text
+  (str/join "\n" events-help-lines))
+
+(def events-help-output
+  (string-append events-help-text "\n"))
+
+(def workspace-help-lines
+  (list
+   "ro workspace"
+   ""
+   "usage:"
+   "  ro workspace current"
+   "  ro workspace list"
+   "  ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo"
+   "  ro workspace init <name> [--dir <path>] [--use]           blank workspace"
+   "  ro workspace use <name>"))
+
+(def workspace-help-text
+  (str/join "\n" workspace-help-lines))
+
+(def workspace-help-output
+  (string-append workspace-help-text "\n"))
+
+(def identity-help-lines
+  (list
+   "ro identity"
+   ""
+   "usage:"
+   "  ro identity list"
+   "  ro identity whoami"
+   "  ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]"
+   "  ro identity use <actor-id>"
+   "  ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]"))
+
+(def identity-help-text
+  (str/join "\n" identity-help-lines))
+
+(def identity-help-output
+  (string-append identity-help-text "\n"))
+
+(def status-help-lines
+  (list "usage: ro status"))
+
+(def status-help-text
+  (str/join "\n" status-help-lines))
+
+(def status-help-output
+  (string-append status-help-text "\n"))
+
+(def doctor-help-lines
+  (list
+   "ro doctor"
+   ""
+   "usage:"
+   "  ro doctor [--fail]"
+   "  ro doctor summary [--fail]"
+   "  ro doctor dedupe [--write --force] [--fail]"))
+
+(def doctor-help-text
+  (str/join "\n" doctor-help-lines))
+
+(def doctor-help-output
+  (string-append doctor-help-text "\n"))
+
+(def reindex-help-lines
+  (list
+   "ro reindex"
+   ""
+   "usage:"
+   "  ro reindex"))
+
+(def reindex-help-text
+  (str/join "\n" reindex-help-lines))
+
+(def reindex-help-output
+  (string-append reindex-help-text "\n"))
+
+(def sync-help-lines
+  (list
+   "ro sync"
+   ""
+   "usage:"
+   "  ro sync status"
+   "  ro sync remotes"
+   "  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]"
+   "  ro sync pull"
+   "  ro sync reindex"
+   "  ro sync push [--message <msg>] [--pull=false]"
+   "  ro sync resolve"))
+
+(def sync-help-text
+  (str/join "\n" sync-help-lines))
+
+(def sync-help-output
+  (string-append sync-help-text "\n"))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn help-request?
+  [args]
+  (if (empty? args)
+      true
+      (let [command (first args)]
+        (help-flag? command))))
+
+(defn completion-help-request?
+  [args]
+  (if (empty? args)
+      false
+      (help-flag? (first args))))
+
+(defn completion-output
+  [shell]
+  (cond
+    (string=? shell "bash") completion-bash-output
+    (string=? shell "zsh") completion-zsh-output
+    (string=? shell "fish") completion-fish-output
+    :else false))

@@ -1,0 +1,89 @@
+;; Pure reindex helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.reindex)
+
+(def reindex-recognized-types
+  (list
+   "identity.create"
+   "identity.seed"
+   "identity.use"
+   "project.create"
+   "project.rename"
+   "project.set_description"
+   "project.archive"
+   "outline.create"
+   "outline.rename"
+   "outline.set_description"
+   "outline.archive"
+   "outline.status.add"
+   "outline.status.remove"
+   "outline.status.update"
+   "outline.status.reorder"
+   "item.create"
+   "item.created"
+   "item.set_title"
+   "item.set_description"
+   "item.set_status"
+   "item.set_children_kind"
+   "item.set_item_kind"
+   "item.set_priority"
+   "item.set_on_hold"
+   "item.set_due"
+   "item.set_schedule"
+   "item.set_assign"
+   "item.archive"
+   "item.tags_add"
+   "item.tags_remove"
+   "item.tags_set"
+   "item.move"
+   "item.move_under"
+   "item.set_parent"
+   "item.indent"
+   "item.outdent"
+   "item.move_outline"
+   "dep.add"
+   "comment.add"
+   "discussion.start"
+   "discussion.resolve"
+   "discussion.reopen"
+   "worklog.add"
+   "attachment.add"
+   "attachment.update"
+   "item.set_rank"))
+
+(defn reindex-type-recognized?
+  [typ]
+  (let ((needle (or typ "")))
+    (let loop ((xs reindex-recognized-types))
+      (cond
+        (empty? xs) false
+        (string=? needle (first xs)) true
+        :else (loop (rest xs))))))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (if (empty? args)
+      false
+      (let loop ((xs (seq args)))
+        (cond
+          (empty? xs) false
+          (help-flag? (car xs)) true
+          :else (loop (cdr xs))))))
+
+(defn reindex-main-plan
+  [args]
+  (cond
+    (empty? args)
+    (vector 'reindex '())
+
+    (any-help-arg? args)
+    (vector 'help '())
+
+    :else
+    (vector 'error "unexpected reindex argument" args)))

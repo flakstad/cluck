@@ -1,0 +1,10 @@
+ro sync
+
+usage:
+  ro sync status
+  ro sync remotes
+  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]
+  ro sync pull
+  ro sync reindex
+  ro sync push [--message <msg>] [--pull=false]
+  ro sync resolve

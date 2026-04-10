@@ -1,0 +1,502 @@
+;; Pure doctor-planning helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.doctor
+  (:require [cluck.string :as str]
+            [json :as json]))
+
+(defn json-key->text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-find-entry
+  [entries key]
+  (let ((items (if (vector? entries)
+                   (vector->list entries)
+                   (if (or (not entries)
+                           (null? entries))
+                       '()
+                       (seq entries)))))
+    (if (empty? items)
+        false
+        (let loop ((xs items))
+          (cond
+            (empty? xs) false
+            (string=? (json-key->text (first (car xs))) key) (car xs)
+            :else (loop (cdr xs)))))))
+
+(defn json-field-value
+  [entries key default]
+  (let ((entry (json-find-entry entries key)))
+    (if entry
+        (cdr entry)
+        default)))
+
+(defn json-first-field-value
+  [entries keys default]
+  (if (or (not keys)
+          (null? keys))
+      default
+      (let ((entry (json-find-entry entries (car keys))))
+        (if entry
+            (cdr entry)
+            (json-first-field-value entries (cdr keys) default)))))
+
+(defn doctor-event-entity-kind
+  [typ]
+  (cond
+    (str/starts-with? typ "item.") "item"
+    (str/starts-with? typ "comment.") "comment"
+    (str/starts-with? typ "discussion.") "discussion"
+    (str/starts-with? typ "worklog.") "worklog"
+    (str/starts-with? typ "dep.") "dep"
+    (str/starts-with? typ "attachment.") "attachment"
+    (str/starts-with? typ "outline.") "outline"
+    (str/starts-with? typ "project.") "project"
+    (str/starts-with? typ "identity.") "actor"
+    :else ""))
+
+(defn doctor-make-issue
+  [level code message path line event-id replica-id workspace-id entity-kind entity-id typ]
+  (let ((parts (list (cons 'level level)
+                     (cons 'code code)
+                     (cons 'message message))))
+    (if (not (str/blank? path))
+        (set! parts (append parts (list (cons 'path path)))))
+    (if (> line 0)
+        (set! parts (append parts (list (cons 'line line)))))
+    (if (not (str/blank? event-id))
+        (set! parts (append parts (list (cons 'eventId event-id)))))
+    (if (not (str/blank? replica-id))
+        (set! parts (append parts (list (cons 'replicaId replica-id)))))
+    (if (not (str/blank? workspace-id))
+        (set! parts (append parts (list (cons 'workspaceId workspace-id)))))
+    (if (not (str/blank? entity-kind))
+        (set! parts (append parts (list (cons 'entityKind entity-kind)))))
+    (if (not (str/blank? entity-id))
+        (set! parts (append parts (list (cons 'entityId entity-id)))))
+    (if (not (str/blank? typ))
+        (set! parts (append parts (list (cons 'type typ)))))
+    (list->vector parts)))
+
+(defn doctor-issue-from-record
+  [record level code message]
+  (doctor-make-issue
+   level
+   code
+   message
+   (or (json-field-value record "path" "") "")
+   (or (json-field-value record "line" 0) 0)
+   (or (json-field-value record "eventId" "") "")
+   (or (json-field-value record "replicaId" "") "")
+   (or (json-field-value record "workspaceId" "") "")
+   (or (json-field-value record "entityKind" "") "")
+   (or (json-field-value record "entityId" "") "")
+   (or (json-field-value record "type" "") "")))
+
+(defn doctor-parse-event-record
+  [path line-number trimmed]
+  (handle-exceptions exn
+      false
+    (let ((raw-event
+           (call-with-input-string
+            trimmed
+            (fn [port]
+              (json/json-read port)))))
+      (if (or (map? raw-event)
+              (vector? raw-event))
+          (let ((event-id (or (json-first-field-value raw-event (list "eventId" "event_id") "") ""))
+                (workspace-id (or (json-first-field-value raw-event (list "workspaceId" "workspace_id") "") ""))
+                (replica-id (or (json-first-field-value raw-event (list "replicaId" "replica_id") "") ""))
+                (entity-kind (or (json-first-field-value raw-event (list "entityKind" "entity_kind") "") ""))
+                (entity-id (or (json-first-field-value raw-event (list "entityId" "entity_id") "") ""))
+                (typ (or (json-first-field-value raw-event (list "type" "typ") "") ""))
+                (actor-id (or (json-first-field-value raw-event (list "actorId" "actor_id") "") ""))
+                (issued-at (or (json-first-field-value raw-event (list "issuedAt" "issued_at") "") ""))
+                (parents (or (json-first-field-value raw-event (list "parents") '()) '())))
+            (vector
+             (cons 'path path)
+             (cons 'line line-number)
+             (cons 'eventId event-id)
+             (cons 'workspaceId workspace-id)
+             (cons 'replicaId replica-id)
+             (cons 'entityKind entity-kind)
+             (cons 'entityId entity-id)
+             (cons 'type typ)
+                          (cons 'actorId actor-id)
+                          (cons 'issuedAt issued-at)
+                          (cons 'parents parents)))
+          false))))
+
+(defn doctor-key-count<?
+  [left right]
+  (let ((left-count (or (json-field-value left "count" 0) 0))
+        (right-count (or (json-field-value right "count" 0) 0))
+        (left-key (or (json-field-value left "key" "") ""))
+        (right-key (or (json-field-value right "key" "") "")))
+    (cond
+      (> left-count right-count) true
+      (< left-count right-count) false
+      (string<? left-key right-key) true
+      (string<? right-key left-key) false
+      :else false)))
+
+(defn doctor-event-summary<?
+  [left right]
+  (let ((left-count (or (json-field-value left "count" 0) 0))
+        (right-count (or (json-field-value right "count" 0) 0))
+        (left-event-id (or (json-field-value left "eventId" "") ""))
+        (right-event-id (or (json-field-value right "eventId" "") "")))
+    (cond
+      (> left-count right-count) true
+      (< left-count right-count) false
+      (string<? left-event-id right-event-id) true
+      (string<? right-event-id left-event-id) false
+      :else false)))
+
+(defn doctor-dedupe-file<?
+  [left right]
+  (let ((left-path (or (json-field-value left "path" "") ""))
+        (right-path (or (json-field-value right "path" "") "")))
+    (cond
+      (string<? left-path right-path) true
+      (string<? right-path left-path) false
+      :else false)))
+
+(defn doctor-dedupe-event<?
+  [left right]
+  (let ((left-count (or (json-field-value left "count" 0) 0))
+        (right-count (or (json-field-value right "count" 0) 0))
+        (left-event-id (or (json-field-value left "eventId" "") ""))
+        (right-event-id (or (json-field-value right "eventId" "") "")))
+    (cond
+      (> left-count right-count) true
+      (< left-count right-count) false
+      (string<? left-event-id right-event-id) true
+      (string<? right-event-id left-event-id) false
+      :else false)))
+
+(defn doctor-count-objects
+  [values]
+  (let ((counts (make-hash-table)))
+    (let loop ((xs values))
+      (if (empty? xs)
+          true
+          (let ((key (or (first xs) "")))
+            (hash-table-set!
+             counts
+             key
+             (+ 1 (hash-table-ref/default counts key 0)))
+            (loop (rest xs)))))
+    (let ((entries '()))
+      (hash-table-for-each
+       counts
+       (fn [key count]
+         (set! entries
+               (cons (list->vector
+                      (list (cons 'key key)
+                            (cons 'count count)))
+                     entries))))
+      (cluck-sort-list entries doctor-key-count<?))))
+
+(defn doctor-duplicate-event-summary
+  [issues]
+  (let loop ((xs issues)
+             (entries '()))
+    (if (empty? xs)
+        (let loop-entries ((ys entries)
+                           (acc '()))
+          (if (empty? ys)
+              (cluck-sort-list acc doctor-event-summary<?)
+              (let ((entry (first ys))
+                    (event-id (first entry))
+                    (count (first (rest entry)))
+                    (path (first (rest (rest entry))))
+                    (first-line (first (rest (rest (rest entry)))))
+                    (last-line (first (rest (rest (rest (rest entry)))))))
+                (if (> count 1)
+                    (loop-entries (rest ys)
+                                  (cons (list->vector
+                                         (list (cons 'eventId event-id)
+                                               (cons 'count count)
+                                               (cons 'path path)
+                                               (cons 'firstLine first-line)
+                                               (cons 'lastLine last-line)))
+                                        acc))
+                    (loop-entries (rest ys) acc)))))
+        (let ((issue (first xs))
+              (event-id (or (json-field-value issue "eventId" "") ""))
+              (path (or (json-field-value issue "path" "") ""))
+              (line (or (json-field-value issue "line" 0) 0)))
+          (if (string=? event-id "")
+              (loop (rest xs) entries)
+              (let update ((ys entries)
+                           (acc '())
+                           (updated? false))
+                (if (empty? ys)
+                    (let ((result (reverse acc))
+                          (new-entry (list event-id 1 path line line)))
+                      (loop (rest xs)
+                            (if updated?
+                                result
+                                (append result (list new-entry)))))
+                    (let ((entry (first ys)))
+                      (if (string=? (first entry) event-id)
+                          (let ((count (first (rest entry)))
+                                (cur-path (first (rest (rest entry))))
+                                (first-line (first (rest (rest (rest entry)))))
+                                (last-line (first (rest (rest (rest (rest entry)))))))
+                            (update (rest ys)
+                                    (cons (list event-id
+                                                (+ count 1)
+                                                (if (string=? cur-path "") path cur-path)
+                                                (if (or (= first-line 0) (< line first-line)) line first-line)
+                                                (if (> line last-line) line last-line))
+                                          acc)
+                                    true))
+                          (update (rest ys) (cons entry acc) updated?))))))))))
+
+(defn doctor-has-errors?
+  [issues]
+  (let loop ((xs issues))
+    (cond
+      (empty? xs) false
+      (string=? (or (json-field-value (first xs) "level" "") "") "error") true
+      :else (loop (rest xs)))))
+
+(defn doctor-summary-from-issues
+  [issues]
+  (let ((by-level (doctor-count-objects (map (fn [issue]
+                                               (json-field-value issue "level" ""))
+                                             issues)))
+        (by-code (doctor-count-objects (map (fn [issue]
+                                              (json-field-value issue "code" ""))
+                                            issues)))
+        (by-kind (doctor-count-objects (map (fn [issue]
+                                              (json-field-value issue "entityKind" ""))
+                                            issues)))
+        (by-type (cluck-sort-list
+                  (doctor-count-objects (map (fn [issue]
+                                               (json-field-value issue "type" ""))
+                                             issues))
+                  doctor-key-count<?))
+        (top-duplicates (doctor-duplicate-event-summary issues)))
+    (list->vector
+     (list (cons 'total (count issues))
+           (cons 'byLevel by-level)
+           (cons 'byCode by-code)
+           (cons 'byEntityKind by-kind)
+           (cons 'byType (take 20 by-type))
+           (cons 'topDuplicateEventIds (take 20 top-duplicates))))))
+
+(defn doctor-dedupe-builder-entry<?
+  [left right]
+  (let ((left-path (car left))
+        (right-path (car right)))
+    (cond
+      (string<? left-path right-path) true
+      (string<? right-path left-path) false
+      :else false)))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (if (empty? args)
+      false
+      (let loop ((xs (seq args)))
+        (cond
+          (empty? xs) false
+          (help-flag? (car xs)) true
+          :else (loop (cdr xs))))))
+
+(defn doctor-main-plan
+  [args]
+  (let loop ((xs args)
+             (subcommand "")
+             (fail? false)
+             (write? false)
+             (force? false))
+    (if (empty? xs)
+        (cond
+          (or (string=? subcommand "")
+              (string=? subcommand "report"))
+          (vector 'report fail? write? force?)
+
+          (string=? subcommand "summary")
+          (vector 'summary fail? write? force?)
+
+          (string=? subcommand "dedupe")
+          (vector 'dedupe fail? write? force?)
+
+          :else
+          (vector 'error "unsupported doctor subcommand" args))
+        (let ((arg (first xs)))
+          (cond
+            (help-flag? arg)
+            (vector 'help '())
+
+            (string=? arg "--fail")
+            (loop (rest xs) subcommand true write? force?)
+
+            (string=? arg "--write")
+            (loop (rest xs) subcommand fail? true force?)
+
+            (string=? arg "--force")
+            (loop (rest xs) subcommand fail? write? true)
+
+            (string=? arg "--summary")
+            (loop (rest xs) "summary" fail? write? force?)
+
+            (string=? arg "summary")
+            (loop (rest xs) "summary" fail? write? force?)
+
+            (string=? arg "dedupe")
+            (loop (rest xs) "dedupe" fail? write? force?)
+
+            (string=? arg "report")
+            (loop (rest xs) "report" fail? write? force?)
+
+            (str/starts-with? arg "-")
+            (vector 'error "unsupported doctor flag" args)
+
+            (string=? subcommand "")
+            (loop (rest xs) arg fail? write? force?)
+
+            :else
+            (vector 'error "unexpected doctor argument" args))))))
+
+(defn doctor-dedupe-event-upsert
+  [event-list event-id line]
+  (let loop ((xs event-list)
+             (acc '())
+             (updated? false))
+    (if (empty? xs)
+        (let ((result (reverse acc))
+              (new-entry
+               (list->vector
+                (list (cons 'eventId event-id)
+                      (cons 'count 1)
+                      (cons 'firstLine line)
+                      (cons 'lastLine line)))))
+          (if updated?
+              result
+              (append result (list new-entry))))
+        (let ((entry (first xs))
+              (entry-event-id (or (json-field-value entry "eventId" "") "")))
+          (if (and (not updated?)
+                   (string=? entry-event-id event-id))
+              (let ((count (or (json-field-value entry "count" 0) 0))
+                    (first-line (or (json-field-value entry "firstLine" 0) 0))
+                    (last-line (or (json-field-value entry "lastLine" 0) 0))
+                    (updated-entry
+                     (list->vector
+                      (list (cons 'eventId event-id)
+                            (cons 'count (+ count 1))
+                            (cons 'firstLine
+                                  (if (or (= first-line 0) (< line first-line))
+                                      line
+                                      first-line))
+                            (cons 'lastLine
+                                  (if (> line last-line)
+                                      line
+                                      last-line))))))
+                (loop (rest xs) (cons updated-entry acc) true))
+              (loop (rest xs) (cons entry acc) updated?))))))
+
+(defn doctor-dedupe-builder-upsert
+  [builders path event-id line]
+  (let loop ((xs builders)
+             (acc '())
+             (updated? false))
+    (if (empty? xs)
+        (let ((result (reverse acc))
+              (initial-event-list
+               (if (string=? event-id "")
+                   '()
+                   (doctor-dedupe-event-upsert '() event-id line))))
+          (if updated?
+              result
+              (append result
+                      (list (cons path (list (list line) initial-event-list))))))
+        (let ((entry (first xs))
+              (entry-path (car entry))
+              (builder (cdr entry)))
+          (if (string=? entry-path path)
+              (let ((remove-lines (first builder))
+                    (event-list (first (rest builder)))
+                    (next-remove-lines
+                     (if (member line remove-lines)
+                         remove-lines
+                         (cons line remove-lines)))
+                    (next-event-list
+                     (if (string=? event-id "")
+                         event-list
+                         (doctor-dedupe-event-upsert event-list event-id line))))
+                (loop (rest xs)
+                      (cons (cons entry-path (list next-remove-lines next-event-list))
+                            acc)
+                      true))
+              (loop (rest xs) (cons entry acc) updated?))))))
+
+(defn doctor-dedupe-builder->file
+  [entry]
+  (let ((path (car entry))
+        (builder (cdr entry))
+        (remove-lines (first builder))
+        (event-list (first (rest builder)))
+        (remove-list (cluck-sort-list remove-lines <))
+        (sorted-event-list (cluck-sort-list event-list doctor-dedupe-event<?)))
+    (list->vector
+     (list (cons 'path path)
+           (cons 'removeCount (count remove-list))
+           (cons 'removeLines remove-list)
+           (cons 'eventIds sorted-event-list)
+           (cons 'backupPath ""))))
+)
+
+
+(defn doctor-dedupe-plan-from-issues
+  [issues]
+  (let loop ((xs issues)
+             (builders '())
+             (duplicate-issue-count 0))
+    (if (empty? xs)
+        (if (= duplicate-issue-count 0)
+            (list->vector
+             (list (cons 'write false)
+                   (cons 'duplicateIssueCount 0)
+                   (cons 'fileCount 0)
+                   (cons 'removedLines 0)
+                   (cons 'files '())))
+            (let ((sorted-builders
+                   (cluck-sort-list builders doctor-dedupe-builder-entry<?))
+                  (files (map doctor-dedupe-builder->file sorted-builders)))
+              (list->vector
+               (list (cons 'write false)
+                     (cons 'duplicateIssueCount duplicate-issue-count)
+                     (cons 'fileCount (count files))
+                     (cons 'removedLines
+                           (let loop ((xs files) (n 0))
+                             (if (empty? xs)
+                                 n
+                                 (loop (rest xs)
+                                       (+ n (or (json-field-value (first xs) "removeCount" 0) 0))))))
+                     (cons 'files files)))))
+        (let ((issue (first xs))
+              (code (or (json-field-value issue "code" "") ""))
+              (path (or (json-field-value issue "path" "") ""))
+              (event-id (or (json-field-value issue "eventId" "") ""))
+              (line (or (json-field-value issue "line" 0) 0)))
+          (if (string=? code "duplicate_event_id")
+              (loop (rest xs)
+                    (doctor-dedupe-builder-upsert builders path event-id line)
+                    (+ duplicate-issue-count 1))
+              (loop (rest xs) builders duplicate-issue-count))))))

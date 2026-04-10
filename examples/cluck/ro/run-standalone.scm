@@ -14,6 +14,7 @@
   (include "src/cluck-standalone-prelude.scm"))
 
 (include "src/cluck.scm")
+
 (include "src/cluck/string.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
 
@@ -23,8 +24,49 @@
 (include "src/cluck/io.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.io #t)
 
+(include "src/cluck/process.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.process #t)
+
 (define json/json-read json:json-read)
 (define json/json-write json:json-write)
+
+(include "examples/cluck/ro/core/commands.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.commands #t)
+
+(include "examples/cluck/ro/core/json.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.json #t)
+
+(include "examples/cluck/ro/core/docs.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.docs #t)
+
+(include "examples/cluck/ro/core/help.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.help #t)
+
+(include "examples/cluck/ro/core/workspace.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.workspace #t)
+
+(include "examples/cluck/ro/core/projects.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.projects #t)
+
+(include "examples/cluck/ro/core/items.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.items #t)
+
+(include "examples/cluck/ro/core/events.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.events #t)
+
+(include "examples/cluck/ro/core/sync.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.sync #t)
+
+(include "examples/cluck/ro/core/doctor.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.doctor #t)
+
+(include "examples/cluck/ro/core/reindex.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.reindex #t)
+
+(include "examples/cluck/ro/core/route.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.route #t)
+
+(include "examples/cluck/ro/bootstrap-core-aliases.scm")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.app #t)
 

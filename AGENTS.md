@@ -36,8 +36,11 @@ Testing and implementation:
 - Document architectural decisions in the relevant example project docs.
 
 Feedback loop:
-- Append notes to `FEEDBACK.md` while working on Cluck and Scheme behavior.
-- Record missing Clojure forms or functions, Cluck bugs, mutation surprises,
-  and any time you have to drop to Scheme for a good reason.
-- Include enough context to make the note searchable later, but keep entries
-  short and append-only.
+- `FEEDBACK.md` is for Cluck language/runtime notes only.
+- If you discover a task-specific issue while working, file it as a Ro item
+  first, ideally as a child item of the task you are currently on.
+- Use `FEEDBACK.md` for short, searchable notes about missing Clojure forms or
+  functions, Cluck bugs, mutation surprises, or reasons you had to drop to
+  Scheme.
+- Keep entries short and append-only so the file stays useful as language
+  feedback, not as task tracking.

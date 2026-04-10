@@ -24,6 +24,15 @@ command surface is in shape.
 For now, bare `ro` in Cluck prints the CLI help surface instead of opening the
 Odin-style TUI entrypoint.
 
+The first pure-helper split for the spike now lives in
+`cluck.examples.ro.core.*`:
+- `core.commands` owns the top-level command registry that feeds root help,
+  routing, and completion
+- `core.help` owns the help surface and completion scripts
+- `core.docs` owns the built-in docs topics and docs topic envelope shaping
+- `core.json` owns JSON envelope shaping
+- `core.workspace` owns workspace/current/status/identity formatting
+
 ## Top-level commands
 
 - `ro`
@@ -47,6 +56,9 @@ Odin-style TUI entrypoint.
 - `ro sync resolve`
 - `ro workspace current`
 - `ro workspace list`
+- `ro workspace init <name> [--dir <path>] [--use]` bootstraps a workspace root and writes the registry if needed
+- `ro workspace add <name> --dir <path> [--kind git] [--use]` registers an existing workspace
+- `ro workspace use <name>`
 - `ro projects create --name <name> [--use]`
 - `ro projects list`
 - `ro projects archive <project-id> [--unarchive]`
@@ -122,23 +134,41 @@ Implemented now:
 - bare `ro` help output for the CLI-first spike
 - `help` and `--help` aliases
 - the first test harness for help parity
+- the top-level command registry is single-sourced in `core.commands`
 - `ro docs` returns the JSON topics envelope
+- `ro docs <topic>` returns a topic/markdown envelope
+- `ro docs <topic> --raw` prints the markdown topic text directly
 - `ro docs --help` and `ro docs -h` print the docs help text
 - `ro completion` prints the completion help and exits with status 1
 - `ro completion <bash|zsh|fish>` prints shell completion scripts
+- `ro events` prints the events help surface
+- `ro events list [--limit N]` returns the events envelope
+- `ro init` bootstraps the default workspace in the current directory
+- `ro doctor` returns the event-log report envelope
+- `ro doctor summary [--fail]` and `ro doctor dedupe [--write --force] [--fail]` are wired
+- `ro reindex` returns the reindex counts envelope
 - `ro workspace` prints the workspace help surface
+- `ro workspace init <name> [--dir <path>] [--use]` bootstraps a workspace root and writes the registry if needed
+- `ro workspace add <name> --dir <path> [--kind git] [--use]` registers an existing workspace
+- `ro workspace use <name>` switches the current workspace
 - `ro workspace current` returns the current workspace envelope
-- `ro workspace list` returns the workspace list envelope
+- `ro workspace list` returns the pretty workspace registry envelope
 - `ro status` returns the workspace status envelope and hints
+- `ro sync status`, `ro sync remotes`, and `ro sync reindex` return live parity envelopes
 - `ro identity` prints the usage surface
 - `ro identity list` returns the current actor list envelope
 - `ro identity whoami` returns the active actor envelope
-- fixture-backed parity tests now cover help and docs
+- fixture-backed parity tests now cover help and docs help
 - fixture-backed parity tests now cover completion and workspace help/scripts
-- live parity tests now cover workspace current/list, status, and identity
+- fixture-backed parity tests now cover events help
+- fixture-backed parity tests now cover doctor and reindex help
+- fixture-backed parity tests now cover sync help output
+- live parity tests now cover events list, workspace current/list, status,
+  identity, doctor, reindex, and sync status/remotes/reindex; workspace
+  init/add/use are covered by isolated-config contract tests against the
+  standalone Cluck binary
 
 Next slices:
-- parse the root command registry
 - implement the remaining read-only commands
 - implement mutating domain commands
 - add parity tests for each command family as it lands

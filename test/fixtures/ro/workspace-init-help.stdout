@@ -1,0 +1,9 @@
+usage: ro workspace init <name> [--dir <path>] [--use]
+ro workspace
+
+usage:
+  ro workspace current
+  ro workspace list
+  ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo
+  ro workspace init <name> [--dir <path>] [--use]           blank workspace
+  ro workspace use <name>
