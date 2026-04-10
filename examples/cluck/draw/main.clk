@@ -14,6 +14,7 @@
             [cluck.examples.draw.selection :as draw-selection]
             [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.create :as draw-create]
+            [cluck.examples.draw.status :as draw-status]
             [cluck.examples.draw.stroke :as draw-stroke]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
@@ -130,6 +131,17 @@
 (def draw-pointer-world-point draw-panel/draw-pointer-world-point)
 (def draw-pointer-screen-point draw-panel/draw-pointer-screen-point)
 (def draw-find-tool-panel-button draw-panel/draw-find-tool-panel-button)
+
+(def draw-debug-event-lines-limit draw-status/draw-debug-event-lines-limit)
+(def draw-truncate-text draw-status/draw-truncate-text)
+(def draw-compact-event-text draw-status/draw-compact-event-text)
+(def describe-state draw-status/describe-state)
+(def draw-input-summary draw-status/draw-input-summary)
+(def draw-debug-control-lines draw-status/draw-debug-control-lines)
+(def draw-debug-event-lines draw-status/draw-debug-event-lines)
+(def draw-render-debug-lines! draw-status/draw-render-debug-lines!)
+(def draw-render-tool-panel-button-base! draw-status/draw-render-tool-panel-button!)
+(def draw-render-tool-panel-base! draw-status/draw-render-tool-panel!)
 
 (def draw-arrow-record draw-geometry/draw-arrow-record)
 (def draw-arrow-length draw-geometry/draw-arrow-length)
@@ -275,10 +287,6 @@
 (def draw-synthetic-pen-mouse-event? draw-input/draw-synthetic-pen-mouse-event?)
 (def draw-ignorable-input-event? draw-input/draw-ignorable-input-event?)
 (def draw-loggable-event? draw-input/draw-loggable-event?)
-
-(defn draw-debug-event-lines-limit
-  []
-  4)
 
 (defn draw-preview-segment-budget
   "Return the maximum number of new stroke points to preview in one frame."
@@ -902,20 +910,6 @@
   []
   (set! *draw-render-fn* nil)
   nil)
-
-(defn draw-truncate-text
-  "Clamp TEXT to at most LIMIT characters for live debug rendering."
-  [text limit]
-  (let [text (or text "")
-        limit (if (and limit (> limit 4)) limit 4)]
-    (if (> (count text) limit)
-      (str (substring text 0 (- limit 3)) "...")
-      text)))
-
-(defn draw-compact-event-text
-  "Return a shorter event description suitable for the debug panel."
-  [text]
-  (draw-truncate-text text 88))
 
 (defn draw-mark-canvas-dirty!
   "Mark the cached canvas as needing a rebuild."
@@ -2198,25 +2192,7 @@
 (defn input-summary
   "Return a short textual summary of the current input state."
   []
-  (let [state (or (current-state) (default-state))]
-    (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
-            (or (get state :mouse-x) 0.0)
-            (or (get state :mouse-y) 0.0)
-            (draw-view-x state)
-            (draw-view-y state)
-            (draw-view-zoom state)
-            (or (get state :last-key) "")
-            (or (get state :last-text) "")
-            (or (get state :last-event) "")
-            (count (get state :elements))
-            (count (draw-selected-element-ids state))
-            (count (get state :strokes))
-            (count (get state :history))
-            (draw-tool-mode state)
-            (get state :brush-size)
-            (if (get state :debug-panel?) "on" "off")
-            (if (get state :window-focused?) "on" "off")
-            (or (get state :pen-pressure) 1.0))))
+  (draw-input-summary (or (current-state) (default-state))))
 
 (defn sync-window-title!
   "Update the SDL window title from the current state."
@@ -2292,31 +2268,6 @@
           command)
         false))
     false))
-
-(defn describe-state
-  "Return a short human-readable summary of STATE."
-  [state]
-  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
-          (get state :title)
-          (get state :width)
-          (get state :height)
-          (get state :frame)
-          (or (get state :mouse-x) 0.0)
-          (or (get state :mouse-y) 0.0)
-          (draw-view-x state)
-          (draw-view-y state)
-          (draw-view-zoom state)
-          (or (get state :last-key) "")
-          (or (get state :last-text) "")
-          (count (get state :elements))
-          (count (draw-selected-element-ids state))
-          (count (get state :strokes))
-          (count (get state :history))
-          (draw-tool-mode state)
-          (get state :brush-size)
-          (if (get state :debug-panel?) "on" "off")
-          (if (get state :window-focused?) "on" "off")
-          (or (get state :pen-pressure) 1.0)))
 
 (defn draw-brush-radius
   "Return the brush radius for SIZE."
@@ -2940,197 +2891,30 @@
 (defn draw-render-tool-panel-button!
   "Render BUTTON from the in-window tool panel."
   [renderer button]
-  (let [active? (get button :active?)
-        x (get button :x)
-        y (get button :y)
-        width (get button :width)
-        height (get button :height)]
-    (if active?
-      (sdl/set-draw-color! renderer 70 110 170 255)
-      (sdl/set-draw-color! renderer 46 50 60 235))
-    (sdl/render-fill-rect! renderer x y width height)
-    (sdl/set-draw-color! renderer 235 235 235 255)
-    (sdl/render-debug-text! renderer (+ x 8) (+ y 6) (get button :label))
-    nil))
+  (draw-render-tool-panel-button-base! renderer button))
 
 (defn draw-render-tool-panel!
   "Render the toggleable in-window tool panel."
   [renderer state]
-  (let [panel (draw-tool-panel-rect state)
-        buttons (draw-tool-panel-buttons state)
-        info-lines (draw-tool-panel-info-lines state)
-        selection-lines (draw-tool-panel-selection-lines state)]
-    (sdl/set-draw-color! renderer 18 20 26 228)
-    (sdl/render-fill-rect! renderer
-                           (get panel :x)
-                           (get panel :y)
-                           (get panel :width)
-                           (get panel :height))
-    (sdl/set-draw-color! renderer 235 235 235 255)
-    (sdl/render-debug-text! renderer
-                            (+ (get panel :x) 10)
-                            (+ (get panel :y) 10)
-                            "tool panel")
-    (sdl/render-debug-text! renderer
-                            (+ (get panel :x) 10)
-                            (+ (get panel :y) 26)
-                            (draw-selection-summary state))
-    (reduce (fn [acc button]
-              (begin
-                (draw-render-tool-panel-button! renderer button)
-                acc))
-            nil
-            buttons)
-    (sdl/set-draw-color! renderer 210 210 210 255)
-    (reduce (fn [next-y line]
-              (begin
-                (sdl/render-debug-text! renderer
-                                        (+ (get panel :x) 10)
-                                        next-y
-                                        line)
-                (+ next-y 16)))
-            (+ (get panel :y) 244)
-            selection-lines)
-    (reduce (fn [next-y line]
-              (begin
-                (sdl/render-debug-text! renderer
-                                        (+ (get panel :x) 10)
-                                        next-y
-                                        line)
-                (+ next-y 16)))
-            (+ (get panel :y) 292)
-            info-lines)
-    nil))
+  (draw-render-tool-panel-base! renderer state))
 
 (defn draw-render-debug-panel!
   "Render the on-demand debug panel."
   [renderer state]
-  (let [mouse-x (get state :mouse-x)
-        mouse-y (get state :mouse-y)
-        recent-lines (draw-debug-event-lines state)]
-    (sdl/set-draw-color! renderer 245 245 245 255)
-    (sdl/render-debug-text! renderer 12 12 (describe-state state))
-    (sdl/render-debug-text! renderer 12 28
-                            (format "mouse: %.1f, %.1f" mouse-x mouse-y))
-    (sdl/render-debug-text! renderer 12 44
-                            (format "view: %.1f, %.1f zoom: %.2f"
-                                    (draw-view-x state)
-                                    (draw-view-y state)
-                                    (draw-view-zoom state)))
-    (sdl/render-debug-text! renderer 12 60
-                            (format "pointer: %s ink: %d rectangle: %s arrow: %s text: %s"
-                                    (if (get state :pointer-down?) "down" "up")
-                                    (if (get state :active-stroke)
-                                      (count (get (get state :active-stroke) :points))
-                                      0)
-                                    (if (get state :active-box) "active" "idle")
-                                    (if (get state :active-arrow) "active" "idle")
-                                    (if (get state :active-text) "active" "idle")))
-    (sdl/render-debug-text! renderer 12 76
-                            (format "pan: %s cursor: %s"
-                                    (if (get state :panning?) "on" "off")
-                                    (name (draw-desired-cursor-kind state))))
-    (sdl/render-debug-text! renderer 12 92
-                            (format "tool: %s size: %d color: %s elements: %d selection: %d"
-                                    (draw-tool-mode state)
-                                    (get state :brush-size)
-                                    (pr-str (draw-stroke-color state))
-                                    (count (get state :elements))
-                                    (count (draw-selected-element-ids state))))
-    (sdl/render-debug-text! renderer 12 108
-                            (format "undo history: %d"
-                                    (count (get state :history))))
-    (sdl/render-debug-text! renderer 12 124
-                            (format "focus: %s pressure: %.2f"
-                                    (if (get state :window-focused?) "on" "off")
-                                    (or (get state :pen-pressure) 1.0)))
-    (sdl/render-debug-text! renderer 12 140
-                            (format "last key: %s" (or (get state :last-key) "")))
-    (sdl/render-debug-text! renderer 12 156
-                            (format "last key desc: %s"
-                                    (draw-compact-event-text
-                                      (or (get state :last-key-desc) ""))))
-    (sdl/render-debug-text! renderer 12 172
-                            (format "last text: %s"
-                                    (draw-truncate-text (or (get state :last-text) "") 48)))
-    (sdl/render-debug-text! renderer 12 188
-                            (format "last event: %s"
-                                    (draw-compact-event-text
-                                      (or (get state :last-event) ""))))
-    (sdl/render-debug-text! renderer 12 204
-                            (format "last error: %s"
-                                    (if *draw-last-error*
-                                      (draw-truncate-text (format "%s" *draw-last-error*) 88)
-                                      "")))
-    (when (not (empty? recent-lines))
-      (sdl/render-debug-text! renderer 12 220 "recent events:")
-      (draw-render-debug-lines! renderer 236 recent-lines))
-    (draw-render-debug-lines!
-      renderer
-      (+ 236 (* 16 (count recent-lines)))
-      (draw-debug-control-lines))
-    nil))
-
-(defn draw-debug-control-lines
-  "Return the fixed debug-panel help lines."
-  []
-  ["controls:"
-   "  wheel: zoom at pointer"
-   "  ctrl +/-: zoom at pointer"
-   "  space+drag: pan"
-   "  cursors: crosshair draw/rotate, move select, resize handles, text tool"
-   "  drag: draw / move selection"
-   "  rectangle handles: resize corners, rotate top handle"
-   "  shift+click: add to selection"
-   "  i: ink   t: text   v: select   r: rectangle   a: arrow"
-   "  mouse/pen: pressure-sensitive strokes"
-   "  u: undo   c: clear   e: eraser"
-   "  1/2/3: brush size"
-   "  d: debug panel   tab: tool panel   0: reset view"
-   "  ctrl+s: save   ctrl+o: load"
-   "  repl: save-canvas!, load-canvas!, restart-dev!"
-   "  repl: (draw-log-tail 20), draw-clear-log!, dump-current-state!"
-   "  repl: draw-simulate-input!, draw-replay-live!"
-   "  repl: draw-replay-benchmark!, draw-replay-live-benchmark!"])
-
-(defn draw-debug-event-lines
-  "Return compact recent event lines for the debug overlay."
-  [state]
-  (let [recent (reverse (take (draw-debug-event-lines-limit)
-                              (get state :recent-events)))]
-    (map-indexed (fn [index line]
-                   (format "  %d: %s"
-                           (+ index 1)
-                           (draw-compact-event-text line)))
-                 recent)))
-
-(defn draw-render-debug-lines!
-  "Render LINES in the debug overlay starting at Y."
-  [renderer y lines]
-  (reduce (lambda (next-y line)
-            (begin
-              (sdl/render-debug-text! renderer 12 next-y line)
-              (+ next-y 16)))
-          y
-          lines))
+  (draw-status/draw-render-debug-panel! renderer
+                                        state
+                                        draw-render-stroke-point!
+                                        draw-desired-cursor-kind
+                                        *draw-last-error*))
 
 (defn draw-render-status!
   "Render the text overlay and mouse marker for STATE."
   [ctx state]
-  (let [renderer (get ctx :renderer)
-        mouse-x (get state :mouse-x)
-        mouse-y (get state :mouse-y)
-        pressure (or (get state :pen-pressure) 1.0)
-        marker-point [mouse-x mouse-y pressure]]
-    (sdl/set-draw-color! renderer 220 180 90 255)
-    (draw-render-stroke-point! renderer state marker-point 3)
-    (if (get state :tool-panel?)
-      (draw-render-tool-panel! renderer state)
-      nil)
-    (if (get state :debug-panel?)
-      (draw-render-debug-panel! renderer state)
-      nil)
-    nil))
+  (draw-status/draw-render-status! ctx
+                                   state
+                                   draw-render-stroke-point!
+                                   draw-desired-cursor-kind
+                                   *draw-last-error*))
 
 (defn draw-loop-step!
   "Drain input and render once when the window is active."
