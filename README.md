@@ -242,9 +242,9 @@ The demo prints a small report over a vector of maps and shows the syntax in act
 ## SDL3 drawing scaffold
 
 The SDL3 example is a minimal drawing app scaffold that now opens a window,
- tracks mouse, pen, and recent keyboard input, and supports a mixed ink/object
- canvas with a soft pressure-sensitive brush, a first rectangle tool, a first
- selection tool, a first arrow tool, and a first text tool:
+tracks mouse, pen, and recent keyboard input, and supports a mixed ink/object
+canvas with a soft pressure-sensitive brush, rectangle creation, selection,
+eraser toggling, and an in-window tool palette:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
 - [`examples/cluck/draw/src/sdl3.clk`](./examples/cluck/draw/src/sdl3.clk)
@@ -289,29 +289,27 @@ like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 `mouse-position`, `input-summary`, `save-canvas!`, `load-canvas!`, and `stop!`
 while the window stays open. Use the mouse wheel to zoom around the cursor,
 hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
-pointer, drag with the mouse or pen to paint
-ink, switch to the rectangle tool when you want a structured object, and switch to
-selection mode when you want to move existing elements. Empty-space drag in
-selection mode now performs marquee selection, and arrow endpoints expose
-selection handles for reshaping. Press `d` to toggle
-the debug panel on demand, or `tab` to toggle the in-window tool panel with
-clickable buttons and a selection summary. Cursor shape follows the current
-interaction mode: crosshair for drawing, move while panning or dragging
-selection, rotate with the top rectangle handle, resize over rectangle corner handles, text for the text tool, and pointer
-over clickable tool-panel buttons. The viewport range is now much deeper too:
+pointer, drag with the mouse or pen to paint ink, press `1` for ink, `2` for
+selection, `3` for rectangle, `4` for eraser, and `[` / `]` to change brush
+size; `i` / `v` / `r` / `e` remain as legacy aliases, and `b` still works as a
+legacy rectangle alias. Press `d` to toggle the debug panel on demand, or `tab`
+to toggle the in-window tool panel with clickable buttons and a selection
+summary. Cursor shape follows the current interaction mode: crosshair for
+drawing, move while panning or dragging selection, rotate with the top
+rectangle handle, resize over rectangle corner handles, and pointer over
+clickable tool-panel buttons. The viewport range is now much deeper too:
 the world bounds are intentionally very large and pointer-anchored zoom is
 covered by focused view tests at extreme zoom levels. The current tool
 shortcuts are:
 
-- `i` ink tool
-- `t` text tool
-- `v` selection tool
-- `r` rectangle tool (`b` still works as a legacy alias)
-- `a` arrow tool
+- `1` ink tool
+- `2` selection tool
+- `3` rectangle tool (`b` still works as a legacy alias)
+- `4` eraser
+- `[`/`]` brush size smaller/larger
+- `i`/`v`/`r`/`e` legacy aliases
 - `u` undo the last action
 - `c` clear the canvas
-- `e` eraser
-- `1`/`2`/`3` brush sizes
 - `tab` toggles the tool panel
 - `ctrl` + `+` / `=` zoom in at the pointer
 - `ctrl` + `-` zoom out at the pointer
@@ -332,14 +330,15 @@ State changes redraw the live window immediately, and the resulting release
 binary is self-contained and does not depend on a separately installed SDL3
 dylib.
 
-The current structured-object milestone is intentionally small: ink, text, rectangle,
-and arrow now coexist as first-class canvas elements, while older frame data is normalized
-to rectangles on load, and the
-selection tool can now pick, shift-add, move existing elements, show a group bounds rectangle,
-marquee-select from empty canvas, resize a single selected rectangle through corner handles, rotate it through a top handle, reshape a selected arrow through endpoint handles, and expose a first
-clickable in-window tool panel with save/load controls plus selection-aware action hints. The next
-steps are broader selection work like lasso/grouping and deeper text editing
-rather than just placement.
+The current structured-object milestone is intentionally small: ink, rectangles,
+selection, and eraser now coexist as first-class canvas interactions, while older
+frame data is normalized to rectangles on load. The selection tool can now pick,
+shift-add, move existing elements, show a group bounds rectangle, marquee-select
+from empty canvas, resize a single selected rectangle through corner handles,
+rotate it through a top handle, and expose a first clickable in-window tool
+panel with save/load controls plus selection-aware action hints. The next steps
+are broader selection work like lasso/grouping and deeper editing for the
+remaining hidden tools.
 
 In `cluck-mode`, `C-c C-z` switches to the ordinary Cluck REPL buffer. The REPL
 starts with no window and does not load SDL automatically. When you want the

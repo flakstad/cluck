@@ -47,6 +47,8 @@
   [state]
   [(format "file: %s" (fs/basename (draw.state/draw-state-file-path)))
    (format "format: %s" (draw-save-format-label))
+   "1 ink   2 select   3 rectangle   4 eraser"
+   "[ smaller brush   ] larger brush"
    "TAB toggle  CTRL+S save"
    "CTRL+O load"])
 
@@ -78,28 +80,21 @@
       :tool :box
       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :box)
       :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
-     {:id :tool-arrow
-      :label "Arrow"
-      :kind :tool
-      :tool :arrow
-      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :arrow)
+     {:id :tool-eraser
+      :label "Eraser"
+      :kind :eraser
+      :active? (if (get state :eraser?) true false)
       :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
-     {:id :tool-text
-      :label "Text"
-      :kind :tool
-      :tool :text
-      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :text)
-      :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
      {:id :save
       :label "Save"
       :kind :save
       :active? false
-      :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
+      :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
      {:id :load
       :label "Load"
       :kind :load
       :active? false
-      :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}]))
+      :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}]))
 
 (defn draw-selection-summary
   "Return a compact summary of the current selection."
@@ -130,12 +125,18 @@
   [state]
   (let [elements (draw.state/draw-selected-elements state)
         total (count elements)]
-    (if (= total 0)
+      (if (= total 0)
       (if (draw.state/draw-selection-tool? state)
         ["actions: none selected"
          "canvas: drag empty space to marquee select"]
-        ["actions: none selected"
-         "canvas: drag to draw or create"])
+        (if (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
+          (if (get state :eraser?)
+            ["actions: none selected"
+             "canvas: drag to erase"]
+            ["actions: none selected"
+             "canvas: drag to draw"])
+          ["actions: none selected"
+           "canvas: drag to create"]))
       (if (= total 1)
         (let [element (first elements)]
           (if (draw.state/draw-box-element? element)

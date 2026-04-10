@@ -1272,6 +1272,9 @@
       (draw-kind=? kind :tool)
       (draw-set-tool-core! base-state (get button :tool))
 
+      (draw-kind=? kind :eraser)
+      (draw-toggle-eraser-core! base-state)
+
       (draw-kind=? kind :save)
       (draw-save-canvas-core! base-state)
 

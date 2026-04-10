@@ -14,15 +14,24 @@
       (string=? key "c") (clear-strokes-core! state)
       (string=? key "u") (undo-stroke-core! state)
       (string=? key "i") (set-tool-core! state :ink)
-      (string=? key "t") (set-tool-core! state :text)
       (string=? key "v") (set-tool-core! state :select)
       (string=? key "r") (set-tool-core! state :box)
       (string=? key "b") (set-tool-core! state :box)
-      (string=? key "a") (set-tool-core! state :arrow)
       (string=? key "e") (toggle-eraser-core! state)
-      (string=? key "1") (set-brush-size-core! state 2)
-      (string=? key "2") (set-brush-size-core! state 6)
-      (string=? key "3") (set-brush-size-core! state 12)
+      (string=? key "1") (set-tool-core! state :ink)
+      (string=? key "2") (set-tool-core! state :select)
+      (string=? key "3") (set-tool-core! state :box)
+      (string=? key "4") (toggle-eraser-core! state)
+      (string=? key "[") (set-brush-size-core! state
+                                               (draw.view/draw-clamp
+                                                 (- (or (get state :brush-size) 2) 1)
+                                                 1
+                                                 64))
+      (string=? key "]") (set-brush-size-core! state
+                                               (draw.view/draw-clamp
+                                                 (+ (or (get state :brush-size) 2) 1)
+                                                 1
+                                                 64))
       :else state)))
 
 (defn draw-handle-view-key!

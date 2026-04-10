@@ -79,7 +79,7 @@
   (draw-input-assert-true "debug panel lists space pan"
                           (draw-input-has-line? lines "  space+drag: pan"))
   (draw-input-assert-true "debug panel lists cursors"
-                          (draw-input-has-line? lines "  cursors: crosshair draw/rotate, move select, resize handles, text tool"))
+                          (draw-input-has-line? lines "  cursors: crosshair draw/rotate, move select, resize handles"))
   (draw-input-assert-true "debug panel lists draw"
                           (draw-input-has-line? lines "  drag: draw / move selection"))
   (draw-input-assert-true "debug panel lists rectangle resize"
@@ -87,7 +87,7 @@
   (draw-input-assert-true "debug panel lists shift selection"
                           (draw-input-has-line? lines "  shift+click: add to selection"))
   (draw-input-assert-true "debug panel lists tools"
-                          (draw-input-has-line? lines "  i: ink   t: text   v: select   r: rectangle   a: arrow"))
+                          (draw-input-has-line? lines "  1: ink   2: select   3: rectangle   4: eraser"))
   (draw-input-assert-true "debug panel lists pressure"
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
@@ -113,7 +113,7 @@
   (draw-input-assert-true "tool panel selection lines mention no selection"
                           (draw-input-has-line? lines "actions: none selected"))
   (draw-input-assert-true "tool panel selection lines mention canvas"
-                          (draw-input-has-line? lines "canvas: drag to draw or create")))
+                          (draw-input-has-line? lines "canvas: drag to draw")))
 
 (let [lines (draw-tool-panel-selection-lines
               (draw-set-tool-core! (default-state) :select))]
@@ -365,8 +365,17 @@
                           (draw-tool-mode clicked)))
 
 (let [base (assoc (default-state) :tool-panel? true :title "Panel Button Save")
-      save-button (nth (draw-tool-panel-buttons base) 5)
-      load-button (nth (draw-tool-panel-buttons base) 6)
+      eraser-button (nth (draw-tool-panel-buttons base) 3)
+      save-button (nth (draw-tool-panel-buttons base) 4)
+      load-button (nth (draw-tool-panel-buttons base) 5)
+      erased (draw-input-copy-state
+               (draw-apply-input-event! base
+                                        {:kind :mouse-down
+                                         :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel-eraser"
+                                         :mouse-x (+ (get eraser-button :x) 4)
+                                         :mouse-y (+ (get eraser-button :y) 4)
+                                         :pressure 1.0
+                                         :shift? false}))
       saved (draw-input-copy-state
               (draw-apply-input-event! base
                                        {:kind :mouse-down
@@ -383,6 +392,8 @@
                                          :mouse-y (+ (get load-button :y) 4)
                                          :pressure 1.0
                                          :shift? false}))]
+  (draw-input-assert-true "tool panel eraser toggles eraser mode"
+                          (get erased :eraser?))
   (draw-input-assert-true "tool panel save button writes state file"
                           (fs/exists? (draw-state-file-path)))
   (draw-input-assert-str= "tool panel load button restores saved title"

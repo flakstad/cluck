@@ -107,40 +107,57 @@
                               1
                               (count (get undo-by-key :strokes)))))
 
-  (let [tool-state (draw-handle-tool-key! (default-state) "3")]
-    (draw-tools-assert-str= "brush size key preset"
-                            "12"
-                            (str (get tool-state :brush-size))))
+  (let [smaller (draw-handle-tool-key! (default-state) "[")
+        larger (draw-handle-tool-key! (default-state) "]")]
+    (draw-tools-assert-num= "brush size down key step"
+                            1
+                            (get smaller :brush-size))
+    (draw-tools-assert-num= "brush size up key step"
+                            3
+                            (get larger :brush-size)))
 
-  (let [box-state (draw-handle-tool-key! (default-state) "b")
-        rect-state (draw-handle-tool-key! (default-state) "r")
-        text-state (draw-handle-tool-key! (default-state) "t")
-        select-state (draw-handle-tool-key! (default-state) "v")
-        arrow-state (draw-handle-tool-key! (default-state) "a")
-        frame-state (draw-handle-tool-key! (default-state) "f")
-        box-snapshot (edn/read-string (pr-str box-state))
-        ink-state (draw-handle-tool-key! box-state "i")]
-    (draw-tools-assert-str= "rectangle tool key preset"
-                            "rectangle"
-                            (draw-tool-mode box-snapshot))
-    (draw-tools-assert-str= "rectangle alias key preset"
-                            "rectangle"
-                            (draw-tool-mode rect-state))
-    (draw-tools-assert-str= "text tool key preset"
-                            "text"
-                            (draw-tool-mode text-state))
-    (draw-tools-assert-str= "selection tool key preset"
+  (let [ink-state (draw-tools-copy-state
+                    (draw-handle-tool-key! (default-state) "1"))
+        select-state (draw-tools-copy-state
+                       (draw-handle-tool-key! (default-state) "2"))
+        rect-state (draw-tools-copy-state
+                     (draw-handle-tool-key! (default-state) "3"))
+        eraser-state (draw-tools-copy-state
+                       (draw-handle-tool-key! (default-state) "4"))
+        eraser-state-for-ink (draw-tools-copy-state eraser-state)
+        legacy-rect-state (draw-tools-copy-state
+                            (draw-handle-tool-key! (default-state) "r"))
+        box-state (draw-tools-copy-state
+                    (draw-handle-tool-key! (default-state) "b"))
+        frame-state (draw-tools-copy-state
+                      (draw-handle-tool-key! (default-state) "f"))
+        ink-after-eraser (draw-tools-copy-state
+                           (draw-handle-tool-key! eraser-state-for-ink "1"))]
+    (draw-tools-assert-str= "ink tool number preset"
+                            "ink"
+                            (draw-tool-mode ink-state))
+    (draw-tools-assert-str= "selection tool number preset"
                             "select"
                             (draw-tool-mode select-state))
-    (draw-tools-assert-str= "arrow tool key preset"
-                            "arrow"
-                            (draw-tool-mode arrow-state))
+    (draw-tools-assert-str= "rectangle tool number preset"
+                            "rectangle"
+                            (draw-tool-mode rect-state))
+    (draw-tools-assert-true "eraser number preset toggles eraser"
+                            (get eraser-state :eraser?))
+    (draw-tools-assert-str= "rectangle alias key preset"
+                            "rectangle"
+                            (draw-tool-mode legacy-rect-state))
+    (draw-tools-assert-str= "box alias key preset"
+                            "rectangle"
+                            (draw-tool-mode box-state))
     (draw-tools-assert-str= "frame tool key ignored from active tool surface"
                             "ink"
                             (draw-tool-mode frame-state))
-    (draw-tools-assert-str= "ink tool key preset"
+    (draw-tools-assert-true "tool key leaves eraser mode off when switching back to ink"
+                            (not (get ink-after-eraser :eraser?)))
+    (draw-tools-assert-str= "tool key returns to ink after eraser"
                             "ink"
-                            (draw-tool-mode ink-state)))
+                            (draw-tool-mode ink-after-eraser)))
 
   (let [base (default-state)
         one (draw-start-stroke base [10.0 10.0 1.0] [10.0 10.0] :mouse)

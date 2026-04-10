@@ -17,14 +17,13 @@ What is in place:
 - a first structured object tool: `r` drag-to-create rectangles (`b` still works as a legacy alias)
 - a first selection tool: `v` to select existing elements, `shift`+click to add to the selection, and drag them
 - selection bounds for the active selection, plus rectangle corner resize handles and a top rotation handle for a single selected rectangle
-- a first connector tool: `a` drag-to-create arrows
-- a first text tool: `t` click to place text elements
+- legacy arrow and text tools remain in the code for now, but they are hidden from the toolbar and shortcut surface
 - an on-demand debug panel toggled with `d`
 - a toggleable in-window tool panel with clickable buttons and selection-aware action hints, toggled with `tab`
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
-- tool-aware cursors: crosshair for draw tools and rectangle rotation, move for selection drag/pan, resize on rectangle corner handles, text cursor for the text tool, pointer over clickable tool-panel buttons
-- tool shortcuts for `i` ink, `t` text, `r` rectangle, `u` undo, `c` clear, `e` eraser, and `1`/`2`/`3` brush sizes
+- tool-aware cursors: crosshair for draw tools and rectangle rotation, move for selection drag/pan, resize on rectangle corner handles, pointer over clickable tool-panel buttons
+- tool shortcuts for `1` ink, `2` select, `3` rectangle, `4` eraser, and `[`/`]` brush sizes, with `i`/`v`/`r`/`e` kept as legacy aliases
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
   - the default file format is EDN
@@ -56,7 +55,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default
 5. if the draw child crashes or stalls, call `(restart-dev!)` to restart it without killing the REPL
-6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `t` to place text, press `r` to switch into drag-to-create rectangle mode (`b` still works as a legacy alias), press `a` for drag-to-create arrows, and press `v` to switch into selection mode for moving existing elements; press `d` to toggle the debug panel and `tab` to toggle the tool panel
+6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `1` for ink, `2` for selection, `3` for rectangle, `4` for eraser, and `[` / `]` to change brush size; `i` / `v` / `r` / `e` remain as legacy aliases, and `b` still works as a legacy rectangle alias; press `d` to toggle the debug panel and `tab` to toggle the tool panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s examples/cluck/draw/test/run-draw-toggle.scm` for a fast focused probe
@@ -87,22 +86,18 @@ starts a fresh one from the current REPL state.
 While the window is live:
 - press `d` to toggle the debug panel
 - press `tab` to toggle the in-window tool panel
-- press `i` for the ink tool
-- press `t` for the text tool, then click to place a text element
-- press `v` for the selection tool, then click or drag selected elements to move them
+- press `1` for the ink tool, `2` for selection, `3` for rectangle, and `4` for eraser
+- press `[` / `]` to shrink or grow the brush size
 - drag empty space in selection mode to marquee-select elements
 - hold `shift` while clicking in selection mode to add another element to the active selection
 - hold `shift` while marquee-selecting to add the marquee hits to the current selection
 - drag a rectangle corner handle in selection mode to resize a selected rectangle
 - drag the top handle in selection mode to rotate a selected rectangle
-- drag an arrow endpoint handle in selection mode to reshape a selected arrow
 - use the tool panel buttons to switch tools, and watch the panel summary for the current selection
 - press `r` for the rectangle tool, then drag to create a rectangle object (`b` still works as a legacy alias)
-- press `a` for the arrow tool, then drag to create a connector
 - press `u` to undo the last action, including clear or brush changes
 - press `c` to clear the canvas, which is undoable
 - press `e` to toggle eraser mode
-- press `1`, `2`, or `3` to switch brush sizes
 - use the mouse wheel to zoom around the cursor
 - use `ctrl` + `+` / `-` to zoom around the cursor
 - the viewport now supports a much larger bounded world and deeper zoom range, while keeping pointer-anchored zoom stable in the focused view tests
