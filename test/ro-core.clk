@@ -1,0 +1,983 @@
+;; Pure core tests for the Ro spike.
+
+(ns cluck.test.ro-core
+  (:require [json :as json]
+            [cluck.string :as str]
+            [cluck.test.support :refer [assert-str=
+                                        assert-num=
+                                        assert-true]]))
+
+(def ro-help-help-request? (ns-resolve 'cluck.examples.ro.core.help 'help-request?))
+(def ro-help-completion-output (ns-resolve 'cluck.examples.ro.core.help 'completion-output))
+(def ro-help-completion-bash-output (ns-resolve 'cluck.examples.ro.core.help 'completion-bash-output))
+(def ro-help-completion-zsh-output (ns-resolve 'cluck.examples.ro.core.help 'completion-zsh-output))
+(def ro-help-completion-fish-output (ns-resolve 'cluck.examples.ro.core.help 'completion-fish-output))
+(def ro-help-docs-output (ns-resolve 'cluck.examples.ro.core.help 'docs-output))
+(def ro-commands-command-root-help-lines (ns-resolve 'cluck.examples.ro.core.commands 'command-root-help-lines))
+(def ro-commands-command-top-commands (ns-resolve 'cluck.examples.ro.core.commands 'command-top-commands))
+(def ro-commands-command-kind-for-name (ns-resolve 'cluck.examples.ro.core.commands 'command-kind-for-name))
+(def ro-commands-command-known? (ns-resolve 'cluck.examples.ro.core.commands 'command-known?))
+(def ro-commands-command-implemented? (ns-resolve 'cluck.examples.ro.core.commands 'command-implemented?))
+(def ro-docs-docs-topic-markdown (ns-resolve 'cluck.examples.ro.core.docs 'docs-topic-markdown))
+(def ro-docs-docs-topic-output (ns-resolve 'cluck.examples.ro.core.docs 'docs-topic-output))
+(def ro-docs-docs-main-plan (ns-resolve 'cluck.examples.ro.core.docs 'docs-main-plan))
+(def ro-items-items-help-output (ns-resolve 'cluck.examples.ro.core.items 'items-help-output))
+(def ro-items-item-show-summary (ns-resolve 'cluck.examples.ro.core.items 'item-show-summary))
+(def ro-items-items-main-plan (ns-resolve 'cluck.examples.ro.core.items 'items-main-plan))
+(def ro-items-item-main-plan (ns-resolve 'cluck.examples.ro.core.items 'item-main-plan))
+(def ro-items-items-show-plan (ns-resolve 'cluck.examples.ro.core.items 'items-show-plan))
+(def ro-items-items-list-plan (ns-resolve 'cluck.examples.ro.core.items 'items-list-plan))
+(def ro-items-items-ready-plan (ns-resolve 'cluck.examples.ro.core.items 'items-ready-plan))
+(def ro-items-items-events-plan (ns-resolve 'cluck.examples.ro.core.items 'items-events-plan))
+(def ro-route-main-route (ns-resolve 'cluck.examples.ro.core.route 'main-route))
+(def ro-events-event-line->record (ns-resolve 'cluck.examples.ro.core.events 'event-line->record))
+(def ro-events-event-materialize-record (ns-resolve 'cluck.examples.ro.core.events 'event-materialize-record))
+(def ro-events-event-record<? (ns-resolve 'cluck.examples.ro.core.events 'event-record<?))
+(def ro-events-events-sort-records (ns-resolve 'cluck.examples.ro.core.events 'events-sort-records))
+(def ro-events-events-main-plan (ns-resolve 'cluck.examples.ro.core.events 'events-main-plan))
+(def ro-reindex-reindex-main-plan (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-main-plan))
+(def ro-sync-git-status-line-unmerged? (ns-resolve 'cluck.examples.ro.core.sync 'git-status-line-unmerged?))
+(def ro-sync-git-status-flags (ns-resolve 'cluck.examples.ro.core.sync 'git-status-flags))
+(def ro-sync-git-ahead-behind (ns-resolve 'cluck.examples.ro.core.sync 'git-ahead-behind))
+(def ro-sync-git-sync-empty-status (ns-resolve 'cluck.examples.ro.core.sync 'git-sync-empty-status))
+(def ro-sync-sync-main-plan (ns-resolve 'cluck.examples.ro.core.sync 'sync-main-plan))
+(def ro-doctor-doctor-event-entity-kind (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-event-entity-kind))
+(def ro-doctor-doctor-parse-event-record (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-parse-event-record))
+(def ro-doctor-doctor-issue-from-record (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-issue-from-record))
+(def ro-doctor-doctor-has-errors? (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-has-errors?))
+(def ro-doctor-doctor-summary-from-issues (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-summary-from-issues))
+(def ro-doctor-doctor-dedupe-plan-from-issues (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-dedupe-plan-from-issues))
+(def ro-doctor-doctor-main-plan (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-main-plan))
+(def ro-reindex-reindex-recognized-types (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-recognized-types))
+(def ro-reindex-reindex-type-recognized? (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-type-recognized?))
+(def ro-json-compact-json-text (ns-resolve 'cluck.examples.ro.core.json 'compact-json-text))
+(def ro-json-json-field-value (ns-resolve 'cluck.examples.ro.core.json 'json-field-value))
+(def ro-workspace-current-info (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-info))
+(def ro-workspace-current-name (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-name))
+(def ro-workspace-current-path (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-path))
+(def ro-workspace-current-output (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-output))
+(def ro-workspace-status-output (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-status-output))
+(def ro-workspace-current-write-actor-id (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-write-actor-id))
+(def ro-workspace-identity-list-output (ns-resolve 'cluck.examples.ro.core.workspace 'identity-list-output))
+(def ro-workspace-identity-whoami-output (ns-resolve 'cluck.examples.ro.core.workspace 'identity-whoami-output))
+(def ro-workspace-init-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'init-main-plan))
+(def ro-workspace-status-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'status-main-plan))
+(def ro-workspace-workspace-add-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-add-plan))
+(def ro-workspace-workspace-init-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-init-plan))
+(def ro-workspace-workspace-use-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-use-plan))
+(def ro-workspace-workspace-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-main-plan))
+(def ro-workspace-identity-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'identity-main-plan))
+(def ro-projects-project-summary (ns-resolve 'cluck.examples.ro.core.projects 'project-summary))
+(def ro-projects-projects-list-output (ns-resolve 'cluck.examples.ro.core.projects 'projects-list-output))
+(def ro-projects-projects-current-output (ns-resolve 'cluck.examples.ro.core.projects 'projects-current-output))
+(def ro-projects-projects-main-plan (ns-resolve 'cluck.examples.ro.core.projects 'projects-main-plan))
+
+(defn parse-output
+  [output]
+  (json/json-read (open-input-string output)))
+
+(defn output-data
+  [output]
+  (ro-json-json-field-value (parse-output output) "data" '()))
+
+(defn first-entry
+  [value]
+  (cond
+    (vector? value) (vector-ref value 0)
+    (pair? value) (car (seq value))
+    :else value))
+
+(def sample-detail
+  (vector (cons 'name "alpha")
+          (cons 'path "/tmp/alpha")))
+
+(def sample-workspace-root
+  (vector
+   (cons 'data
+         (vector (cons 'currentWorkspace "alpha")))
+   (cons 'meta
+         (vector (cons 'details
+                       (vector sample-detail))))))
+
+(def sample-agent
+  (vector (cons 'id "actor-1")
+          (cons 'name "Agent One")
+          (cons 'kind "agent")
+          (cons 'userId "human-1")
+          (cons 'session "sess-1")))
+
+(def sample-human
+  (vector (cons 'id "human-1")
+          (cons 'name "Human One")
+          (cons 'kind "human")
+          (cons 'userId "")
+          (cons 'session "")))
+
+(def sample-actors
+  (list sample-agent sample-human))
+
+(def sample-project
+  (vector (cons 'id "proj-1")
+          (cons 'name "Project One")
+          (cons 'description "The project")
+          (cons 'archived #f)
+          (cons 'updatedAtUnixms 123)))
+
+(def sample-project-alpha
+  (vector (cons 'id "proj-0")
+          (cons 'name "Annet")
+          (cons 'description "")
+          (cons 'archived #f)
+          (cons 'updatedAtUnixms 122)))
+
+(def sample-item-show
+  (vector (cons 'id "item-1")
+          (cons 'projectId "proj-1")
+          (cons 'outlineId "out-1")
+          (cons 'parentId "parent-1")
+          (cons 'status "doing")
+          (cons 'title "Item One")
+          (cons 'description "The item")
+          (cons 'priority false)
+          (cons 'onHold false)
+          (cons 'assignedActorId "act-1")
+          (cons 'dueDate "")
+          (cons 'scheduleDate "")
+          (cons 'tags (vector "tag-1"))
+          (cons 'itemKind "")
+          (cons 'childrenKind "")
+          (cons 'commentsCount 2)
+          (cons 'worklogCount 15)
+          (cons 'hasChildren true)
+          (cons 'rank "000123")
+          (cons 'ownerActorId "act-owner")
+          (cons 'createdBy "act-created")
+          (cons 'createdAt "2026-04-10T00:00:00Z")
+          (cons 'updatedAt "2026-04-10T01:00:00Z")))
+
+(assert-true "core help request empty args" (ro-help-help-request? '()))
+(assert-true "core help request help" (ro-help-help-request? '("help")))
+(assert-true "core help request --help" (ro-help-help-request? '("--help")))
+(assert-true "core help request -h" (ro-help-help-request? '("-h")))
+(assert-true "core help request rejects item commands"
+             (not (ro-help-help-request? '("items"))))
+(assert-true "core command registry knows help"
+             (ro-commands-command-known? "help"))
+(assert-true "core command registry knows tasks"
+             (ro-commands-command-known? "tasks"))
+(assert-true "core command registry implements init"
+             (ro-commands-command-implemented? 'init))
+(assert-true "core command registry implements projects"
+             (ro-commands-command-implemented? 'projects))
+(assert-true "core command registry implements items"
+             (ro-commands-command-implemented? 'items))
+(assert-str= "core command registry root help first"
+             "  ro help                   # show this help"
+             (first ro-commands-command-root-help-lines))
+(assert-str= "core command registry top command first"
+             "agent"
+             (first ro-commands-command-top-commands))
+(assert-str= "core command registry kind tasks"
+             "tasks"
+             (symbol->string (ro-commands-command-kind-for-name "tasks")))
+(assert-str= "core items help output starts with ro items"
+             "ro items"
+             (first (str/split-lines ro-items-items-help-output)))
+(define sample-item-show-summary
+  (ro-items-item-show-summary sample-item-show 2 15 true))
+(assert-str= "core item show summary title"
+             "Item One"
+             (ro-json-json-field-value sample-item-show-summary "title" ""))
+(assert-str= "core item show summary omits rank"
+             ""
+             (ro-json-json-field-value sample-item-show-summary "rank" ""))
+(assert-num= "core item show summary worklog count"
+             15
+             (ro-json-json-field-value sample-item-show-summary "worklogCount" 0))
+
+(define help-route (ro-route-main-route '()))
+(define docs-route (ro-route-main-route '("docs")))
+(define projects-route (ro-route-main-route '("projects")))
+(define init-route (ro-route-main-route '("init")))
+(define tasks-route (ro-route-main-route '("tasks")))
+(define item-route (ro-route-main-route '("item-vvo")))
+(define formatted-item-route (ro-route-main-route '("--format" "json" "item-vvo")))
+(define completion-route (ro-route-main-route '("completion" "bash")))
+
+(assert-str= "core route empty args"
+             "help"
+             (symbol->string (vector-ref help-route 0)))
+(assert-num= "core route empty args payload count"
+             0
+             (count (vector-ref help-route 1)))
+(assert-str= "core route docs"
+             "docs"
+             (symbol->string (vector-ref docs-route 0)))
+(assert-num= "core route docs payload count"
+             0
+             (count (vector-ref docs-route 1)))
+(assert-str= "core route projects"
+             "projects"
+             (symbol->string (vector-ref projects-route 0)))
+(assert-num= "core route projects payload count"
+             0
+             (count (vector-ref projects-route 1)))
+(assert-str= "core route init"
+             "init"
+             (symbol->string (vector-ref init-route 0)))
+(assert-num= "core route init payload count"
+             0
+             (count (vector-ref init-route 1)))
+(assert-str= "core route tasks"
+             "tasks"
+             (symbol->string (vector-ref tasks-route 0)))
+(assert-num= "core route tasks payload count"
+             0
+             (count (vector-ref tasks-route 1)))
+(assert-str= "core route item lookup"
+             "item"
+             (symbol->string (vector-ref item-route 0)))
+(assert-num= "core route item lookup payload count"
+             1
+             (count (vector-ref item-route 1)))
+(assert-str= "core route formatted item lookup"
+             "item"
+             (symbol->string (vector-ref formatted-item-route 0)))
+(assert-num= "core route formatted item payload count"
+             1
+             (count (vector-ref formatted-item-route 1)))
+(assert-str= "core route completion"
+             "completion"
+             (symbol->string (vector-ref completion-route 0)))
+(assert-str= "core route completion payload"
+             "bash"
+             (first-entry (vector-ref completion-route 1)))
+
+(def sample-event-line
+  "{\"eventId\":\"evt-1\",\"workspaceId\":\"ws-1\",\"replicaId\":\"rep-1\",\"entityKind\":\"item\",\"entityId\":\"item-1\",\"entitySeq\":2,\"type\":\"item.create\",\"parents\":[\"parent-1\"],\"issuedAt\":\"2026-01-02T03:04:05Z\",\"actorId\":\"act-1\",\"payload\":{\"title\":\"Hello world\"},\"localStatus\":\"local\",\"serverStatus\":\"pending\",\"rejectionReason\":\"\",\"publishedAtUnixms\":123,\"hasPublishedAt\":true}")
+
+(def sample-event-line-later
+  "{\"eventId\":\"evt-2\",\"workspaceId\":\"ws-1\",\"replicaId\":\"rep-1\",\"entityKind\":\"item\",\"entityId\":\"item-2\",\"entitySeq\":3,\"type\":\"item.set_title\",\"parents\":[],\"issuedAt\":\"2026-01-03T03:04:05Z\",\"actorId\":\"act-2\",\"payload\":{\"title\":\"Later\"},\"localStatus\":\"local\",\"serverStatus\":\"pending\",\"rejectionReason\":\"\",\"publishedAtUnixms\":456,\"hasPublishedAt\":true}")
+
+(define sample-event-record
+  (ro-events-event-line->record "events.1.jsonl" 7 sample-event-line))
+
+(define sample-doctor-record
+  (ro-doctor-doctor-parse-event-record "events.1.jsonl" 7 sample-event-line))
+
+(define sample-doctor-issue-from-record
+  (ro-doctor-doctor-issue-from-record sample-event-record
+                                      "error"
+                                      "malformed_json"
+                                      "malformed JSON"))
+
+(assert-str= "core events record path"
+             "events.1.jsonl"
+             (ro-json-json-field-value sample-event-record "path" ""))
+(assert-num= "core events record line"
+             7
+             (ro-json-json-field-value sample-event-record "line" 0))
+(assert-str= "core events record event id"
+             "evt-1"
+             (ro-json-json-field-value sample-event-record "event_id" ""))
+(assert-str= "core events record payload title"
+             "Hello world"
+             (ro-json-json-field-value (ro-json-json-field-value sample-event-record "payload" '())
+                                       "title"
+                                       ""))
+
+(assert-str= "core doctor parse record event id"
+             "evt-1"
+             (ro-json-json-field-value sample-doctor-record "eventId" ""))
+(assert-str= "core doctor issue from record path"
+             "events.1.jsonl"
+             (ro-json-json-field-value sample-doctor-issue-from-record "path" ""))
+(assert-str= "core doctor issue from record level"
+             "error"
+             (ro-json-json-field-value sample-doctor-issue-from-record "level" ""))
+
+(define sample-materialized-event
+  (ro-events-event-materialize-record
+   (lambda (issued-at) 4242)
+   sample-event-record))
+
+(assert-num= "core events materialized issued at"
+             4242
+             (ro-json-json-field-value sample-materialized-event "issued_at_unixms" 0))
+(assert-str= "core events materialized payload json"
+             "{\"title\":\"Hello world\"}"
+             (ro-json-json-field-value sample-materialized-event "payload_json" ""))
+
+(assert-true "core events record ordering"
+             (ro-events-event-record<?
+              sample-event-record
+              (ro-events-event-line->record "events.1.jsonl" 8 sample-event-line-later)))
+
+(define sorted-event-records
+  (ro-events-events-sort-records
+   (list (ro-events-event-line->record "events.1.jsonl" 8 sample-event-line-later)
+         sample-event-record)))
+
+(assert-str= "core events sort first id"
+             "evt-1"
+             (ro-json-json-field-value (first-entry sorted-event-records)
+                                       "event_id"
+                                       ""))
+
+(assert-true "core sync status line unmerged UU"
+             (ro-sync-git-status-line-unmerged? "UU"))
+(assert-true "core sync status line unmerged DD"
+             (ro-sync-git-status-line-unmerged? "DD"))
+
+(define sync-status-flags
+  (ro-sync-git-status-flags " M app.clk\nUU merge.clk\n"))
+(define sync-ahead-behind
+  (ro-sync-git-ahead-behind "3 5"))
+(define sync-empty-status
+  (ro-sync-git-sync-empty-status))
+
+(assert-true "core sync status dirty flag"
+             (first-entry sync-status-flags))
+(assert-true "core sync status unmerged flag"
+             (first-entry (rest sync-status-flags)))
+(assert-num= "core sync ahead count"
+             3
+             (first-entry sync-ahead-behind))
+(assert-num= "core sync behind count"
+             5
+             (first-entry (rest sync-ahead-behind)))
+(assert-true "core sync empty status repo flag"
+             (not (ro-json-json-field-value sync-empty-status "isRepo" true)))
+
+(assert-str= "core reindex first recognized type"
+             "identity.create"
+             (first-entry ro-reindex-reindex-recognized-types))
+(assert-true "core reindex recognizes item.create"
+             (ro-reindex-reindex-type-recognized? "item.create"))
+(assert-true "core reindex recognizes project.set_description"
+             (ro-reindex-reindex-type-recognized? "project.set_description"))
+(assert-true "core reindex rejects unknown type"
+             (not (ro-reindex-reindex-type-recognized? "bogus.type")))
+
+(assert-str= "core doctor event entity kind"
+             "item"
+             (ro-doctor-doctor-event-entity-kind "item.create"))
+
+(define sample-doctor-issue-1
+  (vector (cons 'level "error")
+          (cons 'code "duplicate_event_id")
+          (cons 'message "duplicate event id")
+          (cons 'path "events/one.jsonl")
+          (cons 'line 4)
+          (cons 'eventId "evt-1")
+          (cons 'entityKind "item")
+          (cons 'entityId "item-1")
+          (cons 'type "item.create")))
+
+(define sample-doctor-issue-2
+  (vector (cons 'level "error")
+          (cons 'code "duplicate_event_id")
+          (cons 'message "duplicate event id")
+          (cons 'path "events/one.jsonl")
+          (cons 'line 9)
+          (cons 'eventId "evt-1")
+          (cons 'entityKind "item")
+          (cons 'entityId "item-2")
+          (cons 'type "item.set_title")))
+
+(define sample-doctor-issue-3
+  (vector (cons 'level "warn")
+          (cons 'code "multiple_parents")
+          (cons 'message "event has 2 parents")
+          (cons 'path "events/two.jsonl")
+          (cons 'line 12)
+          (cons 'eventId "evt-2")
+          (cons 'entityKind "item")
+          (cons 'entityId "item-3")
+          (cons 'type "item.set_title")))
+
+(define sample-doctor-issues
+  (list sample-doctor-issue-1
+        sample-doctor-issue-2
+        sample-doctor-issue-3))
+
+(define sample-doctor-summary
+  (ro-doctor-doctor-summary-from-issues sample-doctor-issues))
+
+(define sample-doctor-dedupe-plan
+  (ro-doctor-doctor-dedupe-plan-from-issues sample-doctor-issues))
+
+(assert-true "core doctor has errors"
+             (ro-doctor-doctor-has-errors? sample-doctor-issues))
+(assert-true "core doctor ignores warning-only issues"
+             (not (ro-doctor-doctor-has-errors? (list sample-doctor-issue-3))))
+(assert-num= "core doctor summary total"
+             3
+             (ro-json-json-field-value sample-doctor-summary "total" 0))
+(assert-num= "core doctor summary error count"
+             2
+             (ro-json-json-field-value
+              (first-entry (ro-json-json-field-value sample-doctor-summary "byLevel" '()))
+              "count"
+              0))
+(assert-num= "core doctor summary duplicate code count"
+             2
+             (ro-json-json-field-value
+              (first-entry (ro-json-json-field-value sample-doctor-summary "byCode" '()))
+              "count"
+              0))
+(assert-str= "core doctor summary top duplicate event id"
+             "evt-1"
+             (ro-json-json-field-value
+              (first-entry (ro-json-json-field-value sample-doctor-summary "topDuplicateEventIds" '()))
+              "eventId"
+              ""))
+(assert-num= "core doctor dedupe duplicate issue count"
+             2
+             (ro-json-json-field-value sample-doctor-dedupe-plan "duplicateIssueCount" 0))
+(assert-num= "core doctor dedupe file count"
+             1
+             (ro-json-json-field-value sample-doctor-dedupe-plan "fileCount" 0))
+(assert-num= "core doctor dedupe removed lines"
+             2
+             (ro-json-json-field-value sample-doctor-dedupe-plan "removedLines" 0))
+(assert-str= "core doctor dedupe file path"
+             "events/one.jsonl"
+             (ro-json-json-field-value
+              (first-entry (ro-json-json-field-value sample-doctor-dedupe-plan "files" '()))
+              "path"
+              ""))
+(assert-num= "core doctor dedupe remove count"
+             2
+             (ro-json-json-field-value
+              (first-entry (ro-json-json-field-value sample-doctor-dedupe-plan "files" '()))
+              "removeCount"
+              0))
+
+(assert-str= "core completion bash dispatch"
+             ro-help-completion-bash-output
+             (ro-help-completion-output "bash"))
+(assert-str= "core completion zsh dispatch"
+             ro-help-completion-zsh-output
+             (ro-help-completion-output "zsh"))
+(assert-str= "core completion fish dispatch"
+             ro-help-completion-fish-output
+             (ro-help-completion-output "fish"))
+(assert-true "core completion rejects unknown shell"
+             (not (ro-help-completion-output "powershell")))
+
+(assert-str= "core compact json text"
+             "{\"a\":\"b c\",\"nested\":{\"x\":1}}"
+             (ro-json-compact-json-text "{ \"a\" : \"b c\" , \"nested\" : { \"x\" : 1 } }"))
+
+(assert-true "core workspace current info"
+             (equal? (ro-workspace-current-info sample-workspace-root)
+                     (cons "alpha" "/tmp/alpha")))
+(assert-str= "core workspace current name"
+             "alpha"
+             (ro-workspace-current-name sample-workspace-root))
+(assert-str= "core workspace current path"
+             "/tmp/alpha"
+             (ro-workspace-current-path sample-workspace-root))
+
+(define workspace-current-output-value
+  (ro-workspace-current-output "alpha" "/tmp/alpha"))
+(define workspace-current-output-data
+  (output-data workspace-current-output-value))
+
+(assert-str= "core workspace current output workspace"
+             "alpha"
+             (ro-json-json-field-value workspace-current-output-data "workspace" ""))
+(assert-str= "core workspace current output dir"
+             "/tmp/alpha"
+             (ro-json-json-field-value workspace-current-output-data "dir" ""))
+
+(define sample-project-summary
+  (ro-projects-project-summary sample-project))
+
+(assert-str= "core projects summary id"
+             "proj-1"
+             (ro-json-json-field-value sample-project-summary "id" ""))
+(assert-str= "core projects summary name"
+             "Project One"
+             (ro-json-json-field-value sample-project-summary "name" ""))
+(assert-str= "core projects summary description"
+             "The project"
+             (ro-json-json-field-value sample-project-summary "description" ""))
+(assert-true "core projects summary archived false"
+             (not (ro-json-json-field-value sample-project-summary "archived" true)))
+
+(define sample-project-list-output
+  (ro-projects-projects-list-output (list sample-project sample-project-alpha)))
+(define sample-project-list-data
+  (output-data sample-project-list-output))
+
+(assert-num= "core projects list count"
+             2
+             (count sample-project-list-data))
+(assert-str= "core projects list first id"
+             "proj-0"
+             (ro-json-json-field-value (first-entry sample-project-list-data) "id" ""))
+(assert-str= "core projects list first name"
+             "Annet"
+             (ro-json-json-field-value (first-entry sample-project-list-data) "name" ""))
+
+(define sample-project-current-output
+  (ro-projects-projects-current-output "proj-1" sample-project))
+(define sample-project-current-output-empty
+  (ro-projects-projects-current-output "proj-1" #f))
+(define sample-project-current-data
+  (output-data sample-project-current-output))
+
+(assert-str= "core projects current project id"
+             "proj-1"
+             (ro-json-json-field-value sample-project-current-data "projectId" ""))
+(assert-str= "core projects current nested id"
+             "proj-1"
+             (ro-json-json-field-value (ro-json-json-field-value sample-project-current-data "project" '())
+                                       "id"
+                                       ""))
+(assert-str= "core projects current null project"
+             "{\"data\":{\"projectId\":\"proj-1\",\"project\":null}}\n"
+             sample-project-current-output-empty)
+
+(define sample-status-plan
+  (ro-workspace-status-main-plan '()))
+(define sample-status-help-plan
+  (ro-workspace-status-main-plan '("--help")))
+(define sample-workspace-plan
+  (ro-workspace-workspace-main-plan '("current")))
+(define sample-workspace-help-plan
+  (ro-workspace-workspace-main-plan '("help")))
+(define sample-workspace-add-plan
+  (ro-workspace-workspace-main-plan '("add" "alpha" "--dir" "/tmp/alpha" "--use")))
+(define sample-workspace-add-help-plan
+  (ro-workspace-workspace-add-plan '("--help")))
+(define sample-workspace-init-plan
+  (ro-workspace-workspace-main-plan '("init" "beta" "--dir" "/tmp/beta")))
+(define sample-workspace-init-help-plan
+  (ro-workspace-workspace-init-plan '("--help")))
+(define sample-workspace-use-plan
+  (ro-workspace-workspace-main-plan '("use" "gamma")))
+(define sample-workspace-use-help-plan
+  (ro-workspace-workspace-use-plan '("--help")))
+(define sample-init-main-plan
+  (ro-workspace-init-main-plan '()))
+(define sample-identity-plan
+  (ro-workspace-identity-main-plan '("list")))
+(define sample-identity-help-plan
+  (ro-workspace-identity-main-plan '("list" "--help")))
+
+(assert-str= "core status plan tag"
+             "status"
+             (symbol->string (vector-ref sample-status-plan 0)))
+(assert-str= "core status help plan tag"
+             "help"
+             (symbol->string (vector-ref sample-status-help-plan 0)))
+(assert-str= "core workspace plan tag"
+             "current"
+             (symbol->string (vector-ref sample-workspace-plan 0)))
+(assert-str= "core workspace help plan tag"
+             "help"
+             (symbol->string (vector-ref sample-workspace-help-plan 0)))
+(assert-str= "core workspace add plan tag"
+             "add"
+             (symbol->string (vector-ref sample-workspace-add-plan 0)))
+(assert-str= "core workspace add plan name"
+             "alpha"
+             (vector-ref sample-workspace-add-plan 1))
+(assert-str= "core workspace add plan dir"
+             "/tmp/alpha"
+             (vector-ref sample-workspace-add-plan 2))
+(assert-str= "core workspace add plan kind"
+             "git"
+             (vector-ref sample-workspace-add-plan 3))
+(assert-true "core workspace add plan use"
+             (vector-ref sample-workspace-add-plan 4))
+(assert-str= "core workspace add help plan tag"
+             "subhelp-root"
+             (symbol->string (vector-ref sample-workspace-add-help-plan 0)))
+(assert-str= "core workspace add help plan usage"
+             "usage: ro workspace add <name> --dir <path> [--kind git] [--use]\n"
+             (vector-ref sample-workspace-add-help-plan 1))
+(assert-str= "core workspace init plan tag"
+             "init"
+             (symbol->string (vector-ref sample-workspace-init-plan 0)))
+(assert-str= "core workspace init plan name"
+             "beta"
+             (vector-ref sample-workspace-init-plan 1))
+(assert-str= "core workspace init plan dir"
+             "/tmp/beta"
+             (vector-ref sample-workspace-init-plan 2))
+(assert-true "core workspace init plan use false"
+             (not (vector-ref sample-workspace-init-plan 3)))
+(assert-str= "core workspace init help plan tag"
+             "subhelp-root"
+             (symbol->string (vector-ref sample-workspace-init-help-plan 0)))
+(assert-str= "core workspace init help plan usage"
+             "usage: ro workspace init <name> [--dir <path>] [--use]\n"
+             (vector-ref sample-workspace-init-help-plan 1))
+(assert-str= "core workspace use plan tag"
+             "use"
+             (symbol->string (vector-ref sample-workspace-use-plan 0)))
+(assert-str= "core workspace use plan name"
+             "gamma"
+             (vector-ref sample-workspace-use-plan 1))
+(assert-str= "core workspace use help plan tag"
+             "subhelp"
+             (symbol->string (vector-ref sample-workspace-use-help-plan 0)))
+(assert-str= "core workspace use help plan usage"
+             "usage: ro workspace use <name>\n"
+             (vector-ref sample-workspace-use-help-plan 1))
+(assert-str= "core init main plan tag"
+             "init"
+             (symbol->string (vector-ref sample-init-main-plan 0)))
+(assert-str= "core identity plan tag"
+             "list"
+             (symbol->string (vector-ref sample-identity-plan 0)))
+(assert-str= "core identity help plan tag"
+             "help"
+             (symbol->string (vector-ref sample-identity-help-plan 0)))
+
+(define sample-projects-help-plan
+  (ro-projects-projects-main-plan '()))
+(define sample-projects-create-plan
+  (ro-projects-projects-main-plan '("create" "--name" "Project Two" "--use")))
+(define sample-projects-archive-plan
+  (ro-projects-projects-main-plan '("archive" "proj-1" "--unarchive")))
+(define sample-projects-use-plan
+  (ro-projects-projects-main-plan '("use" "--help")))
+(define sample-projects-list-plan
+  (ro-projects-projects-main-plan '("list" "--help")))
+(define sample-projects-current-plan
+  (ro-projects-projects-main-plan '("current" "--help")))
+
+(assert-str= "core projects help plan tag"
+             "help"
+             (symbol->string (vector-ref sample-projects-help-plan 0)))
+(assert-str= "core projects create plan tag"
+             "create"
+             (symbol->string (vector-ref sample-projects-create-plan 0)))
+(assert-str= "core projects create plan name"
+             "Project Two"
+             (vector-ref sample-projects-create-plan 1))
+(assert-true "core projects create plan use"
+             (vector-ref sample-projects-create-plan 2))
+(assert-str= "core projects archive plan tag"
+             "archive"
+             (symbol->string (vector-ref sample-projects-archive-plan 0)))
+(assert-str= "core projects archive plan project id"
+             "proj-1"
+             (vector-ref sample-projects-archive-plan 1))
+(assert-true "core projects archive plan unarchive"
+             (not (vector-ref sample-projects-archive-plan 2)))
+(assert-str= "core projects use plan tag"
+             "use"
+             (symbol->string (vector-ref sample-projects-use-plan 0)))
+(assert-str= "core projects use plan help arg stays positional"
+             "--help"
+             (vector-ref sample-projects-use-plan 1))
+(assert-str= "core projects list plan tag"
+             "list"
+             (symbol->string (vector-ref sample-projects-list-plan 0)))
+(assert-str= "core projects current plan tag"
+             "current"
+             (symbol->string (vector-ref sample-projects-current-plan 0)))
+
+(assert-str= "core write actor id maps agent to user id"
+             "human-1"
+             (ro-workspace-current-write-actor-id sample-agent "actor-1"))
+(assert-str= "core write actor id keeps human actor id"
+             "human-1"
+             (ro-workspace-current-write-actor-id sample-human "human-1"))
+
+(define docs-output-data
+  (output-data ro-help-docs-output))
+(define docs-topics
+  (ro-json-json-field-value docs-output-data "topics" '()))
+
+(assert-num= "core docs topic count"
+             8
+             (count docs-topics))
+(assert-str= "core docs first topic"
+             "cli"
+             (first-entry docs-topics))
+(assert-str= "core docs cli markdown"
+             "# Ro CLI (ro)\n\n`ro` is the primary CLI entrypoint.\n\n- `ro status` prints workspace counts and the selected actor.\n- `ro items ready` finds the next actionable items.\n- `ro <item-id>` is shorthand for `ro items show <item-id>`.\n- `ro docs <topic>` prints long-form docs for the CLI surface.\n\nUse `--format json|edn` to control output, and `--pretty` for human-readable JSON."
+             (ro-docs-docs-topic-markdown "cli"))
+(define docs-topic-output-data
+  (output-data (ro-docs-docs-topic-output "output-contract")))
+(assert-str= "core docs topic output topic"
+             "output-contract"
+             (ro-json-json-field-value docs-topic-output-data "topic" ""))
+(assert-str= "core docs topic output markdown"
+             "# Output contract\n\nMost commands return a stable envelope with a `data` field.\n\n- Default format: JSON\n- Alternate format: EDN via `--format edn`\n- `--pretty` pretty-prints JSON for human inspection\n- Commands may add `_hints` with suggested next steps"
+             (ro-json-json-field-value docs-topic-output-data "markdown" ""))
+
+(define docs-main-plan-output
+  (ro-docs-docs-main-plan '()))
+(define docs-topic-plan
+  (ro-docs-docs-main-plan '("getting-started")))
+(define docs-raw-plan
+  (ro-docs-docs-main-plan '("getting-started" "--raw")))
+(define docs-help-plan
+  (ro-docs-docs-main-plan '("getting-started" "--help")))
+
+(assert-str= "core docs main plan tag"
+             "output"
+             (symbol->string (vector-ref docs-main-plan-output 0)))
+(assert-str= "core docs topic plan tag"
+             "topic"
+             (symbol->string (vector-ref docs-topic-plan 0)))
+(assert-str= "core docs topic plan topic"
+             "getting-started"
+             (vector-ref docs-topic-plan 1))
+(assert-true "core docs topic plan raw false"
+             (not (vector-ref docs-topic-plan 2)))
+(assert-str= "core docs raw plan tag"
+             "topic"
+             (symbol->string (vector-ref docs-raw-plan 0)))
+(assert-true "core docs raw plan raw"
+             (vector-ref docs-raw-plan 2))
+(assert-str= "core docs help plan tag"
+             "help"
+             (symbol->string (vector-ref docs-help-plan 0)))
+
+(define sample-items-main-help-plan
+  (ro-items-items-main-plan '("help")))
+(define sample-items-main-show-plan
+  (ro-items-items-main-plan '("show" "item-vvo")))
+(define sample-items-main-list-plan
+  (ro-items-items-main-plan '("list" "--project" "proj-d1743158" "--outline" "out-a5341a59" "--status" "doing")))
+(define sample-items-main-ready-plan
+  (ro-items-items-main-plan '("ready")))
+(define sample-items-main-events-plan
+  (ro-items-items-main-plan '("events" "item-vvo" "--limit" "3")))
+(define sample-item-main-plan
+  (ro-items-item-main-plan '("item-vvo")))
+
+(assert-str= "core items main help plan tag"
+             "help"
+             (symbol->string (vector-ref sample-items-main-help-plan 0)))
+(assert-str= "core items main show plan tag"
+             "show"
+             (symbol->string (vector-ref sample-items-main-show-plan 0)))
+(assert-str= "core items main list plan tag"
+             "list"
+             (symbol->string (vector-ref sample-items-main-list-plan 0)))
+(assert-str= "core items main ready plan tag"
+             "ready"
+             (symbol->string (vector-ref sample-items-main-ready-plan 0)))
+(assert-str= "core items main events plan tag"
+             "events"
+             (symbol->string (vector-ref sample-items-main-events-plan 0)))
+(assert-str= "core item main plan tag"
+             "show"
+             (symbol->string (vector-ref sample-item-main-plan 0)))
+
+(assert-str= "core items show plan tag"
+             "show"
+             (symbol->string (vector-ref (ro-items-items-show-plan '("item-vvo")) 0)))
+(assert-str= "core items list plan tag"
+             "list"
+             (symbol->string (vector-ref (ro-items-items-list-plan '("--project" "proj-d1743158")) 0)))
+(assert-str= "core items ready plan tag"
+             "ready"
+             (symbol->string (vector-ref (ro-items-items-ready-plan '("--help")) 0)))
+(assert-str= "core items events plan tag"
+             "events"
+             (symbol->string (vector-ref (ro-items-items-events-plan '("item-vvo" "--limit" "3")) 0)))
+
+(define identity-list-output-data
+  (output-data (ro-workspace-identity-list-output "actor-1" sample-actors)))
+(define identity-list-actors
+  (ro-json-json-field-value identity-list-output-data "actors" '()))
+(define identity-list-first-actor
+  (first-entry identity-list-actors))
+
+(assert-str= "core identity list current actor"
+             "actor-1"
+             (ro-json-json-field-value identity-list-output-data "currentActorId" ""))
+(assert-str= "core identity list first actor id"
+             "actor-1"
+             (ro-json-json-field-value identity-list-first-actor "id" ""))
+(assert-str= "core identity list first actor name"
+             "Agent One"
+             (ro-json-json-field-value identity-list-first-actor "name" ""))
+(assert-str= "core identity list first actor kind"
+             "agent"
+             (ro-json-json-field-value identity-list-first-actor "kind" ""))
+
+(define identity-whoami-output-data
+  (output-data (ro-workspace-identity-whoami-output sample-agent)))
+
+(assert-str= "core identity whoami actor id"
+             "actor-1"
+             (ro-json-json-field-value identity-whoami-output-data "id" ""))
+(assert-str= "core identity whoami actor name"
+             "Agent One"
+             (ro-json-json-field-value identity-whoami-output-data "name" ""))
+
+(define workspace-status-output-data
+  (output-data
+   (ro-workspace-status-output "alpha"
+                               "workspace-1"
+                               "actor-1"
+                               "project-1"
+                               2
+                               3
+                               4
+                               5
+                               6
+                               7
+                               8
+                               9
+                               10)))
+(define workspace-status-counts
+  (ro-json-json-field-value workspace-status-output-data "counts" '()))
+(define workspace-status-hints
+  (ro-json-json-field-value (parse-output
+                             (ro-workspace-status-output "alpha"
+                                                         "workspace-1"
+                                                         "actor-1"
+                                                         "project-1"
+                                                         2
+                                                         3
+                                                         4
+                                                         5
+                                                         6
+                                                         7
+                                                         8
+                                                         9
+                                                         10))
+                            "_hints"
+                            '()))
+
+(assert-str= "core workspace status workspace"
+             "alpha"
+             (ro-json-json-field-value workspace-status-output-data "workspace" ""))
+(assert-str= "core workspace status workspace id"
+             "workspace-1"
+             (ro-json-json-field-value workspace-status-output-data "workspaceId" ""))
+(assert-str= "core workspace status current actor"
+             "actor-1"
+             (ro-json-json-field-value workspace-status-output-data "currentActorId" ""))
+(assert-str= "core workspace status current project"
+             "project-1"
+             (ro-json-json-field-value workspace-status-output-data "currentProjectId" ""))
+(assert-num= "core workspace status actor count"
+             2
+             (ro-json-json-field-value workspace-status-output-data "actors" 0))
+(assert-num= "core workspace status project count"
+             3
+             (ro-json-json-field-value workspace-status-output-data "projects" 0))
+(assert-num= "core workspace status outline count"
+             4
+             (ro-json-json-field-value workspace-status-output-data "outlines" 0))
+(assert-num= "core workspace status item count"
+             5
+             (ro-json-json-field-value workspace-status-output-data "items" 0))
+(assert-num= "core workspace status dep count"
+             6
+             (ro-json-json-field-value workspace-status-output-data "deps" 0))
+(assert-num= "core workspace status comment count"
+             7
+             (ro-json-json-field-value workspace-status-output-data "comments" 0))
+(assert-num= "core workspace status discussion count"
+             8
+             (ro-json-json-field-value workspace-status-output-data "discussions" 0))
+(assert-num= "core workspace status worklog count"
+             9
+             (ro-json-json-field-value workspace-status-output-data "worklog" 0))
+(assert-num= "core workspace status attachment count"
+             10
+             (ro-json-json-field-value workspace-status-output-data "attachments" 0))
+(assert-num= "core workspace status nested actor count"
+             2
+             (ro-json-json-field-value workspace-status-counts "actors" 0))
+(assert-num= "core workspace status nested project count"
+             3
+             (ro-json-json-field-value workspace-status-counts "projects" 0))
+(assert-num= "core workspace status nested item count"
+             5
+             (ro-json-json-field-value workspace-status-counts "items" 0))
+(assert-str= "core workspace status first hint"
+             "ro projects list"
+             (first-entry workspace-status-hints))
+
+(define events-main-plan-output
+  (ro-events-events-main-plan '()))
+(define events-list-plan
+  (ro-events-events-main-plan '("list")))
+(define events-list-help-plan
+  (ro-events-events-main-plan '("list" "--help")))
+
+(assert-str= "core events main plan tag"
+             "help"
+             (symbol->string (vector-ref events-main-plan-output 0)))
+(assert-str= "core events list plan tag"
+             "list"
+             (symbol->string (vector-ref events-list-plan 0)))
+(assert-num= "core events list default limit"
+             200
+             (vector-ref events-list-plan 1))
+(assert-str= "core events list help plan tag"
+             "unsupported-flag"
+             (symbol->string (vector-ref events-list-help-plan 0)))
+
+(define reindex-main-plan-output
+  (ro-reindex-reindex-main-plan '()))
+(define reindex-help-plan
+  (ro-reindex-reindex-main-plan '("--help")))
+
+(assert-str= "core reindex main plan tag"
+             "reindex"
+             (symbol->string (vector-ref reindex-main-plan-output 0)))
+(assert-str= "core reindex help plan tag"
+             "help"
+             (symbol->string (vector-ref reindex-help-plan 0)))
+
+(define sync-main-plan-output
+  (ro-sync-sync-main-plan '()))
+(define sync-status-plan
+  (ro-sync-sync-main-plan '("status")))
+(define sync-remotes-plan
+  (ro-sync-sync-main-plan '("remotes")))
+
+(assert-str= "core sync main plan tag"
+             "help"
+             (symbol->string (vector-ref sync-main-plan-output 0)))
+(assert-str= "core sync status plan tag"
+             "status"
+             (symbol->string (vector-ref sync-status-plan 0)))
+(assert-str= "core sync remotes plan tag"
+             "remotes"
+             (symbol->string (vector-ref sync-remotes-plan 0)))
+
+(define doctor-report-plan
+  (ro-doctor-doctor-main-plan '()))
+(define doctor-help-plan
+  (ro-doctor-doctor-main-plan '("--help")))
+(define doctor-summary-plan
+  (ro-doctor-doctor-main-plan '("summary" "--fail")))
+(define doctor-dedupe-plan-main
+  (ro-doctor-doctor-main-plan '("dedupe" "--write" "--force")))
+
+(assert-str= "core doctor report plan tag"
+             "report"
+             (symbol->string (vector-ref doctor-report-plan 0)))
+(assert-str= "core doctor help plan tag"
+             "help"
+             (symbol->string (vector-ref doctor-help-plan 0)))
+(assert-str= "core doctor summary plan tag"
+             "summary"
+             (symbol->string (vector-ref doctor-summary-plan 0)))
+(assert-true "core doctor summary plan fail flag"
+             (vector-ref doctor-summary-plan 1))
+(assert-str= "core doctor dedupe plan tag"
+             "dedupe"
+             (symbol->string (vector-ref doctor-dedupe-plan-main 0)))
+(assert-true "core doctor dedupe plan write flag"
+             (vector-ref doctor-dedupe-plan-main 2))
+(assert-true "core doctor dedupe plan force flag"
+             (vector-ref doctor-dedupe-plan-main 3))

@@ -1,0 +1,204 @@
+;; Pure long-form docs helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.docs
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [json :as json]))
+
+(defn compact-json-step
+  [text i len in-string? escaped? acc]
+  (if (= i len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text i)]
+        (cond
+          escaped?
+          (compact-json-step text (+ i 1) len in-string? false (cons ch acc))
+
+          (char=? ch #\")
+          (compact-json-step text (+ i 1) len (not in-string?) false (cons ch acc))
+
+          (and in-string?
+               (char=? ch #\\))
+          (compact-json-step text (+ i 1) len true true (cons ch acc))
+
+          in-string?
+          (compact-json-step text (+ i 1) len true false (cons ch acc))
+
+          (char-whitespace? ch)
+          (compact-json-step text (+ i 1) len false false acc)
+
+          :else
+          (compact-json-step text (+ i 1) len false false (cons ch acc))))))
+
+(defn compact-json-text
+  [text]
+  (compact-json-step text 0 (string-length text) false false '()))
+
+(defn json-write-output
+  [value]
+  (string-append
+   (compact-json-text
+    (io/with-output-string
+     (fn [port]
+       (json/json-write value port))))
+   "\n"))
+
+(def docs-cli-markdown
+  (str/join
+   "\n"
+   (list
+    "# Ro CLI (ro)"
+    ""
+    "`ro` is the primary CLI entrypoint."
+    ""
+    "- `ro status` prints workspace counts and the selected actor."
+    "- `ro items ready` finds the next actionable items."
+    "- `ro <item-id>` is shorthand for `ro items show <item-id>`."
+    "- `ro docs <topic>` prints long-form docs for the CLI surface."
+    ""
+    "Use `--format json|edn` to control output, and `--pretty` for human-readable JSON.")))
+
+(def docs-getting-started-markdown
+  (str/join
+   "\n"
+   (list
+    "# Getting started"
+    ""
+    "1. Run `ro init` in your workspace."
+    "2. Create or select an identity with `ro identity create --kind human --use`."
+    "3. Create a project, outline, and first item."
+    "4. Use `ro items ready` to find the next thing to do."
+    "5. Record work with `ro comments add` and `ro worklog add`.")))
+
+(def docs-output-contract-markdown
+  (str/join
+   "\n"
+   (list
+    "# Output contract"
+    ""
+    "Most commands return a stable envelope with a `data` field."
+    ""
+    "- Default format: JSON"
+    "- Alternate format: EDN via `--format edn`"
+    "- `--pretty` pretty-prints JSON for human inspection"
+    "- Commands may add `_hints` with suggested next steps")))
+
+(def docs-identity-ownership-markdown
+  (str/join
+   "\n"
+   (list
+    "# Identity and ownership"
+    ""
+    "All writes are attributed to an actor."
+    ""
+    "- `ro identity whoami` shows the active actor."
+    "- `ro identity use <actor-id>` switches the current actor."
+    "- `ro identity create --kind agent --user <human-actor-id>` creates an agent identity.")))
+
+(def docs-agent-runtimes-markdown
+  (str/join
+   "\n"
+   (list
+    "# Agent runtimes"
+    ""
+    "- `ro agent start <item-id>` ensures an agent identity/session and claims the item."
+    "- `ro agent prepare <item-id>` is the explicit claim-and-prepare step."
+    "- `ro agent open <item-id>` attaches to an existing saved runtime when one exists."
+    "- `ro agent open --session <key> --print-command` prints the attach command.")))
+
+(def docs-sync-markdown
+  (str/join
+   "\n"
+   (list
+    "# Sync"
+    ""
+    "- `ro sync status` inspects the Git-backed workspace state."
+    "- `ro sync remotes` shows upstream remotes."
+    "- `ro sync pull`, `ro sync push`, and `ro sync resolve` manage repository synchronization.")))
+
+(def docs-doctor-reindex-markdown
+  (str/join
+   "\n"
+   (list
+    "# Doctor and reindex"
+    ""
+    "- `ro doctor` validates event logs and common integrity issues."
+    "- `ro doctor summary` reports aggregate issue counts."
+    "- `ro doctor dedupe` shows a dry-run plan for duplicate event ids."
+    "- `ro reindex` rebuilds the SQLite index from events.")))
+
+(def docs-storage-markdown
+  (str/join
+   "\n"
+   (list
+    "# Storage"
+    ""
+    "- Canonical state lives in the workspace SQLite index."
+    "- The workspace registry is local config under `~/.ro` or `RO_CONFIG_DIR`."
+    "- `ro reindex` rebuilds derived state from the canonical event log.")))
+
+(defn docs-topic-markdown
+  [topic]
+  (cond
+    (string=? topic "cli") docs-cli-markdown
+    (string=? topic "getting-started") docs-getting-started-markdown
+    (string=? topic "output-contract") docs-output-contract-markdown
+    (string=? topic "storage") docs-storage-markdown
+    (string=? topic "identity-ownership") docs-identity-ownership-markdown
+    (string=? topic "agent-runtimes") docs-agent-runtimes-markdown
+    (string=? topic "sync") docs-sync-markdown
+    (string=? topic "doctor-reindex") docs-doctor-reindex-markdown
+    :else false))
+
+(defn docs-topic-output
+  [topic]
+  (let ((markdown (docs-topic-markdown topic)))
+    (and markdown
+         (json-write-output
+          (vector (cons 'data
+                        (vector (cons 'topic topic)
+                                (cons 'markdown markdown))))))))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (if (empty? args)
+      false
+      (let loop ((xs (seq args)))
+        (cond
+          (empty? xs) false
+          (help-flag? (car xs)) true
+          :else (loop (cdr xs))))))
+
+(defn docs-main-plan
+  [args]
+  (cond
+    (empty? args)
+    (vector 'output '())
+
+    (help-flag? (first args))
+    (vector 'help '())
+
+    (any-help-arg? (rest args))
+    (vector 'help '())
+
+    :else
+    (let loop ((xs (rest args))
+               (raw? false))
+      (cond
+        (empty? xs)
+        (vector 'topic (first args) raw?)
+
+        (string=? (first xs) "--raw")
+        (loop (rest xs) true)
+
+        (str/starts-with? (first xs) "-")
+        (vector 'unsupported-flag '())
+
+        :else
+        (vector 'unexpected '())))))

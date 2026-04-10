@@ -1,0 +1,87 @@
+;; Pure git-status helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.sync
+  (:require [cluck.string :as str]))
+
+(defn git-status-line-unmerged?
+  [xy]
+  (or (string=? xy "DD")
+      (string=? xy "AU")
+      (string=? xy "UD")
+      (string=? xy "UA")
+      (string=? xy "DU")
+      (string=? xy "AA")
+      (string=? xy "UU")
+      (and (> (string-length xy) 0)
+           (char=? (string-ref xy 0) #\U))
+      (and (> (string-length xy) 1)
+           (char=? (string-ref xy 1) #\U))))
+
+(defn git-status-flags
+  [text]
+  (let loop ((lines (str/split-lines (or text "")))
+             (dirty false)
+             (unmerged false))
+    (if (empty? lines)
+        (list dirty unmerged)
+        (let ((line (first lines)))
+          (if (< (string-length line) 2)
+              (loop (rest lines) dirty unmerged)
+              (let ((xy (substring line 0 2))
+                    (next-dirty (or dirty (not (str/blank? xy))))
+                    (next-unmerged (or unmerged (git-status-line-unmerged? xy))))
+                (loop (rest lines) next-dirty next-unmerged)))))))
+
+(defn git-ahead-behind
+  [text]
+  (handle-exceptions exn
+    (list 0 0)
+    (call-with-input-string (or text "")
+      (fn [port]
+        (let ((ahead (read port))
+              (behind (read port)))
+          (list (or ahead 0)
+                (or behind 0)))))))
+
+(defn git-sync-empty-status
+  []
+  (list->vector
+   (list (cons 'upstreamRemote "")
+         (cons 'dirty false)
+         (cons 'behind 0)
+         (cons 'inProgress false)
+         (cons 'isRepo false)
+         (cons 'upstreamRemoteURL "")
+         (cons 'head "")
+         (cons 'root "")
+         (cons 'ahead 0)
+         (cons 'unmerged false)
+         (cons 'inProgressKind "")
+         (cons 'dirtyTracked false)
+         (cons 'branch "")
+         (cons 'upstream ""))))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn sync-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    (vector 'help '())
+
+    (string=? (first args) "status")
+    (vector 'status (rest args))
+
+    (string=? (first args) "remotes")
+    (vector 'remotes (rest args))
+
+    (string=? (first args) "reindex")
+    (vector 'reindex (rest args))
+
+    :else
+    (vector 'error "unsupported sync subcommand" args)))

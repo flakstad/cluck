@@ -1,0 +1,645 @@
+;; CLI contract tests for the Ro spike.
+
+(ns cluck.test.ro-cli
+  (:require [cluck.fs :as fs]
+            [cluck.process :as proc]
+            [cluck.string :as str]
+            [json :as json]
+            [cluck.test.support :refer [assert-str=
+                                        assert-num=
+                                        assert-true
+                                        pass
+                                        fail
+                                        capture-output
+                                        capture-error-output]]))
+
+(def app-help-request? (ns-resolve 'cluck.examples.ro.app 'help-request?))
+(def app-root-help-output (ns-resolve 'cluck.examples.ro.app 'root-help-output))
+(def app-docs-help-output (ns-resolve 'cluck.examples.ro.app 'docs-help-output))
+(def app-docs-output (ns-resolve 'cluck.examples.ro.app 'docs-output))
+(def app-docs-topic-markdown (ns-resolve 'cluck.examples.ro.app 'docs-topic-markdown))
+(def app-docs-topic-output (ns-resolve 'cluck.examples.ro.app 'docs-topic-output))
+(def app-completion-help-output (ns-resolve 'cluck.examples.ro.app 'completion-help-output))
+(def app-events-help-output (ns-resolve 'cluck.examples.ro.app 'events-help-output))
+(def app-doctor-help-output (ns-resolve 'cluck.examples.ro.app 'doctor-help-output))
+(def app-reindex-help-output (ns-resolve 'cluck.examples.ro.app 'reindex-help-output))
+(def app-sync-help-output (ns-resolve 'cluck.examples.ro.app 'sync-help-output))
+(def app-status-help-output (ns-resolve 'cluck.examples.ro.app 'status-help-output))
+(def app-status-output (ns-resolve 'cluck.examples.ro.app 'workspace-status-output))
+(def app-identity-help-output (ns-resolve 'cluck.examples.ro.app 'identity-help-output))
+(def app-identity-list-output (ns-resolve 'cluck.examples.ro.app 'identity-list-output))
+(def app-identity-whoami-output (ns-resolve 'cluck.examples.ro.app 'identity-whoami-output))
+(def app-workspace-current-output (ns-resolve 'cluck.examples.ro.app 'workspace-current-output))
+(def app-workspace-list-output (ns-resolve 'cluck.examples.ro.app 'workspace-list-output))
+(def app-workspace-help-output (ns-resolve 'cluck.examples.ro.app 'workspace-help-output))
+(def ro-json-json-field-value (ns-resolve 'cluck.examples.ro.core.json 'json-field-value))
+(def app-projects-help-output (ns-resolve 'cluck.examples.ro.app 'projects-help-output))
+(def app-projects-list-output (ns-resolve 'cluck.examples.ro.app 'projects-list-output))
+(def app-projects-current-output (ns-resolve 'cluck.examples.ro.app 'projects-current-output))
+(def app-print-projects-list (ns-resolve 'cluck.examples.ro.app 'print-projects-list))
+(def app-print-projects-current (ns-resolve 'cluck.examples.ro.app 'print-projects-current))
+(def app-items-help-output (ns-resolve 'cluck.examples.ro.app 'items-help-output))
+(def app-main (ns-resolve 'cluck.examples.ro.app 'main))
+(def run-live-parity?
+  (not (string=? (or (get-environment-variable "RO_CLI_SKIP_LIVE") "") "1")))
+
+(def fixture-root "test/fixtures/ro")
+(def root-help-fixture "root-help")
+(def ro-standalone-built? #f)
+
+(defn fixture-path
+  [case-name ext]
+  (fs/path fixture-root (string-append case-name "." ext)))
+
+(defn read-fixture
+  [case-name]
+  (fs/slurp (fixture-path case-name "stdout")))
+
+(defn read-fixture-err
+  [case-name]
+  (fs/slurp (fixture-path case-name "stderr")))
+
+(def ro-standalone-path "build/ro-standalone")
+(def ro-standalone-build-args
+  (list "-static"
+        "-deployed"
+        "-k"
+        "-v"
+        "-O2"
+        "-strip"
+        "-o"
+        ro-standalone-path
+        "examples/cluck/ro/run-standalone.scm"
+        "-L"
+        "-lncurses"
+        "-L"
+        "-lsqlite3"))
+
+(defn ensure-ro-standalone!
+  []
+  (if ro-standalone-built?
+      ro-standalone-path
+      (let ((compile-result (proc/exec "csc" ro-standalone-build-args)))
+        (if (= 0 (get compile-result :exit 1))
+            (begin
+              (set! ro-standalone-built? #t)
+              ro-standalone-path)
+            (error "failed to build ro-standalone" (get compile-result :out ""))))))
+
+(defn run-cluck-ro
+  [args]
+  (proc/exec (ensure-ro-standalone!) args))
+
+(defn run-odin-ro
+  [args]
+  (proc/exec "ro" args))
+
+(defn temp-dir
+  [prefix]
+  (let* ((result
+          (proc/exec
+           "python3"
+           "-c"
+           (string-append "import tempfile; print(tempfile.mkdtemp(prefix='"
+                          prefix
+                          "'))")))
+         (path (str/trim (get result :out ""))))
+    path))
+
+(defn run-ro-in-config
+  [binary config-dir args]
+  (proc/exec
+   "env"
+   (cons (string-append "RO_CONFIG_DIR=" config-dir)
+         (cons binary args))))
+
+(defn run-cluck-ro-in-config
+  [config-dir args]
+  (run-ro-in-config (ensure-ro-standalone!) config-dir args))
+
+(defn cluck-json-output-in-config
+  [config-dir args]
+  (json/json-read
+   (open-input-string
+    (get (run-cluck-ro-in-config config-dir args) :out ""))))
+
+(defn json-output-field
+  [output key default]
+  (ro-json-json-field-value (ro-json-json-field-value output "data" '())
+                            key
+                            default))
+
+(defn run-odin-ro-in-config
+  [config-dir args]
+  (run-ro-in-config "ro" config-dir args))
+
+(defn json-key-text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-object-like?
+  [value]
+  (let [items (cond
+                (vector? value) (vector->list value)
+                (pair? value) (seq value)
+                :else '())]
+    (and (not (empty? items))
+         (every? pair? items))))
+
+(defn normalize-json-value
+  [value]
+  (cond
+    (json-object-like? value)
+    (let [items (cond
+                  (vector? value) (vector->list value)
+                  (pair? value) (seq value)
+                  :else '())
+          sorted (cluck-sort-list items
+                                  (lambda (a b)
+                                    (string<? (json-key-text (car a))
+                                              (json-key-text (car b)))))]
+      (map (lambda (entry)
+             (let [key (car entry)
+                   normalized-value
+                   (if (and (string? key)
+                            (string=? key "payload_json")
+                            (string? (cdr entry)))
+                       (normalize-json-value
+                        (json/json-read
+                         (open-input-string (cdr entry))))
+                       (normalize-json-value (cdr entry)))]
+               (cons key normalized-value)))
+           sorted))
+
+    (vector? value)
+    (map normalize-json-value (vector->list value))
+
+    (pair? value)
+    (map normalize-json-value (seq value))
+
+    :else value))
+
+(defn assert-json=
+  [label expected actual]
+  (if (equal? (normalize-json-value expected)
+              (normalize-json-value actual))
+      (pass label)
+      (fail label expected actual)))
+
+(defn assert-cli-json-parity
+  [label args]
+  (let [cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-json= (string-append label " stdout json parity")
+                  (json/json-read (open-input-string odin-out))
+                  (json/json-read (open-input-string cluck-out)))
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-case
+  [label case-name args]
+  (let [fixture-out (read-fixture case-name)
+        cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-str= (string-append label " fixture")
+                 fixture-out
+                 (get cluck :out))
+    (assert-str= (string-append label " stdout parity")
+                 (get odin :out)
+                 (get cluck :out))
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-case-err
+  [label case-name args]
+  (let [fixture-out (read-fixture-err case-name)
+        cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-str= (string-append label " fixture")
+                 fixture-out
+                 cluck-out)
+    (assert-str= (string-append label " stdout parity")
+                 odin-out
+                 cluck-out)
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-fixture-case-err
+  [label case-name args expected-exit]
+  (let [fixture-out (read-fixture-err case-name)
+        cluck (run-cluck-ro args)
+        cluck-out (get cluck :out "")
+        cluck-err (get cluck :err "")]
+    (assert-str= (string-append label " fixture")
+                 fixture-out
+                 cluck-out)
+    (assert-str= (string-append label " stderr empty")
+                 ""
+                 cluck-err)
+    (assert-num= (string-append label " exit")
+                 expected-exit
+                 (get cluck :exit))))
+
+(defn assert-cli-parity
+  [label args]
+  (let [cluck (run-cluck-ro args)
+        odin (run-odin-ro args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")
+        cluck-err (get cluck :err "")
+        odin-err (get odin :err "")]
+    (assert-str= (string-append label " stdout parity")
+                 odin-out
+                 cluck-out)
+    (assert-str= (string-append label " stderr parity")
+                 odin-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-parity-in-config
+  [label cluck-config-dir odin-config-dir args]
+  (let [cluck (run-cluck-ro-in-config cluck-config-dir args)
+        odin (run-odin-ro-in-config odin-config-dir args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")]
+    (assert-str= (string-append label " stdout parity")
+                 odin-out
+                 cluck-out)
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-json-parity-in-config
+  [label cluck-config-dir odin-config-dir args]
+  (let [cluck (run-cluck-ro-in-config cluck-config-dir args)
+        odin (run-odin-ro-in-config odin-config-dir args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")]
+    (assert-json= (string-append label " stdout json parity")
+                  (json/json-read (open-input-string odin-out))
+                  (json/json-read (open-input-string cluck-out)))
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(assert-true "help request empty args" (app-help-request? '()))
+(assert-true "help request help" (app-help-request? '("help")))
+(assert-true "help request --help" (app-help-request? '("--help")))
+(assert-true "help request -h" (app-help-request? '("-h")))
+(assert-true "help request rejects item commands"
+             (not (app-help-request? '("items"))))
+
+(assert-str= "main prints root help on no args"
+             app-root-help-output
+             (capture-output (lambda () (app-main '()))))
+(assert-str= "main prints root help on help"
+             app-root-help-output
+             (capture-output (lambda () (app-main '("help")))))
+(assert-str= "main prints root help on --help"
+             app-root-help-output
+             (capture-output (lambda () (app-main '("--help")))))
+(assert-str= "main prints root help on -h"
+             app-root-help-output
+             (capture-output (lambda () (app-main '("-h")))))
+(assert-str= "main prints docs help on docs --help"
+             app-docs-help-output
+             (capture-output (lambda () (app-main '("docs" "--help")))))
+(assert-str= "main prints docs help on docs -h"
+             app-docs-help-output
+             (capture-output (lambda () (app-main '("docs" "-h")))))
+(assert-str= "main prints docs output on docs"
+             app-docs-output
+             (capture-output (lambda () (app-main '("docs")))))
+(assert-str= "docs storage stdout"
+             (app-docs-topic-output "storage")
+             (capture-output (lambda () (app-main '("docs" "storage")))))
+(assert-str= "docs cli stdout"
+             (app-docs-topic-output "cli")
+             (capture-output (lambda () (app-main '("docs" "cli")))))
+(assert-str= "docs getting-started stdout"
+             (app-docs-topic-output "getting-started")
+             (capture-output (lambda () (app-main '("docs" "getting-started")))))
+(assert-str= "docs output-contract stdout"
+             (app-docs-topic-output "output-contract")
+             (capture-output (lambda () (app-main '("docs" "output-contract")))))
+(assert-str= "docs identity-ownership stdout"
+             (app-docs-topic-output "identity-ownership")
+             (capture-output (lambda () (app-main '("docs" "identity-ownership")))))
+(assert-str= "docs agent-runtimes stdout"
+             (app-docs-topic-output "agent-runtimes")
+             (capture-output (lambda () (app-main '("docs" "agent-runtimes")))))
+(assert-str= "docs sync stdout"
+             (app-docs-topic-output "sync")
+             (capture-output (lambda () (app-main '("docs" "sync")))))
+(assert-str= "docs doctor-reindex stdout"
+             (app-docs-topic-output "doctor-reindex")
+             (capture-output (lambda () (app-main '("docs" "doctor-reindex")))))
+(assert-str= "docs getting-started raw"
+             (app-docs-topic-markdown "getting-started")
+             (capture-output (lambda () (app-main '("docs" "getting-started" "--raw")))))
+(assert-str= "main prints completion help on completion no args"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion")))))
+(assert-str= "main prints completion help on completion help"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion" "help")))))
+(assert-str= "main prints completion help on completion --help"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion" "--help")))))
+(assert-str= "main prints completion help on completion -h"
+             app-completion-help-output
+             (capture-output (lambda () (app-main '("completion" "-h")))))
+(assert-str= "main prints events help on events no args"
+             app-events-help-output
+             (capture-output (lambda () (app-main '("events")))))
+(assert-str= "main prints events help on events help"
+             app-events-help-output
+             (capture-output (lambda () (app-main '("events" "help")))))
+(assert-str= "main prints events help on events --help"
+             app-events-help-output
+             (capture-output (lambda () (app-main '("events" "--help")))))
+(assert-str= "main prints events help on events -h"
+             app-events-help-output
+             (capture-output (lambda () (app-main '("events" "-h")))))
+(assert-str= "main prints events list --help errors"
+             "unsupported flag\n"
+             (capture-error-output (lambda () (app-main '("events" "list" "--help")))))
+(assert-str= "main prints doctor help on doctor --help"
+             app-doctor-help-output
+             (capture-output (lambda () (app-main '("doctor" "--help")))))
+(assert-str= "main prints doctor help on doctor help"
+             app-doctor-help-output
+             (capture-output (lambda () (app-main '("doctor" "help")))))
+(assert-str= "main prints doctor help on doctor summary --help"
+             app-doctor-help-output
+             (capture-output (lambda () (app-main '("doctor" "summary" "--help")))))
+(assert-str= "main prints doctor help on doctor dedupe --help"
+             app-doctor-help-output
+             (capture-output (lambda () (app-main '("doctor" "dedupe" "--help")))))
+(assert-str= "main prints reindex help on reindex --help"
+             app-reindex-help-output
+             (capture-output (lambda () (app-main '("reindex" "--help")))))
+(assert-str= "main accepts events list --limit=3"
+             (capture-output (lambda () (app-main '("events" "list" "--limit=3"))))
+             (capture-output (lambda () (app-main '("events" "list" "--limit" "3")))))
+(assert-str= "main prints status output on status"
+             (app-status-output)
+             (capture-output (lambda () (app-main '("status")))))
+(assert-str= "main prints status help on status --help"
+             app-status-help-output
+             (capture-error-output (lambda () (app-main '("status" "--help")))))
+(assert-str= "main prints status help on status help"
+             app-status-help-output
+             (capture-error-output (lambda () (app-main '("status" "help")))))
+(assert-str= "main prints identity help on identity"
+             app-identity-help-output
+             (capture-output (lambda () (app-main '("identity")))))
+(assert-str= "main prints identity help on identity --help"
+             app-identity-help-output
+             (capture-output (lambda () (app-main '("identity" "--help")))))
+(assert-str= "main prints identity help on identity list --help"
+             app-identity-help-output
+             (capture-output (lambda () (app-main '("identity" "list" "--help")))))
+(assert-str= "main prints identity list on identity list"
+             (app-identity-list-output)
+             (capture-output (lambda () (app-main '("identity" "list")))))
+(assert-str= "main prints identity whoami on identity whoami"
+             (app-identity-whoami-output)
+             (capture-output (lambda () (app-main '("identity" "whoami")))))
+(assert-str= "main prints workspace help on workspace"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace")))))
+(assert-str= "main prints workspace help on workspace help"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace" "help")))))
+(assert-str= "main prints workspace help on workspace --help"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace" "--help")))))
+(assert-str= "main prints workspace help on workspace -h"
+             app-workspace-help-output
+             (capture-output (lambda () (app-main '("workspace" "-h")))))
+(assert-str= "main prints workspace current on workspace current"
+             (app-workspace-current-output)
+             (capture-output (lambda () (app-main '("workspace" "current")))))
+(assert-str= "main prints workspace list on workspace list"
+             (app-workspace-list-output)
+             (capture-output (lambda () (app-main '("workspace" "list")))))
+(assert-str= "main prints projects help on projects"
+             app-projects-help-output
+             (capture-output (lambda () (app-main '("projects")))))
+(assert-str= "main prints items help on items"
+             app-items-help-output
+             (capture-output (lambda () (app-main '("items")))))
+(assert-str= "main prints items help on tasks"
+             app-items-help-output
+             (capture-output (lambda () (app-main '("tasks")))))
+(assert-str= "main prints projects help on projects --help"
+             app-projects-help-output
+             (capture-output (lambda () (app-main '("projects" "--help")))))
+(assert-str= "main prints projects help on projects help"
+             app-projects-help-output
+             (capture-output (lambda () (app-main '("projects" "help")))))
+(assert-str= "main prints projects list on projects list"
+             (capture-output (lambda () (app-print-projects-list)))
+             (capture-output (lambda () (app-main '("projects" "list")))))
+(assert-str= "main prints projects current on projects current"
+             (capture-output (lambda () (app-print-projects-current)))
+             (capture-output (lambda () (app-main '("projects" "current")))))
+(assert-str= "main prints projects use on current project"
+             (capture-output (lambda () (app-main '("projects" "current"))))
+             (capture-output (lambda () (app-main '("projects" "use" "proj-d1743158")))))
+(assert-str= "main prints projects archive missing project not found"
+             "project not found\n"
+             (capture-error-output (lambda () (app-main '("projects" "archive" "proj-nope")))))
+(assert-str= "main prints completion bash on completion bash"
+             (read-fixture "completion-bash")
+             (capture-output (lambda () (app-main '("completion" "bash")))))
+(assert-str= "main prints completion zsh on completion zsh"
+             (read-fixture "completion-zsh")
+             (capture-output (lambda () (app-main '("completion" "zsh")))))
+(assert-str= "main prints completion fish on completion fish"
+             (read-fixture "completion-fish")
+             (capture-output (lambda () (app-main '("completion" "fish")))))
+
+(assert-cli-case "help" root-help-fixture '("help"))
+(assert-cli-case "--help" root-help-fixture '("--help"))
+(assert-cli-case "-h" root-help-fixture '("-h"))
+(assert-cli-case "docs --help" "docs-help" '("docs" "--help"))
+(assert-cli-case "docs -h" "docs-help" '("docs" "-h"))
+(assert-cli-case "docs" "docs" '("docs"))
+(assert-cli-case "completion" "completion-help" '("completion"))
+(assert-cli-case "completion help" "completion-help" '("completion" "help"))
+(assert-cli-case "completion --help" "completion-help" '("completion" "--help"))
+(assert-cli-case "completion -h" "completion-help" '("completion" "-h"))
+(assert-cli-case "events" "events-help" '("events"))
+(assert-cli-case "events help" "events-help" '("events" "help"))
+(assert-cli-case "events --help" "events-help" '("events" "--help"))
+(assert-cli-case "events -h" "events-help" '("events" "-h"))
+(assert-cli-case-err "events list --help" "events-list-help" '("events" "list" "--help"))
+(assert-cli-case "doctor --help" "doctor-help" '("doctor" "--help"))
+(assert-cli-case "doctor help" "doctor-help" '("doctor" "help"))
+(assert-cli-case "doctor summary --help" "doctor-help" '("doctor" "summary" "--help"))
+(assert-cli-case "doctor dedupe --help" "doctor-help" '("doctor" "dedupe" "--help"))
+(assert-cli-case "reindex --help" "reindex-help" '("reindex" "--help"))
+(assert-cli-case-err "sync" "sync-help" '("sync"))
+(assert-cli-fixture-case-err "sync --help" "sync-help" '("sync" "--help") 256)
+(assert-cli-fixture-case-err "sync help" "sync-help" '("sync" "help") 256)
+(assert-cli-case-err "status --help" "status-help" '("status" "--help"))
+(assert-cli-case-err "status help" "status-help" '("status" "help"))
+(assert-cli-case "identity" "identity-help" '("identity"))
+(assert-cli-case "identity --help" "identity-help" '("identity" "--help"))
+(assert-cli-case "identity list --help" "identity-help" '("identity" "list" "--help"))
+(assert-cli-case "identity whoami --help" "identity-help" '("identity" "whoami" "--help"))
+(assert-cli-case "workspace" "workspace-help" '("workspace"))
+(assert-cli-case "workspace help" "workspace-help" '("workspace" "help"))
+(assert-cli-case "workspace --help" "workspace-help" '("workspace" "--help"))
+(assert-cli-case "workspace -h" "workspace-help" '("workspace" "-h"))
+(assert-cli-case "workspace init --help" "workspace-init-help" '("workspace" "init" "--help"))
+(assert-cli-case "workspace add --help" "workspace-add-help" '("workspace" "add" "--help"))
+(assert-cli-case "workspace use --help" "workspace-use-help" '("workspace" "use" "--help"))
+(assert-cli-case "projects --help" "projects-help" '("projects" "--help"))
+(assert-cli-case "projects help" "projects-help" '("projects" "help"))
+(assert-cli-case "completion bash" "completion-bash" '("completion" "bash"))
+(assert-cli-case "completion zsh" "completion-zsh" '("completion" "zsh"))
+(assert-cli-case "completion fish" "completion-fish" '("completion" "fish"))
+
+(define workspace-init-root-dir (temp-dir "cluck-ro-init-workspace-"))
+(define workspace-init-cluck-config-dir (temp-dir "cluck-ro-init-config-cluck-"))
+(define workspace-init-output
+  (cluck-json-output-in-config workspace-init-cluck-config-dir
+                               (list "workspace"
+                                     "init"
+                                     "testws"
+                                     "--dir"
+                                     workspace-init-root-dir
+                                     "--use")))
+(assert-str= "workspace init workspace"
+             "testws"
+             (json-output-field workspace-init-output "workspace" ""))
+(assert-str= "workspace init kind"
+             "local"
+             (json-output-field workspace-init-output "kind" ""))
+(assert-true "workspace init used"
+             (json-output-field workspace-init-output "used" false))
+(define workspace-init-created-dir
+  (json-output-field workspace-init-output "dir" ""))
+(assert-true "workspace init created workspace meta"
+             (fs/file? (fs/path workspace-init-created-dir "meta" "workspace.json")))
+(assert-true "workspace init created device file"
+             (fs/file? (fs/path workspace-init-created-dir ".ro" "device.json")))
+(assert-true "workspace init created sqlite file"
+             (fs/file? (fs/path workspace-init-created-dir ".ro" "index.sqlite")))
+(define workspace-use-after-init-output
+  (cluck-json-output-in-config workspace-init-cluck-config-dir
+                               (list "workspace"
+                                     "use"
+                                     "testws")))
+(assert-str= "workspace use after init workspace"
+             "testws"
+             (json-output-field workspace-use-after-init-output "workspace" ""))
+(assert-str= "workspace use after init dir"
+             workspace-init-created-dir
+             (json-output-field workspace-use-after-init-output "dir" ""))
+
+(define workspace-add-root-dir (temp-dir "cluck-ro-add-workspace-"))
+(define workspace-add-cluck-config-dir (temp-dir "cluck-ro-add-config-cluck-"))
+(define workspace-add-output
+  (cluck-json-output-in-config workspace-add-cluck-config-dir
+                               (list "workspace"
+                                     "add"
+                                     "git-workspace"
+                                     "--dir"
+                                     workspace-add-root-dir
+                                     "--kind"
+                                     "git"
+                                     "--use")))
+(assert-str= "workspace add workspace"
+             "git-workspace"
+             (json-output-field workspace-add-output "workspace" ""))
+(assert-str= "workspace add kind"
+             "git"
+             (json-output-field workspace-add-output "kind" ""))
+(assert-true "workspace add used"
+             (json-output-field workspace-add-output "used" false))
+(define workspace-add-created-dir
+  (json-output-field workspace-add-output "dir" ""))
+(assert-true "workspace add created workspace meta"
+             (fs/file? (fs/path workspace-add-created-dir "meta" "workspace.json")))
+(assert-true "workspace add created device file"
+             (fs/file? (fs/path workspace-add-created-dir ".ro" "device.json")))
+(assert-true "workspace add created sqlite file"
+             (fs/file? (fs/path workspace-add-created-dir ".ro" "index.sqlite")))
+(define workspace-use-after-add-output
+  (cluck-json-output-in-config workspace-add-cluck-config-dir
+                               (list "workspace"
+                                     "use"
+                                     "git-workspace")))
+(assert-str= "workspace use after add workspace"
+             "git-workspace"
+             (json-output-field workspace-use-after-add-output "workspace" ""))
+(assert-str= "workspace use after add dir"
+             workspace-add-created-dir
+             (json-output-field workspace-use-after-add-output "dir" ""))
+
+(if run-live-parity?
+    (begin
+      (assert-cli-json-parity "items show" '("items" "show" "item-vvo" "--format" "json"))
+      (assert-cli-json-parity "item shortcut" '("item-vvo" "--format" "json"))
+      (assert-cli-json-parity "items list" '("items" "list" "--format" "json"))
+      (assert-cli-json-parity "items ready" '("items" "ready" "--format" "json"))
+      (assert-cli-json-parity "items events" '("items" "events" "item-vvo" "--format" "json"))
+      (assert-cli-json-parity "events list" '("events" "list" "--limit" "3"))
+      (assert-cli-json-parity "doctor" '("doctor"))
+      (assert-cli-json-parity "doctor --fail" '("doctor" "--fail"))
+      (assert-cli-json-parity "doctor summary" '("doctor" "summary"))
+      (assert-cli-json-parity "doctor summary --fail" '("doctor" "summary" "--fail"))
+      (assert-cli-json-parity "doctor dedupe" '("doctor" "dedupe"))
+      (assert-cli-json-parity "doctor dedupe --write --force" '("doctor" "dedupe" "--write" "--force"))
+      (assert-cli-json-parity "reindex" '("reindex"))
+      (assert-cli-json-parity "sync status" '("sync" "status"))
+      (assert-cli-json-parity "sync status --help" '("sync" "status" "--help"))
+      (assert-cli-json-parity "sync remotes" '("sync" "remotes"))
+      (assert-cli-json-parity "sync remotes --help" '("sync" "remotes" "--help"))
+      (assert-cli-json-parity "sync reindex" '("sync" "reindex"))
+      (assert-cli-json-parity "sync reindex --help" '("sync" "reindex" "--help"))
+      (assert-cli-parity "status" '("status"))
+      (assert-cli-parity "identity list" '("identity" "list"))
+      (assert-cli-parity "identity whoami" '("identity" "whoami"))
+      (assert-cli-parity "workspace current" '("workspace" "current"))
+      (assert-cli-parity "workspace list" '("workspace" "list"))
+      (assert-cli-json-parity "projects list" '("projects" "list"))
+      (assert-cli-json-parity "projects list --help" '("projects" "list" "--help"))
+      (assert-cli-parity "projects use current project" '("projects" "use" "proj-d1743158"))
+      (assert-cli-parity "projects use --help" '("projects" "use" "--help"))
+      (assert-cli-parity "projects use help" '("projects" "use" "help"))
+      (assert-cli-json-parity "projects current" '("projects" "current"))
+      (assert-cli-json-parity "projects current --help" '("projects" "current" "--help")))
+    (pass "skipped live Odin parity"))

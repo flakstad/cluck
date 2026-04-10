@@ -1,0 +1,8 @@
+ro identity
+
+usage:
+  ro identity list
+  ro identity whoami
+  ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]
+  ro identity use <actor-id>
+  ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]

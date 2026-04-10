@@ -1,0 +1,6 @@
+ro doctor
+
+usage:
+  ro doctor [--fail]
+  ro doctor summary [--fail]
+  ro doctor dedupe [--write --force] [--fail]

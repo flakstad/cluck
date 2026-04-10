@@ -1,0 +1,17 @@
+_ro_complete() {
+  local cur cmd
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  cmd="${COMP_WORDS[1]}"
+
+  if [[ ${COMP_CWORD} -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "agent attachments capture comments completion deps docs doctor help identity init items reindex status sync tasks worklog workspace" -- "$cur") )
+    return 0
+  fi
+
+  case "$cmd" in
+    docs) COMPREPLY=( $(compgen -W "cli getting-started output-contract storage identity-ownership agent-runtimes sync doctor-reindex" -- "$cur") ) ;;
+    *) COMPREPLY=() ;;
+  esac
+}
+
+complete -F _ro_complete ro

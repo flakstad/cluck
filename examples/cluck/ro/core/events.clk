@@ -1,0 +1,275 @@
+;; Pure event-log helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.events
+  (:require [cluck.io :as io]
+            [json :as json]))
+
+(defn json-key->text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-find-entry
+  [entries key]
+  (let ((items (if (vector? entries)
+                   (vector->list entries)
+                   (if (or (not entries)
+                           (null? entries))
+                       '()
+                       (seq entries)))))
+    (if (empty? items)
+        false
+        (let loop ((xs items))
+          (cond
+            (empty? xs) false
+            (string=? (json-key->text (first (car xs))) key) (car xs)
+            :else (loop (cdr xs)))))))
+
+(defn json-field-value
+  [entries key default]
+  (let ((entry (json-find-entry entries key)))
+    (if entry
+        (cdr entry)
+        default)))
+
+(defn json-first-field-value
+  [entries keys default]
+  (if (or (not keys)
+          (null? keys))
+      default
+      (let ((entry (json-find-entry entries (car keys))))
+        (if entry
+            (cdr entry)
+            (json-first-field-value entries (cdr keys) default)))))
+
+(defn compact-json-step
+  [text i len in-string? escaped? acc]
+  (if (= i len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text i)]
+        (cond
+          escaped?
+          (compact-json-step text (+ i 1) len in-string? false (cons ch acc))
+
+          (char=? ch #\")
+          (compact-json-step text (+ i 1) len (not in-string?) false (cons ch acc))
+
+          (and in-string?
+               (char=? ch #\\))
+          (compact-json-step text (+ i 1) len true true (cons ch acc))
+
+          in-string?
+          (compact-json-step text (+ i 1) len true false (cons ch acc))
+
+          (char-whitespace? ch)
+          (compact-json-step text (+ i 1) len false false acc)
+
+          :else
+          (compact-json-step text (+ i 1) len false false (cons ch acc))))))
+
+(defn compact-json-text
+  [text]
+  (compact-json-step text 0 (string-length text) false false '()))
+
+(defn event-line->record
+  [path line-number line]
+  (let ((raw-event
+         (call-with-input-string
+          line
+          (fn [port]
+            (json/json-read port))))
+        (event-id (or (json-first-field-value raw-event (list "eventId" "event_id") "") ""))
+        (workspace-id (or (json-first-field-value raw-event (list "workspaceId" "workspace_id") "") ""))
+        (replica-id (or (json-first-field-value raw-event (list "replicaId" "replica_id") "") ""))
+        (entity-kind (or (json-first-field-value raw-event (list "entityKind" "entity_kind") "") ""))
+        (entity-id (or (json-first-field-value raw-event (list "entityId" "entity_id") "") ""))
+        (entity-seq (or (json-first-field-value raw-event (list "entitySeq" "entity_seq") 0) 0))
+        (typ (or (json-first-field-value raw-event (list "type" "typ") "") ""))
+        (parents (or (json-first-field-value raw-event (list "parents") '()) '()))
+        (issued-at (or (json-first-field-value raw-event (list "issuedAt" "issued_at") "") ""))
+        (actor-id (or (json-first-field-value raw-event (list "actorId" "actor_id") "") ""))
+        (payload (or (json-first-field-value raw-event (list "payload") '()) '()))
+        (local-status (or (json-first-field-value raw-event (list "localStatus" "local_status") "local") "local"))
+        (server-status (or (json-first-field-value raw-event (list "serverStatus" "server_status") "pending") "pending"))
+        (rejection-reason (or (json-first-field-value raw-event (list "rejectionReason" "rejection_reason") "") ""))
+        (published-at-unixms (or (json-first-field-value raw-event (list "publishedAtUnixms" "published_at_unixms") 0) 0))
+        (has-published-at (or (json-first-field-value raw-event (list "hasPublishedAt" "has_published_at") false) false)))
+    (vector
+     (cons 'path path)
+     (cons 'line line-number)
+     (cons 'event_id event-id)
+     (cons 'workspace_id workspace-id)
+     (cons 'replica_id replica-id)
+     (cons 'entity_kind entity-kind)
+     (cons 'entity_id entity-id)
+     (cons 'entity_seq entity-seq)
+     (cons 'typ typ)
+     (cons 'parents parents)
+     (cons 'issued_at issued-at)
+     (cons 'actor_id actor-id)
+     (cons 'payload payload)
+     (cons 'local_status local-status)
+     (cons 'server_status server-status)
+     (cons 'rejection_reason rejection-reason)
+     (cons 'published_at_unixms published-at-unixms)
+     (cons 'has_published_at has-published-at))))
+
+(defn event-materialize-record
+  [issued-at->unixms record]
+  (let ((issued-at (or (json-field-value record "issued_at" "") ""))
+        (payload (or (json-field-value record "payload" '()) '()))
+        (payload-json
+         (compact-json-text
+          (io/with-output-string
+           (fn [port]
+             (json/json-write payload port)))))
+        (issued-at-unixms
+         (if (or (not issued-at)
+                 (string=? issued-at ""))
+             0
+             (issued-at->unixms issued-at))))
+    (vector
+     (cons 'path (json-field-value record "path" ""))
+     (cons 'line (json-field-value record "line" 0))
+     (cons 'event_id (json-field-value record "event_id" ""))
+     (cons 'workspace_id (json-field-value record "workspace_id" ""))
+     (cons 'replica_id (json-field-value record "replica_id" ""))
+     (cons 'entity_kind (json-field-value record "entity_kind" ""))
+     (cons 'entity_id (json-field-value record "entity_id" ""))
+     (cons 'entity_seq (json-field-value record "entity_seq" 0))
+     (cons 'typ (json-field-value record "typ" ""))
+     (cons 'parents (json-field-value record "parents" '()))
+     (cons 'issued_at issued-at)
+     (cons 'issued_at_unixms issued-at-unixms)
+     (cons 'actor_id (json-field-value record "actor_id" ""))
+     (cons 'payload payload)
+     (cons 'payload_json payload-json)
+     (cons 'local_status (json-field-value record "local_status" "local"))
+     (cons 'server_status (json-field-value record "server_status" "pending"))
+     (cons 'rejection_reason (json-field-value record "rejection_reason" ""))
+     (cons 'published_at_unixms (json-field-value record "published_at_unixms" 0))
+     (cons 'has_published_at (json-field-value record "has_published_at" false)))))
+
+(defn event-record<?
+  [left right]
+  (let ((left-issued-at (or (json-field-value left "issued_at" "") ""))
+        (right-issued-at (or (json-field-value right "issued_at" "") ""))
+        (left-event-id (or (json-field-value left "event_id" "") ""))
+        (right-event-id (or (json-field-value right "event_id" "") ""))
+        (left-replica-id (or (json-field-value left "replica_id" "") ""))
+        (right-replica-id (or (json-field-value right "replica_id" "") ""))
+        (left-path (or (json-field-value left "path" "") ""))
+        (right-path (or (json-field-value right "path" "") ""))
+        (left-line (or (json-field-value left "line" 0) 0))
+        (right-line (or (json-field-value right "line" 0) 0)))
+    (cond
+      (string<? left-issued-at right-issued-at) true
+      (string<? right-issued-at left-issued-at) false
+      (string<? left-event-id right-event-id) true
+      (string<? right-event-id left-event-id) false
+      (string<? left-replica-id right-replica-id) true
+      (string<? right-replica-id left-replica-id) false
+      (string<? left-path right-path) true
+      (string<? right-path left-path) false
+      (< left-line right-line) true
+      (> left-line right-line) false
+      :else false)))
+
+(defn events-merge-record-lists
+  [left right]
+  (cond
+    (empty? left) right
+    (empty? right) left
+    (event-record<? (car left) (car right))
+    (cons (car left)
+          (events-merge-record-lists (cdr left) right))
+    :else
+    (cons (car right)
+          (events-merge-record-lists left (cdr right)))))
+
+(defn events-split-records
+  [records]
+  (let loop ((slow records)
+             (fast records)
+             (left '()))
+    (if (or (empty? fast)
+            (empty? (cdr fast)))
+        (cons (reverse left) slow)
+        (loop (cdr slow)
+              (cddr fast)
+              (cons (car slow) left)))))
+
+(defn events-sort-records
+  [records]
+  (if (or (empty? records)
+          (empty? (cdr records)))
+      records
+      (let ((parts (events-split-records records))
+            (left (car parts))
+            (right (cdr parts)))
+        (events-merge-record-lists (events-sort-records left)
+                                   (events-sort-records right)))))
+
+(def events-default-limit 200)
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (if (empty? args)
+      false
+      (let loop ((xs (seq args)))
+        (cond
+          (empty? xs) false
+          (help-flag? (car xs)) true
+          :else (loop (cdr xs))))))
+
+(defn events-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    (vector 'help '())
+
+    (string=? (first args) "list")
+    (cond
+      (empty? (rest args))
+      (vector 'list events-default-limit)
+
+      (any-help-arg? (rest args))
+      (vector 'unsupported-flag '())
+
+      :else
+      (let loop ((xs (rest args))
+                 (limit events-default-limit))
+        (cond
+          (empty? xs)
+          (vector 'list limit)
+
+          (string=? (first xs) "--limit")
+          (if (empty? (rest xs))
+              (vector 'error "ro events list expects a value after --limit" args)
+              (let ((next-limit (parse-long (first (rest xs)))))
+                (if (< next-limit 0)
+                    (vector 'error "ro events list expects a non-negative --limit" next-limit)
+                    (loop (cddr xs) next-limit))))
+
+          (str/starts-with? (first xs) "--limit=")
+          (let ((value (substring (first xs) 8 (string-length (first xs))))
+                (next-limit (parse-long value)))
+            (if (< next-limit 0)
+                (vector 'error "ro events list expects a non-negative --limit" next-limit)
+                (loop (cdr xs) next-limit)))
+
+          :else
+          (vector 'unsupported-flag '()))))
+
+    :else
+    (vector 'error "unsupported events subcommand" args)))

@@ -1,0 +1,6 @@
+ro docs
+
+usage:
+  ro docs
+  ro docs <topic>
+  ro docs <topic> --raw
