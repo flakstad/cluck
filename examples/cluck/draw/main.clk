@@ -12,6 +12,7 @@
             [cluck.examples.draw.panel :as draw-panel]
             [cluck.examples.draw.geometry :as draw-geometry]
             [cluck.examples.draw.selection :as draw-selection]
+            [cluck.examples.draw.actions :as draw-actions]
             [cluck.examples.draw.canvas :as draw-canvas]
             [cluck.examples.draw.render :as draw-render]
             [cluck.examples.draw.edit :as draw-edit]
@@ -1328,14 +1329,11 @@
 (defn draw-set-brush-size-core!
   "Set the brush size and return to brush mode, recording undo history."
   [state size]
-  (let [state (draw-push-history! state)
-        next-state (assoc state
-                          :brush-size size
-                          :eraser? false)]
-    (draw-log-entry! :brush-size
-                     {:size size
-                      :state (draw-state-snapshot next-state)})
-    next-state))
+  (draw-actions/draw-set-brush-size-core! state
+                                          size
+                                          draw-push-history!
+                                          draw-state-snapshot
+                                          draw-log-entry!))
 
 (defn draw-set-brush-size!
   "Set the brush size and return to brush mode, recording undo history."
@@ -1351,14 +1349,10 @@
 (defn draw-toggle-eraser-core!
   "Toggle eraser mode for STATE and record undo history."
   [state]
-  (let [state (draw-push-history! state)
-        next-state (assoc state
-                          :tool :ink
-                          :eraser? (not (get state :eraser?)))]
-    (draw-log-entry! :eraser-toggle
-                     {:eraser? (get next-state :eraser?)
-                      :state (draw-state-snapshot next-state)})
-    next-state))
+  (draw-actions/draw-toggle-eraser-core! state
+                                         draw-push-history!
+                                         draw-state-snapshot
+                                         draw-log-entry!))
 
 (defn draw-toggle-eraser!
   "Toggle eraser mode for STATE and record undo history."
@@ -1374,26 +1368,12 @@
 (defn draw-clear-strokes-core!
   "Clear all finished and active strokes from STATE and record undo history."
   [state]
-  (let [state (draw-push-history! state)]
-    (draw-clear-preview!)
-    (let [next-state (draw-sync-elements
-                       (assoc state
-                              :selection []
-                              :active-selection-drag false
-                              :active-selection-resize false
-                              :active-selection-rotate false
-                              :active-stroke false
-                              :active-box false
-                              :active-arrow false
-                              :active-frame false
-                              :active-text false
-                              :pointer-down? false
-                              :panning? false
-                              :canvas-dirty? true)
-                       [])]
-      (draw-log-entry! :clear
-                       {:state (draw-state-snapshot next-state)})
-      next-state)))
+  (draw-actions/draw-clear-strokes-core! state
+                                         draw-push-history!
+                                         draw-clear-preview!
+                                         draw-sync-elements
+                                         draw-state-snapshot
+                                         draw-log-entry!))
 
 (defn draw-clear-strokes!
   "Clear all finished and active strokes from STATE and record undo history."
@@ -1409,11 +1389,11 @@
 (defn draw-undo-stroke-core!
   "Undo the most recent draw action."
   [state]
-  (draw-clear-preview!)
-  (let [next-state (assoc (draw-restore-history! state) :canvas-dirty? true)]
-    (draw-log-entry! :undo
-                     {:state (draw-state-snapshot next-state)})
-    next-state))
+  (draw-actions/draw-undo-stroke-core! state
+                                       draw-clear-preview!
+                                       draw-restore-history!
+                                       draw-state-snapshot
+                                       draw-log-entry!))
 
 (defn draw-undo-stroke!
   "Undo the most recent draw action."

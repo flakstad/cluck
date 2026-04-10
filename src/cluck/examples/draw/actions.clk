@@ -1,0 +1,60 @@
+;; Draw tool action helpers.
+
+(ns cluck.examples.draw.actions)
+
+(defn draw-set-brush-size-core!
+  "Set the brush size and return to brush mode, recording undo history."
+  [state size push-history! state-snapshot log-entry!]
+  (let [state (push-history! state)
+        next-state (assoc state
+                          :brush-size size
+                          :eraser? false)]
+    (log-entry! :brush-size
+                {:size size
+                 :state (state-snapshot next-state)})
+    next-state))
+
+(defn draw-toggle-eraser-core!
+  "Toggle eraser mode for STATE and record undo history."
+  [state push-history! state-snapshot log-entry!]
+  (let [state (push-history! state)
+        next-state (assoc state
+                          :tool :ink
+                          :eraser? (not (get state :eraser?)))]
+    (log-entry! :eraser-toggle
+                {:eraser? (get next-state :eraser?)
+                 :state (state-snapshot next-state)})
+    next-state))
+
+(defn draw-clear-strokes-core!
+  "Clear all finished and active strokes from STATE and record undo history."
+  [state push-history! clear-preview! sync-elements state-snapshot log-entry!]
+  (let [state (push-history! state)]
+    (clear-preview!)
+    (let [next-state (sync-elements
+                       (assoc state
+                              :selection []
+                              :active-selection-drag false
+                              :active-selection-resize false
+                              :active-selection-rotate false
+                              :active-stroke false
+                              :active-box false
+                              :active-arrow false
+                              :active-frame false
+                              :active-text false
+                              :pointer-down? false
+                              :panning? false
+                              :canvas-dirty? true)
+                       [])]
+      (log-entry! :clear
+                  {:state (state-snapshot next-state)})
+      next-state)))
+
+(defn draw-undo-stroke-core!
+  "Undo the most recent draw action."
+  [state clear-preview! restore-history! state-snapshot log-entry!]
+  (clear-preview!)
+  (let [next-state (assoc (restore-history! state) :canvas-dirty? true)]
+    (log-entry! :undo
+                {:state (state-snapshot next-state)})
+    next-state))
