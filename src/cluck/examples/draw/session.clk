@@ -1,0 +1,78 @@
+;; Draw session and persistence helpers.
+
+(ns cluck.examples.draw.session
+  (:require [cluck.fs :as fs]
+            [cluck.io :as io]
+            [cluck.edn :as edn]))
+
+(defn draw-dump-state!
+  "Write the current full draw state to PATH, or the default state file."
+  [path default-path current-state write-file-atomic!]
+  (let [target (if path
+                 (fs/path path)
+                 default-path)]
+    (write-file-atomic! target (pr-str (current-state)))
+    target))
+
+(defn draw-set-state-core!
+  "Install STATE and refresh the cached canvas if needed."
+  [state normalize-state supervised-mode? assign-state! write-control-command! reset-preview-sync! clear-preview! state-snapshot log-entry! running? render-current!]
+  (let [next-state (assoc (normalize-state state) :canvas-dirty? true)]
+    (if (supervised-mode?)
+      (begin
+        (assign-state! next-state)
+        (write-control-command! :set-state next-state)
+        next-state)
+      (begin
+        (assign-state! next-state)
+        (reset-preview-sync!)
+        (clear-preview!)
+        (log-entry! :set-state {:state (state-snapshot next-state)})
+        (if (running?)
+          nil
+          (render-current!))
+        next-state))))
+
+(defn draw-save-canvas-core!
+  "Write STATE to the default draw save file and return STATE."
+  [state state-file-path ensure-parent-directory! state-snapshot log-entry!]
+  (let [path state-file-path]
+    (ensure-parent-directory! path)
+    (io/spit path (pr-str state))
+    (log-entry! :save
+                {:path path
+                 :state (state-snapshot state)})
+    state))
+
+(defn draw-load-canvas-core!
+  "Load draw state from the default save file and return the next state."
+  [state state-file-path normalize-state state-snapshot log-entry!]
+  (let [path state-file-path]
+    (if (fs/exists? path)
+      (let [loaded (normalize-state
+                     (edn/read-string (io/slurp path)))
+            next-state (assoc loaded
+                              :debug-panel? (if (get state :debug-panel?) true false)
+                              :tool-panel? (if (get state :tool-panel?) true false)
+                              :window-focused? (if (contains? state :window-focused?)
+                                                 (get state :window-focused?)
+                                                 true)
+                              :running? (if (contains? state :running?)
+                                          (get state :running?)
+                                          true)
+                              :canvas-dirty? true)]
+        (log-entry! :load
+                    {:path path
+                     :state (state-snapshot next-state)})
+        next-state)
+      state)))
+
+(defn current-state
+  "Return the current draw state."
+  [supervised-mode? child-alive? child-pid read-state-file fallback-state]
+  (if (supervised-mode?)
+    (if (child-alive? child-pid)
+      (or (read-state-file)
+          fallback-state)
+      fallback-state)
+    fallback-state))

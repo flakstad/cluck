@@ -14,6 +14,7 @@
             [cluck.examples.draw.selection :as draw-selection]
             [cluck.examples.draw.actions :as draw-actions]
             [cluck.examples.draw.canvas :as draw-canvas]
+            [cluck.examples.draw.session :as draw-session]
             [cluck.examples.draw.render :as draw-render]
             [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.create :as draw-create]
@@ -750,11 +751,10 @@
 (defn draw-dump-state!
   "Write the current full draw state to PATH, or the default state file."
   [path]
-  (let [target (if path
-                 (fs/path path)
-                 (draw-state-file-path))]
-    (draw-write-file-atomic! target (pr-str (current-state)))
-    target))
+  (draw-session/draw-dump-state! path
+                                 (draw-state-file-path)
+                                 current-state
+                                 draw-write-file-atomic!))
 
 (defn dump-current-state!
   "Write the current full draw state to the default dump file."
@@ -764,21 +764,18 @@
 (defn draw-set-state-core!
   "Install STATE and refresh the cached canvas if needed."
   [state]
-  (let [next-state (assoc (draw-normalize-state state) :canvas-dirty? true)]
-    (if (draw-supervised-mode?)
-      (begin
-        (set! *draw-state* next-state)
-        (draw-write-control-command! :set-state next-state)
-        next-state)
-      (begin
-        (set! *draw-state* next-state)
-        (draw-reset-preview-sync!)
-        (draw-clear-preview!)
-        (draw-log-entry! :set-state {:state (draw-state-snapshot *draw-state*)})
-        (if *draw-running?*
-          nil
-          (draw-render-current!))
-        *draw-state*))))
+  (draw-session/draw-set-state-core! state
+                                     draw-normalize-state
+                                     draw-supervised-mode?
+                                     (lambda (next-state)
+                                       (set! *draw-state* next-state))
+                                     draw-write-control-command!
+                                     draw-reset-preview-sync!
+                                     draw-clear-preview!
+                                     draw-state-snapshot
+                                     draw-log-entry!
+                                     (lambda () *draw-running?*)
+                                     draw-render-current!))
 
 (defn draw-load-state-core!
   "Install STATE after loading it from disk."
@@ -788,36 +785,20 @@
 (defn draw-save-canvas-core!
   "Write STATE to the default draw save file and return STATE."
   [state]
-  (let [path (draw-state-file-path)]
-    (draw-ensure-parent-directory! path)
-    (io/spit path (pr-str state))
-    (draw-log-entry! :save
-                     {:path path
-                      :state (draw-state-snapshot state)})
-    state))
+  (draw-session/draw-save-canvas-core! state
+                                       (draw-state-file-path)
+                                       draw-ensure-parent-directory!
+                                       draw-state-snapshot
+                                       draw-log-entry!))
 
 (defn draw-load-canvas-core!
   "Load draw state from the default save file and return the next state."
   [state]
-  (let [path (draw-state-file-path)]
-    (if (fs/exists? path)
-      (let [loaded (draw-normalize-state
-                     (edn/read-string (io/slurp path)))
-            next-state (assoc loaded
-                              :debug-panel? (if (get state :debug-panel?) true false)
-                              :tool-panel? (if (get state :tool-panel?) true false)
-                              :window-focused? (if (contains? state :window-focused?)
-                                                 (get state :window-focused?)
-                                                 true)
-                              :running? (if (contains? state :running?)
-                                          (get state :running?)
-                                          true)
-                              :canvas-dirty? true)]
-        (draw-log-entry! :load
-                         {:path path
-                          :state (draw-state-snapshot next-state)})
-        next-state)
-      state)))
+  (draw-session/draw-load-canvas-core! state
+                                       (draw-state-file-path)
+                                       draw-normalize-state
+                                       draw-state-snapshot
+                                       draw-log-entry!))
 
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
@@ -844,12 +825,11 @@
 (defn current-state
   "Return the current draw state."
   []
-  (if (draw-supervised-mode?)
-    (if (draw-child-alive? *draw-child-pid*)
-      (or (draw-read-state-file)
-          *draw-state*)
-      *draw-state*)
-    *draw-state*))
+  (draw-session/current-state draw-supervised-mode?
+                              draw-child-alive?
+                              *draw-child-pid*
+                              draw-read-state-file
+                              *draw-state*))
 
 (defn reset-state!
   "Reset the current draw state to the default."
