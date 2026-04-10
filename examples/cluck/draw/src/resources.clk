@@ -261,7 +261,7 @@
       (dissoc context :cursor-cache :cursor-kind)
       context)))
 
-(defn draw-ensure-system-cursor!
+(defn draw-resource-ensure-system-cursor!
   "Return a cached system cursor pointer for KIND, creating it when needed."
   [context kind]
   (if (not context)
@@ -285,7 +285,7 @@
     (let [current-kind (get context :cursor-kind)]
       (if (equal? desired-kind current-kind)
         {:context context :kind desired-kind}
-        (let [cursor-result (draw-ensure-system-cursor! context desired-kind)
+        (let [cursor-result (draw-resource-ensure-system-cursor! context desired-kind)
               next-context (get cursor-result :context)
               cursor (get cursor-result :cursor)]
           (if cursor

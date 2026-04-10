@@ -7,7 +7,7 @@
 
 (import (chicken time))
 
-(load-file "test/draw-replay-script.clk")
+(load-file "examples/cluck/draw/test/draw-replay-script.clk")
 
 (define (draw-replay-pass label)
   (println "ok" label)

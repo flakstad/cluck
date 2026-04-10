@@ -2,7 +2,7 @@
 
 (in-ns 'cluck.examples.draw)
 
-(load-file "test/draw-brush-undo-script.clk")
+(load-file "examples/cluck/draw/test/draw-brush-undo-script.clk")
 
 (define (draw-brush-undo-pass label)
   (println "ok" label)

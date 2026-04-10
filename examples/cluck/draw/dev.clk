@@ -42,7 +42,7 @@
 
 (defn draw-dev-source-path
   [root]
-  (fs/path root "src/cluck/examples/draw/sdl3.clk"))
+  (fs/path root "examples/cluck/draw/src/sdl3.clk"))
 
 (defn draw-dev-source-mtime
   [path]

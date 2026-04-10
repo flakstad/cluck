@@ -12,7 +12,7 @@
 
 (let ((root (script-root)))
   (handle-exceptions exn #t
-    (create-directory (string-append root "../build")))
-  (load (string-append root "../src/cluck-init.scm"))
-  (load-file (string-append root "../examples/cluck/draw/dev.clk"))
+    (create-directory (string-append root "../../../../build")))
+  (load (string-append root "../../../../src/cluck-init.scm"))
+  (load-file (string-append root "../dev.clk"))
   (load-file (string-append root "draw-toggle.clk")))

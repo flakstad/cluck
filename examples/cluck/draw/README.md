@@ -5,7 +5,7 @@ This is the starting point for the SDL3 drawing app.
 What is in place:
 - a Cluck-only `main.clk`
 - a thin example-scoped `cluck.examples.draw.sdl3` direct-interop layer
-- extracted draw helper namespaces under `src/cluck/examples/draw/`, including state, history, view, panel, geometry, selection, actions, canvas, session, runtime, supervision, resources, render, status, commands, replay, edit, create, stroke, and input
+- extracted draw helper namespaces under `examples/cluck/draw/src/`, including state, history, view, panel, geometry, selection, actions, canvas, session, runtime, supervision, resources, render, status, commands, replay, edit, create, stroke, and input
 - a compiled runner entrypoint in `run.scm`
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
 - a first SDL3 window-open loop that clears the screen until quit
@@ -59,17 +59,17 @@ The intent is to build this interactively in small steps:
 6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `t` to place text, press `r` to switch into drag-to-create rectangle mode (`b` still works as a legacy alias), press `a` for drag-to-create arrows, and press `v` to switch into selection mode for moving existing elements; press `d` to toggle the debug panel and `tab` to toggle the tool panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
-9. when you are working on keyboard toggles or other input routing, run `csi -q -s test/run-draw-toggle.scm` for a fast focused probe
-10. when you are working on draw tools and state mutations, run `csi -q -s test/run-draw-tools.scm` for a fast focused probe
-11. when you are working on save/load round-trips, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-save-load.scm` for a fast focused probe
-12. when you are working on viewport transforms or world-space drawing, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-view.scm` for a fast focused probe
-13. when you are working on pen pressure, focus handling, or other input-state routing, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm` for a fast focused probe
-14. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm` for a fast focused probe
-15. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm` for a fast focused probe
-16. when you are working on the child-process supervision path itself, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-supervisor.scm`
-17. when you are working on input replay or performance inspection, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm` for a fast focused probe; pass a round count like `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000` when you want a longer sustained stress run
-18. when you want to exercise the real live window with scripted input, run `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-replay.scm` or omit the dummy video driver for an actual windowed session; this goes through `draw-replay-live!`
-19. when you want to exercise the brush-change and undo path specifically, run `csi -q -s test/run-draw-brush-undo.scm` for a fast focused probe or `SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-brush-undo.scm` for the live-window replay
+9. when you are working on keyboard toggles or other input routing, run `csi -q -s examples/cluck/draw/test/run-draw-toggle.scm` for a fast focused probe
+10. when you are working on draw tools and state mutations, run `csi -q -s examples/cluck/draw/test/run-draw-tools.scm` for a fast focused probe
+11. when you are working on save/load round-trips, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-save-load.scm` for a fast focused probe
+12. when you are working on viewport transforms or world-space drawing, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-view.scm` for a fast focused probe
+13. when you are working on pen pressure, focus handling, or other input-state routing, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-input.scm` for a fast focused probe
+14. when you are working on the canvas cache or render-target path, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-cache.scm` for a fast focused probe
+15. when you are working on the running lifecycle, restart, or hang recovery path, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-lifecycle.scm` for a fast focused probe
+16. when you are working on the child-process supervision path itself, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-supervisor.scm`
+17. when you are working on input replay or performance inspection, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-replay.scm` for a fast focused probe; pass a round count like `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-replay.scm 1000` when you want a longer sustained stress run
+18. when you want to exercise the real live window with scripted input, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-live-replay.scm` or omit the dummy video driver for an actual windowed session; this goes through `draw-replay-live!`
+19. when you want to exercise the brush-change and undo path specifically, run `csi -q -s examples/cluck/draw/test/run-draw-brush-undo.scm` for a fast focused probe or `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-live-brush-undo.scm` for the live-window replay
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
@@ -123,7 +123,7 @@ While the window is live:
 - use `(draw-log-tail 20)` to inspect the last log entries, `(draw-clear-log!)` to reset the trace, and `(dump-current-state!)` to write the current full state to disk while the app is still running
 - use `(draw-watchdog-status)` to inspect the watchdog configuration; `draw-enable-watchdog!` and `draw-disable-watchdog!` control the external stall watcher
 - use `(draw-supervisor-status)` to inspect the current child/supervisor status
-- if you are chasing brush-change or undo issues, use `draw-replay-live!` with `draw-brush-undo-script` or the dedicated `test/run-draw-brush-undo.scm` / `test/run-draw-live-brush-undo.scm` runners
+- if you are chasing brush-change or undo issues, use `draw-replay-live!` with `draw-brush-undo-script` or the dedicated `examples/cluck/draw/test/run-draw-brush-undo.scm` / `examples/cluck/draw/test/run-draw-live-brush-undo.scm` runners
 
 The launcher vendors a static SDL3 build under `build/vendor/`, so the
 resulting binary is self-contained rather than linked to a Homebrew SDL3

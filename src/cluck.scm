@@ -315,15 +315,35 @@
          (prefix "cluck/examples/"))
     (if (cluck-string-prefix? prefix path)
         (let* ((name (substring path (string-length prefix) (string-length path)))
-               (base (string-append "examples/cluck/" name)))
-          (list (string-append base "/main.clk")
-                (string-append base ".clk")
-                (string-append base "/main.clj")
-                (string-append base ".clj")
-                (string-append base "/main.clj.scm")
-                (string-append base ".clj.scm")
-                (string-append base "/main.scm")
-                (string-append base ".scm")))
+               (base (string-append "examples/cluck/" name))
+               (slash-pos
+                (let loop ((i 0) (found #f))
+                  (if (= i (string-length name))
+                      found
+                      (loop (+ i 1)
+                            (if (char=? (string-ref name i) #\/) i found)))))
+               (example-src-candidates
+                (if slash-pos
+                    (let* ((example-root (substring name 0 slash-pos))
+                           (module-path (substring name (+ slash-pos 1) (string-length name)))
+                           (example-base (string-append "examples/cluck/"
+                                                        example-root
+                                                        "/src/"
+                                                        module-path)))
+                      (list (string-append example-base ".clk")
+                            (string-append example-base ".clj")
+                            (string-append example-base ".clj.scm")
+                            (string-append example-base ".scm")))
+                    '())))
+          (append example-src-candidates
+                  (list (string-append base "/main.clk")
+                        (string-append base ".clk")
+                        (string-append base "/main.clj")
+                        (string-append base ".clj")
+                        (string-append base "/main.clj.scm")
+                        (string-append base ".clj.scm")
+                        (string-append base "/main.scm")
+                        (string-append base ".scm"))))
         '())))
 
 (define (cluck-module-candidates ns)

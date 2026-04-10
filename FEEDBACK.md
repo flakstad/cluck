@@ -20,3 +20,7 @@
   namespace resolved to the entrypoint wrapper with the same name at runtime,
   so example-scoped modules should currently prefer distinctive helper names
   rather than relying on namespace-local resolution for duplicated symbols.
+- 2026-04-10: `cluck.examples.<example>.*` namespaces now need to resolve under
+  `examples/cluck/<example>/src/` as well as the older flat example paths, or
+  extracted example modules fall back to pretending they belong under core
+  `src/`.

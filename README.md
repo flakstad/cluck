@@ -247,25 +247,25 @@ The SDL3 example is a minimal drawing app scaffold that now opens a window,
  selection tool, a first arrow tool, and a first text tool:
 
 - [`examples/cluck/draw/main.clk`](./examples/cluck/draw/main.clk)
-- [`src/cluck/examples/draw/sdl3.clk`](./src/cluck/examples/draw/sdl3.clk)
-- [`src/cluck/examples/draw/state.clk`](./src/cluck/examples/draw/state.clk)
-- [`src/cluck/examples/draw/history.clk`](./src/cluck/examples/draw/history.clk)
-- [`src/cluck/examples/draw/view.clk`](./src/cluck/examples/draw/view.clk)
-- [`src/cluck/examples/draw/panel.clk`](./src/cluck/examples/draw/panel.clk)
-- [`src/cluck/examples/draw/actions.clk`](./src/cluck/examples/draw/actions.clk)
-- [`src/cluck/examples/draw/canvas.clk`](./src/cluck/examples/draw/canvas.clk)
-- [`src/cluck/examples/draw/session.clk`](./src/cluck/examples/draw/session.clk)
-- [`src/cluck/examples/draw/runtime.clk`](./src/cluck/examples/draw/runtime.clk)
-- [`src/cluck/examples/draw/supervision.clk`](./src/cluck/examples/draw/supervision.clk)
-- [`src/cluck/examples/draw/resources.clk`](./src/cluck/examples/draw/resources.clk)
-- [`src/cluck/examples/draw/render.clk`](./src/cluck/examples/draw/render.clk)
-- [`src/cluck/examples/draw/edit.clk`](./src/cluck/examples/draw/edit.clk)
-- [`src/cluck/examples/draw/create.clk`](./src/cluck/examples/draw/create.clk)
-- [`src/cluck/examples/draw/status.clk`](./src/cluck/examples/draw/status.clk)
-- [`src/cluck/examples/draw/commands.clk`](./src/cluck/examples/draw/commands.clk)
-- [`src/cluck/examples/draw/replay.clk`](./src/cluck/examples/draw/replay.clk)
-- [`src/cluck/examples/draw/stroke.clk`](./src/cluck/examples/draw/stroke.clk)
-- [`src/cluck/examples/draw/input.clk`](./src/cluck/examples/draw/input.clk)
+- [`examples/cluck/draw/src/sdl3.clk`](./examples/cluck/draw/src/sdl3.clk)
+- [`examples/cluck/draw/src/state.clk`](./examples/cluck/draw/src/state.clk)
+- [`examples/cluck/draw/src/history.clk`](./examples/cluck/draw/src/history.clk)
+- [`examples/cluck/draw/src/view.clk`](./examples/cluck/draw/src/view.clk)
+- [`examples/cluck/draw/src/panel.clk`](./examples/cluck/draw/src/panel.clk)
+- [`examples/cluck/draw/src/actions.clk`](./examples/cluck/draw/src/actions.clk)
+- [`examples/cluck/draw/src/canvas.clk`](./examples/cluck/draw/src/canvas.clk)
+- [`examples/cluck/draw/src/session.clk`](./examples/cluck/draw/src/session.clk)
+- [`examples/cluck/draw/src/runtime.clk`](./examples/cluck/draw/src/runtime.clk)
+- [`examples/cluck/draw/src/supervision.clk`](./examples/cluck/draw/src/supervision.clk)
+- [`examples/cluck/draw/src/resources.clk`](./examples/cluck/draw/src/resources.clk)
+- [`examples/cluck/draw/src/render.clk`](./examples/cluck/draw/src/render.clk)
+- [`examples/cluck/draw/src/edit.clk`](./examples/cluck/draw/src/edit.clk)
+- [`examples/cluck/draw/src/create.clk`](./examples/cluck/draw/src/create.clk)
+- [`examples/cluck/draw/src/status.clk`](./examples/cluck/draw/src/status.clk)
+- [`examples/cluck/draw/src/commands.clk`](./examples/cluck/draw/src/commands.clk)
+- [`examples/cluck/draw/src/replay.clk`](./examples/cluck/draw/src/replay.clk)
+- [`examples/cluck/draw/src/stroke.clk`](./examples/cluck/draw/src/stroke.clk)
+- [`examples/cluck/draw/src/input.clk`](./examples/cluck/draw/src/input.clk)
 - [`examples/cluck/draw/run.scm`](./examples/cluck/draw/run.scm)
 
 It uses direct C interop through `cluck.examples.draw.sdl3`, but the application logic stays
@@ -408,36 +408,36 @@ There is also a small smoke-test harness in:
 It is loaded by:
 
 - [`test/run.scm`](./test/run.scm)
-- [`test/run-draw-toggle.scm`](./test/run-draw-toggle.scm)
-- [`test/run-draw-tools.scm`](./test/run-draw-tools.scm)
-- [`test/run-draw-save-load.scm`](./test/run-draw-save-load.scm)
-- [`test/run-draw-view.scm`](./test/run-draw-view.scm)
-- [`test/run-draw-input.scm`](./test/run-draw-input.scm)
-- [`test/run-draw-cache.scm`](./test/run-draw-cache.scm)
-- [`test/run-draw-lifecycle.scm`](./test/run-draw-lifecycle.scm)
+- [`examples/cluck/draw/test/run-draw-toggle.scm`](./examples/cluck/draw/test/run-draw-toggle.scm)
+- [`examples/cluck/draw/test/run-draw-tools.scm`](./examples/cluck/draw/test/run-draw-tools.scm)
+- [`examples/cluck/draw/test/run-draw-save-load.scm`](./examples/cluck/draw/test/run-draw-save-load.scm)
+- [`examples/cluck/draw/test/run-draw-view.scm`](./examples/cluck/draw/test/run-draw-view.scm)
+- [`examples/cluck/draw/test/run-draw-input.scm`](./examples/cluck/draw/test/run-draw-input.scm)
+- [`examples/cluck/draw/test/run-draw-cache.scm`](./examples/cluck/draw/test/run-draw-cache.scm)
+- [`examples/cluck/draw/test/run-draw-lifecycle.scm`](./examples/cluck/draw/test/run-draw-lifecycle.scm)
 - [`test/run-tui-todos.scm`](./test/run-tui-todos.scm)
-- [`test/run-draw-replay.scm`](./test/run-draw-replay.scm)
-- [`test/run-draw-live-replay.scm`](./test/run-draw-live-replay.scm)
-- [`test/run-draw-brush-undo.scm`](./test/run-draw-brush-undo.scm)
-- [`test/run-draw-live-brush-undo.scm`](./test/run-draw-live-brush-undo.scm)
+- [`examples/cluck/draw/test/run-draw-replay.scm`](./examples/cluck/draw/test/run-draw-replay.scm)
+- [`examples/cluck/draw/test/run-draw-live-replay.scm`](./examples/cluck/draw/test/run-draw-live-replay.scm)
+- [`examples/cluck/draw/test/run-draw-brush-undo.scm`](./examples/cluck/draw/test/run-draw-brush-undo.scm)
+- [`examples/cluck/draw/test/run-draw-live-brush-undo.scm`](./examples/cluck/draw/test/run-draw-live-brush-undo.scm)
 
 Run it with:
 
 ```bash
 csi -q -s test/run.scm
-csi -q -s test/run-draw-toggle.scm
-csi -q -s test/run-draw-tools.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-save-load.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-view.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-input.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-cache.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-lifecycle.scm
+csi -q -s examples/cluck/draw/test/run-draw-toggle.scm
+csi -q -s examples/cluck/draw/test/run-draw-tools.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-save-load.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-view.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-input.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-cache.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-lifecycle.scm
 csi -q -s test/run-tui-todos.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-replay.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-replay.scm 1000
-csi -q -s test/run-draw-brush-undo.scm
-SDL_VIDEODRIVER=dummy csi -q -s test/run-draw-live-brush-undo.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-replay.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-live-replay.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-replay.scm 1000
+csi -q -s examples/cluck/draw/test/run-draw-brush-undo.scm
+SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-live-brush-undo.scm
 ```
 
 The smoke tests check the reader, printer, function macros, threading forms, and a few core collection helpers.

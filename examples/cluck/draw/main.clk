@@ -1,7 +1,7 @@
 ;; SDL3 drawing app spike for Cluck.
 ;;
 ;; The app stays in Cluck syntax. The SDL3 bindings and extracted pure helper
-;; namespaces live under src/cluck/examples/draw/, keeping this entrypoint
+;; namespaces live under examples/cluck/draw/src/, keeping this entrypoint
 ;; focused on orchestration and the live draw loop.
 
 (ns cluck.examples.draw

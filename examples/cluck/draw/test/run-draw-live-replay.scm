@@ -23,11 +23,11 @@
 
 (let ((root (script-root)))
   (handle-exceptions exn #t
-    (create-directory (string-append root "../build")))
-  (load (string-append root "../src/cluck-init.scm"))
-  (load-file (string-append root "../examples/cluck/draw/dev.clk"))
+    (create-directory (string-append root "../../../../build")))
+  (load (string-append root "../../../../src/cluck-init.scm"))
+  (load-file (string-append root "../dev.clk"))
   (draw-disable-supervision!)
-  (load-file (string-append root "draw-brush-undo-script.clk"))
+  (load-file (string-append root "draw-replay-script.clk"))
   (let ((args (command-line-arguments))
         (rounds 1)
         (pause 16))
@@ -36,7 +36,7 @@
     (if (start-dev!)
       (begin
         (if (> rounds 1)
-          (draw-replay-live-benchmark! (draw-brush-undo-script) rounds pause)
-          (draw-replay-live! (draw-brush-undo-script) pause))
+          (draw-replay-live-benchmark! (draw-replay-script) rounds pause)
+          (draw-replay-live! (draw-replay-script) pause))
         (stop!))
       nil)))

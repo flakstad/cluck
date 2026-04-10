@@ -12,4 +12,4 @@
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.sdl3 #t)
 
-(include "src/cluck/examples/draw/sdl3.clk")
+(include "examples/cluck/draw/src/sdl3.clk")
