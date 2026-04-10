@@ -1,0 +1,88 @@
+;; Cached-canvas and preview rendering helpers.
+
+(ns cluck.examples.draw.canvas
+  (:require [cluck.examples.draw.sdl3 :as sdl]))
+
+(defn draw-mark-canvas-dirty!
+  "Mark the cached canvas as needing a rebuild."
+  [state]
+  (assoc state :canvas-dirty? true))
+
+(defn draw-sync-canvas!
+  "Rebuild the cached canvas when STATE says it is dirty."
+  [state canvas-ready? rebuild-canvas!]
+  (if (and (canvas-ready?)
+           (get state :canvas-dirty?))
+    (begin
+      (rebuild-canvas! state)
+      (assoc state :canvas-dirty? false))
+    state))
+
+(defn draw-preview-stroke!
+  "Render STROKE into the preview texture."
+  [state stroke with-preview! render-stroke!]
+  (with-preview!
+    (lambda (renderer)
+      (render-stroke! renderer state stroke)
+      nil)))
+
+(defn draw-preview-segment!
+  "Render just the newest segment from PREVIOUS to POINT into the preview texture."
+  [state previous point size color with-preview! with-stroke-color render-stroke-segment!]
+  (with-preview!
+    (lambda (renderer)
+      (with-stroke-color color
+        (lambda ()
+          (render-stroke-segment! renderer state previous point size)))
+      nil)))
+
+(defn draw-preview-batch-render!
+  "Render active stroke points from START-INDEX up to END-INDEX."
+  [renderer state points start-index end-index size render-stroke-segment!]
+  (if (>= start-index end-index)
+    nil
+    (let [previous (nth points (- start-index 1))
+          point (nth points start-index)]
+      (render-stroke-segment! renderer state previous point size)
+      (draw-preview-batch-render! renderer
+                                  state
+                                  points
+                                  (+ start-index 1)
+                                  end-index
+                                  size
+                                  render-stroke-segment!))))
+
+(defn draw-render-canvas!
+  "Render the cached canvas texture, or fall back to stroke replay."
+  [ctx state canvas-ready? preview-ready? render-elements! render-stroke! render-active-box! render-active-arrow! render-active-frame! render-active-text! render-selection!]
+  (let [renderer (get ctx :renderer)
+        canvas (if ctx (get ctx :canvas) nil)
+        preview (if ctx (get ctx :preview) nil)
+        active (get state :active-stroke)
+        active-box (get state :active-box)
+        active-arrow (get state :active-arrow)
+        active-frame (get state :active-frame)
+        active-text (get state :active-text)]
+    (if (canvas-ready?)
+      (begin
+        (sdl/render-texture! renderer canvas)
+        (if (and active (preview-ready?))
+          (sdl/render-texture! renderer preview)
+          (if active
+            (render-stroke! renderer state active)
+            nil))
+        (if active-box
+          (render-active-box! renderer state active-box)
+          nil)
+        (if active-arrow
+          (render-active-arrow! renderer state active-arrow)
+          nil)
+        (if active-frame
+          (render-active-frame! renderer state active-frame)
+          nil)
+        (if active-text
+          (render-active-text! renderer state active-text)
+          nil)
+        (render-selection! renderer state)
+        nil)
+      (render-elements! ctx state))))

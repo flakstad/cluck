@@ -12,6 +12,7 @@
             [cluck.examples.draw.panel :as draw-panel]
             [cluck.examples.draw.geometry :as draw-geometry]
             [cluck.examples.draw.selection :as draw-selection]
+            [cluck.examples.draw.canvas :as draw-canvas]
             [cluck.examples.draw.render :as draw-render]
             [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.create :as draw-create]
@@ -930,20 +931,14 @@
   (set! *draw-render-fn* nil)
   nil)
 
-(defn draw-mark-canvas-dirty!
-  "Mark the cached canvas as needing a rebuild."
-  [state]
-  (assoc state :canvas-dirty? true))
+(def draw-mark-canvas-dirty! draw-canvas/draw-mark-canvas-dirty!)
 
 (defn draw-sync-canvas!
   "Rebuild the cached canvas when STATE says it is dirty."
   [state]
-  (if (and (draw-canvas-ready?)
-           (get state :canvas-dirty?))
-    (begin
-      (draw-rebuild-canvas! state)
-      (assoc state :canvas-dirty? false))
-    state))
+  (draw-canvas/draw-sync-canvas! state
+                                 draw-canvas-ready?
+                                 draw-rebuild-canvas!))
 
 (defn draw-clear-error!
   "Clear the last recorded draw error."
@@ -2515,35 +2510,33 @@
 (defn draw-preview-stroke!
   "Render STROKE into the preview texture."
   [state stroke]
-  (draw-with-preview!
-    (lambda (renderer)
-      (draw-render-stroke! renderer state stroke)
-      nil)))
+  (draw-canvas/draw-preview-stroke! state
+                                    stroke
+                                    draw-with-preview!
+                                    draw-render-stroke!))
 
 (defn draw-preview-segment!
   "Render just the newest segment from PREVIOUS to POINT into the preview texture."
   [state previous point size color]
-  (draw-with-preview!
-    (lambda (renderer)
-      (draw-with-stroke-color color
-        (lambda ()
-          (draw-render-stroke-segment! renderer state previous point size)))
-      nil)))
+  (draw-canvas/draw-preview-segment! state
+                                     previous
+                                     point
+                                     size
+                                     color
+                                     draw-with-preview!
+                                     draw-with-stroke-color
+                                     draw-render-stroke-segment!))
 
 (defn draw-preview-batch-render!
   "Render active stroke points from START-INDEX up to END-INDEX."
   [renderer state points start-index end-index size]
-  (if (>= start-index end-index)
-    nil
-    (let [previous (nth points (- start-index 1))
-          point (nth points start-index)]
-      (draw-render-stroke-segment! renderer state previous point size)
-      (draw-preview-batch-render! renderer
-                                  state
-                                  points
-                                  (+ start-index 1)
-                                  end-index
-                                  size))))
+  (draw-canvas/draw-preview-batch-render! renderer
+                                          state
+                                          points
+                                          start-index
+                                          end-index
+                                          size
+                                          draw-render-stroke-segment!))
 
 (defn draw-sync-preview!
   "Render only the missing active-stroke segments into the preview texture."
@@ -2618,39 +2611,17 @@
 (defn draw-render-canvas!
   "Render the cached canvas texture, or fall back to stroke replay."
   [ctx state]
-  (let [renderer (get ctx :renderer)
-        canvas (if ctx (get ctx :canvas) nil)
-        preview (if ctx (get ctx :preview) nil)
-        active (get state :active-stroke)
-        active-box (get state :active-box)
-        active-arrow (get state :active-arrow)
-        active-frame (get state :active-frame)
-        active-text (get state :active-text)]
-    (if (draw-canvas-ready?)
-      (begin
-        (sdl/render-texture! renderer canvas)
-        (if (and active (draw-preview-ready?))
-          (sdl/render-texture! renderer preview)
-          (if active
-            (draw-render-stroke! renderer state active)
-            nil))
-        (if active-box
-          (draw-render-active-box! renderer state active-box)
-          nil)
-        (if active-arrow
-          (draw-render-active-arrow! renderer state active-arrow)
-          nil)
-        (if active-frame
-          (draw-render-active-frame! renderer state active-frame)
-          nil)
-        (if active-text
-          (draw-render-active-text! renderer state active-text)
-          nil)
-        (draw-render-selection! renderer state)
-        (if (and (not active) (draw-preview-ready?))
-          nil
-          nil))
-      (draw-render-elements! ctx state))))
+  (draw-canvas/draw-render-canvas! ctx
+                                   state
+                                   draw-canvas-ready?
+                                   draw-preview-ready?
+                                   draw-render-elements!
+                                   draw-render-stroke!
+                                   draw-render-active-box!
+                                   draw-render-active-arrow!
+                                   draw-render-active-frame!
+                                   draw-render-active-text!
+                                   draw-render-selection!))
 
 (defn draw-render-tool-panel-button!
   "Render BUTTON from the in-window tool panel."

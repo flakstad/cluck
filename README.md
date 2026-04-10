@@ -252,6 +252,7 @@ The SDL3 example is a minimal drawing app scaffold that now opens a window,
 - [`src/cluck/examples/draw/history.clk`](./src/cluck/examples/draw/history.clk)
 - [`src/cluck/examples/draw/view.clk`](./src/cluck/examples/draw/view.clk)
 - [`src/cluck/examples/draw/panel.clk`](./src/cluck/examples/draw/panel.clk)
+- [`src/cluck/examples/draw/canvas.clk`](./src/cluck/examples/draw/canvas.clk)
 - [`src/cluck/examples/draw/render.clk`](./src/cluck/examples/draw/render.clk)
 - [`src/cluck/examples/draw/edit.clk`](./src/cluck/examples/draw/edit.clk)
 - [`src/cluck/examples/draw/create.clk`](./src/cluck/examples/draw/create.clk)
