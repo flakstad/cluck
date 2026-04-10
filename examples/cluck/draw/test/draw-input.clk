@@ -43,6 +43,16 @@
 (define (draw-input-copy-state state)
   (edn/read-string (pr-str state)))
 
+(define (draw-input-find-button-kind buttons kind)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (draw-kind=? (get button :kind) kind)
+                    button
+                    false)))
+          false
+          buttons))
+
 (draw-input-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 (draw-input-assert-true "focus gained event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_GAINED")
@@ -88,6 +98,10 @@
                           (draw-input-has-line? lines "  shift+click: add to selection"))
   (draw-input-assert-true "debug panel lists tools"
                           (draw-input-has-line? lines "  1: ink   2: select   3: rectangle   4: eraser"))
+  (draw-input-assert-true "debug panel lists brush sizes"
+                          (draw-input-has-line? lines "  ctrl+1/2/3: brush sizes"))
+  (draw-input-assert-true "debug panel lists color swatches"
+                          (draw-input-has-line? lines "  brush/background swatches in the tool panel"))
   (draw-input-assert-true "debug panel lists pressure"
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
@@ -104,10 +118,37 @@
                           (draw-input-has-line? lines "file: cluck-draw-state.edn"))
   (draw-input-assert-true "tool panel lists edn format"
                           (draw-input-has-line? lines "format: EDN"))
+  (draw-input-assert-true "tool panel lists brush sizes"
+                          (draw-input-has-line? lines "ctrl+1/2/3 brush sizes"))
+  (draw-input-assert-true "tool panel lists color swatches"
+                          (draw-input-has-line? lines "brush/background swatches below"))
   (draw-input-assert-true "tool panel lists save shortcut"
                           (draw-input-has-line? lines "TAB toggle  CTRL+S save"))
   (draw-input-assert-true "tool panel lists load shortcut"
                           (draw-input-has-line? lines "CTRL+O load")))
+
+(let [panel-state (assoc (default-state) :tool-panel? true)
+      buttons (draw-tool-panel-buttons panel-state)
+      brush-button (draw-input-find-button-kind buttons :brush-color)
+      background-button (draw-input-find-button-kind buttons :background-color)]
+  (draw-input-assert-true "tool panel includes brush color swatches"
+                          brush-button)
+  (draw-input-assert-true "tool panel includes background color swatches"
+                          background-button)
+  (draw-input-assert-true "tool panel hit finds brush color swatch"
+                          (draw-kind=? (get (draw-find-tool-panel-button
+                                              panel-state
+                                              [(+ (get brush-button :x) 1)
+                                               (+ (get brush-button :y) 1)])
+                                            :kind)
+                                       :brush-color))
+  (draw-input-assert-true "tool panel hit finds background color swatch"
+                          (draw-kind=? (get (draw-find-tool-panel-button
+                                              panel-state
+                                              [(+ (get background-button :x) 1)
+                                               (+ (get background-button :y) 1)])
+                                            :kind)
+                                       :background-color)))
 
 (let [lines (draw-tool-panel-selection-lines (default-state))]
   (draw-input-assert-true "tool panel selection lines mention no selection"

@@ -290,9 +290,9 @@ like `set-title!`, `set-background!`, `set-render-fn!`, `render-now!`,
 while the window stays open. Use the mouse wheel to zoom around the cursor,
 hold `space` while dragging to pan, use `ctrl` + `+` / `-` to zoom at the
 pointer, drag with the mouse or pen to paint ink, press `1` for ink, `2` for
-selection, `3` for rectangle, `4` for eraser, and `[` / `]` to change brush
-size; `i` / `v` / `r` / `e` remain as legacy aliases, and `b` still works as a
-legacy rectangle alias. Press `d` to toggle the debug panel on demand, or `tab`
+selection, `3` for rectangle, `4` for eraser, and `ctrl` + `1` / `2` / `3` to
+change brush size; `i` / `v` / `r` / `e` remain as legacy aliases, and `b`
+still works as a legacy rectangle alias. Press `d` to toggle the debug panel on demand, or `tab`
 to toggle the in-window tool panel with clickable buttons and a selection
 summary. Cursor shape follows the current interaction mode: crosshair for
 drawing, move while panning or dragging selection, rotate with the top
@@ -306,7 +306,7 @@ shortcuts are:
 - `2` selection tool
 - `3` rectangle tool (`b` still works as a legacy alias)
 - `4` eraser
-- `[`/`]` brush size smaller/larger
+- `ctrl+1/2/3` brush size presets
 - `i`/`v`/`r`/`e` legacy aliases
 - `u` undo the last action
 - `c` clear the canvas
@@ -322,7 +322,7 @@ shortcuts are:
 - zoomed drawing keeps brush width visually stable on screen, so zooming in gives finer world-space detail
 - `save-canvas!` / `load-canvas!` round-trip the current canvas to
   `build/cluck-draw-state.edn` by default
-- the tool panel shows the default save filename and the `EDN` format in-window
+- the tool panel shows the default save filename, the `EDN` format, and brush/background color swatches in-window
 - draw session logging writes to `build/cluck-draw.log`
 - crashes write a snapshot to `build/cluck-draw-crash.edn`
 - `draw-supervisor-status` reports the current child/supervisor state

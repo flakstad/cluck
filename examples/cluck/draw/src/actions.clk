@@ -14,6 +14,23 @@
                  :state (state-snapshot next-state)})
     next-state))
 
+(defn draw-set-brush-color-core!
+  "Set the brush color and return to brush mode, recording undo history."
+  [state color push-history! state-snapshot log-entry!]
+  (let [current-color (get state :brush-color)
+        current-eraser? (if (get state :eraser?) true false)]
+    (if (and (equal? current-color color)
+             (not current-eraser?))
+      state
+      (let [state (push-history! state)
+            next-state (assoc state
+                              :brush-color color
+                              :eraser? false)]
+        (log-entry! :brush-color
+                    {:color color
+                     :state (state-snapshot next-state)})
+        next-state))))
+
 (defn draw-toggle-eraser-core!
   "Toggle eraser mode for STATE and record undo history."
   [state push-history! state-snapshot log-entry!]
@@ -25,6 +42,19 @@
                 {:eraser? (get next-state :eraser?)
                  :state (state-snapshot next-state)})
     next-state))
+
+(defn draw-set-background-core!
+  "Set the background color and record undo history."
+  [state color push-history! state-snapshot log-entry!]
+  (if (equal? (get state :background) color)
+    state
+    (let [state (push-history! state)
+          next-state (assoc state
+                            :background color)]
+      (log-entry! :background-color
+                  {:color color
+                   :state (state-snapshot next-state)})
+      next-state)))
 
 (defn draw-clear-strokes-core!
   "Clear all finished and active strokes from STATE and record undo history."

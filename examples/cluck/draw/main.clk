@@ -803,10 +803,12 @@
 (defn set-background!
   "Update the current background color to a [R G B] vector."
   [color]
-  (draw-with-lock
-    (lambda ()
-      (draw-set-state-core! (assoc (or (current-state) (default-state))
-                                   :background color)))))
+  (draw-set-background! (or (current-state) (default-state)) color))
+
+(defn set-brush-color!
+  "Update the current brush color to a [R G B] vector."
+  [color]
+  (draw-set-brush-color! (or (current-state) (default-state)) color))
 
 (defn set-render-fn!
   "Install a custom render function of (lambda [ctx state] ...)."
@@ -1085,6 +1087,22 @@
           (draw-render-current!))
         state))))
 
+(defn draw-set-brush-color-core!
+  "Set the brush color and return to brush mode, recording undo history."
+  [state color]
+  (draw-actions/draw-set-brush-color-core! state
+                                           color
+                                           draw-push-history!
+                                           draw-state-snapshot
+                                           draw-log-entry!))
+
+(defn draw-set-brush-color!
+  "Set the brush color and return to brush mode, recording undo history."
+  [state color]
+  (draw-with-lock
+    (lambda ()
+      (draw-set-state-core! (draw-set-brush-color-core! state color)))))
+
 (defn draw-toggle-eraser-core!
   "Toggle eraser mode for STATE and record undo history."
   [state]
@@ -1103,6 +1121,22 @@
           nil
           (draw-render-current!))
         state))))
+
+(defn draw-set-background-core!
+  "Set the canvas background color and record undo history."
+  [state color]
+  (draw-actions/draw-set-background-core! state
+                                          color
+                                          draw-push-history!
+                                          draw-state-snapshot
+                                          draw-log-entry!))
+
+(defn draw-set-background!
+  "Set the canvas background color and record undo history."
+  [state color]
+  (draw-with-lock
+    (lambda ()
+      (draw-set-state-core! (draw-set-background-core! state color)))))
 
 (defn draw-clear-strokes-core!
   "Clear all finished and active strokes from STATE and record undo history."
@@ -1274,6 +1308,12 @@
 
       (draw-kind=? kind :eraser)
       (draw-toggle-eraser-core! base-state)
+
+      (draw-kind=? kind :brush-color)
+      (draw-set-brush-color-core! base-state (get button :color))
+
+      (draw-kind=? kind :background-color)
+      (draw-set-background-core! base-state (get button :color))
 
       (draw-kind=? kind :save)
       (draw-save-canvas-core! base-state)
@@ -2746,6 +2786,8 @@
   (draw-clear-strokes! (default-state))
   (draw-undo-stroke! (default-state))
   (draw-set-brush-size! (default-state) 6)
+  (draw-set-brush-color! (default-state) [255 112 122])
+  (draw-set-background! (default-state) [33 37 45])
   (draw-toggle-eraser! (default-state))
   (restart-dev!)
   (draw-toggle-debug-panel! (current-state))

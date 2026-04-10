@@ -85,9 +85,10 @@
    "  rectangle handles: resize corners, rotate top handle"
    "  shift+click: add to selection"
    "  1: ink   2: select   3: rectangle   4: eraser"
+   "  ctrl+1/2/3: brush sizes"
+   "  brush/background swatches in the tool panel"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
-   "  [ : smaller brush   ]: larger brush"
    "  d: debug panel   tab: tool panel   0: reset view"
    "  ctrl+s: save   ctrl+o: load"
    "  repl: save-canvas!, load-canvas!, restart-dev!"
@@ -119,18 +120,48 @@
 (defn draw-render-tool-panel-button!
   "Render BUTTON from the in-window tool panel."
   [renderer button]
-  (let [active? (get button :active?)
+  (let [kind (get button :kind)
+        active? (get button :active?)
         x (get button :x)
         y (get button :y)
         width (get button :width)
         height (get button :height)]
-    (if active?
-      (sdl/set-draw-color! renderer 70 110 170 255)
-      (sdl/set-draw-color! renderer 46 50 60 235))
-    (sdl/render-fill-rect! renderer x y width height)
-    (sdl/set-draw-color! renderer 235 235 235 255)
-    (sdl/render-debug-text! renderer (+ x 8) (+ y 6) (get button :label))
-    nil))
+    (cond
+      (draw.state/draw-kind=? kind :section)
+      (begin
+        (sdl/set-draw-color! renderer 235 235 235 255)
+        (sdl/render-debug-text! renderer (+ x 2) (+ y 1) (get button :label))
+        nil)
+
+      (or (draw.state/draw-kind=? kind :brush-color)
+          (draw.state/draw-kind=? kind :background-color))
+      (let [color (get button :color)]
+        (sdl/set-draw-color! renderer
+                             (nth color 0)
+                             (nth color 1)
+                             (nth color 2)
+                             255)
+        (sdl/render-fill-rect! renderer x y width height)
+        (sdl/set-draw-color! renderer
+                             (if active? 255 56)
+                             (if active? 255 68)
+                             (if active? 255 84)
+                             255)
+        (sdl/render-line! renderer x y (+ x width) y)
+        (sdl/render-line! renderer (+ x width) y (+ x width) (+ y height))
+        (sdl/render-line! renderer (+ x width) (+ y height) x (+ y height))
+        (sdl/render-line! renderer x (+ y height) x y)
+        nil)
+
+      :else
+      (begin
+        (if active?
+          (sdl/set-draw-color! renderer 70 110 170 255)
+          (sdl/set-draw-color! renderer 46 50 60 235))
+        (sdl/render-fill-rect! renderer x y width height)
+        (sdl/set-draw-color! renderer 235 235 235 255)
+        (sdl/render-debug-text! renderer (+ x 8) (+ y 6) (get button :label))
+        nil))))
 
 (defn draw-render-tool-panel!
   "Render the toggleable in-window tool panel."
@@ -138,7 +169,17 @@
   (let [panel (draw.panel/draw-tool-panel-rect state)
         buttons (draw.panel/draw-tool-panel-buttons state)
         info-lines (draw.panel/draw-tool-panel-info-lines state)
-        selection-lines (draw.panel/draw-tool-panel-selection-lines state)]
+        selection-lines (draw.panel/draw-tool-panel-selection-lines state)
+        button-bottom (reduce (lambda (max-y button)
+                                (let [bottom (+ (get button :y)
+                                                (get button :height))]
+                                  (if (> bottom max-y)
+                                    bottom
+                                    max-y)))
+                              0
+                              buttons)
+        selection-y (+ button-bottom 10)
+        info-y (+ button-bottom 42)]
     (sdl/set-draw-color! renderer 18 20 26 228)
     (sdl/render-fill-rect! renderer
                            (get panel :x)
@@ -168,7 +209,7 @@
                                         next-y
                                         line)
                 (+ next-y 16)))
-            (+ (get panel :y) 244)
+            (+ (get panel :y) selection-y)
             selection-lines)
     (reduce (fn [next-y line]
               (begin
@@ -177,7 +218,7 @@
                                         next-y
                                         line)
                 (+ next-y 16)))
-            (+ (get panel :y) 292)
+            (+ (get panel :y) info-y)
             info-lines)
     nil))
 

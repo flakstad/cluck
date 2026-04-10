@@ -23,10 +23,12 @@ What is in place:
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
 - tool-aware cursors: crosshair for draw tools and rectangle rotation, move for selection drag/pan, resize on rectangle corner handles, pointer over clickable tool-panel buttons
-- tool shortcuts for `1` ink, `2` select, `3` rectangle, `4` eraser, and `[`/`]` brush sizes, with `i`/`v`/`r`/`e` kept as legacy aliases
+- tool shortcuts for `1` ink, `2` select, `3` rectangle, `4` eraser, and `ctrl+1/2/3` brush sizes, with `i`/`v`/`r`/`e` kept as legacy aliases
+- the tool panel includes clickable brush-color and background-color swatches
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
   - the default file format is EDN
+- `set-brush-color!` and `set-background!` REPL helpers for programmatic color changes
 - viewport shortcuts for the infinite canvas:
   - `ctrl` + `+` / `=` zoom in at the pointer
   - `ctrl` + `-` zoom out at the pointer
@@ -87,7 +89,7 @@ While the window is live:
 - press `d` to toggle the debug panel
 - press `tab` to toggle the in-window tool panel
 - press `1` for the ink tool, `2` for selection, `3` for rectangle, and `4` for eraser
-- press `[` / `]` to shrink or grow the brush size
+- press `ctrl`+`1` / `2` / `3` to pick brush sizes
 - drag empty space in selection mode to marquee-select elements
 - hold `shift` while clicking in selection mode to add another element to the active selection
 - hold `shift` while marquee-selecting to add the marquee hits to the current selection

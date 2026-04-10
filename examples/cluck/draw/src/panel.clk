@@ -2,6 +2,7 @@
 
 (ns cluck.examples.draw.panel
   (:require [cluck.examples.draw.state :as draw.state]
+            [cluck.math :as math]
             [cluck.fs :as fs]
             [cluck.string :as str]))
 
@@ -25,13 +26,62 @@
   []
   6)
 
+(defn draw-tool-panel-height
+  "Return the tool panel height in screen pixels."
+  []
+  468)
+
+(defn draw-tool-panel-section-height
+  "Return the height of a tool-panel section label row."
+  []
+  16)
+
+(defn draw-tool-panel-swatch-size
+  "Return the size of a color swatch button."
+  []
+  18)
+
+(defn draw-tool-panel-swatch-gap
+  "Return the gap between color swatches."
+  []
+  6)
+
+(defn draw-tool-panel-swatch-columns
+  "Return the number of color swatch columns."
+  []
+  4)
+
+(defn draw-brush-color-palette
+  "Return the preset brush color palette."
+  []
+  [[245 245 245]
+   [255 112 122]
+   [255 179 71]
+   [255 228 124]
+   [121 213 114]
+   [103 169 255]
+   [175 124 255]
+   [72 78 92]])
+
+(defn draw-background-color-palette
+  "Return the preset background color palette."
+  []
+  [[24 24 28]
+   [33 37 45]
+   [46 49 59]
+   [58 50 45]
+   [39 52 44]
+   [63 40 43]
+   [16 16 18]
+   [240 236 230]])
+
 (defn draw-tool-panel-rect
   "Return the tool panel screen rectangle for STATE."
   [state]
   (let [width (draw-tool-panel-width)
         x (- (or (get state :width) 1280) width 12)
         y 12
-        height 352]
+        height (draw-tool-panel-height)]
     {:x x
      :y y
      :width width
@@ -48,9 +98,53 @@
   [(format "file: %s" (fs/basename (draw.state/draw-state-file-path)))
    (format "format: %s" (draw-save-format-label))
    "1 ink   2 select   3 rectangle   4 eraser"
-   "[ smaller brush   ] larger brush"
+   "ctrl+1/2/3 brush sizes"
+   "brush/background swatches below"
    "TAB toggle  CTRL+S save"
    "CTRL+O load"])
+
+(defn draw-tool-panel-section-label
+  "Return a non-clickable tool panel section label."
+  [state id label y]
+  (let [panel (draw-tool-panel-rect state)
+        padding (draw-tool-panel-padding)
+        x (+ (get panel :x) padding)
+        width (- (get panel :width) (* padding 2))
+        height (draw-tool-panel-section-height)]
+    {:id id
+     :label label
+     :kind :section
+     :clickable? false
+     :active? false
+     :x x
+     :y y
+     :width width
+     :height height}))
+
+(defn draw-tool-panel-swatch-buttons
+  "Return a grid of color-swatch buttons for STATE."
+  [state kind colors y0 active-color]
+  (let [panel (draw-tool-panel-rect state)
+        padding (draw-tool-panel-padding)
+        x (+ (get panel :x) padding)
+        size (draw-tool-panel-swatch-size)
+        gap (draw-tool-panel-swatch-gap)
+        columns (draw-tool-panel-swatch-columns)]
+    (map-indexed
+      (lambda (index color)
+        (let [row (math/quotient index columns)
+              col (mod index columns)]
+          {:id (keyword (format "%s-%d" (name kind) index))
+           :label ""
+           :kind kind
+           :clickable? true
+           :color color
+           :active? (equal? active-color color)
+           :x (+ x (* col (+ size gap)))
+           :y (+ y0 (* row (+ size gap)))
+           :width size
+           :height size}))
+      colors)))
 
 (defn draw-tool-panel-buttons
   "Return clickable tool panel buttons for STATE."
@@ -61,40 +155,70 @@
         width (- (get panel :width) (* padding 2))
         height (draw-tool-panel-button-height)
         gap (draw-tool-panel-button-gap)
-        y0 (+ (get panel :y) 40)]
-    [{:id :tool-ink
-      :label "Ink"
-      :kind :tool
-      :tool :ink
-      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
-      :x x :y y0 :width width :height height}
-     {:id :tool-select
-      :label "Select"
-      :kind :tool
-      :tool :select
-      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :select)
-      :x x :y (+ y0 (* 1 (+ height gap))) :width width :height height}
-     {:id :tool-rectangle
-      :label "Rectangle"
-      :kind :tool
-      :tool :box
-      :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :box)
-      :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
-     {:id :tool-eraser
-      :label "Eraser"
-      :kind :eraser
-      :active? (if (get state :eraser?) true false)
-      :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
-     {:id :save
-      :label "Save"
-      :kind :save
-      :active? false
-      :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
-     {:id :load
-      :label "Load"
-      :kind :load
-      :active? false
-      :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}]))
+        y0 (+ (get panel :y) 40)
+        tool-buttons [{:id :tool-ink
+                       :label "Ink"
+                       :kind :tool
+                       :tool :ink
+                       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
+                       :x x :y y0 :width width :height height}
+                      {:id :tool-select
+                       :label "Select"
+                       :kind :tool
+                       :tool :select
+                       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :select)
+                       :x x :y (+ y0 (* 1 (+ height gap))) :width width :height height}
+                      {:id :tool-rectangle
+                       :label "Rectangle"
+                       :kind :tool
+                       :tool :box
+                       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :box)
+                       :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
+                      {:id :tool-eraser
+                       :label "Eraser"
+                       :kind :eraser
+                       :active? (if (get state :eraser?) true false)
+                       :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
+                      {:id :save
+                       :label "Save"
+                       :kind :save
+                       :active? false
+                       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
+                      {:id :load
+                       :label "Load"
+                       :kind :load
+                       :active? false
+                       :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}]
+        section-y (+ y0 (* 6 (+ height gap)))
+        brush-label (draw-tool-panel-section-label state
+                                                   :brush-colors
+                                                   "Brush colors"
+                                                   section-y)
+        brush-buttons (draw-tool-panel-swatch-buttons state
+                                                      :brush-color
+                                                      (draw-brush-color-palette)
+                                                      (+ section-y (draw-tool-panel-section-height) 6)
+                                                      (get state :brush-color))
+        background-y (+ section-y
+                        (draw-tool-panel-section-height)
+                        6
+                        (* 2 (+ (draw-tool-panel-swatch-size)
+                                (draw-tool-panel-swatch-gap)))
+                        16)
+        background-label (draw-tool-panel-section-label state
+                                                        :background-colors
+                                                        "Background colors"
+                                                        background-y)
+        background-buttons (draw-tool-panel-swatch-buttons state
+                                                           :background-color
+                                                           (draw-background-color-palette)
+                                                           (+ background-y (draw-tool-panel-section-height) 6)
+                                                           (get state :background))]
+    (concat tool-buttons
+            [brush-label]
+            brush-buttons
+            [background-label]
+            background-buttons)))
 
 (defn draw-selection-summary
   "Return a compact summary of the current selection."
@@ -190,7 +314,8 @@
       (if (empty? buttons)
         false
         (let [button (first buttons)]
-          (if (draw-screen-point-in-rect? screen-point button)
+          (if (and (not (false? (get button :clickable? true)))
+                   (draw-screen-point-in-rect? screen-point button))
             button
             (loop (rest buttons))))))
     false))

@@ -37,6 +37,16 @@
 (define (draw-tools-copy-state state)
   (edn/read-string (pr-str state)))
 
+(define (draw-tools-find-button-kind buttons kind)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (draw-kind=? (get button :kind) kind)
+                    button
+                    false)))
+          false
+          buttons))
+
 (define (draw-tools-base-state)
   (draw-normalize-state
     {:title "Cluck Draw"
@@ -107,13 +117,21 @@
                               1
                               (count (get undo-by-key :strokes)))))
 
-  (let [smaller (draw-handle-tool-key! (default-state) "[")
-        larger (draw-handle-tool-key! (default-state) "]")]
-    (draw-tools-assert-num= "brush size down key step"
-                            1
+  (let [ctrl-state (assoc (default-state) :ctrl-down? true)
+        smaller (draw-tools-copy-state
+                  (draw-handle-tool-key! ctrl-state "1"))
+        medium (draw-tools-copy-state
+                 (draw-handle-tool-key! ctrl-state "2"))
+        larger (draw-tools-copy-state
+                 (draw-handle-tool-key! ctrl-state "3"))]
+    (draw-tools-assert-num= "brush size ctrl+1 preset"
+                            2
                             (get smaller :brush-size))
-    (draw-tools-assert-num= "brush size up key step"
-                            3
+    (draw-tools-assert-num= "brush size ctrl+2 preset"
+                            6
+                            (get medium :brush-size))
+    (draw-tools-assert-num= "brush size ctrl+3 preset"
+                            12
                             (get larger :brush-size)))
 
   (let [ink-state (draw-tools-copy-state
@@ -158,6 +176,72 @@
     (draw-tools-assert-str= "tool key returns to ink after eraser"
                             "ink"
                             (draw-tool-mode ink-after-eraser)))
+
+  (let [brush-color [255 112 122]
+        background-color [46 49 59]
+        brush-state (draw-set-brush-color! (default-state) brush-color)
+        background-state (draw-set-background! (default-state) background-color)]
+    (draw-tools-assert-str= "brush color setter updates brush color"
+                            (pr-str brush-color)
+                            (pr-str (get brush-state :brush-color)))
+    (draw-tools-assert-true "brush color setter clears eraser"
+                            (not (get brush-state :eraser?)))
+    (draw-tools-assert-num= "brush color setter adds undo history"
+                            1
+                            (count (get brush-state :history)))
+    (draw-tools-assert-str= "background setter updates background color"
+                            (pr-str background-color)
+                            (pr-str (get background-state :background)))
+    (draw-tools-assert-num= "background setter adds undo history"
+                            1
+                            (count (get background-state :history)))
+    (let [undone-brush (draw-undo-stroke! (draw-tools-copy-state brush-state))
+          undone-background (draw-undo-stroke! (draw-tools-copy-state background-state))]
+    (draw-tools-assert-str= "undo restores brush color"
+                            "[245 245 245]"
+                            (pr-str (get undone-brush :brush-color)))
+    (draw-tools-assert-str= "undo restores background color"
+                            "[24 24 28]"
+                            (pr-str (get undone-background :background)))))
+
+  (let [panel-state (assoc (default-state) :tool-panel? true)
+        buttons (draw-tool-panel-buttons panel-state)
+        brush-button (draw-tools-find-button-kind buttons :brush-color)
+        background-button (draw-tools-find-button-kind buttons :background-color)
+        brush-hit (draw-find-tool-panel-button
+                    panel-state
+                    [(+ (get brush-button :x) 1)
+                     (+ (get brush-button :y) 1)])
+        background-hit (draw-find-tool-panel-button
+                          panel-state
+                          [(+ (get background-button :x) 1)
+                           (+ (get background-button :y) 1)])
+        brush-picked (draw-apply-tool-panel-button
+                       (default-state)
+                       brush-button
+                       [0.0 0.0 1.0]
+                       [0.0 0.0])
+        background-picked (draw-apply-tool-panel-button
+                            (default-state)
+                            background-button
+                            [0.0 0.0 1.0]
+                            [0.0 0.0])]
+    (draw-tools-assert-true "tool panel includes brush swatches"
+                            brush-button)
+    (draw-tools-assert-true "tool panel includes background swatches"
+                            background-button)
+    (draw-tools-assert-str= "tool panel hit finds brush swatch"
+                            ":brush-color"
+                            (pr-str (get brush-hit :kind)))
+    (draw-tools-assert-str= "tool panel hit finds background swatch"
+                            ":background-color"
+                            (pr-str (get background-hit :kind)))
+    (draw-tools-assert-str= "brush swatch changes brush color"
+                            (pr-str (get brush-button :color))
+                            (pr-str (get brush-picked :brush-color)))
+    (draw-tools-assert-str= "background swatch changes background color"
+                            (pr-str (get background-button :color))
+                            (pr-str (get background-picked :background))))
 
   (let [base (default-state)
         one (draw-start-stroke base [10.0 10.0 1.0] [10.0 10.0] :mouse)
