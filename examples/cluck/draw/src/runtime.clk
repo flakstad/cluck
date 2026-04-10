@@ -11,6 +11,8 @@
         (prefix (chicken process-context posix) posix:)
         (chicken time))
 
+(def *draw-atomic-write-seq* 0)
+
 (defn draw-log-file-path
   "Return the path used for the draw session log."
   [cwd override]
@@ -66,6 +68,12 @@
   []
   (posix:current-process-id))
 
+(defn draw-next-atomic-write-seq!
+  "Return a process-local sequence for unique atomic-write temp files."
+  []
+  (set! *draw-atomic-write-seq* (+ *draw-atomic-write-seq* 1))
+  *draw-atomic-write-seq*)
+
 (defn draw-wall-clock-ms
   "Return the current wall clock in milliseconds."
   []
@@ -85,7 +93,12 @@
   "Write TEXT to PATH using a temporary file and rename."
   [path text]
   (let [target (fs/path path)
-        temp (str target ".tmp")]
+        temp (str target
+                  "."
+                  (draw-process-id)
+                  "."
+                  (draw-next-atomic-write-seq!)
+                  ".tmp")]
     (draw-ensure-parent-directory! target)
     (io/spit temp text)
     (cfile:rename-file temp target true)

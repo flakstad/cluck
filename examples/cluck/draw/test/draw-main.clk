@@ -1,0 +1,45 @@
+;; Focused standalone/local main path probe for the SDL3 example.
+
+(in-ns 'cluck.examples.draw)
+
+(define (draw-main-pass label)
+  (println "ok" label)
+  true)
+
+(define (draw-main-fail label expected actual)
+  (error (string-append "draw main test failed: "
+                        label
+                        " expected "
+                        (str expected)
+                        " got "
+                        (pr-str actual))))
+
+(define (draw-main-assert-true label value)
+  (if value
+      (draw-main-pass label)
+      (draw-main-fail label "truthy value" value)))
+
+(define original-render-fn *draw-render-fn*)
+
+(set! *draw-render-fn*
+      (fn [ctx state]
+        (default-render-frame ctx state)
+        (set! *draw-running?* false)
+        nil))
+
+(draw-clear-log!)
+(draw-clear-watchdog-files!)
+(draw-disable-supervision!)
+(draw-main-assert-true "main local path returns nil" (nil? (main [])))
+(draw-main-assert-true "main local path wrote draw log"
+                       (fs/file? (draw-log-file-path)))
+(draw-main-assert-true "main local path wrote heartbeat"
+                       (fs/file? (draw-heartbeat-file-path)))
+
+(let [atomic-path (fs/path (current-directory) "build" "draw-main-atomic-write.edn")]
+  (draw-write-file-atomic! atomic-path "{:step 1}")
+  (draw-write-file-atomic! atomic-path "{:step 2}")
+  (draw-main-assert-true "atomic file writer survives repeated writes"
+                         (string=? "{:step 2}" (io/slurp atomic-path))))
+
+(set! *draw-render-fn* original-render-fn)

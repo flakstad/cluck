@@ -2700,37 +2700,31 @@
 (defn main
   "Open a window and run the minimal SDL3 loop."
   [args]
-  (set! *draw-state* (default-state))
-  (if (member "--repl" args)
-    (begin
-      (if (start-dev!)
-        (begin
-          (println (format "Opened %s" (describe-state *draw-state*)))
-          (println (format "Hint: %s" (str/upper-case "use the repl to change state")))
-          (println (format "Hint: %s" (str/upper-case "call (stop!) or close the window to quit")))
-          (cluck-repl)
-          (stop!))
-        nil))
-    (let [state (current-state)]
-      (if (not (init-video!))
-        (begin
-          (println (format "SDL init failed: %s" (last-error)))
-          nil)
-        (let [ctx (sdl/open-context (get state :title)
-                                    (get state :width)
-                                    (get state :height))]
-          (if (nil? ctx)
+  (let [argv (seq args)]
+    (set! *draw-state* (default-state))
+    (if (member "--repl" argv)
+      (begin
+        (if (start-dev!)
+          (begin
+            (println (format "Opened %s" (describe-state *draw-state*)))
+            (println (format "Hint: %s" (str/upper-case "use the repl to change state")))
+            (println (format "Hint: %s" (str/upper-case "call (stop!) or close the window to quit")))
+            (cluck-repl)
+            (stop!))
+          nil))
+      (begin
+        (draw-disable-supervision!)
+        (draw-clear-error!)
+        (let [ctx (start!)]
+          (if ctx
             (begin
-              (println (format "SDL window failed: %s" (last-error)))
-              (shutdown!)
-              nil)
-            (begin
-              (println (format "Opened %s" (describe-state state)))
+              (println (format "Opened %s" (describe-state *draw-state*)))
               (println (format "Hint: %s" (str/upper-case "close the window to quit")))
-              (run-loop ctx state)
-              (sdl/close-context! ctx)
-              (shutdown!)
-              nil)))))))
+              (render-now!)
+              (run-loop ctx *draw-state*)
+              (draw-stop-local!)
+              nil)
+            nil))))))
 
 (comment
   
