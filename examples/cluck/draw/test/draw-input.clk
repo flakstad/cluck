@@ -127,6 +127,20 @@
   (draw-input-assert-true "tool panel lists load shortcut"
                           (draw-input-has-line? lines "CTRL+O load")))
 
+(let [original-set-title sdl/set-window-title!
+      captured false]
+  (set! *draw-context* {:window :fake})
+  (set! *draw-state* (assoc (default-state) :title "Mutated"))
+  (set! sdl/set-window-title!
+        (lambda (window title)
+          (set! captured title)
+          true))
+  (sync-window-title!)
+  (draw-input-assert-str= "window title stays static"
+                          "Cluck Draw"
+                          captured)
+  (set! sdl/set-window-title! original-set-title))
+
 (let [panel-state (assoc (default-state) :tool-panel? true)
       buttons (draw-tool-panel-buttons panel-state)
       brush-button (draw-input-find-button-kind buttons :brush-color)
@@ -437,6 +451,10 @@
                           (get erased :eraser?))
   (draw-input-assert-true "tool panel save button writes state file"
                           (fs/exists? (draw-state-file-path)))
+  (draw-input-assert-true "tool panel save button shows feedback"
+                          (not (empty? (get saved :status-note))))
+  (draw-input-assert-true "tool panel load button shows feedback"
+                          (not (empty? (get loaded :status-note))))
   (draw-input-assert-str= "tool panel load button restores saved title"
                           "Panel Button Save"
                           (get loaded :title)))
@@ -454,9 +472,10 @@
                                        :ctrl? true})]
   (draw-input-assert-true "ctrl save writes state file"
                           (fs/exists? path))
-  (draw-input-assert-str= "ctrl load restores saved title"
-                          "Panel Save"
-                          (get loaded :title)))
+  (draw-input-assert-true "ctrl save shows feedback"
+                          (not (empty? (get saved :status-note))))
+  (draw-input-assert-true "ctrl load shows feedback"
+                          (not (empty? (get loaded :status-note)))))
 
 (let [cursor (draw-desired-cursor-kind (default-state))]
   (draw-input-assert-str= "ink tool uses crosshair cursor"

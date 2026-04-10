@@ -68,9 +68,13 @@
 
 (def default-state draw-state/default-state)
 (def draw-state-file-path draw-state/draw-state-file-path)
+(def draw-window-title draw-state/draw-window-title)
 (def draw-kind=? draw-state/draw-kind=?)
 (def draw-tool-mode draw-state/draw-tool-mode)
 (def draw-state-snapshot draw-state/draw-state-snapshot)
+(def draw-set-status-note draw-state/draw-set-status-note)
+(def draw-status-note-text draw-state/draw-status-note-text)
+(def draw-persisted-state draw-state/draw-persisted-state)
 (def draw-element-kind draw-state/draw-element-kind)
 (def draw-ink-element? draw-state/draw-ink-element?)
 (def draw-box-element? draw-state/draw-box-element?)
@@ -693,20 +697,28 @@
 (defn draw-save-canvas-core!
   "Write STATE to the default draw save file and return STATE."
   [state]
-  (draw-session/draw-save-canvas-core! state
-                                       (draw-state-file-path)
-                                       draw-ensure-parent-directory!
-                                       draw-state-snapshot
-                                       draw-log-entry!))
+  (let [path (draw-state-file-path)
+        saved-state (draw-session/draw-save-canvas-core! (draw-persisted-state state)
+                                                         path
+                                                         draw-ensure-parent-directory!
+                                                         draw-state-snapshot
+                                                         draw-log-entry!)]
+    (draw-set-status-note saved-state
+                          (format "saved %s" (fs/basename path)))))
 
 (defn draw-load-canvas-core!
   "Load draw state from the default save file and return the next state."
   [state]
-  (draw-session/draw-load-canvas-core! state
-                                       (draw-state-file-path)
-                                       draw-normalize-state
-                                       draw-state-snapshot
-                                       draw-log-entry!))
+  (let [path (draw-state-file-path)
+        loaded-state (draw-session/draw-load-canvas-core! state
+                                                           path
+                                                           draw-normalize-state
+                                                           draw-state-snapshot
+                                                           draw-log-entry!)]
+    (draw-set-status-note loaded-state
+                          (if (fs/file? path)
+                            (format "loaded %s" (fs/basename path))
+                            (format "missing %s" (fs/basename path))))))
 
 (defn draw-refresh!
   "Render the current draw state immediately when the window is live."
@@ -760,7 +772,7 @@
     (lambda ()
       (let [save-path (fs/path path)]
         (draw-ensure-parent-directory! save-path)
-        (io/spit save-path (pr-str (current-state)))
+        (io/spit save-path (pr-str (draw-persisted-state (current-state))))
         save-path))))
 
 (defn save-canvas!
@@ -1873,7 +1885,7 @@
   []
   (if *draw-context*
     (sdl/set-window-title! (get *draw-context* :window)
-                           (describe-state *draw-state*))
+                           (draw-window-title))
     nil))
 
 (defn draw-drain-input-batch!
@@ -2484,7 +2496,7 @@
                                  :window-focused? true
                                  :pen-pressure 1.0)
                           (default-state))
-                  ctx (sdl/open-context (get state :title)
+                  ctx (sdl/open-context (draw-window-title)
                                         (get state :width)
                                         (get state :height))]
               (if (nil? ctx)
@@ -2497,7 +2509,7 @@
                   nil)
                 (begin
                   (if *draw-child-mode?*
-                    (draw-log-entry! :child-open-context-ok {:title (get state :title)})
+                    (draw-log-entry! :child-open-context-ok {:title (draw-window-title)})
                     nil)
                   (set! *draw-state* state)
                   (set! *draw-context* (assoc ctx :cursor-cache {} :cursor-kind false))
@@ -2750,7 +2762,7 @@
       (begin
         (if (start-dev!)
           (begin
-            (println (format "Opened %s" (describe-state *draw-state*)))
+            (println (format "Opened %s" (draw-window-title)))
             (println (format "Hint: %s" (str/upper-case "use the repl to change state")))
             (println (format "Hint: %s" (str/upper-case "call (stop!) or close the window to quit")))
             (cluck-repl)
@@ -2762,7 +2774,7 @@
         (let [ctx (start!)]
           (if ctx
             (begin
-              (println (format "Opened %s" (describe-state *draw-state*)))
+              (println (format "Opened %s" (draw-window-title)))
               (println (format "Hint: %s" (str/upper-case "close the window to quit")))
               (render-now!)
               (run-loop ctx *draw-state*)

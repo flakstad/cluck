@@ -3,10 +3,15 @@
 (ns cluck.examples.draw.state
   (:require [cluck.fs :as fs]))
 
+(defn draw-window-title
+  "Return the static window title for the draw app."
+  []
+  "Cluck Draw")
+
 (defn default-state
   "Return the starter app state."
   []
-  {:title "Cluck Draw"
+  {:title (draw-window-title)
    :width 1280
    :height 720
    :background [24 24 28]
@@ -35,6 +40,8 @@
    :canvas-dirty? false
    :debug-panel? false
    :tool-panel? false
+   :status-note ""
+   :status-note-frame 0
    :history []
    :elements []
    :next-element-id 1
@@ -117,10 +124,42 @@
      :active-text? (if (get state :active-text) true false)
      :history (count (get state :history))
      :canvas-dirty? (get state :canvas-dirty?)
+     :status-note (or (get state :status-note) "")
+     :status-note-frame (or (get state :status-note-frame) 0)
      :last-key (or (get state :last-key) "")
      :last-text (or (get state :last-text) "")
      :last-event (or (get state :last-event) "")}
     nil))
+
+(defn draw-status-note-ttl
+  "Return the number of frames a transient status note remains visible."
+  []
+  180)
+
+(defn draw-set-status-note
+  "Return STATE with NOTE attached as a transient status message."
+  [state note]
+  (assoc state
+         :status-note note
+         :status-note-frame (or (get state :frame) 0)))
+
+(defn draw-status-note-text
+  "Return the currently visible transient status note, or an empty string."
+  [state]
+  (let [note (or (get state :status-note) "")
+        note-frame (or (get state :status-note-frame) 0)
+        frame (or (get state :frame) 0)]
+    (if (and (not (empty? note))
+             (< (- frame note-frame) (draw-status-note-ttl)))
+      note
+      "")))
+
+(defn draw-persisted-state
+  "Return STATE with transient UI-only fields removed."
+  [state]
+  (if state
+    (dissoc state :status-note :status-note-frame)
+    state))
 
 (defn draw-element-kind
   "Return the normalized kind keyword for ELEMENT."
@@ -392,7 +431,10 @@
                 (assoc state :view-anchor-y 0.0))
         state (if (contains? state :tool-panel?)
                 state
-                (assoc state :tool-panel? false))]
+                (assoc state :tool-panel? false))
+        state (if (contains? state :status-note)
+                state
+                (assoc state :status-note "" :status-note-frame 0))]
     (draw-sync-elements state (get state :elements))))
 
 (defn draw-next-element-id

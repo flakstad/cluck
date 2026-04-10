@@ -222,6 +222,23 @@
             info-lines)
     nil))
 
+(defn draw-render-status-note!
+  "Render the transient save/load status note."
+  [renderer state]
+  (let [note (draw.state/draw-status-note-text state)]
+    (if (empty? note)
+      nil
+      (let [text (draw-truncate-text note 72)
+            x 12
+            y (- (or (get state :height) 720) 30)
+            width 312
+            height 22]
+        (sdl/set-draw-color! renderer 20 22 30 220)
+        (sdl/render-fill-rect! renderer x (- y 4) width height)
+        (sdl/set-draw-color! renderer 235 235 235 255)
+        (sdl/render-debug-text! renderer (+ x 8) y text)
+        nil))))
+
 (defn draw-render-debug-panel-base!
   "Render the on-demand debug panel."
   [renderer state render-stroke-point! desired-cursor-kind-fn last-error]
@@ -312,4 +329,5 @@
         desired-cursor-kind-fn
         last-error)
       nil)
+    (draw-render-status-note! renderer state)
     nil))

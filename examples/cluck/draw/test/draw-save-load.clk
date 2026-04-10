@@ -35,6 +35,8 @@
                         :title "Saved Draw"
                         :brush-size 7
                         :tool :box
+                        :status-note "saved note"
+                        :status-note-frame 42
                         :history [(draw-history-snapshot
                                     (draw-sync-elements
                                       (assoc (default-state)
@@ -89,6 +91,12 @@
       (draw-save-load-assert-str= "load restored title"
                                   "Saved Draw"
                                   (get (current-state) :title))
+      (draw-save-load-assert-str= "load clears transient status note"
+                                  ""
+                                  (get (current-state) :status-note))
+      (draw-save-load-assert-num= "load clears transient status note frame"
+                                  0
+                                  (get (current-state) :status-note-frame))
       (draw-save-load-assert-num= "load restored brush size"
                                   7
                                   (get (current-state) :brush-size))

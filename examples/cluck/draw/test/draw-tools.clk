@@ -79,6 +79,28 @@
 (draw-tools-assert-true "describe-state includes undo count"
                         (str/includes? (describe-state (default-state)) "undo 0"))
 (draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
+(draw-tools-assert-str= "window title is static"
+                        "Cluck Draw"
+                        (draw-window-title))
+
+(let [noted (draw-tools-copy-state
+              (assoc (default-state)
+                     :frame 12
+                     :status-note "saved cluck-draw-state.edn"
+                     :status-note-frame 12))]
+  (draw-tools-assert-str= "status note visible while fresh"
+                          "saved cluck-draw-state.edn"
+                          (draw-status-note-text noted))
+  (let [expired (draw-tools-copy-state
+                  (assoc (draw-tools-copy-state noted)
+                         :frame 999))]
+    (draw-tools-assert-str= "status note expires when old"
+                            ""
+                            (draw-status-note-text expired)))
+  (draw-tools-assert-false "persisted state strips status note"
+                           (contains? (draw-persisted-state noted) :status-note))
+  (draw-tools-assert-false "persisted state strips status note frame"
+                           (contains? (draw-persisted-state noted) :status-note-frame)))
 
 (let [cleared (draw-clear-strokes! (draw-tools-base-state))]
     (draw-tools-assert-true "clear strokes"
