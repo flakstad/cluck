@@ -5,7 +5,7 @@ This is the starting point for the SDL3 drawing app.
 What is in place:
 - a Cluck-only `main.clk`
 - a thin example-scoped `cluck.examples.draw.sdl3` direct-interop layer
-- extracted draw helper namespaces under `src/cluck/examples/draw/`, including state, history, view, panel, geometry, selection, actions, canvas, session, render, status, commands, replay, edit, create, stroke, and input
+- extracted draw helper namespaces under `src/cluck/examples/draw/`, including state, history, view, panel, geometry, selection, actions, canvas, session, runtime, render, status, commands, replay, edit, create, stroke, and input
 - a compiled runner entrypoint in `run.scm`
 - the shared example bootstrap from `examples/cluck/bootstrap.scm`
 - a first SDL3 window-open loop that clears the screen until quit

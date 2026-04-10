@@ -15,6 +15,7 @@
             [cluck.examples.draw.actions :as draw-actions]
             [cluck.examples.draw.canvas :as draw-canvas]
             [cluck.examples.draw.session :as draw-session]
+            [cluck.examples.draw.runtime :as draw-runtime]
             [cluck.examples.draw.render :as draw-render]
             [cluck.examples.draw.edit :as draw-edit]
             [cluck.examples.draw.create :as draw-create]
@@ -372,80 +373,67 @@
 (defn draw-log-file-path
   "Return the path used for the draw session log."
   []
-  (or *draw-log-path*
-      (fs/path (current-directory) "build" "cluck-draw.log")))
+  (draw-runtime/draw-log-file-path (current-directory) *draw-log-path*))
 
 (defn draw-crash-file-path
   "Return the path used for the latest crash snapshot."
   []
-  (or *draw-crash-path*
-      (fs/path (current-directory) "build" "cluck-draw-crash.edn")))
+  (draw-runtime/draw-crash-file-path (current-directory) *draw-crash-path*))
 
 (defn draw-heartbeat-file-path
   "Return the path used for draw loop heartbeats."
   []
-  (or *draw-heartbeat-path*
-      (fs/path (current-directory) "build" "cluck-draw-heartbeat.edn")))
+  (draw-runtime/draw-heartbeat-file-path (current-directory) *draw-heartbeat-path*))
 
 (defn draw-stall-file-path
   "Return the path used for detected draw stalls."
   []
-  (or *draw-stall-path*
-      (fs/path (current-directory) "build" "cluck-draw-stall.edn")))
+  (draw-runtime/draw-stall-file-path (current-directory) *draw-stall-path*))
 
 (defn draw-stall-sample-file-path
   "Return the path used for detected draw stall samples."
   []
-  (or *draw-stall-sample-path*
-      (fs/path (current-directory) "build" "cluck-draw-stall.sample")))
+  (draw-runtime/draw-stall-sample-file-path (current-directory) *draw-stall-sample-path*))
 
 (defn draw-watchdog-script-path
   "Return the watchdog script used to capture draw stalls."
   []
-  (fs/path (current-directory) "examples" "cluck" "draw" "watchdog.sh"))
+  (draw-runtime/draw-watchdog-script-path (current-directory)))
 
 (defn draw-child-runner-path
   "Return the child-runner script used by the supervisor process."
   []
-  (fs/path (current-directory) "examples" "cluck" "draw" "run-dev-child.scm"))
+  (draw-runtime/draw-child-runner-path (current-directory)))
 
 (defn draw-control-file-path
   "Return the control file used by the supervised child."
   []
-  (fs/path (current-directory) "build" "cluck-draw-control.edn"))
+  (draw-runtime/draw-control-file-path (current-directory)))
 
 (defn draw-child-stdout-path
   "Return the file used for child stdout/stderr capture."
   []
-  (fs/path (current-directory) "build" "cluck-draw-child.log"))
+  (draw-runtime/draw-child-stdout-path (current-directory)))
 
 (defn draw-process-id
   "Return the current process id."
   []
-  (posix:current-process-id))
+  (draw-runtime/draw-process-id))
 
 (defn draw-wall-clock-ms
   "Return the current wall clock in milliseconds."
   []
-  (* (current-seconds) 1000))
+  (draw-runtime/draw-wall-clock-ms))
 
 (defn draw-ensure-parent-directory!
   "Ensure PATH's parent directory exists before writing a save file."
   [path]
-  (let [dir (fs/dirname path)]
-    (if (and dir (not (fs/directory? dir)))
-      (create-directory dir)
-      dir)))
+  (draw-runtime/draw-ensure-parent-directory! path))
 
 (defn draw-write-file-atomic!
   "Write TEXT to PATH using a temporary file and rename."
   [path text]
-  (let [target (fs/path path)
-        temp (str target ".tmp")]
-    (draw-ensure-parent-directory! target)
-    (io/spit temp text)
-    (cfile:rename-file temp target true)
-    target))
+  (draw-runtime/draw-write-file-atomic! path text))
 
 (defn draw-enable-logging!
   "Enable draw session logging."
@@ -485,13 +473,13 @@
 (defn draw-watchdog-status
   "Return the current watchdog configuration and paths."
   []
-  {:enabled? *draw-watchdog-enabled?*
-   :pid *draw-watchdog-pid*
-   :heartbeat (draw-heartbeat-file-path)
-   :stall (draw-stall-file-path)
-   :sample (draw-stall-sample-file-path)
-   :stale-ms (draw-watchdog-stale-ms)
-   :poll-ms (draw-watchdog-poll-ms)})
+  (draw-runtime/draw-watchdog-status *draw-watchdog-enabled?*
+                                     *draw-watchdog-pid*
+                                     (draw-heartbeat-file-path)
+                                     (draw-stall-file-path)
+                                     (draw-stall-sample-file-path)
+                                     (draw-watchdog-stale-ms)
+                                     (draw-watchdog-poll-ms)))
 
 (defn draw-enable-supervision!
   "Enable the supervised child-process development mode."
@@ -506,98 +494,64 @@
 (defn draw-supervised-mode?
   "Return true when the current process should supervise a child draw window."
   []
-  (and *draw-supervision-enabled?*
-       (not *draw-child-mode?*)))
+  (draw-runtime/draw-supervised-mode? *draw-supervision-enabled?*
+                                      *draw-child-mode?*))
 
 (defn draw-supervisor-status
   "Return the current supervised-child status."
   []
-  {:enabled? (draw-supervised-mode?)
-   :child-mode? *draw-child-mode?*
-   :child-pid *draw-child-pid*
-   :supervisor-thread? (if *draw-supervisor-thread* true false)
-   :control-seq *draw-control-seq*
-   :last-control-seq *draw-last-control-seq*
-   :state-path (draw-state-file-path)
-   :control-path (draw-control-file-path)
-   :child-log (draw-child-stdout-path)
-   :heartbeat (draw-heartbeat-file-path)})
+  (draw-runtime/draw-supervisor-status (draw-supervised-mode?)
+                                       *draw-child-mode?*
+                                       *draw-child-pid*
+                                       (if *draw-supervisor-thread* true false)
+                                       *draw-control-seq*
+                                       *draw-last-control-seq*
+                                       (draw-state-file-path)
+                                       (draw-control-file-path)
+                                       (draw-child-stdout-path)
+                                       (draw-heartbeat-file-path)))
 
 (defn draw-clear-log!
   "Delete the current draw log file when it exists."
   []
-  (let [path (draw-log-file-path)]
-    (if (fs/file? path)
-      (fs/delete! path)
-      false)
-    path))
+  (draw-runtime/draw-clear-log! (draw-log-file-path)))
 
 (defn draw-clear-watchdog-files!
   "Delete prior heartbeat and stall artifacts."
   []
-  (let [paths [(draw-heartbeat-file-path)
-               (draw-stall-file-path)
-               (draw-stall-sample-file-path)]]
-    (let [heartbeat (first paths)
-          stall (nth paths 1)
-          sample (nth paths 2)]
-      (if (fs/file? heartbeat)
-        (fs/delete! heartbeat)
-        false)
-      (if (fs/file? stall)
-        (fs/delete! stall)
-        false)
-      (if (fs/file? sample)
-        (fs/delete! sample)
-        false))
-    paths))
+  (draw-runtime/draw-clear-watchdog-files! (draw-heartbeat-file-path)
+                                           (draw-stall-file-path)
+                                           (draw-stall-sample-file-path)))
 
 (defn draw-clear-control-file!
   "Delete any prior supervised-child control file."
   []
-  (let [path (draw-control-file-path)]
-    (if (fs/file? path)
-      (fs/delete! path)
-      false)
-    path))
+  (draw-runtime/draw-clear-control-file! (draw-control-file-path)))
 
 (defn draw-log-lines
   "Return all current draw log lines."
   []
-  (let [path (draw-log-file-path)]
-    (if (fs/file? path)
-      (io/read-lines path)
-      [])))
+  (draw-runtime/draw-log-lines (draw-log-file-path)))
 
 (defn draw-log-tail
   "Return the last COUNT draw log lines."
   [n]
-  (let [lines (draw-log-lines)
-        total (count lines)
-        limit (if (and n (> n 0)) n 0)]
-    (if (> total limit)
-      (vec (drop (- total limit) lines))
-      (vec lines))))
+  (draw-runtime/draw-log-tail (draw-log-file-path) n))
 
 (defn draw-read-state-file
   "Read the latest full draw state from disk when available."
   []
-  (let [path (draw-state-file-path)]
-    (if (fs/file? path)
-      (handle-exceptions _ false
-        (draw-normalize-state
-          (edn/read-string (io/slurp path))))
-      false)))
+  (draw-runtime/draw-read-state-file (draw-state-file-path)
+                                     draw-normalize-state))
 
 (defn draw-heartbeat-payload
   "Return the external heartbeat payload for STATE at PHASE."
   [phase state]
-  {:at (draw-wall-clock-ms)
-   :phase phase
-   :pid (draw-process-id)
-   :running? *draw-running?*
-   :watchdog? *draw-watchdog-enabled?*
-   :state (draw-state-snapshot state)})
+  (draw-runtime/draw-heartbeat-payload phase
+                                       state
+                                       *draw-running?*
+                                       *draw-watchdog-enabled?*
+                                       draw-state-snapshot))
 
 (defn draw-write-heartbeat!
   "Write a heartbeat for PHASE and STATE when enough time has elapsed."
@@ -636,117 +590,72 @@
 (defn draw-log-entry!
   "Append a diagnostic KIND/PAYLOAD entry to the draw session log."
   [kind payload]
-  (if *draw-log-enabled?*
-    (let [path (draw-log-file-path)
-          entry {:at (current-process-milliseconds)
-                 :kind kind
-                 :payload payload}
-          line (pr-str entry)]
-      (draw-ensure-parent-directory! path)
-      (proc/system (format "printf '%%s\\n' %s >> %s"
-                           (proc/qs line)
-                           (proc/qs path)))
-      line)
-    nil))
+  (draw-runtime/draw-log-entry! *draw-log-enabled?*
+                                (draw-log-file-path)
+                                kind
+                                payload))
 
 (defn draw-write-crash-report!
   "Write a full crash report for EXN."
   [exn]
-  (let [path (draw-crash-file-path)
-        report {:at (current-process-milliseconds)
-                :error (format "%s" exn)
-                :state (draw-state-snapshot *draw-state*)
-                :recent-events (if *draw-state* (get *draw-state* :recent-events) [])
-                :last-error (if *draw-last-error*
-                              (format "%s" *draw-last-error*)
-                              "")}]
-    (draw-write-file-atomic! path (pr-str report))
-    path))
+  (draw-runtime/draw-write-crash-report! (draw-crash-file-path)
+                                         exn
+                                         *draw-state*
+                                         *draw-last-error*
+                                         draw-state-snapshot))
 
 (defn draw-stop-watchdog!
   "Stop the external draw watchdog when one is running."
   []
   (let [pid *draw-watchdog-pid*]
     (set! *draw-watchdog-pid* false)
-    (if pid
-      (proc/system
-        (format "kill %s >/dev/null 2>&1 || true"
-                (proc/qs (str pid))))
-      0)
+    (draw-runtime/draw-stop-watchdog! pid)
     nil))
 
 (defn draw-child-alive?
   "Return true when PID still exists."
   [pid]
-  (and pid
-       (zero? (proc/system
-                (format "kill -0 %s >/dev/null 2>&1"
-                        (proc/qs (str pid)))))))
+  (draw-runtime/draw-child-alive? pid))
 
 (defn draw-write-control-command!
   "Write an OP/PAYLOAD command for the supervised child."
   [op payload]
-    (let [seq (+ *draw-control-seq* 1)
-        command {:seq seq
-                 :op op
-                 :payload payload}
-        path (draw-control-file-path)]
-    (set! *draw-control-seq* seq)
-    (draw-write-file-atomic! path (pr-str command))
-    command))
+  (let [result (draw-runtime/draw-write-control-command! *draw-control-seq*
+                                                         (draw-control-file-path)
+                                                         op
+                                                         payload)]
+    (set! *draw-control-seq* (get result :seq))
+    (get result :command)))
 
 (defn draw-read-control-command
   "Read the latest supervised-child control command when present."
   []
-  (let [path (draw-control-file-path)]
-    (if (fs/file? path)
-      (handle-exceptions _ false
-        (edn/read-string (io/slurp path)))
-      false)))
+  (draw-runtime/draw-read-control-command (draw-control-file-path)))
 
 (defn draw-control-command-pending
   "Return the next unprocessed control command when present."
   []
-  (let [command (draw-read-control-command)]
-    (if command
-      (let [seq (or (get command :seq) 0)]
-        (if (> seq *draw-last-control-seq*)
-          command
-          false))
-      false)))
+  (draw-runtime/draw-control-command-pending (draw-read-control-command)
+                                             *draw-last-control-seq*))
 
 (defn draw-start-watchdog!
   "Start the external draw watchdog if it is enabled."
   []
-  (if (not *draw-watchdog-enabled?*)
-    nil
-    (let [script (draw-watchdog-script-path)]
-      (if (not (fs/file? script))
-        nil
-        (begin
-          (draw-stop-watchdog!)
-          (draw-write-heartbeat! :start *draw-state*)
-          (let [launcher
-                  (format "%s %s %s %s %s %s %s %s >/dev/null 2>&1 & echo $!"
-                          (proc/qs script)
-                          (proc/qs (str (draw-process-id)))
-                          (proc/qs (draw-heartbeat-file-path))
-                          (proc/qs (draw-stall-file-path))
-                          (proc/qs (draw-stall-sample-file-path))
-                          (proc/qs (draw-log-file-path))
-                          (proc/qs (str (draw-watchdog-stale-ms)))
-                          (proc/qs (str (draw-watchdog-poll-ms))))
-                command (format "/bin/sh -c %s"
-                                (proc/qs launcher))
-                result (proc/sh command)]
-            (if (zero? (get result :exit))
-              (let [pid-text (str/trim (get result :out))]
-                (if (str/blank? pid-text)
-                  nil
-                  (begin
-                    (set! *draw-watchdog-pid* (parse-long pid-text))
-                    *draw-watchdog-pid*)))
-              nil)))))))
+  (let [pid (draw-runtime/draw-start-watchdog! *draw-watchdog-enabled?*
+                                               (draw-watchdog-script-path)
+                                               (draw-process-id)
+                                               (draw-heartbeat-file-path)
+                                               (draw-stall-file-path)
+                                               (draw-stall-sample-file-path)
+                                               (draw-log-file-path)
+                                               (draw-watchdog-stale-ms)
+                                               (draw-watchdog-poll-ms)
+                                               draw-stop-watchdog!)]
+    (if pid
+      (begin
+        (set! *draw-watchdog-pid* pid)
+        pid)
+      nil)))
 
 (defn draw-dump-state!
   "Write the current full draw state to PATH, or the default state file."

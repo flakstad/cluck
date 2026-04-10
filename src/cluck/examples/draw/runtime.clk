@@ -1,0 +1,301 @@
+;; Draw runtime support helpers: files, logs, heartbeat state, and watchdog IO.
+
+(ns cluck.examples.draw.runtime
+  (:require [cluck.fs :as fs]
+            [cluck.io :as io]
+            [cluck.edn :as edn]
+            [cluck.process :as proc]
+            [cluck.string :as str]))
+
+(import (prefix (chicken file) cfile:)
+        (prefix (chicken process-context posix) posix:)
+        (chicken time))
+
+(defn draw-log-file-path
+  "Return the path used for the draw session log."
+  [cwd override]
+  (or override
+      (fs/path cwd "build" "cluck-draw.log")))
+
+(defn draw-crash-file-path
+  "Return the path used for the latest crash snapshot."
+  [cwd override]
+  (or override
+      (fs/path cwd "build" "cluck-draw-crash.edn")))
+
+(defn draw-heartbeat-file-path
+  "Return the path used for draw loop heartbeats."
+  [cwd override]
+  (or override
+      (fs/path cwd "build" "cluck-draw-heartbeat.edn")))
+
+(defn draw-stall-file-path
+  "Return the path used for detected draw stalls."
+  [cwd override]
+  (or override
+      (fs/path cwd "build" "cluck-draw-stall.edn")))
+
+(defn draw-stall-sample-file-path
+  "Return the path used for detected draw stall samples."
+  [cwd override]
+  (or override
+      (fs/path cwd "build" "cluck-draw-stall.sample")))
+
+(defn draw-watchdog-script-path
+  "Return the watchdog script used to capture draw stalls."
+  [cwd]
+  (fs/path cwd "examples" "cluck" "draw" "watchdog.sh"))
+
+(defn draw-child-runner-path
+  "Return the child-runner script used by the supervisor process."
+  [cwd]
+  (fs/path cwd "examples" "cluck" "draw" "run-dev-child.scm"))
+
+(defn draw-control-file-path
+  "Return the control file used by the supervised child."
+  [cwd]
+  (fs/path cwd "build" "cluck-draw-control.edn"))
+
+(defn draw-child-stdout-path
+  "Return the file used for child stdout/stderr capture."
+  [cwd]
+  (fs/path cwd "build" "cluck-draw-child.log"))
+
+(defn draw-process-id
+  "Return the current process id."
+  []
+  (posix:current-process-id))
+
+(defn draw-wall-clock-ms
+  "Return the current wall clock in milliseconds."
+  []
+  (* (current-seconds) 1000))
+
+(defn draw-ensure-parent-directory!
+  "Ensure PATH's parent directory exists before writing a save file."
+  [path]
+  (let [dir (fs/dirname path)]
+    (if (and dir (not (fs/directory? dir)))
+      (create-directory dir)
+      dir)))
+
+(defn draw-write-file-atomic!
+  "Write TEXT to PATH using a temporary file and rename."
+  [path text]
+  (let [target (fs/path path)
+        temp (str target ".tmp")]
+    (draw-ensure-parent-directory! target)
+    (io/spit temp text)
+    (cfile:rename-file temp target true)
+    target))
+
+(defn draw-watchdog-status
+  "Return the current watchdog configuration and paths."
+  [enabled? pid heartbeat-path stall-path sample-path stale-ms poll-ms]
+  {:enabled? enabled?
+   :pid pid
+   :heartbeat heartbeat-path
+   :stall stall-path
+   :sample sample-path
+   :stale-ms stale-ms
+   :poll-ms poll-ms})
+
+(defn draw-supervised-mode?
+  "Return true when the current process should supervise a child draw window."
+  [supervision-enabled? child-mode?]
+  (and supervision-enabled?
+       (not child-mode?)))
+
+(defn draw-supervisor-status
+  "Return the current supervised-child status."
+  [enabled? child-mode? child-pid supervisor-thread? control-seq last-control-seq state-path control-path child-log heartbeat]
+  {:enabled? enabled?
+   :child-mode? child-mode?
+   :child-pid child-pid
+   :supervisor-thread? supervisor-thread?
+   :control-seq control-seq
+   :last-control-seq last-control-seq
+   :state-path state-path
+   :control-path control-path
+   :child-log child-log
+   :heartbeat heartbeat})
+
+(defn draw-clear-log!
+  "Delete the current draw log file when it exists."
+  [path]
+  (if (fs/file? path)
+    (fs/delete! path)
+    false)
+  path)
+
+(defn draw-clear-watchdog-files!
+  "Delete prior heartbeat and stall artifacts."
+  [heartbeat stall sample]
+  (if (fs/file? heartbeat)
+    (fs/delete! heartbeat)
+    false)
+  (if (fs/file? stall)
+    (fs/delete! stall)
+    false)
+  (if (fs/file? sample)
+    (fs/delete! sample)
+    false)
+  [heartbeat stall sample])
+
+(defn draw-clear-control-file!
+  "Delete any prior supervised-child control file."
+  [path]
+  (if (fs/file? path)
+    (fs/delete! path)
+    false)
+  path)
+
+(defn draw-log-lines
+  "Return all current draw log lines."
+  [path]
+  (if (fs/file? path)
+    (io/read-lines path)
+    []))
+
+(defn draw-log-tail
+  "Return the last COUNT draw log lines."
+  [path n]
+  (let [lines (draw-log-lines path)
+        total (count lines)
+        limit (if (and n (> n 0)) n 0)]
+    (if (> total limit)
+      (vec (drop (- total limit) lines))
+      (vec lines))))
+
+(defn draw-read-state-file
+  "Read the latest full draw state from disk when available."
+  [path normalize-state]
+  (if (fs/file? path)
+    (handle-exceptions _ false
+      (normalize-state
+        (edn/read-string (io/slurp path))))
+    false))
+
+(defn draw-heartbeat-payload
+  "Return the external heartbeat payload for STATE at PHASE."
+  [phase state running? watchdog-enabled? state-snapshot]
+  {:at (draw-wall-clock-ms)
+   :phase phase
+   :pid (draw-process-id)
+   :running? running?
+   :watchdog? watchdog-enabled?
+   :state (state-snapshot state)})
+
+(defn draw-log-entry!
+  "Append a diagnostic KIND/PAYLOAD entry to the draw session log."
+  [enabled? path kind payload]
+  (if enabled?
+    (let [entry {:at (current-process-milliseconds)
+                 :kind kind
+                 :payload payload}
+          line (pr-str entry)]
+      (draw-ensure-parent-directory! path)
+      (proc/system (format "printf '%%s\\n' %s >> %s"
+                           (proc/qs line)
+                           (proc/qs path)))
+      line)
+    nil))
+
+(defn draw-write-crash-report!
+  "Write a full crash report for EXN."
+  [path exn state last-error state-snapshot]
+  (let [report {:at (current-process-milliseconds)
+                :error (format "%s" exn)
+                :state (state-snapshot state)
+                :recent-events (if state (get state :recent-events) [])
+                :last-error (if last-error
+                              (format "%s" last-error)
+                              "")}]
+    (draw-write-file-atomic! path (pr-str report))
+    path))
+
+(defn draw-stop-watchdog!
+  "Stop the external draw watchdog when one is running."
+  [pid]
+  (if pid
+    (proc/system
+      (format "kill %s >/dev/null 2>&1 || true"
+              (proc/qs (str pid))))
+    0)
+  nil)
+
+(defn draw-child-alive?
+  "Return true when PID still exists."
+  [pid]
+  (and pid
+       (zero? (proc/system
+                (format "kill -0 %s >/dev/null 2>&1"
+                        (proc/qs (str pid)))))))
+
+(defn draw-write-control-command!
+  "Build and write an OP/PAYLOAD command for the supervised child."
+  [control-seq path op payload]
+  (let [seq (+ control-seq 1)
+        command {:seq seq
+                 :op op
+                 :payload payload}]
+    (draw-write-file-atomic! path (pr-str command))
+    {:seq seq
+     :command command}))
+
+(defn draw-read-control-command
+  "Read the latest supervised-child control command when present."
+  [path]
+  (if (fs/file? path)
+    (handle-exceptions _ false
+      (edn/read-string (io/slurp path)))
+    false))
+
+(defn draw-control-command-pending
+  "Return the next unprocessed control command when present."
+  [command last-control-seq]
+  (if command
+    (let [seq (or (get command :seq) 0)]
+      (if (> seq last-control-seq)
+        command
+        false))
+    false))
+
+(defn draw-heartbeat-age-ms
+  "Return the age of the child heartbeat in milliseconds, or false."
+  [heartbeat-path]
+  (if (fs/file? heartbeat-path)
+    (let [heartbeat (edn/read-string (io/slurp heartbeat-path))
+          at (or (get heartbeat :at) 0)]
+      (if (> at 0)
+        (- (draw-wall-clock-ms) at)
+        false))
+    false))
+
+(defn draw-start-watchdog!
+  "Start the external draw watchdog if it is enabled."
+  [enabled? script process-id heartbeat-path stall-path stall-sample-path log-path stale-ms poll-ms stop-watchdog!]
+  (if (not enabled?)
+    nil
+    (if (not (fs/file? script))
+      nil
+      (begin
+        (stop-watchdog!)
+        (let [launcher (format "%s %s %s %s %s %s %s %s >/dev/null 2>&1 & echo $!"
+                               (proc/qs script)
+                               (proc/qs (str process-id))
+                               (proc/qs heartbeat-path)
+                               (proc/qs stall-path)
+                               (proc/qs stall-sample-path)
+                               (proc/qs log-path)
+                               (proc/qs (str stale-ms))
+                               (proc/qs (str poll-ms)))
+              command (format "/bin/sh -c %s"
+                              (proc/qs launcher))
+              result (proc/sh command)]
+          (if (zero? (get result :exit))
+            (let [pid-text (str/trim (get result :out))]
+              (if (str/blank? pid-text)
+                nil
+                (parse-long pid-text)))
+            nil))))))
