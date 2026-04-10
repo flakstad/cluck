@@ -15,3 +15,8 @@
 - 2026-04-09: `json-find-entry` needs to normalize vectors explicitly; `seq`
   alone was not enough in this runtime when looking up keys on vector-backed
   rows.
+- 2026-04-10: Example namespace extraction can still trip over same-named
+  helpers across `.clk` files. A local helper like `draw-with-preview!` in one
+  namespace resolved to the entrypoint wrapper with the same name at runtime,
+  so example-scoped modules should currently prefer distinctive helper names
+  rather than relying on namespace-local resolution for duplicated symbols.

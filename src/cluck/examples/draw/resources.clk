@@ -1,0 +1,296 @@
+;; SDL texture, cursor, and render-target resource helpers for draw.
+
+(ns cluck.examples.draw.resources
+  (:require [cluck.examples.draw.sdl3 :as sdl]))
+
+(defn draw-brush-texture-diameter
+  "Return the canonical brush stamp diameter."
+  []
+  128)
+
+(defn draw-brush-hardness
+  "Return the default brush hardness used by the stamp texture."
+  []
+  0.65)
+
+(defn draw-strip-texture-width
+  "Return the canonical width for the soft strip texture."
+  []
+  64)
+
+(defn draw-strip-texture-height
+  "Return the canonical height for the soft strip texture."
+  []
+  64)
+
+(defn draw-strip-hardness
+  "Return the default strip hardness used by the segment body texture."
+  []
+  0.75)
+
+(defn draw-resource-with-render-target!
+  "Run THUNK with TEXTURE bound as the SDL render target."
+  [context ready? texture thunk]
+  (let [renderer (if context (get context :renderer) false)]
+    (if (and renderer ready?)
+      (begin
+        (sdl/set-render-target! renderer texture)
+        (thunk renderer)
+        (sdl/clear-render-target! renderer)
+        true)
+      false)))
+
+(defn draw-resource-with-canvas!
+  "Run THUNK with the canvas texture bound as the SDL render target."
+  [context canvas-ready? thunk]
+  (draw-resource-with-render-target! context
+                                     canvas-ready?
+                                     (if context (get context :canvas) false)
+                                     thunk))
+
+(defn draw-resource-with-preview!
+  "Run THUNK with the preview texture bound as the SDL render target."
+  [context preview-ready? thunk]
+  (draw-resource-with-render-target! context
+                                     preview-ready?
+                                     (if context (get context :preview) false)
+                                     thunk))
+
+(defn draw-ensure-canvas!
+  "Create or resize the cached canvas texture."
+  [context canvas-ready? width height]
+  (let [renderer (if context (get context :renderer) nil)
+        canvas (if context (get context :canvas) nil)
+        canvas-width (if context (get context :canvas-width) nil)
+        canvas-height (if context (get context :canvas-height) nil)]
+    (if (and canvas-ready?
+             (= canvas-width width)
+             (= canvas-height height))
+      {:context context :ready? true}
+      (let [context (if canvas-ready?
+                      (begin
+                        (sdl/destroy-texture! canvas)
+                        (dissoc context :canvas :canvas-width :canvas-height))
+                      context)]
+        (if renderer
+          (let [texture (sdl/create-canvas-texture renderer width height)]
+            (if texture
+              {:context (assoc context
+                               :canvas texture
+                               :canvas-width width
+                               :canvas-height height)
+               :ready? true}
+              {:context context :ready? false}))
+          {:context context :ready? false})))))
+
+(defn draw-ensure-preview!
+  "Create or resize the active-stroke preview texture."
+  [context preview-ready? width height]
+  (let [renderer (if context (get context :renderer) nil)
+        preview (if context (get context :preview) nil)
+        preview-width (if context (get context :preview-width) nil)
+        preview-height (if context (get context :preview-height) nil)]
+    (if (and preview-ready?
+             (= preview-width width)
+             (= preview-height height))
+      {:context context :ready? true}
+      (let [context (if preview-ready?
+                      (begin
+                        (sdl/destroy-texture! preview)
+                        (dissoc context :preview :preview-width :preview-height))
+                      context)]
+        (if renderer
+          (let [texture (sdl/create-canvas-texture renderer width height)]
+            (if texture
+              {:context (assoc context
+                               :preview texture
+                               :preview-width width
+                               :preview-height height)
+               :ready? true}
+              {:context context :ready? false}))
+          {:context context :ready? false})))))
+
+(defn draw-release-canvas!
+  "Destroy the cached canvas texture."
+  [context canvas-ready?]
+  (let [canvas (if context (get context :canvas) false)]
+    (if canvas-ready?
+      (sdl/destroy-texture! canvas)
+      nil)
+    {:context (if context
+                (dissoc context :canvas :canvas-width :canvas-height)
+                context)
+     :ready? false}))
+
+(defn draw-release-preview!
+  "Destroy the active-stroke preview texture."
+  [context preview-ready?]
+  (let [preview (if context (get context :preview) false)]
+    (if preview-ready?
+      (sdl/destroy-texture! preview)
+      nil)
+    {:context (if context
+                (dissoc context :preview :preview-width :preview-height)
+                context)
+     :ready? false}))
+
+(defn draw-clear-canvas!
+  "Clear the cached canvas texture."
+  [context canvas-ready?]
+  (draw-resource-with-canvas!
+    context
+    canvas-ready?
+    (lambda (renderer)
+      (sdl/set-draw-color! renderer 0 0 0 0)
+      (sdl/render-clear! renderer)
+      nil)))
+
+(defn draw-clear-preview!
+  "Clear the active-stroke preview texture."
+  [context preview-ready?]
+  (draw-resource-with-preview!
+    context
+    preview-ready?
+    (lambda (renderer)
+      (sdl/set-draw-color! renderer 0 0 0 0)
+      (sdl/render-clear! renderer)
+      nil)))
+
+(defn draw-ensure-brush-texture!
+  "Create or refresh the brush stamp texture."
+  [context brush-ready?]
+  (let [renderer (if context (get context :renderer) nil)
+        diameter (draw-brush-texture-diameter)
+        current (if context (get context :brush-texture) nil)
+        current-diameter (if context (get context :brush-texture-diameter) nil)]
+    (if (and brush-ready?
+             (= current-diameter diameter))
+      {:context context :ready? true}
+      (let [context (if brush-ready?
+                      (begin
+                        (sdl/destroy-texture! current)
+                        (dissoc context :brush-texture :brush-texture-diameter))
+                      context)]
+        (if renderer
+          (let [texture (sdl/create-soft-brush-texture renderer
+                                                       diameter
+                                                       (draw-brush-hardness))]
+            (if texture
+              {:context (assoc context
+                               :brush-texture texture
+                               :brush-texture-diameter diameter)
+               :ready? true}
+              {:context context :ready? false}))
+          {:context context :ready? false})))))
+
+(defn draw-release-brush-texture!
+  "Destroy the cached brush stamp texture."
+  [context brush-ready?]
+  (let [brush (if context (get context :brush-texture) false)]
+    (if brush-ready?
+      (sdl/destroy-texture! brush)
+      nil)
+    {:context (if context
+                (dissoc context :brush-texture :brush-texture-diameter)
+                context)
+     :ready? false}))
+
+(defn draw-ensure-strip-texture!
+  "Create or refresh the strip texture used for stroke bodies."
+  [context strip-ready?]
+  (let [renderer (if context (get context :renderer) nil)
+        width (draw-strip-texture-width)
+        height (draw-strip-texture-height)
+        current (if context (get context :strip-texture) nil)
+        current-width (if context (get context :strip-texture-width) nil)
+        current-height (if context (get context :strip-texture-height) nil)]
+    (if (and strip-ready?
+             (= current-width width)
+             (= current-height height))
+      {:context context :ready? true}
+      (let [context (if strip-ready?
+                      (begin
+                        (sdl/destroy-texture! current)
+                        (dissoc context
+                                :strip-texture
+                                :strip-texture-width
+                                :strip-texture-height))
+                      context)]
+        (if renderer
+          (let [texture (sdl/create-soft-strip-texture renderer
+                                                       width
+                                                       height
+                                                       (draw-strip-hardness))]
+            (if texture
+              {:context (assoc context
+                               :strip-texture texture
+                               :strip-texture-width width
+                               :strip-texture-height height)
+               :ready? true}
+              {:context context :ready? false}))
+          {:context context :ready? false})))))
+
+(defn draw-release-strip-texture!
+  "Destroy the cached strip texture."
+  [context strip-ready?]
+  (let [strip (if context (get context :strip-texture) false)]
+    (if strip-ready?
+      (sdl/destroy-texture! strip)
+      nil)
+    {:context (if context
+                (dissoc context
+                        :strip-texture
+                        :strip-texture-width
+                        :strip-texture-height)
+                context)
+     :ready? false}))
+
+(defn draw-release-cursors!
+  "Destroy cached system cursors and clear them from the draw context."
+  [context]
+  (let [cache (if context (or (get context :cursor-cache) {}) {})]
+    (reduce (fn [acc entry]
+              (let [cursor (nth entry 1)]
+                (if cursor
+                  (sdl/destroy-cursor! cursor)
+                  nil)
+                acc))
+            nil
+            cache)
+    (if context
+      (dissoc context :cursor-cache :cursor-kind)
+      context)))
+
+(defn draw-ensure-system-cursor!
+  "Return a cached system cursor pointer for KIND, creating it when needed."
+  [context kind]
+  (if (not context)
+    {:context context :cursor false}
+    (let [cache (or (get context :cursor-cache) {})
+          current (get cache kind)]
+      (if current
+        {:context context :cursor current}
+        (let [cursor (sdl/create-system-cursor kind)]
+          (if cursor
+            {:context (assoc context
+                             :cursor-cache (assoc cache kind cursor))
+             :cursor cursor}
+            {:context context :cursor false}))))))
+
+(defn draw-sync-cursor!
+  "Apply DESIRED-KIND as the active cursor when the context is live."
+  [context desired-kind]
+  (if (not context)
+    {:context context :kind false}
+    (let [current-kind (get context :cursor-kind)]
+      (if (equal? desired-kind current-kind)
+        {:context context :kind desired-kind}
+        (let [cursor-result (draw-ensure-system-cursor! context desired-kind)
+              next-context (get cursor-result :context)
+              cursor (get cursor-result :cursor)]
+          (if cursor
+            (begin
+              (sdl/set-cursor! cursor)
+              {:context (assoc next-context :cursor-kind desired-kind)
+               :kind desired-kind})
+            {:context next-context :kind current-kind}))))))
