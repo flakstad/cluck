@@ -554,12 +554,8 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
   (foreign-lambda bool "cluck_mod_ctrl_pressed"))
 
 (define sdl-create-system-cursor
-  (foreign-lambda* scheme-object ((int id))
-    "SDL_Cursor *cursor = cluck_create_system_cursor(id);
-     if (cursor) {
-       C_return(cursor);
-     }
-     C_return(C_SCHEME_FALSE);"))
+  (foreign-lambda* c-pointer ((int id))
+    "C_return(cluck_create_system_cursor(id));"))
 
 (define sdl-set-cursor!
   (foreign-lambda* bool ((c-pointer cursor))

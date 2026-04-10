@@ -33,18 +33,28 @@
             (thread-sleep! 1)
             (draw-super-wait-for predicate (- rounds 1))))))
 
+(define (draw-super-heartbeat-ready?)
+  (if (fs/file? (draw-heartbeat-file-path))
+      (let* ((heartbeat (edn/read-string (io/slurp (draw-heartbeat-file-path))))
+             (phase (get heartbeat :phase)))
+        (and phase
+             (not (equal? phase :start))))
+      false))
+
 (set! *draw-supervision-enabled?* true)
 (draw-clear-log!)
 (draw-clear-watchdog-files!)
 (draw-clear-control-file!)
 
 (let [result (start-dev!)]
-  (draw-super-wait-for (lambda () (fs/file? (draw-heartbeat-file-path))) 15)
+  (draw-super-wait-for draw-super-heartbeat-ready? 15)
   (let [status (draw-supervisor-status)
         state (current-state)]
     (draw-super-assert-true "start-dev! returns truthy" result)
     (draw-super-assert-num-pos "child pid exists" (get status :child-pid))
     (draw-super-assert-true "state file readable" state)
     (draw-super-assert-true "watchdog heartbeat exists"
-                            (fs/file? (draw-heartbeat-file-path))))
+                            (fs/file? (draw-heartbeat-file-path)))
+    (draw-super-assert-true "child reached live loop heartbeat"
+                            (draw-super-heartbeat-ready?)))
   (stop!))

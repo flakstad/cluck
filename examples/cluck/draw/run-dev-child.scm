@@ -18,13 +18,14 @@
         (newline))
       #:append)))
 
-(let ((root (script-root)))
-  (append-bootstrap-log (string-append root "../../build/cluck-draw-child.log")
+(let* ((root (script-root))
+       (child-log (string-append root "../../../build/cluck-draw-child.log")))
+  (append-bootstrap-log child-log
                         "child-bootstrap: enter run-dev-child.scm")
   (load (string-append root "../../../src/cluck-init.scm"))
-  (append-bootstrap-log (string-append root "../../build/cluck-draw-child.log")
+  (append-bootstrap-log child-log
                         "child-bootstrap: loaded cluck-init.scm")
   (load-file (string-append root "dev.clk"))
-  (append-bootstrap-log (string-append root "../../build/cluck-draw-child.log")
+  (append-bootstrap-log child-log
                         "child-bootstrap: loaded dev.clk")
   (draw-child-main))

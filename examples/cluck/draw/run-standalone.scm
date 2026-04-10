@@ -12,6 +12,11 @@
 (include "src/cluck.scm")
 
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.string #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.fs #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.io #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.edn #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.process #t)
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.math #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.state #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.history #t)
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw.view #t)
@@ -36,6 +41,11 @@
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.draw #t)
 
 (include "src/cluck/string.clk")
+(include "src/cluck/fs.clk")
+(include "src/cluck/io.clk")
+(include "src/cluck/edn.clk")
+(include "src/cluck/process.clk")
+(include "src/cluck/math.clk")
 (include "examples/cluck/draw/src/state.clk")
 (include "examples/cluck/draw/src/history.clk")
 (include "examples/cluck/draw/src/view.clk")

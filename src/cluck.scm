@@ -42,6 +42,44 @@
             (string-append dir "/")))
       #f))
 
+(define (cluck-parent-directory dir)
+  (let* ((normalized (cluck-normalize-directory dir))
+         (trimmed (cluck-trim-trailing-slash normalized))
+         (len (if trimmed (string-length trimmed) 0)))
+    (let loop ((i (- len 1)))
+      (cond
+        ((< i 0) #f)
+        ((char=? (string-ref trimmed i) #\/)
+         (if (= i 0)
+             "/"
+             (substring trimmed 0 (+ i 1))))
+        (:else
+         (loop (- i 1)))))))
+
+(define (cluck-find-project-root dir)
+  (let loop ((current (cluck-normalize-directory dir)))
+    (cond
+      ((not current) #f)
+      ((file-exists? (string-append current "examples/cluck/bootstrap.scm"))
+       current)
+      ((string=? current "/")
+       #f)
+      (:else
+       (loop (cluck-parent-directory current))))))
+
+(define (cluck-module-search-roots)
+  (let* ((cwd (cluck-normalize-directory (current-directory)))
+         (project-root (cluck-find-project-root cwd)))
+    (cond
+      ((and cwd project-root (string=? cwd project-root))
+       (list cwd))
+      ((and cwd project-root)
+       (list cwd project-root))
+      (cwd
+       (list cwd))
+      (:else
+       '()))))
+
 (define (cluck-value=? a b)
   (equal? a b))
 
@@ -53,7 +91,7 @@
 (define *cluck-loading-namespaces* (make-hash-table))
 (define *cluck-ns-aliases* (make-hash-table))
 (define *cluck-module-search-roots*
-  (list (cluck-normalize-directory (current-directory))))
+  (cluck-module-search-roots))
 
 (define (cluck-ensure-ns! ns)
   (let ((existing (hash-table-ref/default *cluck-ns-registry* ns #f)))

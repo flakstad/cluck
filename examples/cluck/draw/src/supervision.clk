@@ -1,7 +1,9 @@
 ;; Parent-side child-process supervision helpers.
 
 (ns cluck.examples.draw.supervision
-  (:require [cluck.fs :as fs]
+  (:require [cluck.edn :as edn]
+            [cluck.fs :as fs]
+            [cluck.io :as io]
             [cluck.process :as proc]))
 
 (import srfi-18
@@ -26,11 +28,23 @@
     0)
   nil)
 
+(defn draw-child-ready-heartbeat?
+  "Return true once the child has advanced beyond the initial :start heartbeat."
+  [heartbeat-path]
+  (if (fs/file? heartbeat-path)
+    (handle-exceptions _
+      false
+      (let [heartbeat (edn/read-string (io/slurp heartbeat-path))
+            phase (get heartbeat :phase)]
+        (and phase
+             (not (equal? phase :start)))))
+    false))
+
 (defn draw-wait-for-child-ready-base!
   "Wait until the supervised child writes its first heartbeat, or time out."
   [heartbeat-path running? child-pid child-alive? wall-clock-ms deadline-ms]
   (cond
-    (fs/file? heartbeat-path)
+    (draw-child-ready-heartbeat? heartbeat-path)
     true
 
     (not (running?))

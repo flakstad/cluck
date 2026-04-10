@@ -76,7 +76,9 @@
   [path]
   (let [dir (fs/dirname path)]
     (if (and dir (not (fs/directory? dir)))
-      (create-directory dir)
+      (if (zero? (proc/system (format "mkdir -p %s" (proc/qs dir))))
+        dir
+        (error (format "failed to create directory: %s" dir)))
       dir)))
 
 (defn draw-write-file-atomic!

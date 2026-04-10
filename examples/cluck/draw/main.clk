@@ -2681,11 +2681,18 @@
   (draw-clear-error!)
   (let [ctx (start!)]
     (if ctx
-      (begin
-        (draw-log-entry! :child-main-started {:state (draw-state-snapshot *draw-state*)})
-        (render-now!)
-        (run-loop ctx *draw-state*)
-        (draw-stop-local!))
+      (handle-exceptions exn
+        (begin
+          (draw-log-entry! :child-main-crash-before-loop
+                           {:error (format "%s" exn)
+                            :state (draw-state-snapshot *draw-state*)})
+          (draw-crash! exn)
+          nil)
+        (begin
+          (draw-log-entry! :child-main-started {:state (draw-state-snapshot *draw-state*)})
+          (render-now!)
+          (run-loop ctx *draw-state*)
+          (draw-stop-local!)))
       (begin
         (draw-log-entry! :child-main-start-returned-nil {:error (last-error)})
         nil))))

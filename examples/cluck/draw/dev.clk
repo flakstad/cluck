@@ -95,7 +95,9 @@
 (defn draw-dev-ensure-directory!
   [path]
   (if (not (fs/directory? path))
-    (create-directory path)
+    (if (zero? (proc/system (format "mkdir -p %s" (proc/qs path))))
+      path
+      (error (format "failed to create directory: %s" path)))
     path))
 
 (defn draw-dev-acquire-build-lock-loop!

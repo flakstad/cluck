@@ -24,3 +24,7 @@
   `examples/cluck/<example>/src/` as well as the older flat example paths, or
   extracted example modules fall back to pretending they belong under core
   `src/`.
+- 2026-04-10: example-local namespace resolution also needs a repo-root search
+  root, not only `current-directory`, or standalone compilation from inside an
+  example tree fails to resolve `cluck.examples.<example>.*` imports after the
+  code is moved out of core `src/`.
