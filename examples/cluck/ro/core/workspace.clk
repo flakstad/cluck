@@ -1,0 +1,469 @@
+;; Pure workspace-formatting helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.workspace
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [json :as json]))
+
+(defn json-key->text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-key->symbol
+  [key]
+  (string->symbol (json-key->text key)))
+
+(defn json-find-entry
+  [entries key]
+  (let ((items (if (vector? entries)
+                   (vector->list entries)
+                   (if (or (not entries)
+                           (null? entries))
+                       '()
+                       (seq entries)))))
+    (if (empty? items)
+        false
+        (let loop ((xs items))
+          (cond
+            (empty? xs) false
+            (string=? (json-key->text (first (car xs))) key) (car xs)
+            :else (loop (cdr xs)))))))
+
+(defn json-field-value
+  [entries key default]
+  (let ((entry (json-find-entry entries key)))
+    (if entry
+        (cdr entry)
+        default)))
+
+(defn json-first-field-value
+  [entries keys default]
+  (if (or (not keys)
+          (null? keys))
+      default
+      (let ((entry (json-find-entry entries (car keys))))
+        (if entry
+            (cdr entry)
+            (json-first-field-value entries (cdr keys) default)))))
+
+(defn compact-json-step
+  [text i len in-string? escaped? acc]
+  (if (= i len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text i)]
+        (cond
+          escaped?
+          (compact-json-step text (+ i 1) len in-string? false (cons ch acc))
+
+          (char=? ch #\")
+          (compact-json-step text (+ i 1) len (not in-string?) false (cons ch acc))
+
+          (and in-string?
+               (char=? ch #\\))
+          (compact-json-step text (+ i 1) len true true (cons ch acc))
+
+          in-string?
+          (compact-json-step text (+ i 1) len true false (cons ch acc))
+
+          (char-whitespace? ch)
+          (compact-json-step text (+ i 1) len false false acc)
+
+          :else
+          (compact-json-step text (+ i 1) len false false (cons ch acc))))))
+
+(defn compact-json-text
+  [text]
+  (compact-json-step text 0 (string-length text) false false '()))
+
+(defn json-write-output
+  [value]
+  (string-append
+   (compact-json-text
+    (io/with-output-string
+     (fn [port]
+       (json/json-write value port))))
+   "\n"))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (if (empty? args)
+      false
+      (let loop ((xs (seq args)))
+        (cond
+          (empty? xs) false
+          (help-flag? (car xs)) true
+          :else (loop (cdr xs))))))
+
+(defn workspace-detail-value
+  [detail key]
+  (let ((entry (json-find-entry detail key)))
+    (and entry (cdr entry))))
+
+(defn workspace-current-detail
+  [details current-name]
+  (if (or (not details)
+          (null? details))
+      false
+      (let loop ((xs (seq details)))
+        (cond
+          (empty? xs) false
+          (string=? (or (workspace-detail-value (car xs) "name") "")
+                    (or current-name ""))
+          (car xs)
+          :else (loop (cdr xs))))))
+
+(defn workspace-current-info
+  [root]
+  (let ((data-entry (json-find-entry root "data"))
+        (data (and data-entry (cdr data-entry)))
+        (current-entry (json-find-entry data "currentWorkspace"))
+        (current-workspace (and current-entry (cdr current-entry)))
+        (meta-entry (json-find-entry root "meta"))
+        (meta (and meta-entry (cdr meta-entry)))
+        (details-entry (json-find-entry meta "details"))
+        (details (and details-entry (cdr details-entry)))
+        (detail (workspace-current-detail details current-workspace))
+        (path (and detail (workspace-detail-value detail "path"))))
+    (and detail (cons current-workspace path))))
+
+(defn workspace-current-name
+  [root]
+  (let ((info (workspace-current-info root)))
+    (and info (car info))))
+
+(defn workspace-current-path
+  [root]
+  (let ((info (workspace-current-info root)))
+    (and info (cdr info))))
+
+(defn actor-record
+  [id name kind user-id session]
+  (vector
+   (cons 'id id)
+   (cons 'name name)
+   (cons 'kind kind)
+   (cons 'userId user-id)
+   (cons 'session session)))
+
+(defn workspace-current-write-actor-id
+  [actor current-actor-id]
+  (if actor
+      (let ((kind (or (workspace-detail-value actor "kind") ""))
+            (user-id (or (workspace-detail-value actor "userId") "")))
+        (if (and (string=? kind "agent")
+                 (not (string=? user-id "")))
+            user-id
+            current-actor-id))
+      current-actor-id))
+
+(defn workspace-current-output
+  [current-workspace path]
+  (json-write-output
+   (vector (cons 'data
+                 (vector (cons 'workspace current-workspace)
+                         (cons 'dir path))))))
+
+(defn workspace-status-output
+  [workspace-name workspace-id current-actor-id current-project-id actor-count project-count outline-count item-count dep-count comment-count discussion-count worklog-count attachment-count]
+  (json-write-output
+   (vector
+    (cons 'data
+          (vector
+           (cons 'workspace workspace-name)
+           (cons 'workspaceId workspace-id)
+           (cons 'currentActorId current-actor-id)
+           (cons 'currentProjectId current-project-id)
+           (cons 'actors actor-count)
+           (cons 'projects project-count)
+           (cons 'outlines outline-count)
+           (cons 'items item-count)
+           (cons 'deps dep-count)
+           (cons 'comments comment-count)
+           (cons 'discussions discussion-count)
+           (cons 'worklog worklog-count)
+           (cons 'attachments attachment-count)
+           (cons 'counts
+                 (vector
+                  (cons 'actors actor-count)
+                  (cons 'projects project-count)
+                  (cons 'outlines outline-count)
+                  (cons 'items item-count)
+                  (cons 'deps dep-count)
+                  (cons 'comments comment-count)
+                  (cons 'discussions discussion-count)
+                  (cons 'worklog worklog-count)
+                  (cons 'attachments attachment-count)))))
+    (cons '_hints
+          (list "ro projects list"
+                "ro items list"
+                "ro items ready")))))
+
+(defn identity-list-output
+  [current-actor-id actors]
+  (json-write-output
+   (vector
+    (cons 'data
+          (vector
+           (cons 'currentActorId current-actor-id)
+           (cons 'actors actors))))))
+
+(defn identity-whoami-output
+  [actor]
+  (json-write-output
+   (vector (cons 'data actor))))
+
+(defn status-main-plan
+  [args]
+  (cond
+    (empty? args)
+    (vector 'status '())
+
+    (any-help-arg? args)
+    (vector 'help '())
+
+    :else
+    (vector 'error "ro status expects no arguments" args)))
+
+(def workspace-add-usage-output
+  "usage: ro workspace add <name> --dir <path> [--kind git] [--use]\n")
+
+(def workspace-init-usage-output
+  "usage: ro workspace init <name> [--dir <path>] [--use]\n")
+
+(def workspace-use-usage-output
+  "usage: ro workspace use <name>\n")
+
+(defn workspace-add-plan
+  [args]
+  (let loop ((xs args)
+             (name "")
+             (dir "")
+             (kind "git")
+             (use? false))
+    (cond
+      (empty? xs)
+      (cond
+        (string=? name "")
+        (vector 'error "ro workspace add expects <name>" args)
+
+        (string=? dir "")
+        (vector 'error "missing --dir" args)
+
+        :else
+        (vector 'add name dir kind use?))
+
+      (help-flag? (first xs))
+      (vector 'subhelp-root workspace-add-usage-output)
+
+      (string=? (first xs) "--use")
+      (loop (rest xs) name dir kind true)
+
+      (string=? (first xs) "--dir")
+      (cond
+        (empty? (rest xs))
+        (vector 'error "missing workspace dir" args)
+
+        :else
+        (loop (rest (rest xs))
+              name
+              (first (rest xs))
+              kind
+              use?))
+
+      (str/starts-with? (first xs) "--dir=")
+      (loop (rest xs)
+            name
+            (substring (first xs) 6 (string-length (first xs)))
+            kind
+            use?)
+
+      (string=? (first xs) "--kind")
+      (cond
+        (empty? (rest xs))
+        (vector 'error "missing workspace kind" args)
+
+        :else
+        (loop (rest (rest xs))
+              name
+              dir
+              (first (rest xs))
+              use?))
+
+      (str/starts-with? (first xs) "--kind=")
+      (loop (rest xs)
+            name
+            dir
+            (substring (first xs) 7 (string-length (first xs)))
+            use?)
+
+      (str/starts-with? (first xs) "-")
+      (vector 'error "unsupported workspace add flag" args)
+
+      (string=? name "")
+      (loop (rest xs)
+            (first xs)
+            dir
+            kind
+            use?)
+
+      :else
+      (vector 'error "unexpected workspace add argument" args))))
+
+(defn workspace-init-plan
+  [args]
+  (let loop ((xs args)
+             (name "")
+             (dir "")
+             (use? false))
+    (cond
+      (empty? xs)
+      (if (string=? name "")
+          (vector 'error "ro workspace init expects <name>" args)
+          (vector 'init name dir use?))
+
+      (help-flag? (first xs))
+      (vector 'subhelp-root workspace-init-usage-output)
+
+      (string=? (first xs) "--use")
+      (loop (rest xs) name dir true)
+
+      (string=? (first xs) "--dir")
+      (cond
+        (empty? (rest xs))
+        (vector 'error "missing workspace dir" args)
+
+        :else
+        (loop (rest (rest xs))
+              name
+              (first (rest xs))
+              use?))
+
+      (str/starts-with? (first xs) "--dir=")
+      (loop (rest xs)
+            name
+            (substring (first xs) 6 (string-length (first xs)))
+            use?)
+
+      (str/starts-with? (first xs) "-")
+      (vector 'error "unsupported workspace init flag" args)
+
+      (string=? name "")
+      (loop (rest xs)
+            (first xs)
+            dir
+            use?)
+
+      :else
+      (vector 'error "unexpected workspace init argument" args))))
+
+(defn workspace-use-plan
+  [args]
+  (let ((workspace-name (if (empty? args)
+                            ""
+                            (first args)))
+        (more (if (empty? args)
+                  '()
+                  (rest args))))
+    (cond
+      (help-flag? workspace-name)
+      (vector 'subhelp workspace-use-usage-output)
+
+      (string=? workspace-name "")
+      (vector 'error "ro workspace use expects <name>" args)
+
+      (not (empty? more))
+      (if (any-help-arg? more)
+          (vector 'help '())
+          (vector 'error "unexpected workspace use argument" args))
+
+      :else
+      (vector 'use workspace-name))))
+
+(defn init-main-plan
+  [args]
+  (cond
+    (empty? args)
+    (vector 'init '())
+
+    (any-help-arg? args)
+    (vector 'help '())
+
+    :else
+    (vector 'error "ro init expects no arguments" args)))
+
+(defn workspace-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    (vector 'help '())
+
+    (and (string=? (first args) "current")
+         (empty? (rest args)))
+    (vector 'current '())
+
+    (and (string=? (first args) "current")
+         (any-help-arg? (rest args)))
+    (vector 'help '())
+
+    (and (string=? (first args) "list")
+         (empty? (rest args)))
+    (vector 'list '())
+
+    (and (string=? (first args) "list")
+         (any-help-arg? (rest args)))
+    (vector 'help '())
+
+    (string=? (first args) "add")
+    (workspace-add-plan (rest args))
+
+    (string=? (first args) "init")
+    (workspace-init-plan (rest args))
+
+    (string=? (first args) "use")
+    (workspace-use-plan (rest args))
+
+    :else
+    (vector 'error "ro workspace commands are not implemented yet" args)))
+
+(defn identity-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    (vector 'help '())
+
+    (string=? (first args) "whoami")
+    (cond
+      (empty? (rest args))
+      (vector 'whoami '())
+
+      (any-help-arg? (rest args))
+      (vector 'help '())
+
+      :else
+      (vector 'error "unexpected identity whoami argument" args))
+
+    (string=? (first args) "list")
+    (cond
+      (empty? (rest args))
+      (vector 'list '())
+
+      (any-help-arg? (rest args))
+      (vector 'help '())
+
+      :else
+      (vector 'error "unexpected identity list argument" args))
+
+    :else
+    (vector 'error "unsupported identity subcommand" args)))

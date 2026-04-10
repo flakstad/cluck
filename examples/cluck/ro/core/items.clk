@@ -1,0 +1,290 @@
+;; Pure item-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.items
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [json :as json]))
+
+(def command-entry-for-name
+  (ns-resolve 'cluck.examples.ro.core.commands 'command-entry-for-name))
+
+(def command-registry-entry-help-lines
+  (ns-resolve 'cluck.examples.ro.core.commands 'command-registry-entry-help-lines))
+
+(def json-write-output
+  (ns-resolve 'cluck.examples.ro.core.json 'json-write-output))
+
+(def json-field-value
+  (ns-resolve 'cluck.examples.ro.core.json 'json-field-value))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (let loop ((xs (seq args)))
+    (cond
+      (empty? xs) false
+      (help-flag? (car xs)) true
+      :else (loop (cdr xs)))))
+
+(def items-help-lines
+  (let ((entry (and command-entry-for-name
+                    (command-entry-for-name "items"))))
+    (append
+     (list
+      "ro items"
+      ""
+      "usage:"
+      "  ro items (alias: ro tasks)")
+     (if entry
+         (command-registry-entry-help-lines entry)
+         '()))))
+
+(def items-help-text
+  (str/join "\n" items-help-lines))
+
+(def items-help-output
+  (string-append items-help-text "\n"))
+
+(defn json-envelope-output
+  [data meta hints]
+  (let ((pairs (list (cons 'data data))))
+    (let ((pairs (if meta
+                     (append pairs (list (cons 'meta meta)))
+                     pairs)))
+      (let ((pairs (if (and hints
+                            (not (empty? hints)))
+                       (append pairs (list (cons '_hints hints)))
+                       pairs)))
+        (json-write-output (list->vector pairs))))))
+
+(def items-show-hints
+  (list "ro items list"
+        "ro items ready"
+        "ro agenda"))
+
+(def items-list-hints
+  (list "ro <item-id>"
+        "ro items show <item-id>"
+        "ro items ready"))
+
+(def items-ready-hints
+  (list "ro <item-id>"
+        "ro items show <item-id>"
+        "ro items claim <item-id>"
+        "ro items set-status <item-id> --status <doing-status>"
+        "ro worklog add <item-id> --body \"...\""
+        "ro comments add <item-id> --body \"...\""))
+
+(defn item-show-summary
+  [item comments-count worklog-count has-children?]
+  (vector
+   (cons 'id (or (json-field-value item "id" "") ""))
+   (cons 'projectId (or (json-field-value item "projectId" "") ""))
+   (cons 'outlineId (or (json-field-value item "outlineId" "") ""))
+   (cons 'parentId (or (json-field-value item "parentId" "") ""))
+   (cons 'status (or (json-field-value item "status" "") ""))
+   (cons 'title (or (json-field-value item "title" "") ""))
+   (cons 'description (or (json-field-value item "description" "") ""))
+   (cons 'priority (or (json-field-value item "priority" false) false))
+   (cons 'onHold (or (json-field-value item "onHold" false) false))
+   (cons 'assignedActorId (or (json-field-value item "assignedActorId" "") ""))
+   (cons 'dueDate (or (json-field-value item "dueDate" "") ""))
+   (cons 'scheduleDate (or (json-field-value item "scheduleDate" "") ""))
+   (cons 'tags (or (json-field-value item "tags" '()) '()))
+   (cons 'itemKind (or (json-field-value item "itemKind" "") ""))
+   (cons 'childrenKind (or (json-field-value item "childrenKind" "") ""))
+   (cons 'commentsCount comments-count)
+   (cons 'worklogCount worklog-count)
+   (cons 'hasChildren has-children?)))
+
+(defn items-show-output
+  [item children-items children-counts deps comments-count discussions-count dep-blocks-in-count dep-blocks-out-count worklog-count has-children?]
+  (json-envelope-output
+    (vector
+    (cons 'item (item-show-summary item comments-count worklog-count has-children?))
+    (cons 'children
+          (vector
+           (cons 'counts children-counts)
+           (cons 'items children-items)))
+    (cons 'deps deps))
+   (vector
+    (cons 'comments
+          (vector (cons 'count comments-count)))
+    (cons 'discussions
+          (vector (cons 'count discussions-count)))
+    (cons 'deps
+          (vector
+           (cons 'blocks
+                 (vector
+                  (cons 'incoming dep-blocks-in-count)
+                  (cons 'outgoing dep-blocks-out-count)))))) 
+   items-show-hints))
+
+(defn items-list-output
+  [items]
+  (json-envelope-output items false items-list-hints))
+
+(defn items-ready-output
+  [items]
+  (json-envelope-output items false items-ready-hints))
+
+(defn items-events-output
+  [events]
+  (json-envelope-output events false '()))
+
+(defn items-show-plan
+  [args]
+  (if (empty? args)
+      (vector 'error "ro items show expects <item-id>" args)
+      (vector 'show (first args))))
+
+(defn items-list-plan
+  [args]
+  (let loop ((xs args)
+             (project-id "")
+             (outline-id "")
+             (status ""))
+    (cond
+      (empty? xs)
+      (vector 'list project-id outline-id status)
+
+      (string=? (first xs) "--project")
+      (if (empty? (rest xs))
+          (vector 'error "missing items project id" args)
+          (loop (cddr xs)
+                (first (rest xs))
+                outline-id
+                status))
+
+      (str/starts-with? (first xs) "--project=")
+      (loop (rest xs)
+            (substring (first xs) 10 (string-length (first xs)))
+            outline-id
+            status)
+
+      (string=? (first xs) "--outline")
+      (if (empty? (rest xs))
+          (vector 'error "missing items outline id" args)
+          (loop (cddr xs)
+                project-id
+                (first (rest xs))
+                status))
+
+      (str/starts-with? (first xs) "--outline=")
+      (loop (rest xs)
+            project-id
+            (substring (first xs) 10 (string-length (first xs)))
+            status)
+
+      (string=? (first xs) "--status")
+      (if (empty? (rest xs))
+          (vector 'error "missing items status" args)
+          (loop (cddr xs)
+                project-id
+                outline-id
+                (first (rest xs))))
+
+      (str/starts-with? (first xs) "--status=")
+      (loop (rest xs)
+            project-id
+            outline-id
+            (substring (first xs) 9 (string-length (first xs))))
+
+      (str/starts-with? (first xs) "-")
+      (vector 'error "unsupported items list flag" args)
+
+      :else
+      (vector 'error "unexpected items list argument" args))))
+
+(defn items-ready-plan
+  [args]
+  (vector 'ready args))
+
+(defn items-events-plan
+  [args]
+  (let ((item-id (if (empty? args)
+                     ""
+                     (first args)))
+        (more (if (empty? args)
+                  '()
+                  (rest args))))
+    (cond
+      (string=? item-id "")
+      (vector 'error "ro items events expects <item-id>" args)
+
+      (empty? more)
+      (vector 'events item-id 0)
+
+      (string=? (first more) "--limit")
+      (if (empty? (rest more))
+          (vector 'error "ro items events expects a value after --limit" args)
+          (let ((next-limit (parse-long (first (rest more)))))
+            (if (< next-limit 0)
+                (vector 'error "ro items events expects a non-negative --limit" next-limit)
+                (if (empty? (cddr more))
+                    (vector 'events item-id next-limit)
+                    (vector 'error "unexpected items events argument" args)))))
+
+      (str/starts-with? (first more) "--limit=")
+      (let ((next-limit (parse-long (substring (first more) 8 (string-length (first more))))))
+        (if (< next-limit 0)
+            (vector 'error "ro items events expects a non-negative --limit" next-limit)
+            (if (empty? (rest more))
+                (vector 'events item-id next-limit)
+                (vector 'error "unexpected items events argument" args))))
+
+      (str/starts-with? (first more) "-")
+      (vector 'error "unsupported items events flag" args)
+
+      :else
+      (vector 'error "unexpected items events argument" args))))
+
+(defn items-main-plan
+  [args]
+  (cond
+    (empty? args)
+    (vector 'help '())
+
+    (help-flag? (first args))
+    (vector 'help '())
+
+    (string=? (first args) "help")
+    (vector 'help '())
+
+    (string=? (first args) "show")
+    (items-show-plan (rest args))
+
+    (string=? (first args) "list")
+    (items-list-plan (rest args))
+
+    (string=? (first args) "ready")
+    (items-ready-plan (rest args))
+
+    (string=? (first args) "events")
+    (items-events-plan (rest args))
+
+    :else
+    (vector 'error "ro items commands are not implemented yet" args)))
+
+(defn item-main-plan
+  [args]
+  (let ((item-id (if (empty? args)
+                     ""
+                     (first args)))
+        (more (if (empty? args)
+                  '()
+                  (rest args))))
+    (cond
+      (string=? item-id "")
+      (vector 'error "ro item expects <item-id>" args)
+
+      (not (empty? more))
+      (vector 'error "unexpected item argument" args)
+
+      :else
+      (vector 'show item-id))))

@@ -1,0 +1,128 @@
+;; Pure JSON helpers for the Ro CLI spike.
+
+;; Pure JSON helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.json
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [json :as json]))
+
+(defn json-key->text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-key->symbol
+  [key]
+  (string->symbol (json-key->text key)))
+
+(defn json-find-entry
+  [entries key]
+  (let ((items (if (vector? entries)
+                   (vector->list entries)
+                   (if (or (not entries)
+                           (null? entries))
+                       '()
+                       (seq entries)))))
+    (if (empty? items)
+        false
+        (let loop ((xs items))
+          (cond
+            (empty? xs) false
+            (string=? (json-key->text (first (car xs))) key) (car xs)
+            :else (loop (cdr xs)))))))
+
+(defn json-field-value
+  [entries key default]
+  (let ((entry (json-find-entry entries key)))
+    (if entry
+        (cdr entry)
+        default)))
+
+(defn json-first-field-value
+  [entries keys default]
+  (if (or (not keys)
+          (null? keys))
+      default
+      (let ((entry (json-find-entry entries (car keys))))
+        (if entry
+            (cdr entry)
+            (json-first-field-value entries (cdr keys) default)))))
+
+(defn cluck-value->json
+  [value]
+  (cond
+    (map? value)
+    (list->vector
+     (map (fn [entry]
+            (cons (json-key->symbol (first entry))
+                  (cluck-value->json (nth entry 1))))
+          (seq value)))
+
+    (vector? value)
+    (map cluck-value->json value)
+
+    (set? value)
+    (map cluck-value->json (seq value))
+
+    (or (pair? value)
+        (null? value))
+    (map cluck-value->json (seq value))
+
+    (keyword? value)
+    (name value)
+
+    (symbol? value)
+    (if (string=? (symbol->string value) "null")
+        'null
+        (symbol->string value))
+
+    :else value))
+
+(defn compact-json-step
+  [text i len in-string? escaped? acc]
+  (if (= i len)
+      (list->string (reverse acc))
+      (let [ch (string-ref text i)]
+        (cond
+          escaped?
+          (compact-json-step text (+ i 1) len in-string? false (cons ch acc))
+
+          (char=? ch #\")
+          (compact-json-step text (+ i 1) len (not in-string?) false (cons ch acc))
+
+          (and in-string?
+               (char=? ch #\\))
+          (compact-json-step text (+ i 1) len true true (cons ch acc))
+
+          in-string?
+          (compact-json-step text (+ i 1) len true false (cons ch acc))
+
+          (char-whitespace? ch)
+          (compact-json-step text (+ i 1) len false false acc)
+
+          :else
+          (compact-json-step text (+ i 1) len false false (cons ch acc))))))
+
+(defn compact-json-text
+  [text]
+  (compact-json-step text 0 (string-length text) false false '()))
+
+(defn json-output
+  [value]
+  (compact-json-text
+   (io/with-output-string
+    (fn [port]
+      (json/json-write (cluck-value->json value) port)))))
+
+(defn json-write-output
+  [value]
+  (string-append
+   (compact-json-text
+    (io/with-output-string
+     (fn [port]
+       (json/json-write value port))))
+   "\n"))

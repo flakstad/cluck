@@ -43,6 +43,13 @@
       (thunk))
     (get-output-string port)))
 
+(defn capture-error-output
+  [thunk]
+  (let [port (open-output-string)]
+    (parameterize ((current-error-port port))
+      (thunk))
+    (get-output-string port)))
+
 (defn string-prefix?
   [prefix s]
   (let [plen (string-length prefix)

@@ -1,0 +1,8 @@
+ro projects
+
+usage:
+  ro projects create --name <name> [--use]
+  ro projects list
+  ro projects archive <project-id> [--unarchive]
+  ro projects use <project-id>
+  ro projects current

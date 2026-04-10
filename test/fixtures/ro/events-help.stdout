@@ -1,0 +1,4 @@
+ro events
+
+usage:
+  ro events list [--limit N]

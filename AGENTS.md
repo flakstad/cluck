@@ -23,8 +23,7 @@ Code style:
 Semantics caveat:
 - Cluck is currently experimenting with mutable-by-default collections.
 - Treat that as provisional language behavior, not a final promise.
-- There is a persistent map implementation available via, see `ns
-  cluck.persistent, hash-map, hash-set ,,`.
+- There is a persistent map implementation available via `hash-map ,,`.
 - Inline data structures like `{:a 1}` are mutable, and functions that operate
   on them, such as `assoc`, can mutate those values.
 - Do not assume Clojure persistent-data semantics unless the code is explicitly

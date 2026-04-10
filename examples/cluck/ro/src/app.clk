@@ -1,0 +1,2557 @@
+;; Cluck Ro CLI spike.
+;;
+;; This first slice captures the root command surface and prints the canonical
+;; top-level help text. Command handling will expand slice by slice under tests.
+
+(ns cluck.examples.ro.app
+  (:require [cluck.io :as io]
+            [cluck.fs :as fs]
+            [cluck.process :as proc]
+            [cluck.string :as str]
+            [json :as json]
+            [sqlite3 :as db]))
+
+;; Core surface data and pure helpers are loaded via the bootstrap aliases
+;; in `examples/cluck/ro/bootstrap-core-aliases.scm`.
+
+(defn workspace-config-dir
+  []
+  (let ((override (or (get-environment-variable "RO_CONFIG_DIR") "")))
+    (if (string=? (str/trim override) "")
+        (fs/path (fs/home) ".ro")
+        (fs/path override))))
+
+(def workspace-json-path
+  (fs/path (workspace-config-dir) "workspaces.json"))
+
+(defn workspace-json-root
+  []
+  (call-with-input-file workspace-json-path
+    (lambda (port)
+      (json/json-read port))))
+
+(defn workspace-detail-value
+  [detail key]
+  (let ((entry (json-find-entry detail key)))
+    (and entry (cdr entry))))
+
+(defn workspace-current-detail
+  [details current-name]
+  (if (or (not details)
+          (null? details))
+      #f
+      (##core#let loop ((xs (seq details)))
+        (cond
+          (empty? xs) #f
+          (string=? (or (workspace-detail-value (car xs) "name") "")
+                    (or current-name ""))
+          (car xs)
+          :else (loop (cdr xs))))))
+
+(defn workspace-current-output
+  []
+  (let* ((root (workspace-json-root))
+         (data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (current-entry (json-find-entry data "currentWorkspace"))
+         (current-workspace (and current-entry (cdr current-entry)))
+         (meta-entry (json-find-entry root "meta"))
+         (meta (and meta-entry (cdr meta-entry)))
+         (details-entry (json-find-entry meta "details"))
+         (details (and details-entry (cdr details-entry)))
+         (detail (workspace-current-detail details current-workspace))
+         (path (and detail (workspace-detail-value detail "path"))))
+    (ro-workspace/workspace-current-output current-workspace path)))
+
+(defn workspace-registry-output
+  [root]
+  (let* ((compact
+          (io/with-output-string
+           (lambda (port)
+             (json/json-write root port))))
+         (result
+          (proc/exec
+           "python3"
+           "-c"
+           "import json,sys; print(json.dumps(json.loads(sys.argv[1]), indent=2))"
+           compact))
+         (exit (or (get result :exit) 1))
+         (out (or (get result :out) "")))
+    (if (= exit 0)
+        out
+        (string-append compact "\n"))))
+
+(defn workspace-list-output
+  []
+  (workspace-registry-output (workspace-registry-root)))
+
+(defn workspace-current-info
+  []
+  (let* ((root (workspace-json-root))
+         (data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (current-entry (json-find-entry data "currentWorkspace"))
+         (current-workspace (and current-entry (cdr current-entry)))
+         (meta-entry (json-find-entry root "meta"))
+         (meta (and meta-entry (cdr meta-entry)))
+         (details-entry (json-find-entry meta "details"))
+         (details (and details-entry (cdr details-entry)))
+         (detail (workspace-current-detail details current-workspace))
+         (path (and detail (workspace-detail-value detail "path"))))
+    (and detail (cons current-workspace path))))
+
+(defn workspace-current-name
+  []
+  (let ((info (workspace-current-info)))
+    (and info (car info))))
+
+(defn workspace-current-path
+  []
+  (let ((info (workspace-current-info)))
+    (and info (cdr info))))
+
+(defn workspace-db-path
+  []
+  (let ((path (workspace-current-path)))
+    (and path (fs/path path ".ro" "index.sqlite"))))
+
+(defn open-workspace-db
+  []
+  (let ((db-path (workspace-db-path)))
+    (if (and db-path (fs/exists? db-path))
+        (let ((conn (db/open-database db-path)))
+          (db/set-busy-handler! conn (db/make-busy-timeout 1000))
+          conn)
+        (error "ro workspace database is unavailable" db-path))))
+
+(defn workspace-status-workspace-id
+  [conn]
+  (db/first-result
+   conn
+   "select workspace_id from events where workspace_id != '' group by workspace_id order by count(*) desc, workspace_id limit 1"))
+
+(defn workspace-status-current-actor-id
+  [conn]
+  (db/first-result conn "select v from state_meta where k='current_actor_id' limit 1"))
+
+(defn workspace-status-current-project-id
+  [conn]
+  (let ((rows
+         (db/map-row
+          (lambda (v) v)
+          conn
+          "select v from state_meta where k='current_project_id' limit 1")))
+    (if (or (not rows)
+            (null? rows))
+        ""
+        (or (car (seq rows)) ""))))
+
+(defn workspace-status-count
+  [conn sql]
+  (db/first-result conn sql))
+
+(defn workspace-current-write-actor-id
+  [conn current-actor-id]
+  (let ((actor (workspace-actor-by-id conn current-actor-id)))
+    (ro-workspace/workspace-current-write-actor-id actor current-actor-id)))
+
+(defn project-json-record
+  [json-text]
+  (call-with-input-string
+   json-text
+   (lambda (port)
+     (json/json-read port))))
+
+(defn workspace-projects
+  [conn]
+  (db/map-row
+   (lambda (json-text)
+     (project-json-record json-text))
+   conn
+   "select json from projects where archived = 0 order by updated_at_unixms desc"))
+
+(defn workspace-project-by-id
+  [conn project-id]
+  (let ((rows
+         (db/map-row
+          (lambda (json-text)
+            (project-json-record json-text))
+          conn
+          "select json from projects where id = ?1 limit 1"
+          project-id)))
+    (if (or (not rows)
+            (null? rows))
+        #f
+        (car (seq rows)))))
+
+(defn workspace-current-project-output
+  [conn]
+  (let* ((current-project-id (or (workspace-status-current-project-id conn) ""))
+         (project (if (string=? current-project-id "")
+                      #f
+                      (workspace-project-by-id conn current-project-id))))
+    (ro-projects/projects-current-output current-project-id project)))
+
+(defn json-write-text
+  [value]
+  (let* ((output (json-write-output value))
+         (len (string-length output)))
+    (if (and (> len 0)
+             (char=? (string-ref output (- len 1)) #\newline))
+        (substring output 0 (- len 1))
+        output)))
+
+(defn workspace-bootstrap-context
+  []
+  (let* ((result
+          (proc/exec
+           "python3"
+           "-c"
+           "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'workspaceId':str(uuid.uuid4()),'deviceId':str(uuid.uuid4()),'replicaId':str(uuid.uuid4()),'createdAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'modifiedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z')}, ensure_ascii=False))"))
+         (exit (or (get result :exit) 1)))
+    (if (= exit 0)
+        (call-with-input-string
+         (or (get result :out) "")
+         (lambda (port)
+           (json/json-read port)))
+        (error "unable to generate workspace bootstrap metadata" result))))
+
+(defn workspace-canonical-path
+  [path]
+  (let* ((result
+          (proc/exec
+           "python3"
+           "-c"
+           "import os,sys; print(os.path.realpath(sys.argv[1]))"
+           path))
+         (exit (or (get result :exit) 1))
+         (out (str/trim (or (get result :out) ""))))
+    (if (= exit 0)
+        out
+        (fs/absolute-path path))))
+
+(defn workspace-root-meta-path
+  [workspace-root]
+  (fs/path workspace-root "meta" "workspace.json"))
+
+(defn workspace-root-device-path
+  [workspace-root]
+  (fs/path workspace-root ".ro" "device.json"))
+
+(defn workspace-root-index-path
+  [workspace-root]
+  (fs/path workspace-root ".ro" "index.sqlite"))
+
+(defn workspace-root-events-dir
+  [workspace-root]
+  (fs/path workspace-root "events"))
+
+(defn workspace-root-event-log-path
+  [workspace-root replica-id]
+  (and (not (string=? (or workspace-root "") ""))
+       (not (string=? (or replica-id "") ""))
+       (fs/path workspace-root "events" (string-append "events." replica-id ".jsonl"))))
+
+(defn workspace-read-json-file
+  [path]
+  (if (and path (fs/file? path))
+      (call-with-input-file path
+        (lambda (port)
+          (json/json-read port)))
+      #f))
+
+(defn workspace-write-json-file!
+  [path value]
+  (ensure-directory! (fs/dirname path))
+  (fs/spit path (string-append (json-write-text value) "\n"))
+  path)
+
+(defn ensure-directory!
+  [path]
+  (if (or (not path)
+          (string=? (or path "") ""))
+      #t
+      (let ((result (proc/exec "mkdir" "-p" path)))
+        (if (= 0 (or (get result :exit) 1))
+            path
+            (error "unable to create directory" path result)))))
+
+(def workspace-sqlite-schema-statements
+  (list
+   "CREATE TABLE IF NOT EXISTS state_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);"
+   "CREATE TABLE IF NOT EXISTS actors (id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, archived INTEGER NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE TABLE IF NOT EXISTS outlines (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', archived INTEGER NOT NULL, status_defs_json TEXT NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_outlines_project ON outlines(project_id);"
+   "CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, outline_id TEXT NOT NULL, parent_id TEXT NOT NULL, rank TEXT NOT NULL, title TEXT NOT NULL, status_id TEXT NOT NULL, priority INTEGER NOT NULL, on_hold INTEGER NOT NULL, archived INTEGER NOT NULL, owner_actor_id TEXT NOT NULL, assigned_actor_id TEXT NOT NULL, due_date TEXT NOT NULL, schedule_date TEXT NOT NULL, tags_json TEXT NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_items_outline ON items(outline_id);"
+   "CREATE INDEX IF NOT EXISTS idx_items_status ON items(status_id);"
+   "CREATE INDEX IF NOT EXISTS idx_items_due ON items(due_date);"
+   "CREATE INDEX IF NOT EXISTS idx_items_sched ON items(schedule_date);"
+   "CREATE TABLE IF NOT EXISTS deps (id TEXT PRIMARY KEY, from_item_id TEXT NOT NULL, to_item_id TEXT NOT NULL, type TEXT NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_deps_from ON deps(from_item_id);"
+   "CREATE INDEX IF NOT EXISTS idx_deps_to ON deps(to_item_id);"
+   "CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY, entity_kind TEXT NOT NULL, entity_id TEXT NOT NULL, author_id TEXT NOT NULL, created_at_unixms INTEGER NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_kind, entity_id, created_at_unixms);"
+   "CREATE TABLE IF NOT EXISTS discussions (id TEXT PRIMARY KEY, entity_kind TEXT NOT NULL, entity_id TEXT NOT NULL, root_comment_id TEXT NOT NULL, state TEXT NOT NULL, author_id TEXT NOT NULL, created_at_unixms INTEGER NOT NULL, resolved_at_unixms INTEGER NOT NULL DEFAULT 0, resolved_by_actor_id TEXT NOT NULL DEFAULT '', reopened_at_unixms INTEGER NOT NULL DEFAULT 0, reopened_by_actor_id TEXT NOT NULL DEFAULT '', json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_discussions_entity ON discussions(entity_kind, entity_id, created_at_unixms);"
+   "CREATE INDEX IF NOT EXISTS idx_discussions_root_comment ON discussions(root_comment_id);"
+   "CREATE TABLE IF NOT EXISTS worklog (id TEXT PRIMARY KEY, entity_kind TEXT NOT NULL, entity_id TEXT NOT NULL, author_id TEXT NOT NULL, created_at_unixms INTEGER NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_worklog_entity ON worklog(entity_kind, entity_id, created_at_unixms);"
+   "CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, entity_kind TEXT NOT NULL, entity_id TEXT NOT NULL, original_name TEXT NOT NULL, size_bytes INTEGER NOT NULL, json TEXT NOT NULL, updated_at_unixms INTEGER NOT NULL);"
+   "CREATE INDEX IF NOT EXISTS idx_attachments_entity ON attachments(entity_kind, entity_id, updated_at_unixms);"))
+
+(defn workspace-ensure-sqlite-schema!
+  [db-path]
+  (let ((conn (db/open-database db-path)))
+    (let loop ((xs workspace-sqlite-schema-statements))
+      (if (empty? xs)
+          #t
+          (begin
+            (db/execute conn (first xs))
+            (loop (rest xs)))))
+    (db/finalize! conn)
+    db-path))
+
+(defn workspace-ensure-gitignore!
+  [workspace-root]
+  (let ((gitignore-path (fs/path workspace-root ".gitignore"))
+        (git-dir-path (fs/path workspace-root ".git")))
+    (if (or (fs/exists? gitignore-path)
+            (fs/exists? git-dir-path))
+        (let* ((existing (if (fs/exists? gitignore-path)
+                             (fs/slurp gitignore-path)
+                             ""))
+               (want ".ro/")
+               (lines (str/split-lines existing))
+               (has-want (let loop ((xs lines))
+                           (cond
+                             (empty? xs) false
+                             (string=? (str/trim (first xs)) want) true
+                             :else (loop (rest xs))))))
+          (if has-want
+              gitignore-path
+              (let ((prefix (if (string=? (str/trimr existing) "")
+                                ""
+                                (string-append (str/trimr existing) "\n")))
+                    (body "# Ro (derived/local-only)\n.ro/\n"))
+                (fs/spit gitignore-path (string-append prefix body))
+                gitignore-path)))
+        #t)))
+
+(defn workspace-ensure-local-layout!
+  [workspace-root]
+  (let* ((root (workspace-canonical-path (fs/absolute-path workspace-root)))
+         (bootstrap (workspace-bootstrap-context))
+         (meta-path (workspace-root-meta-path root))
+         (device-path (workspace-root-device-path root))
+         (index-path (workspace-root-index-path root))
+         (events-dir (workspace-root-events-dir root))
+         (existing-meta (workspace-read-json-file meta-path))
+         (existing-device (workspace-read-json-file device-path))
+         (workspace-id (or (json-field-value existing-meta "workspaceId" "")
+                           (json-field-value bootstrap "workspaceId" "")
+                           ""))
+         (created-at (or (json-field-value existing-meta "createdAt" "")
+                         (json-field-value bootstrap "createdAt" "")
+                         ""))
+         (device-id (or (json-field-value existing-device "deviceId" "")
+                        (json-field-value bootstrap "deviceId" "")
+                        ""))
+         (replica-id (or (json-field-value existing-device "replicaId" "")
+                         (json-field-value bootstrap "replicaId" "")
+                         ""))
+         (modified-at (or (json-field-value existing-device "modifiedAt" "")
+                          (json-field-value bootstrap "modifiedAt" "")
+                          "")))
+    (ensure-directory! root)
+    (ensure-directory! (fs/path root "meta"))
+    (ensure-directory! (fs/path root ".ro"))
+    (ensure-directory! (fs/path root ".ro" "meta"))
+    (ensure-directory! events-dir)
+    (if (not existing-meta)
+        (workspace-write-json-file!
+         meta-path
+         (vector (cons 'workspaceId workspace-id)
+                 (cons 'createdAt created-at)))
+        #t)
+    (if (not existing-device)
+        (workspace-write-json-file!
+         device-path
+         (vector (cons 'deviceId device-id)
+                 (cons 'replicaId replica-id)
+                 (cons 'createdAt created-at)
+                 (cons 'modifiedAt modified-at)))
+        #t)
+    (workspace-ensure-sqlite-schema! index-path)
+    (let ((event-log-path (workspace-root-event-log-path root replica-id)))
+      (if (and event-log-path
+               (not (fs/file? event-log-path)))
+          (fs/spit event-log-path "")
+          #t))
+    (workspace-ensure-gitignore! root)
+    (vector
+     (cons 'dir root)
+     (cons 'workspaceId workspace-id)
+     (cons 'deviceId device-id)
+     (cons 'replicaId replica-id)
+     (cons 'createdAt created-at)
+     (cons 'modifiedAt modified-at)
+     (cons 'metaPath meta-path)
+     (cons 'devicePath device-path)
+     (cons 'indexPath index-path)
+     (cons 'eventLogPath (workspace-root-event-log-path root replica-id)))))
+
+(defn workspace-registry-default-root
+  []
+  (vector
+   (cons 'data
+         (vector (cons 'workspaces '())
+                 (cons 'currentWorkspace "")))
+   (cons 'meta
+         (vector (cons 'details '())))))
+
+(defn workspace-registry-root
+  []
+  (if (fs/file? workspace-json-path)
+      (workspace-json-root)
+      (workspace-registry-default-root)))
+
+(defn workspace-registry-workspaces
+  [root]
+  (let* ((data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (workspaces-entry (json-find-entry data "workspaces")))
+    (and workspaces-entry (cdr workspaces-entry))))
+
+(defn workspace-registry-details
+  [root]
+  (let* ((meta-entry (json-find-entry root "meta"))
+         (meta (and meta-entry (cdr meta-entry)))
+         (details-entry (json-find-entry meta "details")))
+    (and details-entry (cdr details-entry))))
+
+(defn workspace-registry-current-name
+  [root]
+  (let* ((data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (current-entry (json-find-entry data "currentWorkspace")))
+    (and current-entry (cdr current-entry))))
+
+(defn workspace-registry-detail
+  [root workspace-name]
+  (workspace-current-detail (workspace-registry-details root) workspace-name))
+
+(defn workspace-registry-write-root!
+  [root]
+  (workspace-write-json-file! workspace-json-path root))
+
+(defn workspace-registry-detail-record
+  [name path kind archived current]
+  (vector
+   (cons 'name name)
+   (cons 'path path)
+   (cons 'kind kind)
+   (cons 'legacy #f)
+   (cons 'archived archived)
+   (cons 'current current)))
+
+(defn workspace-registry-upsert!
+  [name path kind use?]
+  (let* ((root (workspace-registry-root))
+         (data-entry (json-find-entry root "data"))
+         (data (and data-entry (cdr data-entry)))
+         (meta-entry (json-find-entry root "meta"))
+         (meta (and meta-entry (cdr meta-entry)))
+         (workspaces (or (workspace-registry-workspaces root) '()))
+         (details (or (workspace-registry-details root) '()))
+         (existing-current (or (workspace-registry-current-name root) ""))
+         (current-name (if (or use?
+                               (string=? existing-current ""))
+                           name
+                           existing-current))
+         (names (let loop ((xs (seq workspaces)) (acc '()) (seen false))
+                  (cond
+                    (empty? xs)
+                    (if seen
+                        (reverse acc)
+                        (reverse (cons name acc)))
+
+                    (string=? (or (first xs) "") name)
+                    (loop (rest xs) (cons name acc) true)
+
+                    :else
+                    (loop (rest xs) (cons (first xs) acc) seen))))
+         (next-details
+          (let loop ((xs (seq details)) (acc '()) (seen false))
+            (cond
+              (empty? xs)
+              (let ((detail (workspace-registry-detail-record
+                             name
+                             path
+                             kind
+                             #f
+                             (string=? current-name name))))
+                (reverse (if seen acc (cons detail acc))))
+
+              (string=? (or (workspace-detail-value (first xs) "name") "") name)
+              (let ((detail (workspace-registry-detail-record
+                             name
+                             path
+                             kind
+                             (or (workspace-detail-value (first xs) "archived") #f)
+                             (string=? current-name name))))
+                (loop (rest xs) (cons detail acc) true))
+
+              :else
+              (loop (rest xs) (cons (first xs) acc) seen)))))
+    (workspace-registry-write-root!
+     (vector
+      (cons 'data
+            (vector (cons 'workspaces names)
+                    (cons 'currentWorkspace current-name)))
+      (cons 'meta
+            (vector (cons 'details next-details)))))
+    (list (string=? current-name name) path)))
+(defn workspace-device-json-path
+  []
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (and (not (string=? workspace-root ""))
+         (fs/path workspace-root ".ro" "device.json"))))
+
+(defn workspace-replica-id
+  []
+  (let ((path (workspace-device-json-path)))
+    (if (and path (fs/exists? path))
+        (let* ((root (call-with-input-file path
+                       (lambda (port)
+                         (json/json-read port))))
+               (replica-id (or (workspace-detail-value root "replicaId") "")))
+          replica-id)
+        "")))
+
+(defn workspace-event-log-path
+  []
+  (let* ((workspace-root (or (workspace-current-path) ""))
+         (replica-id (workspace-replica-id)))
+    (if (or (string=? workspace-root "")
+            (string=? replica-id ""))
+        #f
+        (fs/path workspace-root "events" (string-append "events." replica-id ".jsonl")))))
+
+(defn workspace-event-context
+  []
+  (let* ((result
+          (proc/exec
+           "python3"
+           "-c"
+           "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))"))
+         (exit (or (get result :exit) 1)))
+    (if (= exit 0)
+        (call-with-input-string
+         (or (get result :out) "")
+         (lambda (port)
+           (json/json-read port)))
+        (error "unable to generate event metadata" result))))
+
+(defn workspace-project-create-context
+  []
+  (let* ((result
+          (proc/exec
+           "python3"
+           "-c"
+           "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'projectId':'proj-' + uuid.uuid4().hex[:8],'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))"))
+         (exit (or (get result :exit) 1)))
+    (if (= exit 0)
+        (call-with-input-string
+         (or (get result :out) "")
+         (lambda (port)
+           (json/json-read port)))
+        (error "unable to generate project metadata" result))))
+
+(defn workspace-project-record
+  [project-id name description archived updated-at-unixms created-by created-at]
+  (let ((parts (list
+                (cons 'id project-id)
+                (cons 'name name)
+                (cons 'description description)
+                (cons 'archived archived)
+                (cons 'updatedAtUnixms updated-at-unixms))))
+    (if (not (string=? created-by ""))
+        (set! parts (append parts (list (cons 'createdBy created-by)))))
+    (if (not (string=? created-at ""))
+        (set! parts (append parts (list (cons 'createdAt created-at)))))
+    (list->vector parts)))
+
+(defn workspace-project-record-archived
+  [project archived updated-at-unixms]
+  (if project
+      (workspace-project-record
+       (or (json-field-value project "id" "") "")
+       (or (json-field-value project "name" "") "")
+       (or (json-field-value project "description" "") "")
+       archived
+       updated-at-unixms
+       (or (json-field-value project "createdBy" "") "")
+       (or (json-field-value project "createdAt" "") ""))
+      #f))
+
+(defn workspace-project-save!
+  [conn project]
+  (let* ((project-id (or (json-field-value project "id" "") ""))
+         (name (or (json-field-value project "name" "") ""))
+         (archived (or (json-field-value project "archived" false) false))
+         (updated-at-unixms (or (json-field-value project "updatedAtUnixms" 0) 0))
+         (json-text (json-write-text project)))
+    (db/execute
+     conn
+     "insert or replace into projects(id, name, archived, json, updated_at_unixms) values(?1, ?2, ?3, ?4, ?5)"
+     project-id
+     name
+     (if archived 1 0)
+     json-text
+     updated-at-unixms)
+    project))
+
+(defn workspace-project-append-event!
+  [event]
+  (let ((path (workspace-event-log-path)))
+    (if (not path)
+        (error "ro events log is unavailable" (workspace-current-path))
+        (let ((existing (if (fs/exists? path)
+                            (fs/slurp path)
+                            "")))
+          (fs/spit path (string-append existing (json-write-output event)))
+          event))))
+
+(defn workspace-project-next-seq
+  [project-id]
+  (let ((path (workspace-event-log-path)))
+    (if (not path)
+        1
+        (let loop ((records (if (fs/exists? path)
+                                (events-file-records path 0)
+                                '()))
+                   (max-seq 0))
+          (if (empty? records)
+              (+ max-seq 1)
+              (let* ((record (first records))
+                     (kind (or (json-field-value record "entity_kind" "") ""))
+                     (entity-id (or (json-field-value record "entity_id" "") ""))
+                     (entity-seq (or (json-field-value record "entity_seq" 0) 0)))
+                (loop (rest records)
+                      (if (and (string=? kind "project")
+                               (string=? entity-id project-id)
+                               (> entity-seq max-seq))
+                          entity-seq
+                          max-seq))))))))
+
+(defn workspace-project-create!
+  [conn name use?]
+  (let* ((workspace-id (or (workspace-status-workspace-id conn) ""))
+         (actor-id (or (workspace-status-current-actor-id conn) ""))
+         (name (or name ""))
+         (meta (workspace-project-create-context))
+         (event-id (or (json-field-value meta "eventId" "") ""))
+         (project-id (or (json-field-value meta "projectId" "") ""))
+         (issued-at (or (json-field-value meta "issuedAt" "") ""))
+         (issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0))
+         (project (workspace-project-record project-id name "" false issued-at-unixms actor-id issued-at))
+         (event-seq (workspace-project-next-seq project-id))
+         (event (vector
+                 (cons 'eventId event-id)
+                 (cons 'workspaceId workspace-id)
+                 (cons 'replicaId (workspace-replica-id))
+                 (cons 'entityKind "project")
+                 (cons 'entityId project-id)
+                 (cons 'entitySeq event-seq)
+                 (cons 'type "project.create")
+                 (cons 'issuedAt issued-at)
+                 (cons 'actorId actor-id)
+                 (cons 'payload project)
+                 (cons 'localStatus "local")
+                 (cons 'serverStatus "pending"))))
+    (if (string=? name "")
+        (error "project name is required" name)
+        #t)
+    (if (string=? workspace-id "")
+        (error "ro workspace id is unavailable" workspace-id)
+        #t)
+    (if (string=? actor-id "")
+        (error "no current actor" actor-id)
+        #t)
+    (workspace-project-save! conn project)
+    (workspace-project-append-event! event)
+    (when use?
+      (db/execute conn "insert or replace into state_meta(k, v) values(?1, ?2)"
+                  "current_project_id"
+                  project-id))
+    project))
+
+(defn workspace-project-archive!
+  [conn project-id archived?]
+  (let* ((project-id (or project-id ""))
+         (current (workspace-project-by-id conn project-id)))
+    (if (not current)
+        #f
+        (let* ((meta (workspace-event-context))
+               (workspace-id (or (workspace-status-workspace-id conn) ""))
+               (actor-id (or (workspace-status-current-actor-id conn) ""))
+               (event-id (or (json-field-value meta "eventId" "") ""))
+               (issued-at (or (json-field-value meta "issuedAt" "") ""))
+               (issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0))
+               (updated (workspace-project-record-archived current archived? issued-at-unixms))
+               (event-seq (workspace-project-next-seq project-id))
+               (event (vector
+                       (cons 'eventId event-id)
+                       (cons 'workspaceId workspace-id)
+                       (cons 'replicaId (workspace-replica-id))
+                       (cons 'entityKind "project")
+                       (cons 'entityId project-id)
+                       (cons 'entitySeq event-seq)
+                       (cons 'type "project.archive")
+                       (cons 'issuedAt issued-at)
+                       (cons 'actorId actor-id)
+                       (cons 'payload (vector (cons 'archived archived?)))
+                       (cons 'localStatus "local")
+                       (cons 'serverStatus "pending"))))
+          (if (string=? workspace-id "")
+              (error "ro workspace id is unavailable" workspace-id)
+              #t)
+          (if (string=? actor-id "")
+              (error "no current actor" actor-id)
+              #t)
+          (workspace-project-save! conn updated)
+          (workspace-project-append-event! event)
+          (when (and archived?
+                     (string=? project-id (or (workspace-status-current-project-id conn) "")))
+            (db/execute conn "delete from state_meta where k=?1" "current_project_id"))
+          updated))))
+
+(defn workspace-project-use!
+  [conn project-id]
+  (let ((project (workspace-project-by-id conn project-id)))
+    (if (not project)
+        #f
+        (begin
+          (db/execute conn "insert or replace into state_meta(k, v) values(?1, ?2)"
+                      "current_project_id"
+                      project-id)
+          project))))
+
+(defn workspace-status-visible-worklog-count
+  [conn current-write-actor-id]
+  (db/first-result
+   conn
+   "select count(*) from worklog where entity_kind = 'item' and author_id in (select id from actors where coalesce(nullif(trim(json_extract(json, '$.userId')), ''), id) = ?1)"
+   current-write-actor-id))
+
+(defn actor-record
+  [id name kind user-id session]
+  (vector
+   (cons 'id id)
+   (cons 'name name)
+   (cons 'kind kind)
+   (cons 'userId user-id)
+   (cons 'session session)))
+
+(defn workspace-actors
+  [conn]
+  (db/map-row
+   (lambda (id name kind user-id session)
+     (actor-record id name kind user-id session))
+   conn
+   "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors order by case lower(coalesce(json_extract(json, '$.kind'), '')) when 'human' then 0 when 'agent' then 1 else 2 end, lower(coalesce(json_extract(json, '$.name'), id)), id"))
+
+(defn workspace-actor-by-id
+  [conn actor-id]
+  (let ((rows
+         (db/map-row
+          (lambda (id name kind user-id session)
+            (actor-record id name kind user-id session))
+          conn
+          "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors where id = ?1 limit 1"
+          actor-id)))
+    (if (or (not rows)
+            (null? rows))
+        #f
+        (car (seq rows)))))
+
+(defn item-json-record
+  [json-text]
+  (call-with-input-string
+   json-text
+   (lambda (port)
+     (json/json-read port))))
+
+(defn workspace-item-by-id
+  [conn item-id]
+  (let ((rows
+         (db/map-row
+          (lambda (json-text)
+            (item-json-record json-text))
+          conn
+          "select json from items where id = ?1 limit 1"
+          item-id)))
+    (if (or (not rows)
+            (null? rows))
+        #f
+        (car (seq rows)))))
+
+(defn workspace-item-children
+  [conn item-id]
+  (db/map-row
+   (lambda (json-text)
+     (item-json-record json-text))
+   conn
+   "select json from items where parent_id = ?1 order by lower(rank) asc, id asc"
+   item-id))
+
+(defn workspace-item-deps
+  [conn item-id]
+  (db/map-row
+   (lambda (json-text)
+     (item-json-record json-text))
+   conn
+   "select json from deps where from_item_id = ?1 or to_item_id = ?1 order by updated_at_unixms desc, id desc"
+   item-id))
+
+(defn workspace-outline-status-defs-json
+  [conn outline-id]
+  (db/first-result
+   conn
+   "select status_defs_json from outlines where id = ?1 limit 1"
+   outline-id))
+
+(defn workspace-outline-end-status-ids
+  [conn outline-id]
+  (let ((json-text (workspace-outline-status-defs-json conn outline-id)))
+    (if (or (not json-text)
+            (string=? (str/trim (or json-text "")) ""))
+        '()
+        (let ((defs
+               (call-with-input-string
+                json-text
+                (lambda (port)
+                  (json/json-read port)))))
+          (##core#let loop ((xs (seq defs))
+                            (acc '()))
+            (cond
+              (empty? xs) (reverse acc)
+              (or (json-field-value (car xs) "isEndState" false) false)
+              (let ((status-id (or (json-field-value (car xs) "id" "") "")))
+                (if (string=? status-id "")
+                    (loop (cdr xs) acc)
+                    (loop (cdr xs) (cons status-id acc))))
+              :else
+              (loop (cdr xs) acc)))))))
+
+(defn workspace-item-status
+  [item]
+  (or (json-first-field-value item (list "status" "statusId") "") ""))
+
+(defn workspace-item-archived?
+  [item]
+  (or (json-field-value item "archived" false) false))
+
+(defn workspace-item-child-summary
+  [conn item]
+  (let* ((item-id (or (json-field-value item "id" "") ""))
+         (comments-count
+          (workspace-item-count
+           conn
+           "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
+           item-id))
+         (worklog-count
+          (workspace-item-count
+           conn
+           "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1"
+           item-id))
+         (has-children? (> (workspace-item-count conn "select count(*) from items where parent_id = ?1" item-id) 0)))
+    (ro-items/item-show-summary item comments-count worklog-count has-children?)))
+
+(defn workspace-item-counts
+  [children end-status-ids]
+  (let loop ((xs children)
+             (total 0)
+             (archived 0)
+             (done 0))
+    (if (empty? xs)
+        (let ((open (- total archived done)))
+          (vector
+           (cons 'total total)
+           (cons 'open open)
+           (cons 'done done)
+           (cons 'archived archived)))
+        (let* ((child (first xs))
+               (child-archived (workspace-item-archived? child))
+               (child-status (workspace-item-status child))
+               (child-done (and (not child-archived)
+                                (member child-status end-status-ids))))
+          (loop (rest xs)
+                (+ total 1)
+                (if child-archived (+ archived 1) archived)
+                (if child-done (+ done 1) done))))))
+
+(defn workspace-item-count
+  [conn sql item-id]
+  (or (db/first-result conn sql item-id) 0))
+
+(defn workspace-status-output
+  []
+  (let* ((workspace-name (or (workspace-current-name) ""))
+         (workspace-root (or (workspace-current-path) "")))
+    (if (and (not (string=? workspace-name ""))
+             (not (string=? workspace-root "")))
+        (let* ((conn (open-workspace-db))
+               (workspace-id (or (workspace-status-workspace-id conn) ""))
+               (current-actor-id (or (workspace-status-current-actor-id conn) ""))
+               (current-project-id (or (workspace-status-current-project-id conn) ""))
+               (actor-count (workspace-status-count conn "select count(*) from actors"))
+               (project-count (workspace-status-count conn "select count(*) from projects where archived = 0"))
+               (outline-count (workspace-status-count conn "select count(*) from outlines where archived = 0"))
+               (item-count (workspace-status-count conn "select count(*) from items where archived = 0"))
+               (dep-count (workspace-status-count conn "select count(*) from deps"))
+               (comment-count (workspace-status-count conn "select count(*) from comments where entity_kind = 'item'"))
+               (discussion-count (workspace-status-count conn "select count(*) from discussions"))
+               (actor (workspace-actor-by-id conn current-actor-id))
+               (current-write-actor-id (ro-workspace/workspace-current-write-actor-id actor current-actor-id))
+               (worklog-count (workspace-status-visible-worklog-count conn current-write-actor-id))
+               (attachment-count (workspace-status-count conn "select count(*) from attachments")))
+          (ro-workspace/workspace-status-output
+           workspace-name
+           workspace-id
+           current-actor-id
+           current-project-id
+           actor-count
+           project-count
+           outline-count
+           item-count
+           dep-count
+           comment-count
+           discussion-count
+           worklog-count
+           attachment-count))
+        (error "ro workspace current is unavailable" workspace-json-path))))
+
+(defn identity-list-output
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (current-actor-id (or (workspace-status-current-actor-id conn) ""))
+               (actors (workspace-actors conn)))
+          (ro-workspace/identity-list-output
+           current-actor-id
+           actors)))))
+
+(defn identity-whoami-output
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (current-actor-id (or (workspace-status-current-actor-id conn) "")))
+          (if (string=? current-actor-id "")
+              (error "no current actor" current-actor-id)
+              (let ((actor (workspace-actor-by-id conn current-actor-id)))
+                (if actor
+                    (ro-workspace/identity-whoami-output actor)
+                    (error "actor not found" current-actor-id))))))))
+
+(defn print-help
+  []
+  (display root-help-output)
+  root-help-output)
+
+(defn print-docs-help
+  []
+  (display docs-help-output)
+  docs-help-output)
+
+(defn print-docs
+  []
+  (display docs-output)
+  docs-output)
+
+(defn print-docs-topic
+  [topic raw?]
+  (let ((markdown (ro-docs/docs-topic-markdown topic)))
+    (if markdown
+        (if raw?
+            (begin
+              (display markdown)
+              markdown)
+            (let ((output (ro-docs/docs-topic-output topic)))
+              (display output)
+              output))
+        (begin
+          (display "unknown docs topic: " (current-error-port))
+          (display (pr-str topic) (current-error-port))
+          (newline (current-error-port))
+          2))))
+
+(defn completion-output
+  [shell]
+  (cond
+    (string=? shell "bash") completion-bash-output
+    (string=? shell "zsh") completion-zsh-output
+    (string=? shell "fish") completion-fish-output
+    :else false))
+
+(defn print-completion-help
+  []
+  (display completion-help-output)
+  completion-help-output)
+
+(defn print-completion-output
+  [shell]
+  (let [output (completion-output shell)]
+    (if output
+        (begin
+          (display output)
+          output)
+        (error "ro completion expects bash, zsh, or fish" shell))))
+
+(defn completion-main
+  [args]
+  (cond
+    (empty? args) (print-completion-help)
+    (completion-help-request? args) (print-completion-help)
+    (empty? (rest args)) (print-completion-output (first args))
+    :else (error "ro completion expects bash, zsh, or fish" args)))
+
+(defn print-workspace-help
+  []
+  (display workspace-help-output)
+  workspace-help-output)
+
+(defn print-workspace-subhelp
+  [usage-output show-root?]
+  (display usage-output (current-error-port))
+  (if show-root?
+      (begin
+        (display workspace-help-output)
+        (flush-output (current-output-port)))
+      #t)
+  1)
+
+(defn print-workspace-current
+  []
+  (let ((output (workspace-current-output)))
+    (display output)
+    output))
+
+(defn print-workspace-list
+  []
+  (let ((output (workspace-list-output)))
+    (display output)
+    output))
+
+(defn print-workspace-add
+  [name dir kind use?]
+  (let* ((workspace-root (or (if (string=? (or dir "") "")
+                                 (current-directory)
+                                 dir)
+                             ""))
+         (layout (workspace-ensure-local-layout! workspace-root))
+         (actual-path (or (json-field-value layout "dir" workspace-root) workspace-root))
+         (result (workspace-registry-upsert! name actual-path kind use?))
+         (current? (first result))
+         (output
+          (json-write-output
+           (vector
+            (cons 'data
+                  (vector
+                   (cons 'workspace name)
+                   (cons 'dir actual-path)
+                   (cons 'kind kind)
+                   (cons 'used current?)))))))
+    (display output)
+    output))
+
+(defn print-workspace-init
+  [name dir use?]
+  (let* ((workspace-root (or (if (string=? (or dir "") "")
+                                 (current-directory)
+                                 dir)
+                             ""))
+         (layout (workspace-ensure-local-layout! workspace-root))
+         (actual-path (or (json-field-value layout "dir" workspace-root) workspace-root))
+         (result (workspace-registry-upsert! name actual-path "local" use?))
+         (current? (first result))
+         (output
+          (json-write-output
+           (vector
+            (cons 'data
+                  (vector
+                   (cons 'workspace name)
+                   (cons 'dir actual-path)
+                   (cons 'kind "local")
+                   (cons 'used current?)))))))
+    (display output)
+    output))
+
+(defn print-workspace-use
+  [name]
+  (let* ((root (workspace-registry-root))
+         (detail (workspace-registry-detail root name)))
+    (if (not detail)
+        (begin
+          (display "workspace not found\n" (current-error-port))
+          1)
+        (let* ((path (or (workspace-detail-value detail "path") ""))
+               (kind (or (workspace-detail-value detail "kind") ""))
+               (output (json-write-output
+                        (vector
+                         (cons 'data
+                               (vector
+                                (cons 'workspace name)
+                                (cons 'dir path)))))))
+          (workspace-registry-upsert! name path kind true)
+          (display output)
+          output))))
+
+(defn print-init-help
+  []
+  (display workspace-help-output)
+  workspace-help-output)
+
+(defn print-init-output
+  []
+  (let* ((name "default")
+         (workspace-root (current-directory))
+         (layout (workspace-ensure-local-layout! workspace-root))
+         (actual-path (or (json-field-value layout "dir" workspace-root) workspace-root))
+         (result (workspace-registry-upsert! name actual-path "local" true))
+         (current? (first result))
+         (output
+          (json-write-output
+           (vector
+            (cons 'data
+                  (vector
+                   (cons 'workspace name)
+                   (cons 'dir actual-path)
+                   (cons 'kind "local")
+                   (cons 'used current?)))))))
+    (display output)
+    output))
+
+(defn print-status-help
+  []
+  (display status-help-output (current-error-port))
+  1)
+
+(defn print-status
+  []
+  (let ((output (workspace-status-output)))
+    (display output)
+    output))
+
+(defn print-identity-help
+  []
+  (display identity-help-output)
+  identity-help-output)
+
+(defn print-identity-list
+  []
+  (let ((output (identity-list-output)))
+    (display output)
+    output))
+
+(defn print-identity-whoami
+  []
+  (let ((output (identity-whoami-output)))
+    (display output)
+    output))
+
+(defn print-projects-help
+  []
+  (display projects-help-output)
+  projects-help-output)
+
+(defn print-projects-list
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (projects (workspace-projects conn))
+               (output (ro-projects/projects-list-output projects)))
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-projects-current
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (output (workspace-current-project-output conn)))
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-projects-use
+  [project-id]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (project (workspace-project-use! conn project-id)))
+          (if (not project)
+              (begin
+                (db/finalize! conn)
+                (display "project not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-current-project-output conn)))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn print-projects-create
+  [name use?]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (project (workspace-project-create! conn name use?))
+               (output (json-write-output (vector (cons 'data project)))))
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-projects-archive
+  [project-id archived?]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (project (workspace-project-archive! conn project-id archived?)))
+          (if (not project)
+              (begin
+                (db/finalize! conn)
+                (display "project not found\n" (current-error-port))
+                1)
+              (let ((output (json-write-output (vector (cons 'data project)))))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn print-items-help
+  []
+  (display items-help-output)
+  items-help-output)
+
+(defn print-item-show
+  [item-id]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (output (workspace-item-show-output conn item-id)))
+          (db/finalize! conn)
+          (if (not output)
+              (begin
+                (display "item not found\n" (current-error-port))
+                1)
+              (begin
+                (display output)
+                output))))))
+
+(defn print-items-list
+  [project-id outline-id status]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (output (workspace-item-list-output conn project-id outline-id status)))
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-items-ready
+  []
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((conn (open-workspace-db))
+               (output (workspace-item-ready-output conn)))
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-items-events
+  [item-id limit]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let ((output (workspace-item-events-output workspace-root item-id limit)))
+          (display output)
+          output))))
+
+(def events-default-limit 200)
+
+(defn print-events-help
+  []
+  (display events-help-output)
+  events-help-output)
+
+(defn print-events-list
+  [limit]
+  (let ((output (events-list-output limit)))
+    (display output)
+    output))
+
+(defn workspace-item-edge-other-done?
+  [conn other-item]
+  (let* ((outline-id (or (json-field-value other-item "outlineId" "") ""))
+         (status (workspace-item-status other-item))
+         (end-status-ids (workspace-outline-end-status-ids conn outline-id)))
+    (and (not (string=? outline-id ""))
+         (member status end-status-ids))))
+
+(defn workspace-item-edge-for
+  [conn current-item-id item-cache end-status-cache dep]
+  (let* ((dep-type (or (json-first-field-value dep (list "type" "typ") "") ""))
+         (from-id (or (json-first-field-value dep (list "fromItemId" "from_item_id") "") ""))
+         (to-id (or (json-first-field-value dep (list "toItemId" "to_item_id") "") ""))
+         (out? (string=? from-id current-item-id))
+         (in? (string=? to-id current-item-id))
+         (other-id (cond
+                     (and (string=? dep-type "blocks") out?) to-id
+                     (and (string=? dep-type "blocks") in?) from-id
+                     (string=? dep-type "related")
+                     (if (string=? to-id current-item-id) from-id to-id)
+                     :else ""))
+         (direction (cond
+                      (and (string=? dep-type "blocks") out?) "out"
+                      (and (string=? dep-type "blocks") in?) "in"
+                      (string=? dep-type "related")
+                      (if (string=? to-id current-item-id) "in" "out")
+                      :else "")))
+    (if (or (string=? dep-type "")
+            (string=? other-id "")
+            (string=? direction ""))
+        #f
+        (let* ((cached-other (hash-table-ref/default item-cache other-id #f))
+               (other (if cached-other
+                          cached-other
+                          (let ((lookup (workspace-item-by-id conn other-id)))
+                            (when lookup
+                              (hash-table-set! item-cache other-id lookup))
+                            lookup))))
+          (if (or (not other)
+                  (workspace-item-archived? other))
+              #f
+              (let* ((other-outline-id (or (json-field-value other "outlineId" "") ""))
+                     (other-end-status-ids
+                      (hash-table-ref/default end-status-cache other-outline-id #f))
+                     (other-end-status-ids
+                      (if other-end-status-ids
+                          other-end-status-ids
+                          (let ((lookup (workspace-outline-end-status-ids conn other-outline-id)))
+                            (hash-table-set! end-status-cache other-outline-id lookup)
+                            lookup)))
+                     (other-done (and (not (string=? other-outline-id ""))
+                                      (member (workspace-item-status other)
+                                              other-end-status-ids))))
+                (vector
+                 (cons 'type dep-type)
+                 (cons 'direction direction)
+                 (cons 'other other)
+                 (cons 'otherDone (if other-done #t #f)))))))))
+
+(defn workspace-item-show-output
+  [conn item-id]
+  (let* ((item (workspace-item-by-id conn item-id)))
+    (if (not item)
+        #f
+        (let* ((outline-id (or (json-field-value item "outlineId" "") ""))
+               (children (workspace-item-children conn item-id))
+               (children-summaries (map (lambda (child)
+                                          (workspace-item-child-summary conn child))
+                                        children))
+               (end-status-ids (workspace-outline-end-status-ids conn outline-id))
+               (children-counts (workspace-item-counts children end-status-ids))
+               (item-cache (make-hash-table))
+               (end-status-cache (make-hash-table))
+               (deps-rows (workspace-item-deps conn item-id))
+               (worklog-count
+                (workspace-item-count
+                 conn
+                 "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1"
+                 item-id))
+               (has-children? (not (empty? children))))
+          (hash-table-set! item-cache item-id item)
+          (hash-table-set! end-status-cache outline-id end-status-ids)
+          (let loop ((xs deps-rows)
+                     (blocks-in '())
+                     (blocks-out '())
+                     (related '()))
+            (if (empty? xs)
+                (let* ((blocks-in (reverse blocks-in))
+                       (blocks-out (reverse blocks-out))
+                       (related (reverse related))
+                       (deps (vector
+                              (cons 'blocks
+                                    (vector
+                                     (cons 'out blocks-out)
+                                     (cons 'in blocks-in)))
+                              (cons 'related related)))
+                       (comments-count
+                        (workspace-item-count
+                         conn
+                         "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
+                         item-id))
+                       (discussions-count
+                        (workspace-item-count
+                         conn
+                         "select count(*) from discussions where entity_kind = 'item' and entity_id = ?1"
+                         item-id))
+                       (meta-blocks-in (count blocks-in))
+                       (meta-blocks-out (count blocks-out)))
+                  (ro-items/items-show-output
+                   item
+                   children-summaries
+                   children-counts
+                   deps
+                   comments-count
+                   discussions-count
+                   meta-blocks-in
+                   meta-blocks-out
+                   worklog-count
+                   has-children?))
+                (let ((edge (workspace-item-edge-for conn item-id item-cache end-status-cache (first xs))))
+                  (if (not edge)
+                      (loop (rest xs) blocks-in blocks-out related)
+                      (let ((edge-type (or (json-field-value edge "type" "") ""))
+                            (edge-direction (or (json-field-value edge "direction" "") "")))
+                        (cond
+                          (and (string=? edge-type "blocks")
+                               (string=? edge-direction "in"))
+                          (loop (rest xs) (cons edge blocks-in) blocks-out related)
+
+                          (and (string=? edge-type "blocks")
+                               (string=? edge-direction "out"))
+                          (loop (rest xs) blocks-in (cons edge blocks-out) related)
+
+                          (string=? edge-type "related")
+                          (loop (rest xs) blocks-in blocks-out (cons edge related))
+
+                          :else
+                          (loop (rest xs) blocks-in blocks-out related)))))))))))
+
+(defn workspace-item-list-output
+  [conn project-id outline-id status]
+  (let* ((status (if (string=? (or status "") "none")
+                     ""
+                     (or status "")))
+         (rows
+          (db/map-row
+           (lambda (json-text)
+             (item-json-record json-text))
+           conn
+           "select json from items where archived = 0 and (?1 = '' or project_id = ?1) and (?2 = '' or outline_id = ?2) and (?3 = '' or status_id = ?3) order by project_id asc, outline_id asc, parent_id asc, lower(rank) asc, id asc"
+           (or project-id "")
+           (or outline-id "")
+           status)))
+    (ro-items/items-list-output rows)))
+
+(defn workspace-item-ready-output
+  [conn]
+  (let* ((current-actor-id (or (workspace-status-current-actor-id conn) ""))
+         (actor (workspace-actor-by-id conn current-actor-id))
+         (actor-kind (or (json-field-value actor "kind" "") ""))
+         (is-agent? (string=? actor-kind "agent"))
+         (blocked-rows
+          (db/map-row
+           (lambda (from-item-id) from-item-id)
+           conn
+           "select distinct from_item_id from deps where type = 'blocks'"))
+         (blocked-set (make-hash-table)))
+    (let loop-blocked ((xs blocked-rows))
+      (if (empty? xs)
+          #t
+          (begin
+            (hash-table-set! blocked-set (first xs) #t)
+            (loop-blocked (rest xs)))))
+    (let* ((outline-rows
+            (db/map-row
+             (lambda (id status-defs-json)
+               (cons id status-defs-json))
+             conn
+             "select id, status_defs_json from outlines"))
+           (outline-end-status-cache (make-hash-table)))
+      (let loop-outlines ((xs outline-rows))
+        (if (empty? xs)
+            #t
+            (let* ((row (first xs))
+                   (outline-id (or (car row) ""))
+                   (status-defs-json (or (cdr row) "")))
+              (if (string=? outline-id "")
+                  (loop-outlines (rest xs))
+                  (let ((defs (if (string=? status-defs-json "")
+                                  '()
+                                  (call-with-input-string
+                                   status-defs-json
+                                   (lambda (port)
+                                     (json/json-read port))))))
+                    (hash-table-set!
+                     outline-end-status-cache
+                     outline-id
+                     (let loop-defs ((ds (seq defs))
+                                     (acc '()))
+                       (cond
+                         (empty? ds) (reverse acc)
+                         (or (json-field-value (car ds) "isEndState" false) false)
+                         (let ((status-id (or (json-field-value (car ds) "id" "") "")))
+                           (if (string=? status-id "")
+                               (loop-defs (cdr ds) acc)
+                               (loop-defs (cdr ds) (cons status-id acc))))
+                         :else
+                         (loop-defs (cdr ds) acc))))
+                    (loop-outlines (rest xs)))))))
+      (let* ((rows
+              (db/map-row
+               (lambda (json-text)
+                 (item-json-record json-text))
+               conn
+               "select json from items where archived = 0 and on_hold = 0 order by updated_at_unixms desc"))
+             (mine '())
+             (out '()))
+        (let loop ((xs rows))
+          (if (empty? xs)
+              (let ((items (if (empty? mine)
+                               (reverse out)
+                               (append (reverse mine) (reverse out)))))
+                (ro-items/items-ready-output items))
+              (let* ((item (first xs))
+                     (id (or (json-field-value item "id" "") ""))
+                     (outline-id (or (json-field-value item "outlineId" "") ""))
+                     (status (workspace-item-status item))
+                     (assigned-to (or (json-field-value item "assignedActorId" "") ""))
+                     (assigned-to-me? (and (not (string=? assigned-to ""))
+                                           (string=? assigned-to current-actor-id)))
+                     (outline-end-status-ids
+                      (hash-table-ref/default outline-end-status-cache outline-id '())))
+                (if (or (string=? id "")
+                        (hash-table-ref/default blocked-set id #f)
+                        (member status outline-end-status-ids)
+                        (and (not (string=? assigned-to ""))
+                             (not (and is-agent? assigned-to-me?))))
+                    (loop (rest xs))
+                    (if (and is-agent? assigned-to-me?)
+                        (loop (rest xs) (cons item mine) out)
+                        (loop (rest xs) mine (cons item out)))))))))))
+
+(defn workspace-item-events-output
+  [workspace-root item-id limit]
+  (let ((events-root (fs/path workspace-root "events"))
+        (records (events-records (fs/path workspace-root "events") 0)))
+    (let loop ((xs records)
+               (acc '()))
+      (if (empty? xs)
+          (let ((ordered (reverse acc))
+                (limited (if (> limit 0)
+                             (take limit (reverse acc))
+                             (reverse acc))))
+            (ro-items/items-events-output limited))
+          (let ((record (first xs)))
+            (let ((entity-kind (or (json-first-field-value record (list "entityKind" "entity_kind") "") ""))
+                  (entity-id (or (json-first-field-value record (list "entityId" "entity_id") "") "")))
+              (if (and (string=? entity-kind "item")
+                       (string=? entity-id item-id))
+                  (loop (rest xs) (cons record acc))
+                  (loop (rest xs) acc))))))))
+
+(defn print-unsupported-flag
+  []
+  (display "unsupported flag\n" (current-error-port))
+  1)
+
+(defn events-directory-files
+  [events-root]
+  (if (fs/directory? events-root)
+      (let loop ((entries (directory events-root))
+                 (acc '()))
+        (if (empty? entries)
+            (reverse acc)
+            (let ((entry (car entries)))
+              (if (and (str/starts-with? entry "events.")
+                       (str/ends-with? entry ".jsonl"))
+                  (loop (cdr entries)
+                        (cons (fs/path events-root entry) acc))
+                  (loop (cdr entries) acc)))))
+      '()))
+
+(defn events-file-records
+  [path limit]
+  (call-with-input-file
+   path
+   (lambda (port)
+     (let loop ((line-number 1)
+                (records '())
+                (count 0))
+       (let ((line (read-line port)))
+         (if (eof-object? line)
+             (reverse records)
+             (if (and (> limit 0)
+                      (>= count limit))
+                 (reverse records)
+                 (if (str/blank? line)
+                     (loop (+ line-number 1) records count)
+                     (loop (+ line-number 1)
+                           (cons (ro-events/event-line->record path line-number line) records)
+                           (+ count 1))))))))))
+
+(defn events-records
+  [events-root limit]
+  (let loop ((files (cluck-sort-list (events-directory-files events-root) string<?))
+             (records '()))
+    (if (empty? files)
+        records
+        (let ((next-records
+               (ro-events/events-merge-record-lists
+                records
+                (events-file-records (car files) limit))))
+          (loop (cdr files) next-records)))))
+
+(defn events-list-output
+  [limit]
+  (let* ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((events-root (fs/path workspace-root "events"))
+               (time-db (db/open-database ":memory:"))
+               (records (events-records events-root limit))
+               (limited (if (> limit 0)
+                            (take limit records)
+                            records))
+               (output-records (map (lambda (record)
+                                      (ro-events/event-materialize-record
+                                       (lambda (issued-at)
+                                         (db/first-result
+                                          time-db
+                                          "select cast(round((julianday(?1) - 2440587.5) * 86400000.0) as integer)"
+                                          issued-at))
+                                       record))
+                                    limited))
+               (output
+                (json-write-output
+                 (vector
+                  (cons 'data output-records)
+                  (cons '_hints '())))))
+          (db/finalize! time-db)
+          output))))
+
+(defn status-main
+  [args]
+  (let ((plan (ro-workspace/status-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-status-help)
+
+      (eq? (vector-ref plan 0) 'status)
+      (print-status)
+
+      (eq? (vector-ref plan 0) 'error)
+      (error (vector-ref plan 1) (vector-ref plan 2))
+
+      :else
+      (error "ro status expects no arguments" args))))
+
+(defn init-main
+  [args]
+  (let ((plan (ro-workspace/init-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-init-help)
+
+      (eq? (vector-ref plan 0) 'init)
+      (print-init-output)
+
+      (eq? (vector-ref plan 0) 'error)
+      (error (vector-ref plan 1) (vector-ref plan 2))
+
+      :else
+      (error "ro init expects no arguments" args))))
+
+(defn identity-main
+  [args]
+  (let ((plan (ro-workspace/identity-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-identity-help)
+
+      (eq? (vector-ref plan 0) 'list)
+      (print-identity-list)
+
+      (eq? (vector-ref plan 0) 'whoami)
+      (print-identity-whoami)
+
+      (eq? (vector-ref plan 0) 'error)
+      (error (vector-ref plan 1) (vector-ref plan 2))
+
+      :else
+      (error "unsupported identity subcommand" args))))
+
+(defn projects-main
+  [args]
+  (let ((plan (ro-projects/projects-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-projects-help)
+
+      (eq? (vector-ref plan 0) 'create)
+      (print-projects-create (vector-ref plan 1)
+                             (vector-ref plan 2))
+
+      (eq? (vector-ref plan 0) 'list)
+      (print-projects-list)
+
+      (eq? (vector-ref plan 0) 'archive)
+      (print-projects-archive (vector-ref plan 1)
+                              (vector-ref plan 2))
+
+      (eq? (vector-ref plan 0) 'use)
+      (print-projects-use (vector-ref plan 1))
+
+      (eq? (vector-ref plan 0) 'current)
+      (print-projects-current)
+
+      (eq? (vector-ref plan 0) 'error)
+      (error (vector-ref plan 1) (vector-ref plan 2))
+
+      :else
+      (error "ro projects commands are not implemented yet" args))))
+
+(defn workspace-main
+  [args]
+  (let ((plan (ro-workspace/workspace-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-workspace-help)
+
+      (eq? (vector-ref plan 0) 'subhelp-root)
+      (print-workspace-subhelp (vector-ref plan 1) #t)
+
+      (eq? (vector-ref plan 0) 'subhelp)
+      (print-workspace-subhelp (vector-ref plan 1) #f)
+
+      (eq? (vector-ref plan 0) 'current)
+      (print-workspace-current)
+
+      (eq? (vector-ref plan 0) 'list)
+      (print-workspace-list)
+
+      (eq? (vector-ref plan 0) 'add)
+      (print-workspace-add (vector-ref plan 1)
+                           (vector-ref plan 2)
+                           (vector-ref plan 3)
+                           (vector-ref plan 4))
+
+      (eq? (vector-ref plan 0) 'init)
+      (print-workspace-init (vector-ref plan 1)
+                            (vector-ref plan 2)
+                            (vector-ref plan 3))
+
+      (eq? (vector-ref plan 0) 'use)
+      (print-workspace-use (vector-ref plan 1))
+
+      (eq? (vector-ref plan 0) 'error)
+      (error (vector-ref plan 1) (vector-ref plan 2))
+
+      :else
+      (error "ro workspace commands are not implemented yet" args))))
+
+(defn docs-main
+  [args]
+  (let ((plan (ro-docs/docs-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'output)
+      (print-docs)
+
+      (eq? (vector-ref plan 0) 'help)
+      (print-docs-help)
+
+      (eq? (vector-ref plan 0) 'topic)
+      (print-docs-topic (vector-ref plan 1)
+                        (vector-ref plan 2))
+
+      (eq? (vector-ref plan 0) 'unsupported-flag)
+      (begin
+        (display "unsupported docs flag\n" (current-error-port))
+        (print-docs-help)
+        1)
+
+      (eq? (vector-ref plan 0) 'unexpected)
+      (begin
+        (display "unexpected docs argument\n" (current-error-port))
+        (print-docs-help)
+        1)
+
+      :else
+      (error "ro docs commands are not implemented yet" args))))
+
+(defn events-main
+  [args]
+  (let ((plan (ro-events/events-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-events-help)
+
+      (eq? (vector-ref plan 0) 'list)
+      (print-events-list (vector-ref plan 1))
+
+      (eq? (vector-ref plan 0) 'unsupported-flag)
+      (print-unsupported-flag)
+
+      (eq? (vector-ref plan 0) 'error)
+      (error (vector-ref plan 1) (vector-ref plan 2))
+
+      :else
+      (error "unsupported events subcommand" args))))
+
+(defn item-main
+  [args]
+  (let ((plan (ro-items/item-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'show)
+      (print-item-show (vector-ref plan 1))
+
+      (eq? (vector-ref plan 0) 'error)
+      (begin
+        (display (vector-ref plan 1) (current-error-port))
+        (newline (current-error-port))
+        1)
+
+      :else
+      (error "ro item lookup is not implemented yet" args))))
+
+(defn items-main
+  [args]
+  (let ((plan (ro-items/items-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (print-items-help)
+
+      (eq? (vector-ref plan 0) 'show)
+      (print-item-show (vector-ref plan 1))
+
+      (eq? (vector-ref plan 0) 'list)
+      (print-items-list (vector-ref plan 1)
+                        (vector-ref plan 2)
+                        (vector-ref plan 3))
+
+      (eq? (vector-ref plan 0) 'ready)
+      (print-items-ready)
+
+      (eq? (vector-ref plan 0) 'events)
+      (print-items-events (vector-ref plan 1)
+                          (vector-ref plan 2))
+
+      (eq? (vector-ref plan 0) 'error)
+      (begin
+        (display (vector-ref plan 1) (current-error-port))
+        (newline (current-error-port))
+        1)
+
+      :else
+      (error "ro items commands are not implemented yet" args))))
+
+(defn print-reindex-help
+  []
+  (display reindex-help-output)
+  reindex-help-output)
+
+(defn print-sync-help
+  []
+  (display sync-help-output)
+  sync-help-output)
+
+(defn print-unsupported-sync-subcommand
+  []
+  (display "unsupported sync subcommand\n" (current-error-port))
+  1)
+
+(defn git-run-text
+  [args]
+  (let ((result (proc/exec "git" args)))
+    (if (= 0 (or (get result :exit) 1))
+        (str/trim (or (get result :out) ""))
+        #f)))
+
+(defn git-sync-status
+  [root]
+  (let* ((trimmed-root (or (str/trim root) "")))
+    (if (string=? trimmed-root "")
+        (ro-sync/git-sync-empty-status)
+        (let ((repo-root (git-run-text (list "-C" trimmed-root "rev-parse" "--show-toplevel"))))
+          (if (not repo-root)
+              (ro-sync/git-sync-empty-status)
+              (let* ((branch (or (git-run-text (list "-C" repo-root "rev-parse" "--abbrev-ref" "HEAD")) ""))
+                     (head (or (git-run-text (list "-C" repo-root "rev-parse" "--short" "HEAD")) ""))
+                     (upstream (or (git-run-text (list "-C" repo-root "rev-parse" "--abbrev-ref" "--symbolic-full-name" "@{u}")) ""))
+                     (status-out (or (git-run-text (list "-C" repo-root "status" "--porcelain=v1")) ""))
+                     (status-flags (ro-sync/git-status-flags status-out))
+                     (dirty (first status-flags))
+                     (unmerged (first (rest status-flags)))
+                     (tracked-out (or (git-run-text (list "-C" repo-root "status" "--porcelain=v1" "--untracked-files=no")) ""))
+                     (tracked-flags (ro-sync/git-status-flags tracked-out))
+                     (dirty-tracked (first tracked-flags))
+                     (in-progress-kind (cond
+                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "MERGE_HEAD")) "merge"
+                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "REBASE_HEAD")) "rebase"
+                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "CHERRY_PICK_HEAD")) "cherry-pick"
+                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "REVERT_HEAD")) "revert"
+                                         :else ""))
+                     (in-progress (not (string=? in-progress-kind "")))
+                     (upstream-remote (if (string=? upstream "")
+                                          ""
+                                          (first (str/split upstream "/"))))
+                     (upstream-remote-url (if (string=? upstream-remote "")
+                                              ""
+                                              (or (git-run-text (list "-C" repo-root "remote" "get-url" upstream-remote)) "")))
+                     (ahead-behind (if (string=? upstream "")
+                                       (list 0 0)
+                                       (ro-sync/git-ahead-behind
+                                        (git-run-text (list "-C" repo-root "rev-list" "--left-right" "--count" "HEAD...@{u}")))))
+                     (ahead (first ahead-behind))
+                     (behind (first (rest ahead-behind))))
+                (list->vector
+                 (list (cons 'upstreamRemote upstream-remote)
+                       (cons 'dirty dirty)
+                       (cons 'behind behind)
+                       (cons 'inProgress in-progress)
+                       (cons 'isRepo true)
+                       (cons 'upstreamRemoteURL upstream-remote-url)
+                       (cons 'head head)
+                       (cons 'root repo-root)
+                       (cons 'ahead ahead)
+                       (cons 'unmerged unmerged)
+                       (cons 'inProgressKind in-progress-kind)
+                       (cons 'dirtyTracked dirty-tracked)
+                       (cons 'branch branch)
+                       (cons 'upstream upstream)))))))))
+
+(defn git-sync-remotes
+  [root]
+  (let ((out (git-run-text (list "-C" root "remote"))))
+    (if (not out)
+        '()
+        (##core#let loop ((lines (str/split-lines out))
+                          (acc '()))
+          (if (empty? lines)
+              (reverse acc)
+              (let* ((name (str/trim (first lines)))
+                     (fetch-url (if (string=? name "")
+                                    ""
+                                    (or (git-run-text (list "-C" root "remote" "get-url" name)) "")))
+                     (push-url (if (string=? name "")
+                                   ""
+                                   (or (git-run-text (list "-C" root "remote" "get-url" "--push" name)) ""))))
+                (if (string=? name "")
+                    (loop (rest lines) acc)
+                    (loop (rest lines)
+                          (cons (list->vector
+                                 (list (cons 'name name)
+                                       (cons 'fetchUrl fetch-url)
+                                       (cons 'pushUrl push-url)))
+                                acc)))))))))
+
+(defn print-sync-status
+  []
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let ((output
+               (json-write-output
+                (vector
+                 (cons 'data (git-sync-status workspace-root))
+                 (cons '_hints (list "git status"
+                                     "ro sync remotes"))))))
+          (display output)
+          output))))
+
+(defn print-sync-remotes
+  []
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let ((status (git-sync-status workspace-root)))
+          (if (not (json-field-value status "isRepo" false))
+              (error "sync remotes: not a git repository" workspace-root)
+              (let ((output
+                     (json-write-output
+                      (vector
+                       (cons 'data
+                             (vector
+                              (cons 'dir (json-field-value status "root" ""))
+                              (cons 'branch (json-field-value status "branch" ""))
+                              (cons 'upstream (json-field-value status "upstream" ""))
+                              (cons 'remotes (git-sync-remotes workspace-root))))
+                       (cons '_hints (list "git remote -v"
+                                           "ro sync status"))))))
+                (display output)
+                output))))))
+
+(defn reindex-file-counts
+  [path]
+  (call-with-input-file
+   path
+   (lambda (port)
+     (let loop ((applied 0)
+                (skipped 0))
+       (let ((line (read-line port)))
+         (if (eof-object? line)
+             (list applied skipped)
+             (if (str/blank? line)
+                 (loop applied skipped)
+                (handle-exceptions exn
+                     (loop applied (+ skipped 1))
+                   (let* ((raw-event (call-with-input-string line
+                                      (lambda (event-port)
+                                        (json/json-read event-port))))
+                          (event-type (or (json-first-field-value raw-event (list "type" "typ") "") "")))
+                     (if (ro-reindex/reindex-type-recognized? event-type)
+                         (loop (+ applied 1) skipped)
+                         (loop applied (+ skipped 1))))))))))))
+
+(defn reindex-counts
+  [workspace-root]
+  (let loop ((files (cluck-sort-list (events-directory-files (fs/path workspace-root "events")) string<?))
+             (applied 0)
+             (skipped 0))
+    (if (empty? files)
+        (list applied skipped)
+        (let* ((counts (reindex-file-counts (first files)))
+               (next-applied (+ applied (first counts)))
+               (next-skipped (+ skipped (first (rest counts)))))
+          (loop (rest files) next-applied next-skipped)))))
+
+(defn print-reindex-output
+  []
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((counts (reindex-counts workspace-root))
+               (applied (first counts))
+               (skipped (first (rest counts)))
+               (output
+                (json-write-output
+                 (vector
+                  (cons 'data
+                        (vector
+                         (cons 'dir workspace-root)
+                         (cons 'applied applied)
+                         (cons 'skipped skipped)))
+                  (cons '_hints (list "ro status"
+                                      "ro doctor --fail"))))))
+          (display output)
+          output))))
+
+(defn print-sync-reindex-output
+  []
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let* ((counts (reindex-counts workspace-root))
+               (applied (first counts))
+               (skipped (first (rest counts)))
+               (output
+                (json-write-output
+                 (vector
+                  (cons 'data
+                        (vector
+                         (cons 'dir workspace-root)
+                         (cons 'applied applied)
+                         (cons 'skipped skipped)))
+                  (cons '_hints (list "ro sync status"
+                                      "ro status"))))))
+          (display output)
+          output))))
+
+(defn reindex-main
+  [args]
+  (let ((plan (ro-reindex/reindex-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'reindex)
+      (print-reindex-output)
+
+      (eq? (vector-ref plan 0) 'help)
+      (print-reindex-help)
+
+      (eq? (vector-ref plan 0) 'error)
+      (begin
+        (display (vector-ref plan 1) (current-error-port))
+        (newline (current-error-port))
+        (print-reindex-help)
+        1)
+
+      :else
+      (error "ro reindex commands are not implemented yet" args))))
+
+(defn sync-main
+  [args]
+  (let ((plan (ro-sync/sync-main-plan args)))
+    (cond
+      (eq? (vector-ref plan 0) 'help)
+      (begin
+        (print-sync-help)
+        (flush-output (current-output-port))
+        1)
+
+      (eq? (vector-ref plan 0) 'status)
+      (print-sync-status)
+
+      (eq? (vector-ref plan 0) 'remotes)
+      (print-sync-remotes)
+
+      (eq? (vector-ref plan 0) 'reindex)
+      (print-sync-reindex-output)
+
+      (eq? (vector-ref plan 0) 'error)
+      (begin
+        (print-sync-help)
+        (print-unsupported-sync-subcommand))
+
+      :else
+      (error "ro sync commands are not implemented yet" args))))
+
+(defn print-doctor-help
+  []
+  (display doctor-help-output)
+  doctor-help-output)
+
+(defn doctor-main-run
+  [kind plan args]
+  (let* ((fail? (vector-ref plan 1))
+         (write? (vector-ref plan 2))
+         (force? (vector-ref plan 3))
+         (workspace-root (or (workspace-current-path) ""))
+         (issues (doctor-scan-report workspace-root))
+         (has-errors (ro-doctor/doctor-has-errors? issues)))
+    (cond
+      (eq? kind 'report)
+      (let ((output
+             (json-write-output
+              (vector
+               (cons 'data issues)
+               (cons 'meta
+                     (vector
+                      (cons 'issues (count issues))
+                      (cons 'hasErrors has-errors)))
+               (cons '_hints (list "ro doctor summary"
+                                   "ro doctor dedupe"
+                                   "ro reindex"))))))
+        (display output)
+        (if (and fail? has-errors) 2 0))
+
+      (eq? kind 'summary)
+      (let ((summary (ro-doctor/doctor-summary-from-issues issues))
+            (output
+             (json-write-output
+              (vector
+               (cons 'data summary)
+               (cons 'meta
+                     (vector
+                      (cons 'issues (count issues))
+                      (cons 'hasErrors has-errors)))
+               (cons '_hints (list "ro doctor"
+                                   "ro doctor --fail"
+                                   "ro status"))))))
+        (display output)
+        (if (and fail? has-errors) 2 0))
+
+      (eq? kind 'dedupe)
+      (if (and write? (not force?))
+          (begin
+            (display "refusing to rewrite canonical event logs without --force\n" (current-error-port))
+            (display "run dry-run first: ro doctor dedupe\n" (current-error-port))
+            1)
+          (let* ((dedupe-plan (ro-doctor/doctor-dedupe-plan-from-issues issues))
+                 (result (doctor-apply-dedupe dedupe-plan write?))
+                 (summary (ro-doctor/doctor-summary-from-issues issues))
+                 (output
+                  (json-write-output
+                   (vector
+                    (cons 'data
+                          (vector
+                           (cons 'doctorSummary summary)
+                           (cons 'dedupe result)))
+                    (cons 'meta
+                          (vector
+                           (cons 'issues (count issues))
+                           (cons 'hasErrors has-errors)))
+                    (cons '_hints (if write?
+                                      (list "ro reindex"
+                                            "ro doctor --fail"
+                                            "ro status")
+                                      (list "ro doctor dedupe --write --force"
+                                            "ro doctor --fail"
+                                            "ro status")))))))
+            (display output)
+            (if (and fail? has-errors) 2 0)))
+
+      :else
+      (error "ro doctor commands are not implemented yet" args))))
+
+(defn doctor-dedupe-rewrite-file!
+  [path remove-lines]
+  (let* ((backup-path (string-append path ".dedupe.bak"))
+         (original (fs/slurp path))
+         (lines (str/split-lines original))
+         (remove-set (let ((table (make-hash-table)))
+                       (let loop ((xs remove-lines))
+                         (if (empty? xs)
+                             table
+                             (begin
+                               (hash-table-set! table (first xs) #t)
+                               (loop (rest xs)))))))
+         (kept (let loop ((xs lines) (line-no 1) (acc '()))
+                 (if (empty? xs)
+                     (reverse acc)
+                     (if (hash-table-ref/default remove-set line-no #f)
+                         (loop (rest xs) (+ line-no 1) acc)
+                         (loop (rest xs) (+ line-no 1) (cons (first xs) acc))))))
+         (output (if (empty? kept)
+                     ""
+                     (string-append (str/join "\n" kept) "\n"))))
+    (if (fs/exists? backup-path)
+        (fs/delete! backup-path)
+        #t)
+    (fs/spit backup-path original)
+    (fs/spit path output)
+    backup-path))
+
+(defn doctor-apply-dedupe
+  [plan write?]
+  (let* ((files (or (json-field-value plan "files" '()) '()))
+         (updated-files '())
+         (removed-lines 0))
+    (let loop ((xs files))
+      (if (empty? xs)
+          #t
+          (let* ((file (first xs))
+                 (path (or (json-field-value file "path" "") ""))
+                 (remove-lines (or (json-field-value file "removeLines" '()) '()))
+                 (remove-count (or (json-field-value file "removeCount" 0) 0))
+                 (event-ids (or (json-field-value file "eventIds" '()) '()))
+                 (backup-path (if (and write?
+                                       (not (str/blank? path))
+                                       (> remove-count 0))
+                                  (doctor-dedupe-rewrite-file! path remove-lines)
+                                  "")))
+            (if (and write?
+                     (not (str/blank? path))
+                     (> remove-count 0))
+                (set! removed-lines (+ removed-lines remove-count))
+                (set! removed-lines (+ removed-lines remove-count)))
+            (set! updated-files
+                  (cons (list->vector
+                         (list (cons 'path path)
+                               (cons 'removeCount remove-count)
+                               (cons 'removeLines remove-lines)
+                               (cons 'eventIds event-ids)
+                               (cons 'backupPath backup-path)))
+                        updated-files))
+            (loop (rest xs)))))
+    (set! updated-files (cluck-sort-list updated-files ro-doctor/doctor-dedupe-file<?))
+    (list->vector
+     (list (cons 'write write?)
+           (cons 'duplicateIssueCount (or (json-field-value plan "duplicateIssueCount" 0) 0))
+           (cons 'fileCount (count updated-files))
+           (cons 'removedLines removed-lines)
+           (cons 'files updated-files)))))
+
+(defn doctor-scan-report
+  [workspace-root]
+  (let ((issues '())
+        (seen (make-hash-table)))
+    (if (string=? (or workspace-root "") "")
+        issues
+        (let loop-files ((files (cluck-sort-list
+                                 (events-directory-files (fs/path workspace-root "events"))
+                                 string<?)))
+          (if (empty? files)
+              (reverse issues)
+              (let ((path (first files)))
+                (if (not (fs/file? path))
+                    (begin
+                      (set! issues
+                            (cons (ro-doctor/doctor-make-issue
+                                   "error"
+                                   "events_read_failed"
+                                   "failed to read event log"
+                                   path
+                                   0
+                                   ""
+                                   ""
+                                   ""
+                                   ""
+                                   ""
+                                   "")
+                                  issues))
+                      (loop-files (rest files)))
+                    (handle-exceptions exn
+                        (begin
+                          (set! issues
+                                (cons (ro-doctor/doctor-make-issue
+                                       "error"
+                                       "events_read_failed"
+                                       "failed to read event log"
+                                       path
+                                       0
+                                       ""
+                                       ""
+                                       ""
+                                       ""
+                                       ""
+                                       "")
+                                      issues))
+                          (loop-files (rest files)))
+                      (call-with-input-file
+                       path
+                       (lambda (port)
+                         (let loop-lines ((line-no 1))
+                           (let ((line (read-line port)))
+                             (if (eof-object? line)
+                                 (loop-files (rest files))
+                                 (let ((trimmed (str/trim line)))
+                                   (if (str/blank? trimmed)
+                                       (loop-lines (+ line-no 1))
+                                       (if (or (str/starts-with? trimmed "<<<<<<<")
+                                               (str/starts-with? trimmed "=======")
+                                               (str/starts-with? trimmed ">>>>>>>"))
+                                           (begin
+                                             (set! issues
+                                                   (cons (ro-doctor/doctor-make-issue
+                                                          "error"
+                                                          "merge_marker"
+                                                          "git merge conflict marker in events log"
+                                                          path
+                                                          line-no
+                                                          ""
+                                                          ""
+                                                          ""
+                                                          ""
+                                                          ""
+                                                          "")
+                                                         issues))
+                                             (loop-lines (+ line-no 1)))
+                                           (let ((record (ro-doctor/doctor-parse-event-record path line-no trimmed)))
+                                             (if (not record)
+                                                 (begin
+                                                   (set! issues
+                                                         (cons (ro-doctor/doctor-make-issue
+                                                                "error"
+                                                                "malformed_json"
+                                                                "malformed JSON"
+                                                                path
+                                                                line-no
+                                                                ""
+                                                                ""
+                                                                ""
+                                                                ""
+                                                                ""
+                                                                "")
+                                                               issues))
+                                                   (loop-lines (+ line-no 1)))
+                                                 (let* ((event-id (or (json-field-value record "eventId" "") ""))
+                                                        (parents (or (json-field-value record "parents" '()) '())))
+                                                   (if (and (not (str/blank? event-id))
+                                                            (hash-table-ref/default seen event-id #f))
+                                                       (let ((prev (hash-table-ref/default seen event-id #f)))
+                                                         (set! issues
+                                                               (cons (ro-doctor/doctor-issue-from-record
+                                                                      record
+                                                                      "error"
+                                                                      "duplicate_event_id"
+                                                                      (string-append "duplicate eventId "
+                                                                                     (pr-str event-id)
+                                                                                     " (also in "
+                                                                                     (str (first prev))
+                                                                                     ":"
+                                                                                     (str (first (rest prev)))
+                                                                                     ")"))
+                                                                     issues))))
+                                                   (if (not (str/blank? event-id))
+                                                       (hash-table-set! seen event-id (list path line-no))
+                                                       #t)
+                                                   (if (> (count parents) 1)
+                                                       (set! issues
+                                                             (cons (ro-doctor/doctor-issue-from-record
+                                                                    record
+                                                                    "warn"
+                                                                    "multiple_parents"
+                                                                    (string-append "event has "
+                                                                                   (str (count parents))
+                                                                                   " parents"))
+                                                                   issues))
+                                                       #t)
+                                                   (loop-lines (+ line-no 1)))))))))))))))))))))
+
+(defn doctor-main
+  [args]
+  (let* ((plan (ro-doctor/doctor-main-plan args))
+         (kind (vector-ref plan 0)))
+    (cond
+      (eq? kind 'help)
+      (begin
+        (print-doctor-help)
+        0)
+
+      (or (eq? kind 'report)
+          (eq? kind 'summary)
+          (eq? kind 'dedupe))
+      (doctor-main-run kind plan args)
+
+      (eq? kind 'error)
+      (begin
+        (display (vector-ref plan 1) (current-error-port))
+        (newline (current-error-port))
+        (print-doctor-help)
+        1)
+
+      :else
+      (error "ro doctor commands are not implemented yet" args))))
+
+(defn main
+  [args]
+  (let ((route (ro-route/main-route args)))
+    (let ((kind (vector-ref route 0))
+          (route-args (vector-ref route 1)))
+      (cond
+      (eq? kind 'help) (print-help)
+        (eq? kind 'init) (init-main route-args)
+      (eq? kind 'completion) (completion-main route-args)
+      (eq? kind 'status) (status-main route-args)
+      (eq? kind 'identity) (identity-main route-args)
+      (eq? kind 'projects) (projects-main route-args)
+      (eq? kind 'items) (items-main route-args)
+      (eq? kind 'tasks) (items-main route-args)
+      (eq? kind 'item) (item-main route-args)
+      (eq? kind 'workspace) (workspace-main route-args)
+      (eq? kind 'events) (events-main route-args)
+      (eq? kind 'doctor) (doctor-main route-args)
+      (eq? kind 'reindex) (reindex-main route-args)
+        (eq? kind 'sync) (sync-main route-args)
+        (eq? kind 'docs) (docs-main route-args)
+        :else (error "ro CLI commands are not implemented yet" route-args)))))
+
+(def root-help-lines ro-help/root-help-lines)
+(def root-help-text ro-help/root-help-text)
+(def root-help-output ro-help/root-help-output)
+(def docs-help-lines ro-help/docs-help-lines)
+(def docs-help-text ro-help/docs-help-text)
+(def docs-help-output ro-help/docs-help-output)
+(def docs-topics ro-help/docs-topics)
+(def completion-top-commands ro-help/completion-top-commands)
+(def completion-top-command-line ro-help/completion-top-command-line)
+(def completion-doc-topics-line ro-help/completion-doc-topics-line)
+(def completion-help-lines ro-help/completion-help-lines)
+(def completion-help-text ro-help/completion-help-text)
+(def completion-help-output ro-help/completion-help-output)
+(def completion-bash-lines ro-help/completion-bash-lines)
+(def completion-bash-output ro-help/completion-bash-output)
+(def completion-zsh-lines ro-help/completion-zsh-lines)
+(def completion-zsh-output ro-help/completion-zsh-output)
+(def completion-fish-lines ro-help/completion-fish-lines)
+(def completion-fish-output ro-help/completion-fish-output)
+(def events-help-lines ro-help/events-help-lines)
+(def events-help-text ro-help/events-help-text)
+(def events-help-output ro-help/events-help-output)
+(def workspace-help-lines ro-help/workspace-help-lines)
+(def workspace-help-text ro-help/workspace-help-text)
+(def workspace-help-output ro-help/workspace-help-output)
+(def projects-list-output ro-projects/projects-list-output)
+(def projects-current-output ro-projects/projects-current-output)
+(def items-help-lines ro-items/items-help-lines)
+(def items-help-text ro-items/items-help-text)
+(def items-help-output ro-items/items-help-output)
+(def items-show-hints ro-items/items-show-hints)
+(def items-list-hints ro-items/items-list-hints)
+(def items-ready-hints ro-items/items-ready-hints)
+(def items-show-output ro-items/items-show-output)
+(def items-list-output ro-items/items-list-output)
+(def items-ready-output ro-items/items-ready-output)
+(def items-events-output ro-items/items-events-output)
+(def items-show-plan ro-items/items-show-plan)
+(def items-list-plan ro-items/items-list-plan)
+(def items-ready-plan ro-items/items-ready-plan)
+(def items-events-plan ro-items/items-events-plan)
+(def items-main-plan ro-items/items-main-plan)
+(def item-main-plan ro-items/item-main-plan)
+(def identity-help-lines ro-help/identity-help-lines)
+(def identity-help-text ro-help/identity-help-text)
+(def identity-help-output ro-help/identity-help-output)
+(def status-help-lines ro-help/status-help-lines)
+(def status-help-text ro-help/status-help-text)
+(def status-help-output ro-help/status-help-output)
+(def doctor-help-lines ro-help/doctor-help-lines)
+(def doctor-help-text ro-help/doctor-help-text)
+(def doctor-help-output ro-help/doctor-help-output)
+(def reindex-help-lines ro-help/reindex-help-lines)
+(def reindex-help-text ro-help/reindex-help-text)
+(def reindex-help-output ro-help/reindex-help-output)
+(def sync-help-lines ro-help/sync-help-lines)
+(def sync-help-text ro-help/sync-help-text)
+(def sync-help-output ro-help/sync-help-output)
+(def docs-output ro-help/docs-output)
+(def projects-help-lines ro-help/projects-help-lines)
+(def projects-help-text ro-help/projects-help-text)
+(def projects-help-output ro-help/projects-help-output)
+(def docs-topic-markdown ro-docs/docs-topic-markdown)
+(def docs-topic-output ro-docs/docs-topic-output)
+(def json-key->text ro-json/json-key->text)
+(def json-key->symbol ro-json/json-key->symbol)
+(def json-find-entry ro-json/json-find-entry)
+(def json-field-value ro-json/json-field-value)
+(def json-first-field-value ro-json/json-first-field-value)
+(def cluck-value->json ro-json/cluck-value->json)
+(def compact-json-step ro-json/compact-json-step)
+(def compact-json-text ro-json/compact-json-text)
+(def json-output ro-json/json-output)
+(def json-write-output ro-json/json-write-output)
+(def workspace-detail-value ro-workspace/workspace-detail-value)
+(def workspace-current-detail ro-workspace/workspace-current-detail)
+(def init-main-plan ro-workspace/init-main-plan)
+(def workspace-add-plan ro-workspace/workspace-add-plan)
+(def workspace-init-plan ro-workspace/workspace-init-plan)
+(def workspace-use-plan ro-workspace/workspace-use-plan)
+(def actor-record ro-workspace/actor-record)
+(def event-line->record ro-events/event-line->record)
+(def event-materialize-record ro-events/event-materialize-record)
+(def event-record<? ro-events/event-record<?)
+(def events-merge-record-lists ro-events/events-merge-record-lists)
+(def events-split-records ro-events/events-split-records)
+(def events-sort-records ro-events/events-sort-records)
+(def doctor/json-key->text ro-doctor/json-key->text)
+(def doctor/json-find-entry ro-doctor/json-find-entry)
+(def doctor/json-field-value ro-doctor/json-field-value)
+(def doctor/json-first-field-value ro-doctor/json-first-field-value)
+(def doctor-event-entity-kind ro-doctor/doctor-event-entity-kind)
+(def doctor-make-issue ro-doctor/doctor-make-issue)
+(def doctor-issue-from-record ro-doctor/doctor-issue-from-record)
+(def doctor-parse-event-record ro-doctor/doctor-parse-event-record)
+(def doctor-key-count<? ro-doctor/doctor-key-count<?)
+(def doctor-event-summary<? ro-doctor/doctor-event-summary<?)
+(def doctor-dedupe-file<? ro-doctor/doctor-dedupe-file<?)
+(def doctor-dedupe-event<? ro-doctor/doctor-dedupe-event<?)
+(def doctor-count-objects ro-doctor/doctor-count-objects)
+(def doctor-duplicate-event-summary ro-doctor/doctor-duplicate-event-summary)
+(def doctor-has-errors? ro-doctor/doctor-has-errors?)
+(def doctor-summary-from-issues ro-doctor/doctor-summary-from-issues)
+(def doctor-dedupe-plan-from-issues ro-doctor/doctor-dedupe-plan-from-issues)
+(def sync/git-status-line-unmerged? ro-sync/git-status-line-unmerged?)
+(def sync/git-status-flags ro-sync/git-status-flags)
+(def sync/git-ahead-behind ro-sync/git-ahead-behind)
+(def sync/git-sync-empty-status ro-sync/git-sync-empty-status)
+(def reindex/reindex-recognized-types ro-reindex/reindex-recognized-types)
+(def reindex/reindex-type-recognized? ro-reindex/reindex-type-recognized?)
+(def help-request? ro-help/help-request?)
+(def completion-help-request? ro-help/completion-help-request?)
+(def completion-output ro-help/completion-output)

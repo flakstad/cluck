@@ -1,0 +1,4 @@
+ro completion
+
+usage:
+  ro completion <bash|zsh|fish>

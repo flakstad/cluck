@@ -1,0 +1,72 @@
+;; Pure top-level routing for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.route
+  (:require [cluck.string :as str]))
+
+(def help-request?
+  (ns-resolve 'cluck.examples.ro.core.help 'help-request?))
+
+(def command-kind-for-name
+  (ns-resolve 'cluck.examples.ro.core.commands 'command-kind-for-name))
+
+(defn global-flag-with-value?
+  [arg]
+  (or (string=? arg "--workspace")
+      (string=? arg "--actor")
+      (string=? arg "--format")
+      (string=? arg "--api-base")
+      (string=? arg "--api-token")))
+
+(defn strip-global-flags
+  [args]
+  (let loop ((xs args)
+             (acc '()))
+    (cond
+      (empty? xs)
+      (reverse acc)
+
+      (string=? (first xs) "--pretty")
+      (loop (rest xs) acc)
+
+      (global-flag-with-value? (first xs))
+      (if (empty? (rest xs))
+          (loop (rest xs) acc)
+          (loop (cddr xs) acc))
+
+      (str/starts-with? (first xs) "--workspace=")
+      (loop (rest xs) acc)
+
+      (str/starts-with? (first xs) "--actor=")
+      (loop (rest xs) acc)
+
+      (str/starts-with? (first xs) "--format=")
+      (loop (rest xs) acc)
+
+      (str/starts-with? (first xs) "--api-base=")
+      (loop (rest xs) acc)
+
+      (str/starts-with? (first xs) "--api-token=")
+      (loop (rest xs) acc)
+
+      :else
+      (loop (rest xs) (cons (first xs) acc)))))
+
+(defn main-route
+  [args]
+  (let ((args (strip-global-flags args)))
+    (cond
+      (help-request? args)
+      (vector 'help '())
+
+      (empty? args)
+      (vector 'help '())
+
+      :else
+      (let ((kind (command-kind-for-name (first args))))
+        (if kind
+            (vector kind (rest args))
+            (if (and (not (string=? (first args) ""))
+                     (not (str/starts-with? (first args) "-"))
+                     (empty? (rest args)))
+                (vector 'item args)
+                (vector 'error args)))))))

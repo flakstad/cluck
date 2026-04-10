@@ -15,16 +15,18 @@
 - 2026-04-09: `json-find-entry` needs to normalize vectors explicitly; `seq`
   alone was not enough in this runtime when looking up keys on vector-backed
   rows.
-- 2026-04-10: Example namespace extraction can still trip over same-named
-  helpers across `.clk` files. A local helper like `draw-with-preview!` in one
-  namespace resolved to the entrypoint wrapper with the same name at runtime,
-  so example-scoped modules should currently prefer distinctive helper names
-  rather than relying on namespace-local resolution for duplicated symbols.
-- 2026-04-10: `cluck.examples.<example>.*` namespaces now need to resolve under
-  `examples/cluck/<example>/src/` as well as the older flat example paths, or
-  extracted example modules fall back to pretending they belong under core
-  `src/`.
-- 2026-04-10: example-local namespace resolution also needs a repo-root search
-  root, not only `current-directory`, or standalone compilation from inside an
-  example tree fails to resolve `cluck.examples.<example>.*` imports after the
-  code is moved out of core `src/`.
+- 2026-04-09: Standalone Chicken bundles can be picky about namespaces imported
+  from other namespaces in the same compiled unit. Keeping `core.route`
+  self-contained avoided an import failure when bundling the CLI.
+- 2026-04-10: The same standalone import restriction also applies to
+  `core.projects`; it must stay self-contained in the bundled build instead of
+  importing `core.help` directly.
+- 2026-04-09: `second` and `third` are not available as reusable list helpers in
+  this Cluck runtime shape. When porting list walkers from Clojure, spell out
+  the `first`/`rest` chain directly or define explicit helper aliases in core.
+- 2026-04-10: The JSON egg writes JSON null when a value is `void`/unspecified.
+  The symbol `null` serializes as the string `"null"`, so null-shaped outputs
+  need the runtime sentinel rather than a literal symbol.
+- 2026-04-10: Cluck `fn` requires vector arglists like `[x]`; `(fn (x) ...)`
+  expands with `fn expects an argument vector or arity clauses`. This is easy
+  to trip over when replacing Scheme `lambda` forms with Cluck-style callbacks.

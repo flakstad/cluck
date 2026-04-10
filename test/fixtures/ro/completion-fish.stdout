@@ -1,0 +1,3 @@
+complete -c ro -f
+complete -c ro -n '__fish_use_subcommand' -a 'agent attachments capture comments completion deps docs doctor help identity init items reindex status sync tasks worklog workspace'
+complete -c ro -n '__fish_seen_subcommand_from docs' -a 'cli getting-started output-contract storage identity-ownership agent-runtimes sync doctor-reindex'
