@@ -2415,6 +2415,57 @@
 
 (define assoc-in cluck-assoc-in)
 
+(define (cluck-update-in coll ks f . args)
+  (let ((path (seq ks)))
+    (if (cluck-empty-seq? path)
+        (cluck-apply f (cons coll args))
+        (let* ((key (car path))
+               (rest (cdr path))
+               (container (cond
+                            ((map? coll) coll)
+                            ((vector? coll) coll)
+                            ((nil? coll) (hash-map))
+                            (:else
+                             (error "update-in only supports maps and vectors" coll)))))
+          (if (cluck-empty-seq? rest)
+              (cluck-assoc container key
+                           (cluck-apply f (cons (cluck-get container key nil) args)))
+              (let* ((missing (list 'cluck-update-in-missing))
+                     (child (cluck-get container key missing))
+                     (next (if (eq? child missing) (hash-map) child)))
+                (cluck-assoc container key
+                             (if (null? args)
+                                 (cluck-update-in next rest f)
+                                  (apply cluck-update-in next rest f args)))))))))
+
+(define update-in cluck-update-in)
+
+(define (cluck-dissoc-in coll ks)
+  (let ((path (seq ks)))
+    (if (cluck-empty-seq? path)
+        coll
+        (let* ((key (car path))
+               (rest (cdr path))
+               (container (cond
+                            ((map? coll) coll)
+                            ((vector? coll) coll)
+                            ((nil? coll) (hash-map))
+                            (:else
+                             (error "dissoc-in only supports maps and vectors" coll)))))
+          (if (cluck-empty-seq? rest)
+              (if (map? container)
+                  (dissoc container key)
+                  (cluck-assoc container key nil))
+              (let* ((missing (list 'cluck-dissoc-in-missing))
+                     (child (cluck-get container key missing)))
+                (if (eq? child missing)
+                    coll
+                    (begin
+                      (cluck-assoc container key (cluck-dissoc-in child rest))
+                      coll))))))))
+
+(define dissoc-in cluck-dissoc-in)
+
 (define (update coll key f . args)
   (cluck-assoc coll key (cluck-apply f (cons (cluck-get coll key nil) args))))
 
@@ -2854,13 +2905,13 @@
    (cons 'println println)
    (cons 'prn prn)
    (cons 'keyword keyword)
-   (cons 'atom atom)
-   (cons 'atom? atom?)
-   (cons 'deref deref)
-   (cons 'reset! reset!)
-   (cons 'swap! swap!)
-   (cons 'compare-and-set! compare-and-set!)
-   (cons 'hash-map hash-map)
+    (cons 'atom atom)
+    (cons 'atom? atom?)
+    (cons 'deref deref)
+    (cons 'reset! reset!)
+    (cons 'swap! swap!)
+    (cons 'compare-and-set! compare-and-set!)
+    (cons 'hash-map hash-map)
    (cons 'hash-set hash-set)
    (cons 'set set)
    (cons 'nil? nil?)
@@ -2883,10 +2934,12 @@
    (cons 'distinct distinct)
    (cons 'dedupe dedupe)
    (cons 'conj conj)
-   (cons 'get cluck-get)
-   (cons 'get-in get-in)
-   (cons 'assoc-in assoc-in)
-   (cons 'update update)
+    (cons 'get cluck-get)
+    (cons 'get-in get-in)
+    (cons 'assoc-in assoc-in)
+    (cons 'update-in update-in)
+    (cons 'dissoc-in dissoc-in)
+    (cons 'update update)
    (cons 'contains? cluck-contains?)
    (cons 'count count)
    (cons 'seq seq)
@@ -2991,8 +3044,10 @@
    (cons 'conj "Add one item to a collection, returning a new collection.")
    (cons 'get "Look up KEY in MAP, SET, VECTOR, or sequence-backed collection.")
    (cons 'get-in "Look up a nested path in a map or vector.")
-   (cons 'assoc-in "Associate VALUE at a nested path in a map or vector, returning a new collection.")
-   (cons 'update "Update KEY in COLL by applying F to the current value, returning a new collection.")
+    (cons 'assoc-in "Associate VALUE at a nested path in a map or vector, returning a new collection.")
+    (cons 'update-in "Update a nested path in a map or vector by applying F to the current value.")
+    (cons 'dissoc-in "Remove a nested path from a map or vector.")
+    (cons 'update "Update KEY in COLL by applying F to the current value, returning a new collection.")
    (cons 'contains? "Return true when MAP, SET, or VECTOR contains KEY.")
    (cons 'count "Return the number of items in COLL.")
    (cons 'seq "Return a simple sequence view of COLL.")
@@ -3048,11 +3103,16 @@
    (cons 'def "Define a var and intern it into the current namespace.")
    (cons 'defn "Define a named function and intern it into the current namespace.")
    (cons 'fn "Create an anonymous function.")
-   (cons 'let "Bind names, vectors, or maps and evaluate the body.")
+    (cons 'let "Bind names, vectors, or maps and evaluate the body.")
+     (cons 'letfn "Bind recursive local functions and evaluate the body.")
+    (cons 'when-let "Bind a value and run the body only when it is truthy.")
+     (cons 'if-let "Bind a value and choose between THEN and ELSE based on truthiness.")
+     (cons 'as-> "Thread a value through forms by replacing a placeholder symbol.")
    (cons 'and "Evaluate forms left to right and return the last truthy value, or the first falsey value.")
    (cons 'or "Evaluate forms left to right and return the first truthy value, or false.")
-   (cons 'comment "Ignore body forms and return the unspecified value.")
-   (cons 'if "Evaluate THEN or ELSE based on Cluck truthiness.")
+    (cons 'comment "Ignore body forms and return the unspecified value.")
+     (cons 'do "Evaluate body forms in order and return the last value, or nil when empty.")
+     (cons 'if "Evaluate THEN or ELSE based on Cluck truthiness.")
    (cons 'when "Evaluate BODY when TEST is truthy.")
    (cons 'when-not "Evaluate BODY when TEST is falsey.")
    (cons 'if-not "Evaluate ELSE when TEST is truthy, THEN otherwise.")
@@ -3456,6 +3516,45 @@
         (let ((binding (car xs)))
           (loop (cdr xs) (cons (cadr binding) acc))))))
 
+(define (cluck-letfn-clause-list bindings)
+  (let ((vector-bindings (cluck-vector-form->list bindings)))
+    (if vector-bindings
+        vector-bindings
+        (if (pair? bindings) bindings #f))))
+
+(define (cluck-letfn-clause? clause)
+  (and (pair? clause)
+       (symbol? (car clause))
+       (pair? (cdr clause))
+       (cluck-vector-form->list (cadr clause))
+       (pair? (cddr clause))))
+
+(define (cluck-letfn-clause-list? clauses)
+  (cond
+    ((not clauses) #f)
+    ((null? clauses) #t)
+    ((cluck-letfn-clause? (car clauses))
+     (cluck-letfn-clause-list? (cdr clauses)))
+    (:else #f)))
+
+(define (cluck-expand-letfn bindings body)
+  (let ((clauses (cluck-letfn-clause-list bindings)))
+    (if (not (cluck-letfn-clause-list? clauses))
+        (error "letfn expects bindings of the form (name [params] body...)" bindings)
+        (let loop ((xs clauses) (acc '()))
+          (if (null? xs)
+              (if (null? body)
+                  'nil
+                  `(letrec ,(reverse acc)
+                     (##core#begin ,@body)))
+              (let* ((clause (car xs))
+                     (name (car clause))
+                     (params (cadr clause))
+                     (fn-body (cddr clause)))
+                (loop (cdr xs)
+                      (cons `(,name (fn ,params ,@fn-body))
+                            acc))))))))
+
 (define (cluck-expand-named-let name bindings body)
   (let* ((names (cluck-let-binding-pair-names bindings))
          (values (cluck-let-binding-pair-values bindings))
@@ -3656,6 +3755,13 @@
    (lambda (form rename compare)
      '(void))))
 
+(define-syntax do
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (if (null? (cdr form))
+         'nil
+         `(##core#begin ,@(cdr form))))))
+
 (define (cluck-expand-cond clauses rename)
   (let loop ((rest clauses))
     (if (null? rest)
@@ -3696,6 +3802,66 @@
      (if test else then))
     ((_ test then)
      (if test nil then))))
+
+(define (cluck-expand-when-let binding expr body rename)
+  (let ((temp (rename 'cluck-when-let-value)))
+    `(let* ((,temp ,expr)
+            ,@(cluck-destructure-binding binding temp '()))
+       (if ,temp
+           (do ,@body)
+           nil))))
+
+(define (cluck-expand-if-let binding expr then else-part rename)
+  (let ((temp (rename 'cluck-if-let-value)))
+    `(let* ((,temp ,expr)
+            ,@(cluck-destructure-binding binding temp '()))
+       (if ,temp
+           ,then
+           ,else-part))))
+
+(define-syntax when-let
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (##core#let ((parts (cdr form)))
+       (if (and (pair? parts)
+                (pair? (cdr parts)))
+           (##core#let ((binding-spec (car parts))
+                        (body (cdr parts))
+                        (binding-parts (cluck-vector-form->list (car parts))))
+             (if (and binding-parts
+                      (pair? binding-parts)
+                      (pair? (cdr binding-parts))
+                      (null? (cddr binding-parts)))
+                 (cluck-expand-when-let (car binding-parts)
+                                        (cadr binding-parts)
+                                        body
+                                        rename)
+                 (error "when-let expects a binding vector [binding expr]" binding-spec)))
+           (error "when-let expects a binding vector and body" form))))))
+
+(define-syntax if-let
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (##core#let ((parts (cdr form)))
+       (if (and (pair? parts)
+                (pair? (cdr parts)))
+           (##core#let ((binding-spec (car parts))
+                        (then (cadr parts))
+                        (else-rest (cddr parts))
+                        (binding-parts (cluck-vector-form->list (car parts))))
+             (if (and binding-parts
+                      (pair? binding-parts)
+                      (pair? (cdr binding-parts))
+                      (null? (cddr binding-parts))
+                      (or (null? else-rest)
+                          (and (pair? else-rest) (null? (cdr else-rest)))))
+                 (cluck-expand-if-let (car binding-parts)
+                                      (cadr binding-parts)
+                                      then
+                                      (if (null? else-rest) 'nil (car else-rest))
+                                      rename)
+                 (error "if-let expects [binding expr], then, and optional else" binding-spec)))
+           (error "if-let expects a binding vector, then, and optional else" form))))))
 
 (define-syntax cond
   (er-macro-transformer
@@ -3739,6 +3905,59 @@
                                                                  (cddr clauses)
                                                                  rename
                                                                  stepper))))))))
+
+(define (cluck-as->-rewrite form sym replacement)
+  (if (symbol? form)
+      (if (eq? form sym) replacement form)
+      (if (pair? form)
+          (let ((head (car form)))
+            (if (and (symbol? head) (eq? head 'quote))
+                form
+                (if (and (symbol? head) (eq? head 'hash-map))
+                    (let loop ((xs (cdr form)) (acc '()))
+                      (if (null? xs)
+                          (cons 'hash-map (reverse acc))
+                          (loop (cddr xs)
+                                (cons (cluck-as->-rewrite (cadr xs)
+                                                         sym
+                                                         replacement)
+                                      (cons (cluck-as->-rewrite (car xs)
+                                                               sym
+                                                               replacement)
+                                            acc)))))
+                    (cons (cluck-as->-rewrite (car form) sym replacement)
+                          (cluck-as->-rewrite (cdr form) sym replacement)))))
+          (if (vector? form)
+              (list->vector
+               (map (lambda (item)
+                      (cluck-as->-rewrite item sym replacement))
+                    (vector->list form)))
+              form))))
+
+(define (cluck-expand-as-> value sym steps rename)
+  (if (null? steps)
+      value
+      (let ((temp (rename 'cluck-as-value)))
+        `(let* ((,temp ,value))
+           ,(cluck-expand-as-> (cluck-as->-rewrite (car steps) sym temp)
+                               sym
+                               (cdr steps)
+                               rename)))))
+
+(define-syntax as->
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (##core#let ((parts (cdr form)))
+       (if (and (pair? parts)
+                (pair? (cdr parts))
+                (pair? (cddr parts)))
+           (##core#let ((value (car parts))
+                        (sym (cadr parts))
+                        (steps (cddr parts)))
+             (if (symbol? sym)
+                 (cluck-expand-as-> value sym steps rename)
+                 (error "as-> expects a symbol placeholder" sym)))
+           (error "as-> expects a value, a symbol, and one or more forms" form))))))
 
 (define (cluck-expand-some-thread x clauses rename stepper)
   (if (null? clauses)
@@ -3893,7 +4112,17 @@
                  (if vector-bindings
                      `(let* ,(cluck-parse-let-bindings bindings)
                         ,@body)
-                     (if (cluck-let-binding-pair-list? bindings)
-                         `(let* ,bindings
-                            ,@body)
-                         (error "let bindings must be a vector or list" bindings))))))))))
+                      (if (cluck-let-binding-pair-list? bindings)
+                          `(let* ,bindings
+                             ,@body)
+                          (error "let bindings must be a vector or list" bindings))))))))))
+
+(define-syntax letfn
+  (er-macro-transformer
+   (lambda (form rename compare)
+     (##core#let ((parts (cdr form)))
+       (if (null? parts)
+           (error "letfn expects a binding vector and a body")
+           (##core#let ((bindings (car parts))
+                        (body (cdr parts)))
+             (cluck-expand-letfn bindings body)))))))

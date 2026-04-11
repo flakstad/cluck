@@ -37,7 +37,7 @@ That makes it a strong host for an exploratory Lisp layer that wants to feel lig
 The project is exploring a Clojure-like surface on top of CHICKEN Scheme:
 
 - keywords, maps, sets, and vectors with EDN-style syntax
-- core helpers such as `def`, `defn`, `fn`, `let`, `if`, `when`, `cond` with `:else`, `case`, `cond->`, `cond->>`, `some->`, `some->>`, `and`, `or`, `->`, and `->>`
+- core helpers such as `def`, `defn`, `fn`, `let`, `letfn`, `when-let`, `if-let`, `as->`, `do`, `if`, `when`, `cond` with `:else`, `case`, `cond->`, `cond->>`, `some->`, `some->>`, `and`, `or`, `->`, and `->>`
 - common sequence helpers like `seq`, `first`, `rest`, `take`, `drop`, `take-nth`, `partition`, `partition-by`, `frequencies`, `concat`, `interleave`, `flatten`, `last`, `butlast`, `distinct`, `dedupe`, `split-with`, `reductions`, `group-by`, `count`, `map`, `filter`, and `reduce`
 - mutable maps and sets by default, with an opt-in `cluck.persistent` namespace for persistent collections and `cluck.mutable` for host hash tables and sets
 - a REPL and printing experience that feels closer to Clojure than raw Scheme
@@ -66,11 +66,12 @@ The current implementation supports:
 - `cluck.examples.outline`
 - `cluck.examples.datastar-clock`
 - `pr-str`, `str`, `format`, `println`, and `prn`
-- mutable `assoc`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce` in the core layer, plus a separate opt-in persistent collection namespace
+- mutable `assoc`, `assoc-in`, `update-in`, `dissoc-in`, `dissoc`, `conj`, `get`, `contains?`, `seq`, `map`, `mapv`, `filter`, `filterv`, `keep`, `map-indexed`, `empty?`, and `reduce` in the core layer, plus a separate opt-in persistent collection namespace
 - `let`, `fn`, and `defn` destructuring for vectors and maps
 - `ns`, `in-ns`, `current-ns`, `find-ns`, `all-ns`, `ns-publics`, and `ns-resolve`
 - `require` plus `ns`-time `:require` directives for loading namespace files
-- Clojure-style special forms and threading macros, including `case`, `cond->`, `cond->>`, `some->`, and `some->>`
+- Clojure-style special forms and threading macros, including `letfn`, `when-let`, `if-let`, `as->`, `do`, `case`, `cond->`, `cond->>`, `some->`, and `some->>`
+- Exception handling is intentionally left to the host layer for now; `try`/`catch`/`throw` are not part of the Cluck core surface yet.
 - `def` and `defn` intern into the active namespace, return the defined value when evaluated, and support docstrings via `doc`
 - core runtime vars like `map`, `get`, `assoc`, `reduce`, and `seq` carry docstrings that surface through `doc` and `C-c C-d`
 - the public namespace layout is mirrored through `cluck.core`, `cluck.string`, `cluck.io`, `cluck.set`, `cluck.mutable`, `cluck.persistent`, and `cluck.edn`, plus the separate top-level `ring.request`, `ring.response`, `ring.middleware`, and `ring.adapter.spiffy` libraries, with `cluck.core` installed at bootstrap time
