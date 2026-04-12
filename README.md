@@ -801,6 +801,16 @@ location, so keeping the binary under `build/` still works as long as it stays
 inside the project tree. For a fully self-contained binary, use the standalone
 weather packaging pattern described above.
 
+If you are tuning binary size or runtime performance, see
+[`docs/chicken-performance-and-size-notes.md`](./docs/chicken-performance-and-size-notes.md).
+The short version is:
+
+- use standalone entrypoints for deployable binaries, not `src/cluck-cli.scm`
+  or `src/cluck-init.scm`
+- bundle only the Cluck namespaces an app actually needs
+- treat runtime `eval`, dynamic source loading, and REPL/doc support as dev-mode
+  features with real size/perf cost in deployed binaries
+
 ## No-Eggs Example
 
 A small example app that does not use external CHICKEN eggs lives in:
