@@ -78,32 +78,32 @@
   []
   (let [event-type (event-type)]
     (cond
-      (= event-type event-quit) :quit
-      (= event-type event-window-close-requested) :quit
-      (= event-type event-window-focus-gained) :focus-gained
-      (= event-type event-window-focus-lost) :focus-lost
-      (= event-type event-window-occluded) :window-occluded
-      (= event-type event-window-exposed) :window-exposed
-      (= event-type event-window-mouse-enter) :mouse-enter
-      (= event-type event-window-mouse-leave) :mouse-leave
-      (= event-type event-finger-motion) :finger-motion
-      (= event-type event-finger-down) :finger-down
-      (= event-type event-finger-up) :finger-up
-      (= event-type event-finger-canceled) :finger-canceled
-      (= event-type event-key-down) :key-down
-      (= event-type event-key-up) :key-up
-      (= event-type event-text-input) :text-input
-      (= event-type event-text-editing) :text-editing
-      (= event-type event-mouse-motion) :mouse-motion
-      (= event-type event-mouse-button-down) :mouse-down
-      (= event-type event-mouse-button-up) :mouse-up
-      (= event-type event-mouse-wheel) :mouse-wheel
-      (= event-type event-pen-motion) :pen-motion
-      (= event-type event-pen-down) :pen-down
-      (= event-type event-pen-up) :pen-up
-      (= event-type event-pen-button-down) :pen-button-down
-      (= event-type event-pen-button-up) :pen-button-up
-      (= event-type event-pen-axis) :pen-axis
+      (= event-type sdl-event-type-quit) :quit
+      (= event-type sdl-event-type-window-close-requested) :quit
+      (= event-type sdl-event-type-window-focus-gained) :focus-gained
+      (= event-type sdl-event-type-window-focus-lost) :focus-lost
+      (= event-type sdl-event-type-window-occluded) :window-occluded
+      (= event-type sdl-event-type-window-exposed) :window-exposed
+      (= event-type sdl-event-type-window-mouse-enter) :mouse-enter
+      (= event-type sdl-event-type-window-mouse-leave) :mouse-leave
+      (= event-type sdl-event-type-finger-motion) :finger-motion
+      (= event-type sdl-event-type-finger-down) :finger-down
+      (= event-type sdl-event-type-finger-up) :finger-up
+      (= event-type sdl-event-type-finger-canceled) :finger-canceled
+      (= event-type sdl-event-type-key-down) :key-down
+      (= event-type sdl-event-type-key-up) :key-up
+      (= event-type sdl-event-type-text-input) :text-input
+      (= event-type sdl-event-type-text-editing) :text-editing
+      (= event-type sdl-event-type-mouse-motion) :mouse-motion
+      (= event-type sdl-event-type-mouse-button-down) :mouse-down
+      (= event-type sdl-event-type-mouse-button-up) :mouse-up
+      (= event-type sdl-event-type-mouse-wheel) :mouse-wheel
+      (= event-type sdl-event-type-pen-motion) :pen-motion
+      (= event-type sdl-event-type-pen-down) :pen-down
+      (= event-type sdl-event-type-pen-up) :pen-up
+      (= event-type sdl-event-type-pen-button-down) :pen-button-down
+      (= event-type sdl-event-type-pen-button-up) :pen-button-up
+      (= event-type sdl-event-type-pen-axis) :pen-axis
       :else :other)))
 
 (defn event-description

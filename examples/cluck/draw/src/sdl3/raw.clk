@@ -10,82 +10,82 @@
 (def init-video-flags
   (foreign-value "SDL_INIT_VIDEO" unsigned-int))
 
-(def event-quit
+(def sdl-event-type-quit
   (foreign-value "SDL_EVENT_QUIT" unsigned-int))
 
-(def event-window-close-requested
+(def sdl-event-type-window-close-requested
   (foreign-value "SDL_EVENT_WINDOW_CLOSE_REQUESTED" unsigned-int))
 
-(def event-window-focus-gained
+(def sdl-event-type-window-focus-gained
   (foreign-value "SDL_EVENT_WINDOW_FOCUS_GAINED" unsigned-int))
 
-(def event-window-focus-lost
+(def sdl-event-type-window-focus-lost
   (foreign-value "SDL_EVENT_WINDOW_FOCUS_LOST" unsigned-int))
 
-(def event-window-occluded
+(def sdl-event-type-window-occluded
   (foreign-value "SDL_EVENT_WINDOW_OCCLUDED" unsigned-int))
 
-(def event-window-exposed
+(def sdl-event-type-window-exposed
   (foreign-value "SDL_EVENT_WINDOW_EXPOSED" unsigned-int))
 
-(def event-window-mouse-enter
+(def sdl-event-type-window-mouse-enter
   (foreign-value "SDL_EVENT_WINDOW_MOUSE_ENTER" unsigned-int))
 
-(def event-window-mouse-leave
+(def sdl-event-type-window-mouse-leave
   (foreign-value "SDL_EVENT_WINDOW_MOUSE_LEAVE" unsigned-int))
 
-(def event-finger-motion
+(def sdl-event-type-finger-motion
   (foreign-value "SDL_EVENT_FINGER_MOTION" unsigned-int))
 
-(def event-finger-down
+(def sdl-event-type-finger-down
   (foreign-value "SDL_EVENT_FINGER_DOWN" unsigned-int))
 
-(def event-finger-up
+(def sdl-event-type-finger-up
   (foreign-value "SDL_EVENT_FINGER_UP" unsigned-int))
 
-(def event-finger-canceled
+(def sdl-event-type-finger-canceled
   (foreign-value "SDL_EVENT_FINGER_CANCELED" unsigned-int))
 
-(def event-key-down
+(def sdl-event-type-key-down
   (foreign-value "SDL_EVENT_KEY_DOWN" unsigned-int))
 
-(def event-key-up
+(def sdl-event-type-key-up
   (foreign-value "SDL_EVENT_KEY_UP" unsigned-int))
 
-(def event-text-input
+(def sdl-event-type-text-input
   (foreign-value "SDL_EVENT_TEXT_INPUT" unsigned-int))
 
-(def event-text-editing
+(def sdl-event-type-text-editing
   (foreign-value "SDL_EVENT_TEXT_EDITING" unsigned-int))
 
-(def event-mouse-motion
+(def sdl-event-type-mouse-motion
   (foreign-value "SDL_EVENT_MOUSE_MOTION" unsigned-int))
 
-(def event-mouse-button-down
+(def sdl-event-type-mouse-button-down
   (foreign-value "SDL_EVENT_MOUSE_BUTTON_DOWN" unsigned-int))
 
-(def event-mouse-button-up
+(def sdl-event-type-mouse-button-up
   (foreign-value "SDL_EVENT_MOUSE_BUTTON_UP" unsigned-int))
 
-(def event-mouse-wheel
+(def sdl-event-type-mouse-wheel
   (foreign-value "SDL_EVENT_MOUSE_WHEEL" unsigned-int))
 
-(def event-pen-motion
+(def sdl-event-type-pen-motion
   (foreign-value "SDL_EVENT_PEN_MOTION" unsigned-int))
 
-(def event-pen-down
+(def sdl-event-type-pen-down
   (foreign-value "SDL_EVENT_PEN_DOWN" unsigned-int))
 
-(def event-pen-up
+(def sdl-event-type-pen-up
   (foreign-value "SDL_EVENT_PEN_UP" unsigned-int))
 
-(def event-pen-button-down
+(def sdl-event-type-pen-button-down
   (foreign-value "SDL_EVENT_PEN_BUTTON_DOWN" unsigned-int))
 
-(def event-pen-button-up
+(def sdl-event-type-pen-button-up
   (foreign-value "SDL_EVENT_PEN_BUTTON_UP" unsigned-int))
 
-(def event-pen-axis
+(def sdl-event-type-pen-axis
   (foreign-value "SDL_EVENT_PEN_AXIS" unsigned-int))
 
 (define sdl-init!
