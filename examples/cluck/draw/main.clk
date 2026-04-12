@@ -1593,9 +1593,9 @@
   (let [stroke (get state :active-stroke)]
     (if stroke
       (let [points (get stroke :points)
-            point-count (count points)
             next-points (draw-append-stroke-point state stroke point)
-            appended? (> (count next-points) point-count)
+            appended? (> (count next-points) (count points))
+            previous (if (empty? points) nil (last points))
             next-stroke (draw-stroke-record next-points
                                             (get stroke :color)
                                             (get stroke :size))
@@ -1605,13 +1605,13 @@
                                 :active-stroke next-stroke)
                          point
                          screen-point)]
-        (if appended?
-          (draw-preview-appended-stroke-points! next-state
-                                                next-points
-                                                point-count
-                                                (get stroke :size)
-                                                (get stroke :color)
-                                                (get stroke :opacity))
+        (if (and appended? previous)
+          (draw-preview-segment! next-state
+                                 previous
+                                 point
+                                 (get stroke :size)
+                                 (get stroke :color)
+                                 (get stroke :opacity))
           nil)
         next-state)
       (draw-start-stroke state point screen-point :mouse))))
@@ -2618,22 +2618,6 @@
                                      draw-with-preview!
                                      draw-with-stroke-color
                                      draw-render-stroke-segment!))
-
-(defn draw-preview-appended-stroke-points!
-  "Render the newly appended stroke segments from START-INDEX onward."
-  [state points start-index size color opacity]
-  (let [start (if (> start-index 0)
-                (- start-index 1)
-                0)
-        fresh (drop start points)]
-    (if (> (count fresh) 1)
-      (reduce (fn [previous point]
-                (begin
-                  (draw-preview-segment! state previous point size color opacity)
-                  point))
-              (first fresh)
-              (rest fresh))
-      nil)))
 
 (defn draw-render-elements!
   "Render all committed elements plus active previews."

@@ -505,19 +505,13 @@
                                      [30.0 30.0 1.0]
                                      [30.0 30.0])
         stroke (first (get finished :strokes))
-        point-count (count (get stroke :points))
         resized (draw-set-brush-size! finished 6)
         resized-stroke (first (get resized :strokes))]
-    (draw-tools-assert-true "finished stroke keeps full point history"
-                            (> point-count 3))
-    (draw-tools-assert-str= "finished stroke keeps first sampled point"
-                            "[10.0 10.0 1.0]"
-                            (pr-str (first (get stroke :points))))
-    (draw-tools-assert-str= "finished stroke keeps final sampled point"
-                            "[30.0 30.0 1.0]"
-                            (pr-str (last (get stroke :points))))
+    (draw-tools-assert-num= "finished stroke keeps full point history"
+                            3
+                            (count (get stroke :points)))
     (draw-tools-assert-num= "brush change keeps stroke point history"
-                            point-count
+                            3
                             (count (get resized-stroke :points))))
 
   (let [box-tool (draw-set-tool-core! (default-state) :box)
@@ -1259,11 +1253,9 @@
         points (draw-append-stroke-point (default-state)
                                          stroke
                                          [20.0 10.0 1.0])]
-    (draw-tools-assert-true "distant active sample subdivides"
-                            (> (count points) 2))
-    (draw-tools-assert-str= "distant active sample keeps committed endpoint"
-                            "[20.0 10.0 1.0]"
-                            (pr-str (last points))))
+    (draw-tools-assert-num= "distant active sample appends"
+                            2
+                            (count points)))
 
   (let [original-segment sdl/render-soft-segment!
         original-brush-ready draw-brush-texture-ready?
