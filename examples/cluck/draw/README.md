@@ -82,6 +82,13 @@ Architecture notes:
 - keep custom C limited to the places where SDL requires callbacks, direct struct access, or pixel/texture work
 - treat pointers and native resources as boundary concerns; higher-level draw modules should work with ordinary maps and values whenever possible
 
+Stroke rendering quality notes and future steps:
+- current freehand rendering is built from sampled input points plus a soft strip per segment, which keeps the implementation simple but can show faceting on sharp turns and seams at angled joins
+- the first quality lever is sample density; tighter spacing and path subdivision reduce visible straight-line interpolation without changing the native renderer
+- the next likely improvement is curve reconstruction before rendering, for example midpoint subdivision or Catmull-Rom-style interpolation between raw input samples
+- after that, the main remaining artifact source is join rendering; proper round joins or vertex coverage around corners would improve both freehand turns and angled rectangle corners
+- a more ambitious future path is to move from strip-per-segment rendering to repeated brush stamping or a true variable-width path mesh with explicit joins and caps
+
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to
 bring up the window, first evaluate `(load-file "examples/cluck/draw/dev.clk")`

@@ -26,10 +26,40 @@
   "Return the minimum screen-space spacing between active stroke samples."
   [state point size]
   (let [stamp (draw.view/draw-point-screen-size state point size)
-        spacing (/ stamp 2.0)]
-    (if (> spacing 1.0)
+        spacing (/ stamp 4.0)]
+    (if (> spacing 0.5)
       spacing
-      1.0)))
+      0.5)))
+
+(defn draw-interpolate-point
+  "Return the point at fraction T between A and B."
+  [a b t]
+  (let [ax (nth a 0)
+        ay (nth a 1)
+        ap (draw.view/draw-point-pressure a)
+        bx (nth b 0)
+        by (nth b 1)
+        bp (draw.view/draw-point-pressure b)]
+    [(+ ax (* (- bx ax) t))
+     (+ ay (* (- by ay) t))
+     (+ ap (* (- bp ap) t))]))
+
+(defn draw-subdivide-segment
+  "Return interpolated points from A to B no farther apart than SPACING."
+  [state a b spacing]
+  (let [distance (draw-point-screen-distance state a b)]
+    (if (< distance spacing)
+      []
+      (let [steps (inexact->exact (math/ceiling (/ distance spacing)))]
+        (let loop ((index 1)
+                   (points []))
+          (if (> index steps)
+            points
+            (loop (+ index 1)
+                  (conj points
+                        (draw-interpolate-point a
+                                                b
+                                                (/ index steps))))))))))
 
 (defn draw-append-stroke-point
   "Append POINT on STROKE when it is far enough from the prior sample."
@@ -39,8 +69,8 @@
     (if (empty? points)
       [point]
       (let [previous (last points)
-            distance (draw-point-screen-distance state previous point)
             spacing (draw-min-point-spacing state point size)]
-        (if (>= distance spacing)
-          (conj points point)
-          points)))))
+        (reduce (fn [out next-point]
+                  (conj out next-point))
+                points
+                (draw-subdivide-segment state previous point spacing))))))
