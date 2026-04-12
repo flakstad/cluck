@@ -25,12 +25,18 @@
 (defn draw-point-size
   "Scale BASE-SIZE by POINT pressure."
   [point base-size]
-  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
-        scaled (draw-exact-int (math/ceiling (* base-size
-                                                (+ 0.25 (* 0.75 pressure)))))]
+  (let [scaled (draw-point-size-float point base-size)
+        scaled (draw-exact-int (math/ceiling scaled))]
     (if (> scaled 0)
       scaled
       1)))
+
+(defn draw-point-size-float
+  "Scale BASE-SIZE by POINT pressure without rounding."
+  [point base-size]
+  (let [pressure (draw-normalize-pressure (draw-point-pressure point))]
+    (* base-size
+       (+ 0.25 (* 0.75 pressure)))))
 
 (defn draw-clamp
   "Clamp VALUE between LOW and HIGH."
@@ -160,7 +166,7 @@
   "Scale BASE-SIZE into screen space using the current zoom."
   [state point base-size]
   (let [zoom (draw-view-zoom state)
-        scaled (draw-exact-int (math/ceiling (* (draw-point-size point base-size)
+        scaled (draw-exact-int (math/ceiling (* (draw-point-size-float point base-size)
                                                 zoom)))]
     (if (> scaled 0)
       scaled
@@ -170,7 +176,7 @@
   "Convert the current brush BASE-SIZE into a world-space stroke size."
   [state point base-size]
   (let [zoom (draw-view-zoom state)
-        scaled (/ (draw-point-size point base-size)
+        scaled (/ (draw-point-size-float point base-size)
                   zoom)]
     (if (> scaled 0.0)
       scaled

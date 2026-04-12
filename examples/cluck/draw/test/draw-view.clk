@@ -80,6 +80,13 @@
                          2.0
                          (draw-current-brush-size zoomed-in [15 26 1.0] 4)))
 
+(let [deep-zoomed-in (assoc (default-state)
+                            :zoom 64.0)
+      stored-size (draw-current-brush-size deep-zoomed-in [15 26 1.0] 4)]
+  (draw-view-assert-num= "deep zoom current brush still renders at base screen size"
+                         4
+                         (draw-point-screen-size deep-zoomed-in [15 26 1.0] stored-size)))
+
 (let [state (assoc (default-state)
                    :view-x 100.0
                    :view-y 200.0
