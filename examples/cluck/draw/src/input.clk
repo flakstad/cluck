@@ -285,32 +285,33 @@
          1.0)]))
 
 (defn draw-build-input-event
-  "Build a synthetic event map for DESC using the current SDL event state."
-  [state desc]
-  (let [kind (draw-event-kind desc)]
-    {:kind kind
-     :desc desc
-     :key (draw-event-key-label desc)
-     :text (draw-nonblank (sdl/event-text-input) desc)
-     :text-edit (draw-nonblank (sdl/event-text-editing) desc)
-     :mouse-x (draw-event-coordinate desc "x=")
-     :mouse-y (draw-event-coordinate desc "y=")
-     :pressure (draw-event-pressure state desc)
-     :shift? (sdl/mod-shift-pressed?)
-     :ctrl? (sdl/mod-ctrl-pressed?)
-     :wheel-y (sdl/event-wheel-y)
-     :wheel-mouse-x (sdl/event-wheel-mouse-x)
-     :wheel-mouse-y (sdl/event-wheel-mouse-y)}))
+  "Finalize RAW-EVENT into the app-facing input map."
+  [state raw-event]
+  (let [desc (or (get raw-event :desc) "")
+        kind (or (get raw-event :kind) :other)]
+    (assoc raw-event
+           :kind kind
+           :desc desc
+           :key (draw-nonblank (or (get raw-event :key) "") desc)
+           :text (draw-nonblank (or (get raw-event :text) "") desc)
+           :text-edit (draw-nonblank (or (get raw-event :text-edit) "") desc)
+           :pressure (if (draw-pen-event-kind? kind)
+                       (if (draw.state/draw-kind=? kind :pen-axis)
+                         (or (get raw-event :pressure) 1.0)
+                         (or (get state :pen-pressure)
+                             (get raw-event :pressure)
+                             1.0))
+                       1.0))))
 
 (defn draw-synthetic-pen-mouse-event?
   "Return true when EVENT is SDL's synthetic mouse mirror of pen input."
   [event]
   (let [kind (get event :kind)
-        desc (or (get event :desc) "")]
+        synthetic? (get event :synthetic-pen-mouse?)]
     (and (or (draw.state/draw-kind=? kind :mouse-motion)
              (draw.state/draw-kind=? kind :mouse-down)
              (draw.state/draw-kind=? kind :mouse-up))
-         (str/includes? desc "which=4294967294"))))
+         synthetic?)))
 
 (defn draw-ignorable-input-event?
   "Return true when EVENT should be discarded before it reaches app logic."

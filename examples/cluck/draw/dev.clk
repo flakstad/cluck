@@ -54,6 +54,8 @@
 (defn draw-dev-library-sources
   [root]
   [(draw-dev-loadable-source-path root)
+   (fs/path root "examples/cluck/draw/src/sdl3/raw.clk")
+   (fs/path root "examples/cluck/draw/src/sdl3/native.clk")
    (draw-dev-source-path root)
    (fs/path root "src/syntax-bootstrap.scm")
    (fs/path root "src/syntax-bootstrap-core.scm")

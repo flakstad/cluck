@@ -66,6 +66,8 @@
 (include "examples/cluck/draw/src/create.clk")
 (include "examples/cluck/draw/src/stroke.clk")
 (include "examples/cluck/draw/src/input.clk")
+(include "examples/cluck/draw/src/sdl3/raw.clk")
+(include "examples/cluck/draw/src/sdl3/native.clk")
 (include "examples/cluck/draw/src/sdl3.clk")
 (include "examples/cluck/draw/main.clk")
 

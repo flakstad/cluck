@@ -107,11 +107,11 @@
 (draw-input-assert-true "synthetic pen mouse detection"
                         (draw-synthetic-pen-mouse-event?
                          {:kind :mouse-down
-                          :desc "SDL_EVENT_MOUSE_BUTTON_DOWN which=4294967294"}))
+                          :synthetic-pen-mouse? true}))
 (draw-input-assert-false "normal mouse event is not synthetic pen"
                          (draw-synthetic-pen-mouse-event?
                           {:kind :mouse-down
-                           :desc "SDL_EVENT_MOUSE_BUTTON_DOWN which=0"}))
+                           :synthetic-pen-mouse? false}))
 
 (let [lines (draw-debug-control-lines)]
   (draw-input-assert-true "debug panel lists wheel zoom"
@@ -364,16 +364,15 @@
                           "[12.0 34.0 0.5]"
                           (pr-str pen-point)))
 
-(let [original-pen-pressure sdl/event-pen-pressure]
-  (set! sdl/event-pen-pressure
-        (lambda ()
-          0.37))
-  (let [event (draw-build-input-event (default-state)
-                                      "SDL_EVENT_PEN_AXIS x=12.0 y=34.0")]
-    (draw-input-assert-num= "pen axis event reads live SDL pressure"
-                            0.37
-                            (get event :pressure)))
-  (set! sdl/event-pen-pressure original-pen-pressure))
+(let [event (draw-build-input-event (default-state)
+                                    {:kind :pen-axis
+                                     :desc "SDL_EVENT_PEN_AXIS x=12.0 y=34.0"
+                                     :mouse-x 12
+                                     :mouse-y 34
+                                     :pressure 0.37})]
+  (draw-input-assert-num= "pen axis event reads structured pressure"
+                          0.37
+                          (get event :pressure)))
 
 (draw-input-assert-true "pressure scales brush size"
                         (< (draw-point-size [10 20 0.25] 4)
@@ -1504,7 +1503,7 @@
   (set! sdl/set-draw-color! original-set-color))
 
   (let [original-poll sdl/poll-event!
-        original-desc sdl/event-description
+        original-current sdl/current-event
         original-build draw-build-input-event
         original-apply draw-apply-and-log-input-event!
         original-sync sync-window-title!
@@ -1518,13 +1517,17 @@
               (set! events (+ events 1))
               true)
             false)))
-  (set! sdl/event-description
+  (set! sdl/current-event
         (lambda ()
-          "SDL_EVENT_PEN_MOTION x=12.0 y=34.0"))
-  (set! draw-build-input-event
-        (lambda (state desc)
           {:kind :pen-motion
-           :desc desc
+           :desc "SDL_EVENT_PEN_MOTION x=12.0 y=34.0"
+           :mouse-x 12
+           :mouse-y 34
+           :pressure 1.0}))
+  (set! draw-build-input-event
+        (lambda (state raw-event)
+          {:kind :pen-motion
+           :desc (get raw-event :desc)
            :mouse-x 12
            :mouse-y 34
            :pressure 1.0}))
@@ -1543,7 +1546,7 @@
                           1
                           (get *draw-state* :frame))
   (set! sdl/poll-event! original-poll)
-  (set! sdl/event-description original-desc)
+  (set! sdl/current-event original-current)
   (set! draw-build-input-event original-build)
   (set! draw-apply-and-log-input-event! original-apply)
   (set! sync-window-title! original-sync))

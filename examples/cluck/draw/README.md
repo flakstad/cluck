@@ -54,6 +54,9 @@ csi -q -s examples/cluck/draw/run.scm
 
 The intent is to build this interactively in small steps:
 1. keep the SDL3 boundary isolated in `cluck.examples.draw.sdl3`
+   - `examples/cluck/draw/src/sdl3/raw.clk` owns direct SDL constants and imports
+   - `examples/cluck/draw/src/sdl3/native.clk` owns custom C helpers, callbacks, and struct-heavy glue
+   - `examples/cluck/draw/src/sdl3.clk` is the stable app-facing API used by the rest of draw
 2. start a normal Cluck REPL, then evaluate `(load-file "examples/cluck/draw/dev.clk")` to load the SDL3 support code
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default
@@ -72,6 +75,12 @@ The intent is to build this interactively in small steps:
 17. when you are working on input replay or performance inspection, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-replay.scm` for a fast focused probe; pass a round count like `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-replay.scm 1000` when you want a longer sustained stress run
 18. when you want to exercise the real live window with scripted input, run `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-live-replay.scm` or omit the dummy video driver for an actual windowed session; this goes through `draw-replay-live!`
 19. when you want to exercise the brush-change and undo path specifically, run `csi -q -s examples/cluck/draw/test/run-draw-brush-undo.scm` for a fast focused probe or `SDL_VIDEODRIVER=dummy csi -q -s examples/cluck/draw/test/run-draw-live-brush-undo.scm` for the live-window replay
+
+Architecture notes:
+- keep geometry, view math, selection rules, history, replay, and tool behavior in ordinary Cluck namespaces
+- keep SDL event decoding in `cluck.examples.draw.sdl3`; downstream code should prefer structured event maps over parsing SDL debug strings
+- keep custom C limited to the places where SDL requires callbacks, direct struct access, or pixel/texture work
+- treat pointers and native resources as boundary concerns; higher-level draw modules should work with ordinary maps and values whenever possible
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to

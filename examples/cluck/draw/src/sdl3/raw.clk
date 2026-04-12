@@ -1,0 +1,168 @@
+;; Low-level direct SDL3 imports for the Cluck draw example.
+;;
+;; This file shares the public draw SDL namespace so the standalone and
+;; loadable builds can include it directly without separate module packaging.
+
+(ns cluck.examples.draw.sdl3)
+
+(import (chicken foreign))
+
+(def init-video-flags
+  (foreign-value "SDL_INIT_VIDEO" unsigned-int))
+
+(def event-quit
+  (foreign-value "SDL_EVENT_QUIT" unsigned-int))
+
+(def event-window-close-requested
+  (foreign-value "SDL_EVENT_WINDOW_CLOSE_REQUESTED" unsigned-int))
+
+(def event-window-focus-gained
+  (foreign-value "SDL_EVENT_WINDOW_FOCUS_GAINED" unsigned-int))
+
+(def event-window-focus-lost
+  (foreign-value "SDL_EVENT_WINDOW_FOCUS_LOST" unsigned-int))
+
+(def event-window-occluded
+  (foreign-value "SDL_EVENT_WINDOW_OCCLUDED" unsigned-int))
+
+(def event-window-exposed
+  (foreign-value "SDL_EVENT_WINDOW_EXPOSED" unsigned-int))
+
+(def event-window-mouse-enter
+  (foreign-value "SDL_EVENT_WINDOW_MOUSE_ENTER" unsigned-int))
+
+(def event-window-mouse-leave
+  (foreign-value "SDL_EVENT_WINDOW_MOUSE_LEAVE" unsigned-int))
+
+(def event-finger-motion
+  (foreign-value "SDL_EVENT_FINGER_MOTION" unsigned-int))
+
+(def event-finger-down
+  (foreign-value "SDL_EVENT_FINGER_DOWN" unsigned-int))
+
+(def event-finger-up
+  (foreign-value "SDL_EVENT_FINGER_UP" unsigned-int))
+
+(def event-finger-canceled
+  (foreign-value "SDL_EVENT_FINGER_CANCELED" unsigned-int))
+
+(def event-key-down
+  (foreign-value "SDL_EVENT_KEY_DOWN" unsigned-int))
+
+(def event-key-up
+  (foreign-value "SDL_EVENT_KEY_UP" unsigned-int))
+
+(def event-text-input
+  (foreign-value "SDL_EVENT_TEXT_INPUT" unsigned-int))
+
+(def event-text-editing
+  (foreign-value "SDL_EVENT_TEXT_EDITING" unsigned-int))
+
+(def event-mouse-motion
+  (foreign-value "SDL_EVENT_MOUSE_MOTION" unsigned-int))
+
+(def event-mouse-button-down
+  (foreign-value "SDL_EVENT_MOUSE_BUTTON_DOWN" unsigned-int))
+
+(def event-mouse-button-up
+  (foreign-value "SDL_EVENT_MOUSE_BUTTON_UP" unsigned-int))
+
+(def event-mouse-wheel
+  (foreign-value "SDL_EVENT_MOUSE_WHEEL" unsigned-int))
+
+(def event-pen-motion
+  (foreign-value "SDL_EVENT_PEN_MOTION" unsigned-int))
+
+(def event-pen-down
+  (foreign-value "SDL_EVENT_PEN_DOWN" unsigned-int))
+
+(def event-pen-up
+  (foreign-value "SDL_EVENT_PEN_UP" unsigned-int))
+
+(def event-pen-button-down
+  (foreign-value "SDL_EVENT_PEN_BUTTON_DOWN" unsigned-int))
+
+(def event-pen-button-up
+  (foreign-value "SDL_EVENT_PEN_BUTTON_UP" unsigned-int))
+
+(def event-pen-axis
+  (foreign-value "SDL_EVENT_PEN_AXIS" unsigned-int))
+
+(define sdl-init!
+  (foreign-lambda bool "SDL_Init" unsigned-int))
+
+(define sdl-shutdown!
+  (foreign-lambda void "SDL_Quit"))
+
+(define sdl-last-error
+  (foreign-lambda c-string "SDL_GetError"))
+
+(define sdl-delay-ms
+  (foreign-lambda void "SDL_Delay" unsigned-int))
+
+(define sdl-start-text-input!
+  (foreign-lambda bool "SDL_StartTextInput" c-pointer))
+
+(define sdl-stop-text-input!
+  (foreign-lambda bool "SDL_StopTextInput" c-pointer))
+
+(define sdl-destroy-window!
+  (foreign-lambda void "SDL_DestroyWindow" c-pointer))
+
+(define sdl-destroy-renderer!
+  (foreign-lambda void "SDL_DestroyRenderer" c-pointer))
+
+(define sdl-create-window
+  (foreign-lambda* c-pointer ((c-string title) (int width) (int height) (unsigned-int flags))
+    "SDL_Window *window = SDL_CreateWindow(title, width, height, flags);"
+    "C_return(window);"))
+
+(define sdl-create-renderer
+  (foreign-lambda* c-pointer ((c-pointer window))
+    "SDL_Renderer *renderer = SDL_CreateRenderer((SDL_Window *)window, NULL);"
+    "C_return(renderer);"))
+
+(define sdl-set-draw-color!
+  (foreign-lambda bool "SDL_SetRenderDrawColor"
+                  c-pointer
+                  unsigned-int
+                  unsigned-int
+                  unsigned-int
+                  unsigned-int))
+
+(define sdl-render-clear!
+  (foreign-lambda bool "SDL_RenderClear" c-pointer))
+
+(define sdl-render-present!
+  (foreign-lambda bool "SDL_RenderPresent" c-pointer))
+
+(define sdl-quit-requested?
+  (foreign-lambda* bool ()
+    "SDL_Event event;"
+    "while (SDL_PollEvent(&event)) {"
+    "  if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {"
+    "    C_return(1);"
+    "  }"
+    "}"
+    "C_return(0);"))
+
+(define sdl-system-cursor-default
+  (foreign-value "SDL_SYSTEM_CURSOR_DEFAULT" int))
+
+(define sdl-system-cursor-text
+  (foreign-value "SDL_SYSTEM_CURSOR_TEXT" int))
+
+(define sdl-system-cursor-crosshair
+  (foreign-value "SDL_SYSTEM_CURSOR_CROSSHAIR" int))
+
+(define sdl-system-cursor-nwse-resize
+  (foreign-value "SDL_SYSTEM_CURSOR_NWSE_RESIZE" int))
+
+(define sdl-system-cursor-nesw-resize
+  (foreign-value "SDL_SYSTEM_CURSOR_NESW_RESIZE" int))
+
+(define sdl-system-cursor-move
+  (foreign-value "SDL_SYSTEM_CURSOR_MOVE" int))
+
+(define sdl-system-cursor-pointer
+  (foreign-value "SDL_SYSTEM_CURSOR_POINTER" int))

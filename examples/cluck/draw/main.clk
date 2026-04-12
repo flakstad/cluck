@@ -2110,8 +2110,7 @@
   (if (<= remaining 0)
     quit?
     (if (sdl/poll-event!)
-      (let [desc (sdl/event-description)
-            event (draw-build-input-event *draw-state* desc)
+      (let [event (draw-build-input-event *draw-state* (sdl/current-event))
             kind (get event :kind)]
         (if (draw-ignorable-input-event? event)
           (draw-drain-input-batch! remaining quit?)
