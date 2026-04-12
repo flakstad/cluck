@@ -62,12 +62,23 @@
                         :zoom 0.5)
       zoomed-in (assoc (default-state)
                        :zoom 2.0)]
-  (draw-view-assert-num= "screen brush size grows when zoomed out"
-                         8
-                         (draw-point-screen-size zoomed-out [15 26 1.0] 4))
-  (draw-view-assert-num= "screen brush size shrinks when zoomed in"
+  (draw-view-assert-num= "stored stroke renders smaller when zoomed out"
                          2
+                         (draw-point-screen-size zoomed-out [15 26 1.0] 4))
+  (draw-view-assert-num= "stored stroke renders larger when zoomed in"
+                         8
                          (draw-point-screen-size zoomed-in [15 26 1.0] 4)))
+
+(let [zoomed-out (assoc (default-state)
+                        :zoom 0.5)
+      zoomed-in (assoc (default-state)
+                       :zoom 2.0)]
+  (draw-view-assert-num= "current brush stores larger world size when zoomed out"
+                         8.0
+                         (draw-current-brush-size zoomed-out [15 26 1.0] 4))
+  (draw-view-assert-num= "current brush stores smaller world size when zoomed in"
+                         2.0
+                         (draw-current-brush-size zoomed-in [15 26 1.0] 4)))
 
 (let [state (assoc (default-state)
                    :view-x 100.0
@@ -261,4 +272,7 @@
                          (pr-str (first (get stroke :points))))
   (draw-view-assert-str= "zoomed stroke keeps world end point"
                          "[170.0 260.0 1.0]"
-                         (pr-str (last (get stroke :points)))))
+                         (pr-str (last (get stroke :points))))
+  (draw-view-assert-num= "zoomed-in stroke stores smaller world brush size"
+                         1.0
+                         (get stroke :size)))

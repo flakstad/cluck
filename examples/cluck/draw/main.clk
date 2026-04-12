@@ -129,6 +129,7 @@
 (def draw-world-point->screen-point draw-view/draw-world-point->screen-point)
 (def draw-world-point->screen-fpoint draw-view/draw-world-point->screen-fpoint)
 (def draw-point-screen-size draw-view/draw-point-screen-size)
+(def draw-current-brush-size draw-view/draw-current-brush-size)
 (def draw-world-rect->screen-rect draw-view/draw-world-rect->screen-rect)
 (def draw-wheel-zoom-factor draw-view/draw-wheel-zoom-factor)
 (def draw-zoom-at-core! draw-view/draw-zoom-at-core!)
@@ -1543,9 +1544,10 @@
   [state point screen-point pointer-source]
   (let [state (draw-push-history! state)
         opacity (draw-current-opacity state)
+        size (draw-current-brush-size state point (get state :brush-size))
         stroke (draw-stroke-record [point]
                                    (draw-stroke-color state)
-                                   (get state :brush-size))
+                                   size)
         stroke (assoc stroke :opacity opacity)
         next-state (draw-sync-pointer-state
                      (assoc state
