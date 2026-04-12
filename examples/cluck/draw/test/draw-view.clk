@@ -60,13 +60,18 @@
 
 (let [zoomed-out (assoc (default-state)
                         :zoom 0.5)
+      default-zoom (assoc (default-state)
+                          :zoom 1.0)
       zoomed-in (assoc (default-state)
                        :zoom 2.0)]
-  (draw-view-assert-num= "screen brush size grows when zoomed out"
-                         8
-                         (draw-point-screen-size zoomed-out [15 26 1.0] 4))
-  (draw-view-assert-num= "screen brush size shrinks when zoomed in"
+  (draw-view-assert-num= "screen brush size matches base size at zoom 1"
+                         4
+                         (draw-point-screen-size default-zoom [15 26 1.0] 4))
+  (draw-view-assert-num= "screen brush size shrinks when zoomed out"
                          2
+                         (draw-point-screen-size zoomed-out [15 26 1.0] 4))
+  (draw-view-assert-num= "screen brush size grows when zoomed in"
+                         8
                          (draw-point-screen-size zoomed-in [15 26 1.0] 4)))
 
 (let [state (assoc (default-state)
