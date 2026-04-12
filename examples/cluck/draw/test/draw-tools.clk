@@ -110,6 +110,8 @@
                         (str/includes? (describe-state (default-state)) "tool ink"))
 (draw-tools-assert-true "describe-state includes opacity"
                         (str/includes? (describe-state (default-state)) "opacity 1.00"))
+(draw-tools-assert-true "describe-state includes pen mode"
+                        (str/includes? (describe-state (default-state)) "pen dynamic"))
 (draw-tools-assert-true "describe-state includes undo count"
                         (str/includes? (describe-state (default-state)) "undo 0"))
 (draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
@@ -118,7 +120,7 @@
                         (draw-window-title))
 
 (let [noted (draw-tools-copy-state
-              (assoc (default-state)
+             (assoc (default-state)
                      :frame 12
                      :status-note "saved cluck-draw-document.edn"
                      :status-note-frame 12))]
@@ -135,6 +137,16 @@
                            (contains? (draw-persisted-state noted) :status-note))
   (draw-tools-assert-false "persisted state strips status note frame"
                            (contains? (draw-persisted-state noted) :status-note-frame)))
+
+(let [toggled (draw-handle-tool-key! (default-state) "p")]
+  (draw-tools-assert-true "pen pressure toggle switches to fixed"
+                          (draw-kind=? (get toggled :pen-pressure-mode) :fixed))
+  (draw-tools-assert-str= "pen pressure toggle sets status note"
+                          "pen pressure: fixed"
+                          (get toggled :status-note))
+  (let [restored (draw-handle-tool-key! toggled "p")]
+    (draw-tools-assert-true "pen pressure toggle switches back to dynamic"
+                            (draw-kind=? (get restored :pen-pressure-mode) :dynamic))))
 
 (let [cleared (draw-clear-strokes! (draw-tools-base-state))]
     (draw-tools-assert-true "clear strokes"

@@ -1232,6 +1232,18 @@
                                           draw-state-snapshot
                                           draw-log-entry!))
 
+(defn draw-toggle-pen-pressure-mode-core!
+  "Toggle pen pressure between fixed and dynamic modes."
+  [state]
+  (let [next-state (draw-actions/draw-toggle-pen-pressure-mode-core! state
+                                                                     draw-push-history!
+                                                                     draw-state-snapshot
+                                                                     draw-log-entry!)]
+    (assoc next-state
+           :status-note (format "pen pressure: %s"
+                                (name (draw-state/draw-pen-pressure-mode next-state)))
+           :status-note-frame (get next-state :frame))))
+
 (defn draw-set-brush-size!
   "Set the brush size and return to brush mode, recording undo history."
   [state size]
@@ -1361,7 +1373,8 @@
                                        draw-undo-stroke-core!
                                        draw-set-tool-core!
                                        draw-toggle-eraser-core!
-                                       draw-set-brush-size-core!))
+                                       draw-set-brush-size-core!
+                                       draw-toggle-pen-pressure-mode-core!))
 
 (defn draw-handle-view-key!
   "Apply zoom and pan shortcuts for KEY to STATE."

@@ -139,7 +139,9 @@
   (draw-input-assert-true "debug panel lists opacity presets"
                           (draw-input-has-line? lines "  opacity presets in the tool panel"))
   (draw-input-assert-true "debug panel lists pressure"
-                          (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
+                          (draw-input-has-line? lines "  mouse: pressure 1.00   pen: fixed or dynamic pressure"))
+  (draw-input-assert-true "debug panel lists pressure toggle"
+                          (draw-input-has-line? lines "  p: toggle pen pressure fixed/dynamic"))
   (draw-input-assert-true "debug panel lists undo"
                           (draw-input-has-line? lines "  u: undo   c: clear   e: eraser"))
   (draw-input-assert-true "debug panel lists tool panel"
@@ -373,6 +375,28 @@
   (draw-input-assert-num= "pen axis event reads structured pressure"
                           0.37
                           (get event :pressure)))
+
+(let [event (draw-build-input-event (assoc (default-state)
+                                           :pen-pressure-mode :fixed)
+                                    {:kind :pen-axis
+                                     :desc "SDL_EVENT_PEN_AXIS x=12.0 y=34.0"
+                                     :mouse-x 12
+                                     :mouse-y 34
+                                     :pressure 0.37})]
+  (draw-input-assert-num= "fixed pen mode forces pressure to one"
+                          1.0
+                          (get event :pressure)))
+
+(let [pen-point (draw-input-event-point (assoc (default-state)
+                                               :pen-pressure-mode :fixed
+                                               :pen-pressure 0.25)
+                                        {:kind :pen-motion
+                                         :mouse-x 12.0
+                                         :mouse-y 34.0
+                                         :pressure 0.25})]
+  (draw-input-assert-str= "fixed pen mode point uses pressure one"
+                          "[12.0 34.0 1.0]"
+                          (pr-str pen-point)))
 
 (draw-input-assert-true "pressure scales brush size"
                         (< (draw-point-size [10 20 0.25] 4)

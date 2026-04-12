@@ -29,7 +29,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f"
+  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f pen %s"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -50,12 +50,13 @@
           (draw.state/draw-current-opacity state)
           (if (get state :debug-panel?) "on" "off")
           (if (get state :window-focused?) "on" "off")
-          (or (get state :pen-pressure) 1.0)))
+          (or (get state :pen-pressure) 1.0)
+          (name (draw.state/draw-pen-pressure-mode state))))
 
 (defn draw-input-summary
   "Return a short textual summary of the current input state."
   [state]
-  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f"
+  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f pen %s"
           (or (get state :mouse-x) 0.0)
           (or (get state :mouse-y) 0.0)
           (draw.view/draw-view-x state)
@@ -73,7 +74,8 @@
           (draw.state/draw-current-opacity state)
           (if (get state :debug-panel?) "on" "off")
           (if (get state :window-focused?) "on" "off")
-          (or (get state :pen-pressure) 1.0)))
+          (or (get state :pen-pressure) 1.0)
+          (name (draw.state/draw-pen-pressure-mode state))))
 
 (defn draw-debug-control-lines
   "Return the fixed debug-panel help lines."
@@ -91,7 +93,8 @@
    "  recent colors row above brush swatches"
    "  brush/background swatches in the tool panel"
    "  opacity presets in the tool panel"
-   "  mouse/pen: pressure-sensitive strokes"
+   "  p: toggle pen pressure fixed/dynamic"
+   "  mouse: pressure 1.00   pen: fixed or dynamic pressure"
    "  u: undo   c: clear   e: eraser"
    "  d: debug panel   tab: tool panel   0: reset view"
    "  ctrl+n: new   ctrl+s: save   ctrl+shift+s: save as   ctrl+o: open"

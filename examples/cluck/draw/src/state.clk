@@ -27,6 +27,7 @@
    :brush-size 2
    :opacity 1.0
    :pen-pressure 1.0
+   :pen-pressure-mode :dynamic
    :window-focused? true
    :view-x 0.0
    :view-y 0.0
@@ -166,6 +167,27 @@
   "Return the number of frames a transient status note remains visible."
   []
   180)
+
+(defn draw-pen-pressure-mode
+  "Return the normalized pen pressure mode for STATE."
+  [state]
+  (let [mode (or (get state :pen-pressure-mode) :dynamic)]
+    (if (draw-kind=? mode :fixed)
+      :fixed
+      :dynamic)))
+
+(defn draw-dynamic-pen-pressure?
+  "Return true when pen input should use live dynamic pressure."
+  [state]
+  (draw-kind=? (draw-pen-pressure-mode state) :dynamic))
+
+(defn draw-toggle-pen-pressure-mode
+  "Toggle STATE between fixed and dynamic pen pressure modes."
+  [state]
+  (assoc state
+         :pen-pressure-mode (if (draw-dynamic-pen-pressure? state)
+                              :fixed
+                              :dynamic)))
 
 (defn draw-set-status-note
   "Return STATE with NOTE attached as a transient status message."

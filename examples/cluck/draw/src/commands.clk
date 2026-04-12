@@ -8,11 +8,12 @@
 
 (defn draw-handle-tool-key!
   "Apply draw tool shortcuts for KEY to STATE using the supplied handlers."
-  [state key clear-strokes-core! undo-stroke-core! set-tool-core! toggle-eraser-core! set-brush-size-core!]
+  [state key clear-strokes-core! undo-stroke-core! set-tool-core! toggle-eraser-core! set-brush-size-core! toggle-pen-pressure-mode-core!]
   (let [key (str/lower-case (or key ""))]
     (cond
       (string=? key "c") (clear-strokes-core! state)
       (string=? key "u") (undo-stroke-core! state)
+      (string=? key "p") (toggle-pen-pressure-mode-core! state)
       (string=? key "i") (set-tool-core! state :ink)
       (string=? key "v") (set-tool-core! state :select)
       (string=? key "r") (set-tool-core! state :box)

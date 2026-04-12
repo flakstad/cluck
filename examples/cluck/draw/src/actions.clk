@@ -45,6 +45,16 @@
                  :state (state-snapshot next-state)})
     next-state))
 
+(defn draw-toggle-pen-pressure-mode-core!
+  "Toggle pen pressure mode for STATE and record undo history."
+  [state push-history! state-snapshot log-entry!]
+  (let [state (push-history! state)
+        next-state (draw.state/draw-toggle-pen-pressure-mode state)]
+    (log-entry! :pen-pressure-mode
+                {:mode (get next-state :pen-pressure-mode)
+                 :state (state-snapshot next-state)})
+    next-state))
+
 (defn draw-set-background-core!
   "Set the background color and record undo history."
   [state color push-history! state-snapshot log-entry!]

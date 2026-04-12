@@ -273,6 +273,19 @@
   [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
    (or (get event :mouse-y) (get event :wheel-mouse-y) 0)])
 
+(defn draw-effective-event-pressure
+  "Return the pressure EVENT should contribute under STATE's pressure mode."
+  [state event]
+  (let [kind (get event :kind)
+        raw-pressure (or (get event :pressure)
+                         (get state :pen-pressure)
+                         1.0)]
+    (if (draw-pen-event-kind? kind)
+      (if (draw.state/draw-dynamic-pen-pressure? state)
+        raw-pressure
+        1.0)
+      1.0)))
+
 (defn draw-input-event-point
   "Return the [x y pressure] world coordinate from EVENT."
   [state event]
@@ -280,9 +293,7 @@
     state
     [(or (get event :mouse-x) (get event :wheel-mouse-x) 0)
      (or (get event :mouse-y) (get event :wheel-mouse-y) 0)
-     (or (get event :pressure)
-         (get state :pen-pressure)
-         1.0)]))
+     (draw-effective-event-pressure state event)]))
 
 (defn draw-build-input-event
   "Finalize RAW-EVENT into the app-facing input map."
@@ -295,13 +306,7 @@
            :key (draw-nonblank (or (get raw-event :key) "") desc)
            :text (draw-nonblank (or (get raw-event :text) "") desc)
            :text-edit (draw-nonblank (or (get raw-event :text-edit) "") desc)
-           :pressure (if (draw-pen-event-kind? kind)
-                       (if (draw.state/draw-kind=? kind :pen-axis)
-                         (or (get raw-event :pressure) 1.0)
-                         (or (get state :pen-pressure)
-                             (get raw-event :pressure)
-                             1.0))
-                       1.0))))
+           :pressure (draw-effective-event-pressure state raw-event))))
 
 (defn draw-synthetic-pen-mouse-event?
   "Return true when EVENT is SDL's synthetic mouse mirror of pen input."
