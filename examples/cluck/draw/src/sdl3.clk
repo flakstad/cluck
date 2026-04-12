@@ -334,6 +334,51 @@ static bool cluck_set_window_title(SDL_Window *window, const char *title) {
   return SDL_SetWindowTitle(window, title);
 }
 
+static char cluck_render_target_pixel_buffer[64];
+
+static const char *cluck_render_target_pixel_rgba(SDL_Renderer *renderer, int x, int y) {
+  SDL_Rect rect;
+  SDL_Surface *surface;
+  Uint8 r = 0;
+  Uint8 g = 0;
+  Uint8 b = 0;
+  Uint8 a = 0;
+
+  cluck_render_target_pixel_buffer[0] = 0;
+  if (!renderer) {
+    return cluck_render_target_pixel_buffer;
+  }
+
+  rect.x = x;
+  rect.y = y;
+  rect.w = 1;
+  rect.h = 1;
+  surface = SDL_RenderReadPixels(renderer, &rect);
+  if (!surface) {
+    return cluck_render_target_pixel_buffer;
+  }
+
+  if (surface->w < 1 || surface->h < 1) {
+    SDL_DestroySurface(surface);
+    return cluck_render_target_pixel_buffer;
+  }
+
+  if (!SDL_ReadSurfacePixel(surface, 0, 0, &r, &g, &b, &a)) {
+    SDL_DestroySurface(surface);
+    return cluck_render_target_pixel_buffer;
+  }
+
+  SDL_DestroySurface(surface);
+  snprintf(cluck_render_target_pixel_buffer,
+           sizeof(cluck_render_target_pixel_buffer),
+           \"%u,%u,%u,%u\",
+           (unsigned int)r,
+           (unsigned int)g,
+           (unsigned int)b,
+           (unsigned int)a);
+  return cluck_render_target_pixel_buffer;
+}
+
 static SDL_Texture *cluck_create_canvas_texture(SDL_Renderer *renderer, int width, int height) {
   SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, width, height);
   if (texture) {
@@ -723,6 +768,9 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 (define sdl-set-window-title!
   (foreign-lambda* bool ((c-pointer window) (c-string title))
     "C_return(cluck_set_window_title((SDL_Window *)window, title));"))
+
+(define sdl-render-target-pixel-rgba
+  (foreign-lambda c-string "cluck_render_target_pixel_rgba" c-pointer int int))
 
 (define sdl-create-canvas-texture
   (foreign-lambda* c-pointer ((c-pointer renderer) (int width) (int height))

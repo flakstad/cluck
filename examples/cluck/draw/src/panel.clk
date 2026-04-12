@@ -29,7 +29,7 @@
 (defn draw-tool-panel-height
   "Return the tool panel height in screen pixels."
   []
-  468)
+  640)
 
 (defn draw-tool-panel-section-height
   "Return the height of a tool-panel section label row."
@@ -75,6 +75,14 @@
    [16 16 18]
    [240 236 230]])
 
+(defn draw-opacity-palette
+  "Return the preset opacity values."
+  []
+  [1.0
+   0.75
+   0.5
+   0.25])
+
 (defn draw-tool-panel-rect
   "Return the tool panel screen rectangle for STATE."
   [state]
@@ -98,9 +106,11 @@
   [(format "file: %s" (fs/basename (or (get state :file-path)
                                        (draw.state/draw-document-file-path))))
    (format "format: %s" (draw-save-format-label))
-   "1 ink   2 select   3 rectangle   4 eraser"
+   "1 ink   2 select   3 rectangle   4 circle   5 line   6 eraser   7 picker"
    "ctrl+1/2/3 brush sizes"
+   "recent colors row above brush swatches"
    "brush/background swatches below"
+   "opacity presets below"
    "TAB toggle  CTRL+N new  CTRL+S save"
    "CTRL+SHIFT+S save as"
    "CTRL+O open"])
@@ -148,6 +158,34 @@
            :height size}))
       colors)))
 
+(defn draw-tool-panel-opacity-buttons
+  "Return a grid of opacity preset buttons for STATE."
+  [state y0 active-opacity]
+  (let [panel (draw-tool-panel-rect state)
+        padding (draw-tool-panel-padding)
+        x (+ (get panel :x) padding)
+        width (- (get panel :width) (* padding 2))
+        height (draw-tool-panel-button-height)
+        gap (draw-tool-panel-button-gap)
+        columns 2
+        button-width (/ (- width gap) columns)]
+    (map-indexed
+      (lambda (index opacity)
+        (let [row (math/quotient index columns)
+              col (mod index columns)]
+          {:id (keyword (format "opacity-%d" index))
+           :label (format "%.0f%%" (* 100.0 (draw.state/draw-normalize-opacity opacity)))
+           :kind :opacity
+           :clickable? true
+           :opacity opacity
+           :active? (equal? (draw.state/draw-normalize-opacity active-opacity)
+                            (draw.state/draw-normalize-opacity opacity))
+           :x (+ x (* col (+ button-width gap)))
+           :y (+ y0 (* row (+ height gap)))
+           :width button-width
+           :height height}))
+      (draw-opacity-palette))))
+
 (defn draw-tool-panel-buttons
   "Return clickable tool panel buttons for STATE."
   [state]
@@ -176,42 +214,74 @@
                        :tool :box
                        :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :box)
                        :x x :y (+ y0 (* 2 (+ height gap))) :width width :height height}
+                      {:id :tool-circle
+                       :label "Circle"
+                       :kind :tool
+                       :tool :circle
+                       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :circle)
+                       :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
+                      {:id :tool-line
+                       :label "Line"
+                       :kind :tool
+                       :tool :line
+                       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :line)
+                       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
                       {:id :tool-eraser
                        :label "Eraser"
                        :kind :eraser
                        :active? (if (get state :eraser?) true false)
-                       :x x :y (+ y0 (* 3 (+ height gap))) :width width :height height}
+                       :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}
+                      {:id :tool-picker
+                       :label "Picker"
+                       :kind :tool
+                       :tool :picker
+                       :active? (draw.state/draw-kind=? (or (get state :tool) :ink) :picker)
+                       :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
                       {:id :tool-new
                        :label "New"
                        :kind :new
                        :active? false
-                       :x x :y (+ y0 (* 4 (+ height gap))) :width width :height height}
+                       :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}
                       {:id :tool-save
                        :label "Save"
                        :kind :save
                        :active? false
-                       :x x :y (+ y0 (* 5 (+ height gap))) :width width :height height}
+                       :x x :y (+ y0 (* 8 (+ height gap))) :width width :height height}
                       {:id :save-as
                        :label "Save As"
                        :kind :save-as
                        :active? false
-                       :x x :y (+ y0 (* 6 (+ height gap))) :width width :height height}
+                       :x x :y (+ y0 (* 9 (+ height gap))) :width width :height height}
                       {:id :open
                        :label "Open"
                        :kind :open
                        :active? false
-                       :x x :y (+ y0 (* 7 (+ height gap))) :width width :height height}]
-        section-y (+ y0 (* 8 (+ height gap)))
+                       :x x :y (+ y0 (* 10 (+ height gap))) :width width :height height}]
+        section-y (+ y0 (* 11 (+ height gap)))
+        recent-label (draw-tool-panel-section-label state
+                                                    :recent-brush-colors
+                                                    "Recent colors"
+                                                    section-y)
+        recent-buttons (draw-tool-panel-swatch-buttons state
+                                                       :recent-brush-color
+                                                       (draw.state/draw-recent-brush-colors state)
+                                                       (+ section-y (draw-tool-panel-section-height) 6)
+                                                       (get state :brush-color))
+        brush-y (+ section-y
+                   (draw-tool-panel-section-height)
+                   6
+                   (draw-tool-panel-swatch-size)
+                   16)
         brush-label (draw-tool-panel-section-label state
                                                    :brush-colors
                                                    "Brush colors"
-                                                   section-y)
+                                                   brush-y)
         brush-buttons (draw-tool-panel-swatch-buttons state
                                                       :brush-color
                                                       (draw-brush-color-palette)
-                                                      (+ section-y (draw-tool-panel-section-height) 6)
+                                                      (+ brush-y (draw-tool-panel-section-height) 6)
                                                       (get state :brush-color))
-        background-y (+ section-y
+        background-y (+ brush-y
                         (draw-tool-panel-section-height)
                         6
                         (* 2 (+ (draw-tool-panel-swatch-size)
@@ -225,12 +295,29 @@
                                                            :background-color
                                                            (draw-background-color-palette)
                                                            (+ background-y (draw-tool-panel-section-height) 6)
-                                                           (get state :background))]
+                                                           (get state :background))
+        opacity-y (+ background-y
+                     (draw-tool-panel-section-height)
+                     6
+                     (* 2 (+ (draw-tool-panel-swatch-size)
+                             (draw-tool-panel-swatch-gap)))
+                     16)
+        opacity-label (draw-tool-panel-section-label state
+                                                    :opacity
+                                                    "Opacity"
+                                                    opacity-y)
+        opacity-buttons (draw-tool-panel-opacity-buttons state
+                                                         (+ opacity-y (draw-tool-panel-section-height) 6)
+                                                         (draw.state/draw-current-opacity state))]
     (concat tool-buttons
+            [recent-label]
+            recent-buttons
             [brush-label]
             brush-buttons
             [background-label]
-            background-buttons)))
+            background-buttons
+            [opacity-label]
+            opacity-buttons)))
 
 (defn draw-selection-summary
   "Return a compact summary of the current selection."
@@ -261,33 +348,53 @@
   [state]
   (let [elements (draw.state/draw-selected-elements state)
         total (count elements)]
-      (if (= total 0)
-      (if (draw.state/draw-selection-tool? state)
-        ["actions: none selected"
-         "canvas: drag empty space to marquee select"]
-        (if (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
-          (if (get state :eraser?)
-            ["actions: none selected"
-             "canvas: drag to erase"]
-            ["actions: none selected"
-             "canvas: drag to draw"])
+    (cond
+      (= total 0)
+      (if (draw.state/draw-picker-tool? state)
+        ["actions: sample canvas color"
+         "canvas: click to sample color"]
+        (if (draw.state/draw-selection-tool? state)
           ["actions: none selected"
-           "canvas: drag to create"]))
-      (if (= total 1)
-        (let [element (first elements)]
-          (if (draw.state/draw-box-element? element)
-            ["actions: move rectangle"
-             "handles: corners resize, top rotates"]
-            (if (draw.state/draw-arrow-element? element)
-              ["actions: move arrow"
-               "handles: drag endpoints"]
-              (if (draw.state/draw-text-element? element)
-                ["actions: move text"
-                 "selection: single object"]
-                ["actions: move stroke"
-                 "selection: single object"]))))
-        [(format "actions: move %d selected items" total)
-         "selection: shift+click adds/removes"]))))
+           "canvas: drag empty space to marquee select"]
+          (if (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
+            (if (get state :eraser?)
+              ["actions: none selected"
+               "canvas: drag to erase"]
+              ["actions: none selected"
+               "canvas: drag to draw"])
+            ["actions: none selected"
+             "canvas: drag to create"])))
+
+      (= total 1)
+      (let [element (first elements)]
+        (cond
+          (draw.state/draw-box-element? element)
+          ["actions: move rectangle"
+           "handles: corners resize, top rotates"]
+
+          (draw.state/draw-circle-element? element)
+          ["actions: move circle"
+           "handles: corners resize"]
+
+          (draw.state/draw-arrow-element? element)
+          ["actions: move arrow"
+           "handles: drag endpoints"]
+
+          (draw.state/draw-line-element? element)
+          ["actions: move line"
+           "handles: drag endpoints"]
+
+          (draw.state/draw-text-element? element)
+          ["actions: move text"
+           "selection: single object"]
+
+          :else
+          ["actions: move stroke"
+           "selection: single object"]))
+
+      :else
+      [(format "actions: move %d selected items" total)
+       "selection: shift+click adds/removes"])))
 
 (defn draw-screen-point-in-rect?
   "Return true when screen POINT lies inside RECT."

@@ -18,6 +18,10 @@
       (string=? key "r") (set-tool-core! state :box)
       (string=? key "b") (set-tool-core! state :box)
       (string=? key "e") (toggle-eraser-core! state)
+      (string=? key "4") (set-tool-core! state :circle)
+      (string=? key "5") (set-tool-core! state :line)
+      (string=? key "6") (toggle-eraser-core! state)
+      (string=? key "7") (set-tool-core! state :picker)
       (and (get state :ctrl-down?) (string=? key "1"))
       (set-brush-size-core! state 2)
       (and (get state :ctrl-down?) (string=? key "2"))
@@ -27,7 +31,6 @@
       (string=? key "1") (set-tool-core! state :ink)
       (string=? key "2") (set-tool-core! state :select)
       (string=? key "3") (set-tool-core! state :box)
-      (string=? key "4") (toggle-eraser-core! state)
       (string=? key "[") (set-brush-size-core! state
                                                (draw.view/draw-clamp
                                                  (- (or (get state :brush-size) 2) 1)

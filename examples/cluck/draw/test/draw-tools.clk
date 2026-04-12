@@ -47,6 +47,38 @@
           false
           buttons))
 
+(define (draw-tools-find-button-tool buttons tool)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (equal? (get button :tool) tool)
+                    button
+                    false)))
+          false
+          buttons))
+
+(define (draw-tools-find-button-color buttons color)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (and (get button :color)
+                         (equal? (get button :color) color))
+                    button
+                    false)))
+          false
+          buttons))
+
+(define (draw-tools-find-button-opacity buttons opacity)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (and (draw-kind=? (get button :kind) :opacity)
+                         (= (get button :opacity) opacity))
+                    button
+                    false)))
+          false
+          buttons))
+
 (define (draw-tools-base-state)
   (draw-normalize-state
     {:title "Cluck Draw"
@@ -76,6 +108,8 @@
 
 (draw-tools-assert-true "describe-state includes tool"
                         (str/includes? (describe-state (default-state)) "tool ink"))
+(draw-tools-assert-true "describe-state includes opacity"
+                        (str/includes? (describe-state (default-state)) "opacity 1.00"))
 (draw-tools-assert-true "describe-state includes undo count"
                         (str/includes? (describe-state (default-state)) "undo 0"))
 (draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
@@ -162,8 +196,16 @@
                        (draw-handle-tool-key! (default-state) "2"))
         rect-state (draw-tools-copy-state
                      (draw-handle-tool-key! (default-state) "3"))
-        eraser-state (draw-tools-copy-state
+        circle-state (draw-tools-copy-state
                        (draw-handle-tool-key! (default-state) "4"))
+        line-state (draw-tools-copy-state
+                     (draw-handle-tool-key! (default-state) "5"))
+        eraser-state (draw-tools-copy-state
+                       (draw-handle-tool-key! (default-state) "6"))
+        picker-state (draw-tools-copy-state
+                       (draw-handle-tool-key! (default-state) "7"))
+        legacy-eraser-state (draw-tools-copy-state
+                              (draw-handle-tool-key! (default-state) "e"))
         eraser-state-for-ink (draw-tools-copy-state eraser-state)
         legacy-rect-state (draw-tools-copy-state
                             (draw-handle-tool-key! (default-state) "r"))
@@ -182,8 +224,20 @@
     (draw-tools-assert-str= "rectangle tool number preset"
                             "rectangle"
                             (draw-tool-mode rect-state))
+    (draw-tools-assert-str= "circle tool number preset"
+                            "circle"
+                            (draw-tool-mode circle-state))
+    (draw-tools-assert-str= "line tool number preset"
+                            "line"
+                            (draw-tool-mode line-state))
     (draw-tools-assert-true "eraser number preset toggles eraser"
                             (get eraser-state :eraser?))
+    (draw-tools-assert-str= "picker number preset"
+                            "picker"
+                            (draw-tool-mode picker-state))
+    (draw-tools-assert-str= "legacy eraser alias key preset"
+                            "eraser"
+                            (draw-tool-mode legacy-eraser-state))
     (draw-tools-assert-str= "rectangle alias key preset"
                             "rectangle"
                             (draw-tool-mode legacy-rect-state))
@@ -201,8 +255,10 @@
 
   (let [brush-color [255 112 122]
         background-color [46 49 59]
+        opacity 0.5
         brush-state (draw-set-brush-color! (default-state) brush-color)
-        background-state (draw-set-background! (default-state) background-color)]
+        background-state (draw-set-background! (default-state) background-color)
+        opacity-state (draw-set-opacity! (default-state) opacity)]
     (draw-tools-assert-str= "brush color setter updates brush color"
                             (pr-str brush-color)
                             (pr-str (get brush-state :brush-color)))
@@ -217,14 +273,93 @@
     (draw-tools-assert-num= "background setter adds undo history"
                             1
                             (count (get background-state :history)))
-    (let [undone-brush (draw-undo-stroke! (draw-tools-copy-state brush-state))
-          undone-background (draw-undo-stroke! (draw-tools-copy-state background-state))]
+    (draw-tools-assert-num= "opacity setter updates opacity"
+                            opacity
+                            (get opacity-state :opacity))
+    (draw-tools-assert-num= "opacity setter adds undo history"
+                            1
+                            (count (get opacity-state :history)))
+  (let [undone-brush (draw-undo-stroke! (draw-tools-copy-state brush-state))
+          undone-background (draw-undo-stroke! (draw-tools-copy-state background-state))
+          undone-opacity (draw-undo-stroke! (draw-tools-copy-state opacity-state))]
     (draw-tools-assert-str= "undo restores brush color"
                             "[245 245 245]"
                             (pr-str (get undone-brush :brush-color)))
     (draw-tools-assert-str= "undo restores background color"
                             "[24 24 28]"
-                            (pr-str (get undone-background :background)))))
+                            (pr-str (get undone-background :background)))
+    (draw-tools-assert-num= "undo restores opacity"
+                            1.0
+                            (get undone-opacity :opacity))))
+
+  (let [brush-a [255 112 122]
+        brush-b [103 169 255]
+        first-color (draw-set-brush-color! (default-state) brush-a)
+        second-color (assoc (draw-set-brush-color! first-color brush-b)
+                            :tool-panel? true)
+        recent-colors (get second-color :recent-brush-colors)
+        buttons (draw-tool-panel-buttons second-color)
+        recent-button (draw-tools-find-button-color buttons brush-a)
+        picked (draw-apply-tool-panel-button (draw-tools-copy-state second-color)
+                                             recent-button
+                                             [(+ (get recent-button :x) 1)
+                                              (+ (get recent-button :y) 1)]
+                                             [0.0 0.0])
+        undone (draw-undo-stroke! (draw-tools-copy-state second-color))]
+    (draw-tools-assert-str= "recent brush colors keep most recent first"
+                            (pr-str brush-b)
+                            (pr-str (first recent-colors)))
+    (draw-tools-assert-str= "recent brush colors keep prior brush second"
+                            (pr-str brush-a)
+                            (pr-str (nth recent-colors 1)))
+    (draw-tools-assert-true "recent brush swatch is present"
+                            recent-button)
+    (draw-tools-assert-str= "recent brush swatch hit is recent kind"
+                            ":recent-brush-color"
+                            (pr-str (get (draw-find-tool-panel-button
+                                           second-color
+                                           [(+ (get recent-button :x) 1)
+                                            (+ (get recent-button :y) 1)])
+                                         :kind)))
+    (draw-tools-assert-str= "recent brush swatch click updates brush color"
+                            (pr-str brush-a)
+                            (pr-str (get picked :brush-color)))
+    (draw-tools-assert-str= "recent brush swatch click promotes color"
+                            (pr-str brush-a)
+                            (pr-str (first (get picked :recent-brush-colors))))
+    (draw-tools-assert-str= "undo restores recent brush colors"
+                            (pr-str brush-a)
+                            (pr-str (first (get undone :recent-brush-colors)))))
+
+  (let [opacity-target 0.25
+        selected (assoc (draw-sync-elements
+                          (draw-set-tool-core! (assoc (default-state)
+                                                      :opacity 1.0)
+                                              :select)
+                          [{:kind :box
+                            :x 10.0
+                            :y 20.0
+                            :width 30.0
+                            :height 40.0
+                            :color [255 255 255]
+                          :size 2
+                          :opacity 1.0}])
+                        :selection [1])
+        changed (draw-set-opacity! selected opacity-target)
+        changed-box (first (get changed :elements))
+        undone (draw-undo-stroke! (draw-tools-copy-state changed))]
+    (draw-tools-assert-num= "opacity setter updates selected element"
+                            opacity-target
+                            (get changed-box :opacity))
+    (draw-tools-assert-num= "opacity setter updates current opacity"
+                            opacity-target
+                            (get changed :opacity))
+    (draw-tools-assert-num= "opacity setter records selection change"
+                            1
+                            (count (get changed :history)))
+    (draw-tools-assert-num= "undo restores selected element opacity"
+                            1.0
+                            (get (first (get undone :elements)) :opacity)))
 
   (let [dirty (assoc (draw-sync-elements
                        (assoc (default-state)
@@ -268,6 +403,9 @@
         buttons (draw-tool-panel-buttons panel-state)
         brush-button (draw-tools-find-button-kind buttons :brush-color)
         background-button (draw-tools-find-button-kind buttons :background-color)
+        picker-button (draw-tools-find-button-tool buttons :picker)
+        opacity-button (draw-tools-find-button-kind buttons :opacity)
+        opacity-target-button (draw-tools-find-button-opacity buttons 0.5)
         brush-hit (draw-find-tool-panel-button
                     panel-state
                     [(+ (get brush-button :x) 1)
@@ -276,6 +414,14 @@
                           panel-state
                           [(+ (get background-button :x) 1)
                            (+ (get background-button :y) 1)])
+        picker-hit (draw-find-tool-panel-button
+                     panel-state
+                     [(+ (get picker-button :x) 1)
+                      (+ (get picker-button :y) 1)])
+        opacity-hit (draw-find-tool-panel-button
+                      panel-state
+                      [(+ (get opacity-button :x) 1)
+                       (+ (get opacity-button :y) 1)])
         brush-picked (draw-apply-tool-panel-button
                        (default-state)
                        brush-button
@@ -285,23 +431,43 @@
                             (default-state)
                             background-button
                             [0.0 0.0 1.0]
-                            [0.0 0.0])]
+                            [0.0 0.0])
+        opacity-picked (draw-apply-tool-panel-button
+                         (default-state)
+                         opacity-target-button
+                         [0.0 0.0 1.0]
+                         [0.0 0.0])]
     (draw-tools-assert-true "tool panel includes brush swatches"
                             brush-button)
-    (draw-tools-assert-true "tool panel includes background swatches"
-                            background-button)
+  (draw-tools-assert-true "tool panel includes background swatches"
+                          background-button)
+  (draw-tools-assert-true "tool panel includes picker tool"
+                          picker-button)
+  (draw-tools-assert-true "tool panel includes opacity swatches"
+                          opacity-button)
+    (draw-tools-assert-true "tool panel includes target opacity swatch"
+                            opacity-target-button)
     (draw-tools-assert-str= "tool panel hit finds brush swatch"
                             ":brush-color"
                             (pr-str (get brush-hit :kind)))
-    (draw-tools-assert-str= "tool panel hit finds background swatch"
-                            ":background-color"
-                            (pr-str (get background-hit :kind)))
+  (draw-tools-assert-str= "tool panel hit finds background swatch"
+                          ":background-color"
+                          (pr-str (get background-hit :kind)))
+  (draw-tools-assert-str= "tool panel hit finds picker tool"
+                          ":tool"
+                          (pr-str (get picker-hit :kind)))
+  (draw-tools-assert-str= "tool panel hit finds opacity swatch"
+                          ":opacity"
+                          (pr-str (get opacity-hit :kind)))
     (draw-tools-assert-str= "brush swatch changes brush color"
                             (pr-str (get brush-button :color))
                             (pr-str (get brush-picked :brush-color)))
     (draw-tools-assert-str= "background swatch changes background color"
                             (pr-str (get background-button :color))
-                            (pr-str (get background-picked :background))))
+                            (pr-str (get background-picked :background)))
+    (draw-tools-assert-num= "opacity swatch changes opacity"
+                            0.5
+                            (get opacity-picked :opacity)))
 
   (let [base (default-state)
         one (draw-start-stroke base [10.0 10.0 1.0] [10.0 10.0] :mouse)
@@ -368,6 +534,70 @@
                             0
                             (count (get finished-snapshot :strokes)))
     (draw-tools-assert-num= "undo removes box element"
+                            0
+                            (count (get undone :elements))))
+
+  (let [circle-tool (draw-set-tool-core! (default-state) :circle)
+        started (draw-start-circle circle-tool
+                                   [10.0 20.0 1.0]
+                                   [10.0 20.0])
+        extended (draw-extend-circle started
+                                     [40.0 70.0 1.0]
+                                     [40.0 70.0])
+        finished (draw-finish-circle extended
+                                     [40.0 70.0 1.0]
+                                     [40.0 70.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        element (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)]
+    (draw-tools-assert-str= "finished circle keeps tool mode"
+                            "circle"
+                            (draw-tool-mode finished-snapshot))
+    (draw-tools-assert-num= "circle finish adds element"
+                            1
+                            (count (get finished-snapshot :elements)))
+    (draw-tools-assert-str= "circle finish element kind"
+                            ":circle"
+                            (pr-str (get element :kind)))
+    (draw-tools-assert-num= "circle finish width"
+                            30.0
+                            (get element :width))
+    (draw-tools-assert-num= "circle finish height"
+                            50.0
+                            (get element :height))
+    (draw-tools-assert-num= "undo removes circle element"
+                            0
+                            (count (get undone :elements))))
+
+  (let [line-tool (draw-set-tool-core! (default-state) :line)
+        started (draw-start-line line-tool
+                                 [10.0 20.0 1.0]
+                                 [10.0 20.0])
+        extended (draw-extend-line started
+                                   [50.0 70.0 1.0]
+                                   [50.0 70.0])
+        finished (draw-finish-line extended
+                                   [50.0 70.0 1.0]
+                                   [50.0 70.0])
+        finished-snapshot (edn/read-string (pr-str finished))
+        element (first (get finished-snapshot :elements))
+        undone (draw-undo-stroke! finished)]
+    (draw-tools-assert-str= "finished line keeps tool mode"
+                            "line"
+                            (draw-tool-mode finished-snapshot))
+    (draw-tools-assert-num= "line finish adds element"
+                            1
+                            (count (get finished-snapshot :elements)))
+    (draw-tools-assert-str= "line finish element kind"
+                            ":line"
+                            (pr-str (get element :kind)))
+    (draw-tools-assert-str= "line finish start point"
+                            "[10.0 20.0 1.0]"
+                            (pr-str (get element :start)))
+    (draw-tools-assert-str= "line finish end point"
+                            "[50.0 70.0 1.0]"
+                            (pr-str (get element :end)))
+    (draw-tools-assert-num= "undo removes line element"
                             0
                             (count (get undone :elements))))
 
@@ -598,6 +828,52 @@
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
+               [{:kind :circle
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}])
+        selected (assoc base :selection [1])
+        handle (draw-find-selection-handle selected [40.0 60.0])
+        resizing (assoc selected
+                        :pointer-down? true
+                        :pointer-source :mouse
+                        :active-selection-resize {:id 1
+                                                  :handle :se
+                                                  :original-elements (edn/read-string
+                                                                       (pr-str (get selected :elements)))
+                                                  :moved? false})
+        moved (draw-extend-selection-resize resizing
+                                            [50.0 70.0 1.0]
+                                            [50.0 70.0])
+        finished (draw-finish-selection-resize moved
+                                               [50.0 70.0 1.0]
+                                               [50.0 70.0])
+        circle (first (get finished :elements))
+        undone (draw-undo-stroke! finished)
+        restored (first (get undone :elements))]
+    (draw-tools-assert-str= "selection handle hits circle corner"
+                            ":se"
+                            (pr-str handle))
+    (draw-tools-assert-num= "selection resize updates circle width"
+                            40.0
+                            (get circle :width))
+    (draw-tools-assert-num= "selection resize updates circle height"
+                            50.0
+                            (get circle :height))
+    (draw-tools-assert-false "selection resize clears circle on finish"
+                             (get finished :active-selection-resize))
+    (draw-tools-assert-num= "undo restores circle width"
+                            30.0
+                            (get restored :width))
+    (draw-tools-assert-num= "undo restores circle height"
+                            40.0
+                            (get restored :height)))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
                [{:kind :box
                  :x 10.0
                  :y 20.0
@@ -705,6 +981,45 @@
     (draw-tools-assert-false "selection resize clears on finish for arrow"
                              (get finished :active-selection-resize))
     (draw-tools-assert-str= "undo restores arrow start after handle drag"
+                            "[10.0 20.0 1.0]"
+                            (pr-str (get restored :start))))
+
+  (let [base (draw-sync-elements
+               (draw-set-tool-core! (default-state) :select)
+               [{:kind :line
+                 :start [10.0 20.0 1.0]
+                 :end [40.0 60.0 1.0]
+                 :color [255 255 255]
+                 :size 2}])
+        selected (assoc base :selection [1])
+        handle (draw-find-selection-handle selected
+                                           (draw-world-point->screen-point selected
+                                                                           [10.0 20.0 1.0]))
+        resizing (draw-start-selection-resize selected
+                                              [10.0 20.0 1.0]
+                                              [10.0 20.0]
+                                              :mouse
+                                              :start)
+        moved (draw-extend-selection-resize resizing
+                                            [5.0 15.0 1.0]
+                                            [5.0 15.0])
+        finished (draw-finish-selection-resize moved
+                                               [5.0 15.0 1.0]
+                                               [5.0 15.0])
+        resized-line (first (get finished :elements))
+        restored (first (get (draw-undo-stroke-core! finished) :elements))]
+    (draw-tools-assert-str= "selection handle hits line start"
+                            ":start"
+                            (pr-str handle))
+    (draw-tools-assert-str= "selection resize moves line start"
+                            "[5.0 15.0 1.0]"
+                            (pr-str (get resized-line :start)))
+    (draw-tools-assert-str= "selection resize keeps line end"
+                            "[40.0 60.0 1.0]"
+                            (pr-str (get resized-line :end)))
+    (draw-tools-assert-false "selection resize clears line on finish"
+                             (get finished :active-selection-resize))
+    (draw-tools-assert-str= "undo restores line start after handle drag"
                             "[10.0 20.0 1.0]"
                             (pr-str (get restored :start))))
 
@@ -935,7 +1250,9 @@
         original-strip-ready draw-strip-texture-ready?
         original-brush draw-brush-texture
         original-strip draw-strip-texture
-        calls []]
+        calls []
+        state (assoc (default-state)
+                     :zoom 2.0)]
     (set! draw-brush-texture-ready?
           (fn []
             true))
@@ -953,18 +1270,23 @@
             (set! calls (conj calls [strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]))
             true))
     (draw-render-stroke-segments! 'renderer
-                                  (default-state)
-                                  [[10 10 0.25] [20 20 0.75] [30 30 1.0]]
-                                  2)
+                                  state
+                                  [[10.25 10.75 0.25] [20.25 20.75 0.75] [30.25 30.75 1.0]]
+                                  2
+                                  1.0
+                                  draw-render-stroke-segment!)
     (draw-tools-assert-num= "stroke segment renderer call count"
                             2
                             (count calls))
     (draw-tools-assert-str= "stroke segment renderer uses cached strip"
                             "strip"
                             (str (nth (first calls) 0)))
-    (draw-tools-assert-true "stroke segment renderer reflects growing pressure"
-                            (< (nth (first calls) 5)
-                               (nth (last calls) 9)))
+    (draw-tools-assert-num= "stroke segment renderer keeps fractional screen x"
+                            20.5
+                            (nth (first calls) 2))
+    (draw-tools-assert-num= "stroke segment renderer keeps consistent alpha"
+                            (nth (first calls) 5)
+                            (nth (last calls) 9))
     (set! sdl/render-soft-segment! original-segment)
     (set! draw-brush-texture-ready? original-brush-ready)
     (set! draw-strip-texture-ready? original-strip-ready)
@@ -1002,7 +1324,8 @@
       (draw-render-soft-brush! 'renderer
                                (default-state)
                                [20 24 0.5]
-                               6)))
+                               6
+                               1.0)))
   (draw-tools-assert-num= "soft brush color mod count"
                           1
                           (count color-calls))

@@ -29,7 +29,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -47,6 +47,7 @@
           (count (get state :history))
           (draw.state/draw-tool-mode state)
           (get state :brush-size)
+          (draw.state/draw-current-opacity state)
           (if (get state :debug-panel?) "on" "off")
           (if (get state :window-focused?) "on" "off")
           (or (get state :pen-pressure) 1.0)))
@@ -54,7 +55,7 @@
 (defn draw-input-summary
   "Return a short textual summary of the current input state."
   [state]
-  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d dbg %s focus %s pressure %.2f"
+  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f"
           (or (get state :mouse-x) 0.0)
           (or (get state :mouse-y) 0.0)
           (draw.view/draw-view-x state)
@@ -69,6 +70,7 @@
           (count (get state :history))
           (draw.state/draw-tool-mode state)
           (get state :brush-size)
+          (draw.state/draw-current-opacity state)
           (if (get state :debug-panel?) "on" "off")
           (if (get state :window-focused?) "on" "off")
           (or (get state :pen-pressure) 1.0)))
@@ -84,9 +86,11 @@
    "  drag: draw / move selection"
    "  rectangle handles: resize corners, rotate top handle"
    "  shift+click: add to selection"
-   "  1: ink   2: select   3: rectangle   4: eraser"
+   "  1: ink   2: select   3: rectangle   4: circle   5: line   6: eraser   7: picker"
    "  ctrl+1/2/3: brush sizes"
+   "  recent colors row above brush swatches"
    "  brush/background swatches in the tool panel"
+   "  opacity presets in the tool panel"
    "  mouse/pen: pressure-sensitive strokes"
    "  u: undo   c: clear   e: eraser"
    "  d: debug panel   tab: tool panel   0: reset view"
@@ -134,6 +138,7 @@
         nil)
 
       (or (draw.state/draw-kind=? kind :brush-color)
+          (draw.state/draw-kind=? kind :recent-brush-color)
           (draw.state/draw-kind=? kind :background-color))
       (let [color (get button :color)]
         (sdl/set-draw-color! renderer
@@ -268,9 +273,10 @@
                                     (if (get state :panning?) "on" "off")
                                     (name (desired-cursor-kind-fn state))))
     (sdl/render-debug-text! renderer 12 92
-                            (format "tool: %s size: %d color: %s elements: %d selection: %d"
+                            (format "tool: %s size: %d opacity: %.2f color: %s elements: %d selection: %d"
                                     (draw.state/draw-tool-mode state)
                                     (get state :brush-size)
+                                    (draw.state/draw-current-opacity state)
                                     (pr-str (draw.history/draw-stroke-color state))
                                     (count (get state :elements))
                                     (count (draw.state/draw-selected-element-ids state))))
@@ -317,7 +323,7 @@
         pressure (or (get state :pen-pressure) 1.0)
         marker-point [mouse-x mouse-y pressure]]
     (sdl/set-draw-color! renderer 220 180 90 255)
-    (render-stroke-point! renderer state marker-point 3)
+    (render-stroke-point! renderer state marker-point 3 pressure)
     (if (get state :tool-panel?)
       (draw-render-tool-panel! renderer state)
       nil)

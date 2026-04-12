@@ -14,7 +14,7 @@ What is in place:
 - live mouse, pen, and keyboard-event overlays in the window
 - freehand brush strokes while dragging, with a soft pressure-sensitive brush
 - mixed canvas elements, so ink and objects can coexist on the same canvas
-- a first structured object tool: `r` drag-to-create rectangles (`b` still works as a legacy alias)
+- structured object tools for `r` / `b` rectangles, `4` circles, `5` lines, and `7` canvas-color picking
 - a first selection tool: `v` to select existing elements, `shift`+click to add to the selection, and drag them
 - selection bounds for the active selection, plus rectangle corner resize handles and a top rotation handle for a single selected rectangle
 - legacy arrow and text tools remain in the code for now, but they are hidden from the toolbar and shortcut surface
@@ -23,12 +23,13 @@ What is in place:
 - mouse-wheel zoom centered on the cursor
 - `space`+drag panning for the viewport
 - tool-aware cursors: crosshair for draw tools and rectangle rotation, move for selection drag/pan, resize on rectangle corner handles, pointer over clickable tool-panel buttons
-- tool shortcuts for `1` ink, `2` select, `3` rectangle, `4` eraser, and `ctrl+1/2/3` brush sizes, with `i`/`v`/`r`/`e` kept as legacy aliases
-- the tool panel includes clickable brush-color and background-color swatches
+- tool shortcuts for `1` ink, `2` select, `3` rectangle, `4` circle, `5` line, `6` eraser, `7` canvas color picking, and `ctrl+1/2/3` brush sizes, with `i`/`v`/`r`/`e` kept as legacy aliases
+- the tool panel includes clickable brush-color and background-color swatches plus a canvas-color picker tool
+- the tool panel also includes clickable opacity presets for the current brush and selected objects
 - `save-canvas!` and `load-canvas!` helpers for round-tripping the current canvas
   state to `build/cluck-draw-state.edn` by default, plus `ctrl+s` / `ctrl+o` shortcuts
   - the default file format is EDN
-- `set-brush-color!` and `set-background!` REPL helpers for programmatic color changes
+- `set-brush-color!`, `set-background!`, and `set-opacity!` REPL helpers for programmatic paint changes
 - viewport shortcuts for the infinite canvas:
   - `ctrl` + `+` / `=` zoom in at the pointer
   - `ctrl` + `-` zoom out at the pointer
@@ -57,7 +58,7 @@ The intent is to build this interactively in small steps:
 3. once that is loaded, evaluate the draw buffer or the explicit startup forms in the comment block at the end of `main.clk`
 4. call `(start-dev!)` when you want to open the window and experiment live; this now starts a supervised child draw process by default
 5. if the draw child crashes or stalls, call `(restart-dev!)` to restart it without killing the REPL
-6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `1` for ink, `2` for selection, `3` for rectangle, `4` for eraser, and `[` / `]` to change brush size; `i` / `v` / `r` / `e` remain as legacy aliases, and `b` still works as a legacy rectangle alias; press `d` to toggle the debug panel and `tab` to toggle the tool panel
+6. use the mouse wheel to zoom, hold `space` and drag to pan, use `ctrl` + `+` / `-` for keyboard zoom, drag with the mouse or pen to paint ink, press `1` for ink, `2` for selection, `3` for rectangle, `4` for circle, `5` for line, `6` / `e` for eraser, `7` for canvas color picking, and `[` / `]` to change brush size; `i` / `v` / `r` remain as legacy aliases, and `b` still works as a legacy rectangle alias; press `d` to toggle the debug panel and `tab` to toggle the tool panel
 7. use `restart-dev!` if the session gets wedged; it now resets the draw state as part of recovery
 8. add byte-buffer and texture work as needed
 9. when you are working on keyboard toggles or other input routing, run `csi -q -s examples/cluck/draw/test/run-draw-toggle.scm` for a fast focused probe
@@ -88,7 +89,7 @@ starts a fresh one from the current REPL state.
 While the window is live:
 - press `d` to toggle the debug panel
 - press `tab` to toggle the in-window tool panel
-- press `1` for the ink tool, `2` for selection, `3` for rectangle, and `4` for eraser
+- press `1` for the ink tool, `2` for selection, `3` for rectangle, `4` for circle, `5` for line, `6` for eraser, and `7` for canvas color picking
 - press `ctrl`+`1` / `2` / `3` to pick brush sizes
 - drag empty space in selection mode to marquee-select elements
 - hold `shift` while clicking in selection mode to add another element to the active selection
@@ -96,10 +97,10 @@ While the window is live:
 - drag a rectangle corner handle in selection mode to resize a selected rectangle
 - drag the top handle in selection mode to rotate a selected rectangle
 - use the tool panel buttons to switch tools, and watch the panel summary for the current selection
-- press `r` for the rectangle tool, then drag to create a rectangle object (`b` still works as a legacy alias)
+- press `r` for the rectangle tool, `4` for circles, and `5` for lines; drag to create the shape (`b` still works as a legacy rectangle alias)
 - press `u` to undo the last action, including clear or brush changes
 - press `c` to clear the canvas, which is undoable
-- press `e` to toggle eraser mode
+- press `6` or `e` to toggle eraser mode
 - use the mouse wheel to zoom around the cursor
 - use `ctrl` + `+` / `-` to zoom around the cursor
 - the viewport now supports a much larger bounded world and deeper zoom range, while keeping pointer-anchored zoom stable in the focused view tests

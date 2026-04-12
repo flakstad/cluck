@@ -12,10 +12,10 @@
   "Return BOX corner points in screen coordinates."
   [state box]
   (let [points (draw.geometry/draw-box-corner-points box)]
-    {:nw (draw.view/draw-world-point->screen-point state (get points :nw))
-     :ne (draw.view/draw-world-point->screen-point state (get points :ne))
-     :se (draw.view/draw-world-point->screen-point state (get points :se))
-     :sw (draw.view/draw-world-point->screen-point state (get points :sw))}))
+    {:nw (draw.view/draw-world-point->screen-fpoint state (get points :nw))
+     :ne (draw.view/draw-world-point->screen-fpoint state (get points :ne))
+     :se (draw.view/draw-world-point->screen-fpoint state (get points :se))
+     :sw (draw.view/draw-world-point->screen-fpoint state (get points :sw))}))
 
 (defn draw-box-top-center-screen-point
   "Return the midpoint of BOX's top edge in screen coordinates."
@@ -52,6 +52,30 @@
   [state size]
   (* (draw-arrow-head-length state size) 0.55))
 
+(defn draw-circle-sample-points
+  "Return a closed set of world points approximating CIRCLE's outline."
+  [circle]
+  (let [segments 32
+        two-pi (* 2.0 (draw.geometry/draw-pi))
+        x (get circle :x)
+        y (get circle :y)
+        width (get circle :width)
+        height (get circle :height)
+        center-x (+ x (/ width 2.0))
+        center-y (+ y (/ height 2.0))
+        radius-x (/ width 2.0)
+        radius-y (/ height 2.0)]
+    (let loop ((index 0)
+               (points []))
+      (if (> index segments)
+        points
+        (let [angle (/ (* two-pi index) segments)]
+          (loop (+ index 1)
+                (conj points
+                      [(+ center-x (* radius-x (math/cos angle)))
+                       (+ center-y (* radius-y (math/sin angle)))
+                       1.0])))))))
+
 (defn draw-selection-marquee-bounds
   "Return the current marquee-selection bounds when active."
   [state]
@@ -67,22 +91,38 @@
   (let [points (draw-box-screen-points state box)
         color (get box :color)
         size (max 1 (draw.view/draw-exact-int (or (get box :size) 1)))
+        opacity (draw.state/draw-element-opacity box)
         nw (get points :nw)
         ne (get points :ne)
         se (get points :se)
         sw (get points :sw)]
-    (render-screen-soft-segment! renderer color size
+    (render-screen-soft-segment! renderer color size opacity
                                  (nth nw 0) (nth nw 1)
                                  (nth ne 0) (nth ne 1))
-    (render-screen-soft-segment! renderer color size
+    (render-screen-soft-segment! renderer color size opacity
                                  (nth ne 0) (nth ne 1)
                                  (nth se 0) (nth se 1))
-    (render-screen-soft-segment! renderer color size
+    (render-screen-soft-segment! renderer color size opacity
                                  (nth se 0) (nth se 1)
                                  (nth sw 0) (nth sw 1))
-    (render-screen-soft-segment! renderer color size
+    (render-screen-soft-segment! renderer color size opacity
                                  (nth sw 0) (nth sw 1)
                                  (nth nw 0) (nth nw 1))))
+
+(defn draw-render-circle!
+  "Render a circle element."
+  [renderer state circle render-stroke-segment!]
+  (let [points (draw-circle-sample-points circle)
+        total (count points)
+        opacity (draw.state/draw-element-opacity circle)]
+    (if (<= total 1)
+      nil
+      (reduce (fn [previous point]
+                (begin
+                  (render-stroke-segment! renderer state previous point (get circle :size) (get circle :color) opacity)
+                  point))
+              (first points)
+              (rest points)))))
 
 (defn draw-render-frame!
   "Render a legacy frame/container element."
@@ -93,6 +133,7 @@
         height (get frame :height)
         color (get frame :color)
         size (get frame :size)
+        opacity (draw.state/draw-element-opacity frame)
         tab-width (draw-frame-tab-width state frame)
         tab-height (draw-frame-tab-height state frame)
         screen-rect (draw.view/draw-world-rect->screen-rect state x y width height)
@@ -105,12 +146,13 @@
                          (get screen-rect :width)
                          (get screen-rect :height)
                          color
-                         size)
+                         size
+                         opacity)
     (if (> tab-width 0.0)
       (begin
-        (render-box-edge! renderer state color size a [tab-right y])
-        (render-box-edge! renderer state color size [x tab-bottom] [tab-right tab-bottom])
-        (render-box-edge! renderer state color size [tab-right y] [tab-right tab-bottom]))
+        (render-box-edge! renderer state color size opacity a [tab-right y])
+        (render-box-edge! renderer state color size opacity [x tab-bottom] [tab-right tab-bottom])
+        (render-box-edge! renderer state color size opacity [tab-right y] [tab-right tab-bottom]))
       nil)))
 
 (defn draw-render-text!
@@ -122,12 +164,13 @@
                         (get text-element :y)
                         1.0])
         color (or (get text-element :color) [245 245 245])
+        opacity (draw.state/draw-element-opacity text-element)
         text (or (get text-element :text) (draw.geometry/draw-text-default-value))]
     (sdl/set-draw-color! renderer
                          (nth color 0)
                          (nth color 1)
                          (nth color 2)
-                         255)
+                         (draw.view/draw-exact-int (math/round (* 255.0 opacity))))
     (sdl/render-debug-text! renderer
                             (nth screen-point 0)
                             (nth screen-point 1)
@@ -140,11 +183,12 @@
         end (get arrow :end)
         size (get arrow :size)
         color (get arrow :color)
+        opacity (draw.state/draw-element-opacity arrow)
         dx (- (nth end 0) (nth start 0))
         dy (- (nth end 1) (nth start 1))
         length (math/sqrt (+ (* dx dx) (* dy dy)))]
     (if (<= length 0.0)
-      (render-stroke-point! renderer state end size)
+      (render-stroke-point! renderer state end size opacity)
       (let [ux (/ dx length)
             uy (/ dy length)
             head-length (draw-arrow-head-length state size)
@@ -157,22 +201,56 @@
             right [(- back-x (* (- uy) head-width))
                    (- back-y (* ux head-width))
                    1.0]]
-        (render-stroke-segment! renderer state start end size color)
-        (render-stroke-segment! renderer state left end size color)
-        (render-stroke-segment! renderer state right end size color)))))
+        (render-stroke-segment! renderer state start end size color opacity)
+        (render-stroke-segment! renderer state left end size color opacity)
+        (render-stroke-segment! renderer state right end size color opacity)))))
+
+(defn draw-render-line!
+  "Render a line element."
+  [renderer state line render-stroke-segment!]
+  (let [start (get line :start)
+        end (get line :end)
+        size (get line :size)
+        opacity (draw.state/draw-element-opacity line)]
+    (render-stroke-segment! renderer state start end size (get line :color) opacity)))
 
 (defn draw-render-element!
   "Render a committed canvas element."
-  [renderer state element render-box! render-arrow! render-frame! render-text! render-stroke!]
-  (if (draw.state/draw-box-element? element)
+  [renderer state element render-box! render-circle! render-line! render-arrow! render-frame! render-text! render-stroke!]
+  (cond
+    (draw.state/draw-box-element? element)
     (render-box! renderer state element)
-    (if (draw.state/draw-arrow-element? element)
-      (render-arrow! renderer state element)
-      (if (draw.state/draw-frame-element? element)
-        (render-frame! renderer state element)
-        (if (draw.state/draw-text-element? element)
-          (render-text! renderer state element)
-          (render-stroke! renderer state element))))))
+
+    (draw.state/draw-circle-element? element)
+    (render-circle! renderer state element)
+
+    (draw.state/draw-line-element? element)
+    (render-line! renderer state element)
+
+    (draw.state/draw-arrow-element? element)
+    (render-arrow! renderer state element)
+
+    (draw.state/draw-frame-element? element)
+    (render-frame! renderer state element)
+
+    (draw.state/draw-text-element? element)
+    (render-text! renderer state element)
+
+    :else
+    (render-stroke! renderer state element)))
+
+(defn draw-render-stroke-segments!
+  "Render a line strip from POINTS."
+  [renderer state points size opacity render-stroke-segment!]
+  (let [total (count points)]
+    (if (<= total 1)
+      nil
+      (reduce (fn [previous point]
+                (begin
+                  (render-stroke-segment! renderer state previous point size opacity)
+                  point))
+              (first points)
+              (rest points)))))
 
 (defn draw-render-active-box!
   "Render the current active rectangle preview."
@@ -180,6 +258,20 @@
   (render-box! renderer
                state
                (draw.geometry/draw-box-element active-box)))
+
+(defn draw-render-active-circle!
+  "Render the current active circle preview."
+  [renderer state active-circle render-circle!]
+  (render-circle! renderer
+                  state
+                  (draw.geometry/draw-circle-element active-circle)))
+
+(defn draw-render-active-line!
+  "Render the current active line preview."
+  [renderer state active-line render-line!]
+  (render-line! renderer
+                state
+                (draw.geometry/draw-line-element active-line)))
 
 (defn draw-render-active-arrow!
   "Render the current active arrow preview."
@@ -215,6 +307,7 @@
             (render-screen-soft-segment! renderer
                                          color
                                          (draw.geometry/draw-selection-outline-size)
+                                         1.0
                                          (nth top-point 0)
                                          (nth top-point 1)
                                          (nth rotate-point 0)
@@ -238,9 +331,12 @@
                 nil
                 (if (draw.state/draw-box-element? element)
                   [:nw :ne :se :sw :rotate]
-                  (if (draw.state/draw-arrow-element? element)
-                    [:start :end]
-                    []))))
+                  (if (draw.state/draw-circle-element? element)
+                    [:nw :ne :se :sw]
+                    (if (or (draw.state/draw-arrow-element? element)
+                            (draw.state/draw-line-element? element))
+                      [:start :end]
+                      [])))))
       nil)))
 
 (defn draw-render-selection!
@@ -263,11 +359,13 @@
 
 (defn draw-render-elements!
   "Render all committed elements plus active previews."
-  [ctx state render-element! render-stroke! render-active-box! render-active-arrow! render-active-frame! render-active-text! render-selection!]
+  [ctx state render-element! render-stroke! render-active-box! render-active-circle! render-active-line! render-active-arrow! render-active-frame! render-active-text! render-selection!]
   (let [renderer (get ctx :renderer)
         elements (get state :elements)
         active-stroke (get state :active-stroke)
         active-box (get state :active-box)
+        active-circle (get state :active-circle)
+        active-line (get state :active-line)
         active-arrow (get state :active-arrow)
         active-frame (get state :active-frame)
         active-text (get state :active-text)]
@@ -282,6 +380,12 @@
       nil)
     (if active-box
       (render-active-box! renderer state active-box)
+      nil)
+    (if active-circle
+      (render-active-circle! renderer state active-circle)
+      nil)
+    (if active-line
+      (render-active-line! renderer state active-line)
       nil)
     (if active-arrow
       (render-active-arrow! renderer state active-arrow)

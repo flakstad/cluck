@@ -15,7 +15,9 @@
   {:elements (edn/read-string (pr-str (get state :elements)))
    :brush-size (get state :brush-size)
    :brush-color (edn/read-string (pr-str (get state :brush-color)))
+   :recent-brush-colors (edn/read-string (pr-str (draw.state/draw-recent-brush-colors state)))
    :background (edn/read-string (pr-str (get state :background)))
+   :opacity (draw.state/draw-normalize-opacity (get state :opacity))
    :tool (or (get state :tool) :ink)
    :eraser? (if (truthy? (get state :eraser?)) true false)})
 
@@ -40,16 +42,20 @@
   [state]
   (let [history (get state :history)]
     (if (empty? history)
-      (if (or (get state :active-stroke)
-              (get state :active-box)
-              (get state :active-arrow)
-              (get state :active-frame)
-              (get state :active-text)
-              (get state :active-selection-marquee)
-              (get state :active-selection-rotate))
+              (if (or (get state :active-stroke)
+                      (get state :active-box)
+                      (get state :active-arrow)
+                      (get state :active-circle)
+                      (get state :active-line)
+                      (get state :active-frame)
+                      (get state :active-text)
+                      (get state :active-selection-marquee)
+                      (get state :active-selection-rotate))
         (assoc state
                :active-box false
                :active-arrow false
+               :active-circle false
+               :active-line false
                :active-frame false
                :active-text false
                :active-selection-marquee false
@@ -65,11 +71,15 @@
                             [])]
         (draw.state/draw-sync-elements
           (assoc state
-                 :history prior-history
-                 :brush-size (get snapshot :brush-size)
-                 :brush-color (get snapshot :brush-color)
-                 :background (get snapshot :background)
-                 :tool (or (get snapshot :tool) :ink)
+                :history prior-history
+                :brush-size (get snapshot :brush-size)
+                :brush-color (get snapshot :brush-color)
+                :recent-brush-colors (draw.state/draw-normalize-recent-brush-colors
+                                       (get snapshot :recent-brush-colors)
+                                       (get snapshot :brush-color))
+                :background (get snapshot :background)
+                :opacity (draw.state/draw-normalize-opacity (get snapshot :opacity))
+                :tool (or (get snapshot :tool) :ink)
                  :eraser? (if (get snapshot :eraser?) true false)
                  :selection []
                  :active-selection-drag false
@@ -79,6 +89,8 @@
                  :active-stroke false
                  :active-box false
                  :active-arrow false
+                 :active-circle false
+                 :active-line false
                  :active-frame false
                  :active-text false
                  :pointer-down? false

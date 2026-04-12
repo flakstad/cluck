@@ -53,6 +53,38 @@
           false
           buttons))
 
+(define (draw-input-find-button-tool buttons tool)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (equal? (get button :tool) tool)
+                    button
+                    false)))
+          false
+          buttons))
+
+(define (draw-input-find-button-color buttons color)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (and (get button :color)
+                         (equal? (get button :color) color))
+                    button
+                    false)))
+          false
+          buttons))
+
+(define (draw-input-find-button-opacity buttons opacity)
+  (reduce (lambda (found button)
+            (if found
+                found
+                (if (and (draw-kind=? (get button :kind) :opacity)
+                         (= (get button :opacity) opacity))
+                    button
+                    false)))
+          false
+          buttons))
+
 (draw-input-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 (draw-input-assert-true "focus gained event kind"
                         (draw-kind=? (draw-event-kind "SDL_EVENT_WINDOW_FOCUS_GAINED")
@@ -97,11 +129,15 @@
   (draw-input-assert-true "debug panel lists shift selection"
                           (draw-input-has-line? lines "  shift+click: add to selection"))
   (draw-input-assert-true "debug panel lists tools"
-                          (draw-input-has-line? lines "  1: ink   2: select   3: rectangle   4: eraser"))
+                          (draw-input-has-line? lines "  1: ink   2: select   3: rectangle   4: circle   5: line   6: eraser   7: picker"))
   (draw-input-assert-true "debug panel lists brush sizes"
                           (draw-input-has-line? lines "  ctrl+1/2/3: brush sizes"))
+  (draw-input-assert-true "debug panel lists recent colors row"
+                          (draw-input-has-line? lines "  recent colors row above brush swatches"))
   (draw-input-assert-true "debug panel lists color swatches"
                           (draw-input-has-line? lines "  brush/background swatches in the tool panel"))
+  (draw-input-assert-true "debug panel lists opacity presets"
+                          (draw-input-has-line? lines "  opacity presets in the tool panel"))
   (draw-input-assert-true "debug panel lists pressure"
                           (draw-input-has-line? lines "  mouse/pen: pressure-sensitive strokes"))
   (draw-input-assert-true "debug panel lists undo"
@@ -118,10 +154,16 @@
                           (draw-input-has-line? lines "file: cluck-draw-document.edn"))
   (draw-input-assert-true "tool panel lists edn format"
                           (draw-input-has-line? lines "format: EDN"))
+  (draw-input-assert-true "tool panel lists tool shortcuts"
+                          (draw-input-has-line? lines "1 ink   2 select   3 rectangle   4 circle   5 line   6 eraser   7 picker"))
   (draw-input-assert-true "tool panel lists brush sizes"
                           (draw-input-has-line? lines "ctrl+1/2/3 brush sizes"))
+  (draw-input-assert-true "tool panel lists recent colors row"
+                          (draw-input-has-line? lines "recent colors row above brush swatches"))
   (draw-input-assert-true "tool panel lists color swatches"
                           (draw-input-has-line? lines "brush/background swatches below"))
+  (draw-input-assert-true "tool panel lists opacity presets"
+                          (draw-input-has-line? lines "opacity presets below"))
   (draw-input-assert-true "tool panel lists save shortcut"
                           (draw-input-has-line? lines "TAB toggle  CTRL+N new  CTRL+S save"))
   (draw-input-assert-true "tool panel lists save-as shortcut"
@@ -146,11 +188,21 @@
 (let [panel-state (assoc (default-state) :tool-panel? true)
       buttons (draw-tool-panel-buttons panel-state)
       brush-button (draw-input-find-button-kind buttons :brush-color)
-      background-button (draw-input-find-button-kind buttons :background-color)]
+      recent-button (draw-input-find-button-kind buttons :recent-brush-color)
+      background-button (draw-input-find-button-kind buttons :background-color)
+      picker-button (draw-input-find-button-tool buttons :picker)
+      opacity-button (draw-input-find-button-kind buttons :opacity)
+      opacity-change-button (draw-input-find-button-opacity buttons 0.5)]
   (draw-input-assert-true "tool panel includes brush color swatches"
                           brush-button)
+  (draw-input-assert-true "tool panel includes recent brush colors"
+                          recent-button)
   (draw-input-assert-true "tool panel includes background color swatches"
                           background-button)
+  (draw-input-assert-true "tool panel includes picker tool"
+                          picker-button)
+  (draw-input-assert-true "tool panel includes opacity presets"
+                          opacity-button)
   (draw-input-assert-true "tool panel hit finds brush color swatch"
                           (draw-kind=? (get (draw-find-tool-panel-button
                                               panel-state
@@ -164,7 +216,69 @@
                                               [(+ (get background-button :x) 1)
                                                (+ (get background-button :y) 1)])
                                             :kind)
-                                       :background-color)))
+                                       :background-color))
+  (draw-input-assert-true "tool panel hit finds recent brush color swatch"
+                          (draw-kind=? (get (draw-find-tool-panel-button
+                                              panel-state
+                                              [(+ (get recent-button :x) 1)
+                                               (+ (get recent-button :y) 1)])
+                                            :kind)
+                                       :recent-brush-color))
+  (draw-input-assert-true "tool panel hit finds picker tool"
+                          (draw-kind=? (get (draw-find-tool-panel-button
+                                              panel-state
+                                              [(+ (get picker-button :x) 1)
+                                               (+ (get picker-button :y) 1)])
+                                            :tool)
+                                       :picker))
+  (draw-input-assert-true "tool panel hit finds opacity preset"
+                          (draw-kind=? (get (draw-find-tool-panel-button
+                                              panel-state
+                                              [(+ (get opacity-button :x) 1)
+                                               (+ (get opacity-button :y) 1)])
+                                            :kind)
+                                       :opacity))
+  (draw-input-assert-true "tool panel includes change opacity preset"
+                          opacity-change-button)
+  (draw-input-assert-num= "tool panel opacity preset carries target value"
+                          0.5
+                          (get opacity-change-button :opacity)))
+
+(let [brush-a [255 112 122]
+      brush-b [103 169 255]
+      recent-state (assoc (draw-set-brush-color! (draw-set-brush-color! (default-state)
+                                                                        brush-a)
+                                                  brush-b)
+                          :tool-panel? true)
+      buttons (draw-tool-panel-buttons recent-state)
+      recent-button (draw-input-find-button-color buttons brush-a)
+      picked (draw-apply-tool-panel-button recent-state
+                                           recent-button
+                                           [(+ (get recent-button :x) 1)
+                                            (+ (get recent-button :y) 1)]
+                                           [0.0 0.0])]
+  (draw-input-assert-true "recent colors includes previous brush color"
+                          recent-button)
+  (draw-input-assert-str= "recent colors hit finds recent brush swatch"
+                          ":recent-brush-color"
+                          (pr-str (get (draw-find-tool-panel-button
+                                         recent-state
+                                         [(+ (get recent-button :x) 1)
+                                          (+ (get recent-button :y) 1)])
+                                       :kind)))
+  (draw-input-assert-str= "recent colors click applies selected swatch"
+                          (pr-str brush-a)
+                          (pr-str (get picked :brush-color)))
+  (draw-input-assert-str= "recent colors click promotes swatch to front"
+                          (pr-str brush-a)
+                          (pr-str (first (get picked :recent-brush-colors)))))
+
+(let [sample-picker-state (draw-set-tool-core! (default-state) :picker)
+      lines (draw-tool-panel-selection-lines sample-picker-state)]
+  (draw-input-assert-true "tool panel selection lines mention picker action"
+                          (draw-input-has-line? lines "actions: sample canvas color"))
+  (draw-input-assert-true "tool panel selection lines mention picker canvas sampling"
+                          (draw-input-has-line? lines "canvas: click to sample color")))
 
 (let [lines (draw-tool-panel-selection-lines (default-state))]
   (draw-input-assert-true "tool panel selection lines mention no selection"
@@ -207,6 +321,36 @@
   (draw-input-assert-true "tool panel selection lines mention arrow handles"
                           (draw-input-has-line? lines "handles: drag endpoints")))
 
+(let [state (assoc (draw-sync-elements
+                     (draw-set-tool-core! (default-state) :select)
+                     [{:kind :circle
+                       :x 10.0
+                       :y 20.0
+                       :width 30.0
+                       :height 40.0
+                       :color [255 255 255]
+                       :size 2}])
+                    :selection [1])
+      lines (draw-tool-panel-selection-lines state)]
+  (draw-input-assert-true "tool panel selection lines mention circle move"
+                          (draw-input-has-line? lines "actions: move circle"))
+  (draw-input-assert-true "tool panel selection lines mention circle handles"
+                          (draw-input-has-line? lines "handles: corners resize")))
+
+(let [state (assoc (draw-sync-elements
+                     (draw-set-tool-core! (default-state) :select)
+                     [{:kind :line
+                       :start [10.0 20.0 1.0]
+                       :end [40.0 60.0 1.0]
+                       :color [255 255 255]
+                       :size 2}])
+                    :selection [1])
+      lines (draw-tool-panel-selection-lines state)]
+  (draw-input-assert-true "tool panel selection lines mention line move"
+                          (draw-input-has-line? lines "actions: move line"))
+  (draw-input-assert-true "tool panel selection lines mention line handles"
+                          (draw-input-has-line? lines "handles: drag endpoints")))
+
 (let [mouse-point (draw-event-point (default-state)
                                     "SDL_EVENT_MOUSE_MOTION x=12.0 y=34.0")]
   (draw-input-assert-str= "mouse point pressure defaults to 1"
@@ -235,9 +379,13 @@
                         (< (draw-point-size [10 20 0.25] 4)
                            (draw-point-size [10 20 1.0] 4)))
 
-(draw-input-assert-true "pressure scales brush alpha"
-                        (< (draw-point-alpha [10 20 0.25])
-                           (draw-point-alpha [10 20 1.0])))
+(draw-input-assert-num= "pressure does not change brush alpha"
+                        (draw-point-alpha [10 20 0.25] 0.5)
+                        (draw-point-alpha [10 20 1.0] 0.5))
+
+(draw-input-assert-true "opacity still changes brush alpha"
+                        (< (draw-point-alpha [10 20 1.0] 0.25)
+                           (draw-point-alpha [10 20 1.0] 1.0)))
 
 (let [focused (draw-focus-lost-core!
                (assoc (default-state)
@@ -266,6 +414,39 @@
   (draw-input-assert-num= "focus gained resets pressure"
                           1.0
                           (get gained :pen-pressure)))
+
+(draw-input-assert-str= "window occluded event kind"
+                        ":window-occluded"
+                        (pr-str (draw-event-kind "SDL_EVENT_WINDOW_OCCLUDED")))
+(draw-input-assert-str= "window exposed event kind"
+                        ":window-exposed"
+                        (pr-str (draw-event-kind "SDL_EVENT_WINDOW_EXPOSED")))
+(draw-input-assert-true "window occluded is loggable"
+                        (draw-loggable-event? {:kind :window-occluded}))
+(draw-input-assert-true "window exposed is loggable"
+                        (draw-loggable-event? {:kind :window-exposed}))
+
+(let [occluded (draw-window-occluded-core!
+                (assoc (default-state)
+                       :window-focused? true
+                       :pointer-down? true
+                       :active-stroke {:points [[1 2 1.0]]
+                                       :color [1 2 3]
+                                       :size 2}
+                       :pen-pressure 0.4))]
+  (draw-input-assert-false "window occluded turns focus off"
+                           (get occluded :window-focused?))
+  (draw-input-assert-false "window occluded clears active stroke"
+                           (get occluded :active-stroke))
+  (draw-input-assert-true "window occluded marks canvas dirty"
+                          (get occluded :canvas-dirty?)))
+
+(let [exposed (draw-window-exposed-core! (assoc (default-state) :window-focused? false))]
+  (draw-input-assert-true "window exposed turns focus on"
+                          (get exposed :window-focused?))
+  (draw-input-assert-num= "window exposed resets pressure"
+                          1.0
+                          (get exposed :pen-pressure)))
 
 (let [space-down (draw-input-copy-state
                    (draw-apply-input-event! (default-state)
@@ -408,18 +589,65 @@
                           (get panel-on :tool-panel?)))
 
 (let [base (assoc (default-state) :tool-panel? true)
-      button (nth (draw-tool-panel-buttons base) 2)
-      clicked (draw-input-copy-state
-                (draw-apply-input-event! base
-                                         {:kind :mouse-down
-                                          :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel"
-                                          :mouse-x (+ (get button :x) 4)
-                                          :mouse-y (+ (get button :y) 4)
-                                          :pressure 1.0
-                                          :shift? false}))]
+      buttons (draw-tool-panel-buttons base)
+      rectangle-button (nth buttons 2)
+      circle-button (nth buttons 3)
+      line-button (nth buttons 4)
+      picker-button (draw-input-find-button-tool buttons :picker)
+      opacity-button (draw-input-find-button-opacity buttons 0.5)
+      rectangle-clicked (draw-input-copy-state
+                          (draw-apply-input-event! base
+                                                   {:kind :mouse-down
+                                                    :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel rectangle"
+                                                    :mouse-x (+ (get rectangle-button :x) 4)
+                                                    :mouse-y (+ (get rectangle-button :y) 4)
+                                                    :pressure 1.0
+                                                    :shift? false}))
+      circle-clicked (draw-input-copy-state
+                       (draw-apply-input-event! base
+                                                {:kind :mouse-down
+                                                 :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel circle"
+                                                 :mouse-x (+ (get circle-button :x) 4)
+                                                 :mouse-y (+ (get circle-button :y) 4)
+                                                 :pressure 1.0
+                                                 :shift? false}))
+      line-clicked (draw-input-copy-state
+                      (draw-apply-input-event! base
+                                               {:kind :mouse-down
+                                                :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel line"
+                                                :mouse-x (+ (get line-button :x) 4)
+                                                :mouse-y (+ (get line-button :y) 4)
+                                                :pressure 1.0
+                                                :shift? false}))
+      picker-clicked (draw-input-copy-state
+                       (draw-apply-input-event! base
+                                                {:kind :mouse-down
+                                                 :desc "SDL_EVENT_MOUSE_BUTTON_DOWN panel picker"
+                                                 :mouse-x (+ (get picker-button :x) 4)
+                                                 :mouse-y (+ (get picker-button :y) 4)
+                                                 :pressure 1.0
+                                                 :shift? false}))
+      opacity-clicked (draw-input-copy-state
+                        (draw-apply-tool-panel-button base
+                                                     opacity-button
+                                                     [0.0 0.0 1.0]
+                                                     [0.0 0.0]))
+      opacity-value (get opacity-clicked :opacity)]
   (draw-input-assert-str= "tool panel click selects rectangle tool"
                           "rectangle"
-                          (draw-tool-mode clicked)))
+                          (draw-tool-mode rectangle-clicked))
+  (draw-input-assert-str= "tool panel click selects circle tool"
+                          "circle"
+                          (draw-tool-mode circle-clicked))
+  (draw-input-assert-str= "tool panel click selects line tool"
+                          "line"
+                          (draw-tool-mode line-clicked))
+  (draw-input-assert-str= "tool panel click selects picker tool"
+                          "picker"
+                          (draw-tool-mode picker-clicked))
+  (draw-input-assert-num= "tool panel click applies opacity preset"
+                          0.5
+                          opacity-value))
 
 (let [path (fs/path (fs/temp-dir) "cluck-draw-ui-open-save.edn")
       original-open draw-choose-open-path!
@@ -559,6 +787,19 @@
                           "crosshair"
                           (name cursor)))
 
+(let [circle-tool (draw-set-tool-core! (default-state) :circle)
+      line-tool (draw-set-tool-core! (default-state) :line)
+      picker-tool (draw-set-tool-core! (default-state) :picker)]
+  (draw-input-assert-str= "circle tool uses crosshair cursor"
+                          "crosshair"
+                          (name (draw-desired-cursor-kind circle-tool)))
+  (draw-input-assert-str= "line tool uses crosshair cursor"
+                          "crosshair"
+                          (name (draw-desired-cursor-kind line-tool)))
+  (draw-input-assert-str= "picker tool uses crosshair cursor"
+                          "crosshair"
+                          (name (draw-desired-cursor-kind picker-tool))))
+
 (let [base (assoc (default-state) :tool-panel? true)
       button (nth (draw-tool-panel-buttons base) 2)
       hovered (draw-sync-pointer-state base
@@ -633,6 +874,21 @@
                           "move"
                           (name (draw-desired-cursor-kind hovered))))
 
+(let [original draw-resources/draw-resource-ensure-system-cursor!]
+  (set! draw-resources/draw-resource-ensure-system-cursor!
+        (lambda (context kind)
+          {:context (assoc context :cursor-kind kind)
+           :cursor :mock-cursor}))
+  (set! *draw-context* {:cursor-cache {}})
+  (draw-input-assert-str= "system cursor helper returns cached cursor"
+                          ":mock-cursor"
+                          (pr-str (draw-ensure-system-cursor! :crosshair)))
+  (draw-input-assert-str= "system cursor helper records cursor kind"
+                          ":crosshair"
+                          (pr-str (get *draw-context* :cursor-kind)))
+  (set! *draw-context* false)
+  (set! draw-resources/draw-resource-ensure-system-cursor! original))
+
 (let [text-state (draw-set-tool-core! (default-state) :text)]
   (draw-input-assert-str= "text tool uses text cursor"
                           "text"
@@ -687,6 +943,52 @@
                           30.0
                           (get moved-box :y))
   (draw-input-assert-false "selection mouse-up clears active drag"
+                           (get finished :active-selection-drag)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :circle
+               :x 10.0
+               :y 20.0
+               :width 30.0
+               :height 40.0
+               :color [255 255 255]
+               :size 2}])
+      selected (draw-input-copy-state
+                 (draw-apply-input-event! base
+                                          {:kind :mouse-down
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_DOWN circle"
+                                           :mouse-x 25.0
+                                           :mouse-y 40.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      moved (draw-input-copy-state
+              (draw-apply-input-event! selected
+                                       {:kind :mouse-motion
+                                        :desc "SDL_EVENT_MOUSE_MOTION circle"
+                                        :mouse-x 35.0
+                                        :mouse-y 50.0
+                                        :pressure 1.0
+                                        :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! moved
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP circle"
+                                           :mouse-x 35.0
+                                           :mouse-y 50.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      moved-circle (first (get finished :elements))]
+  (draw-input-assert-num= "circle selection mouse-down picks one element"
+                          1
+                          (count (draw-selected-element-ids selected)))
+  (draw-input-assert-num= "circle selection mouse drag moves element x"
+                          20.0
+                          (get moved-circle :x))
+  (draw-input-assert-num= "circle selection mouse drag moves element y"
+                          30.0
+                          (get moved-circle :y))
+  (draw-input-assert-false "circle selection mouse-up clears active drag"
                            (get finished :active-selection-drag)))
 
 (let [base (draw-sync-elements
@@ -785,6 +1087,50 @@
                           (pr-str (get arrow :end)))
   (draw-input-assert-false "arrow handle mouse-up clears resize"
                            (get finished :active-selection-resize)))
+
+(let [base (draw-sync-elements
+             (draw-set-tool-core! (default-state) :select)
+             [{:kind :line
+               :start [10.0 20.0 1.0]
+               :end [40.0 60.0 1.0]
+               :color [255 255 255]
+               :size 2}])
+      selected (draw-input-copy-state
+                 (draw-apply-input-event! base
+                                          {:kind :mouse-down
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_DOWN line"
+                                           :mouse-x 25.0
+                                           :mouse-y 40.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      moved (draw-input-copy-state
+              (draw-apply-input-event! selected
+                                       {:kind :mouse-motion
+                                        :desc "SDL_EVENT_MOUSE_MOTION line"
+                                        :mouse-x 35.0
+                                        :mouse-y 50.0
+                                        :pressure 1.0
+                                        :shift? false}))
+      finished (draw-input-copy-state
+                 (draw-apply-input-event! moved
+                                          {:kind :mouse-up
+                                           :desc "SDL_EVENT_MOUSE_BUTTON_UP line"
+                                           :mouse-x 35.0
+                                           :mouse-y 50.0
+                                           :pressure 1.0
+                                           :shift? false}))
+      moved-line (first (get finished :elements))]
+  (draw-input-assert-num= "line selection mouse-down picks one element"
+                          1
+                          (count (draw-selected-element-ids selected)))
+  (draw-input-assert-str= "line selection mouse drag moves start"
+                          "[20.0 30.0 1.0]"
+                          (pr-str (get moved-line :start)))
+  (draw-input-assert-str= "line selection mouse drag moves end"
+                          "[50.0 70.0 1.0]"
+                          (pr-str (get moved-line :end)))
+  (draw-input-assert-false "line selection mouse-up clears active drag"
+                           (get finished :active-selection-drag)))
 
 (let [base (draw-sync-elements
              (draw-set-tool-core! (default-state) :select)
@@ -981,6 +1327,58 @@
   (draw-input-assert-num= "legacy frame tool stores height"
                           30.0
                           (get frame-element :height)))
+
+(let [circle-created (draw-input-copy-state
+                       (draw-apply-input-event!
+                         (draw-apply-input-event! (draw-set-tool-core! (default-state) :circle)
+                                                  {:kind :mouse-down
+                                                   :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=18.0 y=28.0"
+                                                   :mouse-x 18.0
+                                                   :mouse-y 28.0
+                                                   :pressure 1.0
+                                                   :shift? false})
+                         {:kind :mouse-up
+                          :desc "SDL_EVENT_MOUSE_BUTTON_UP x=48.0 y=58.0"
+                          :mouse-x 48.0
+                          :mouse-y 58.0
+                          :pressure 1.0
+                          :shift? false}))
+      circle-element (first (get circle-created :elements))]
+  (draw-input-assert-str= "circle tool creates circle element"
+                          ":circle"
+                          (pr-str (get circle-element :kind)))
+  (draw-input-assert-num= "circle tool stores width"
+                          30.0
+                          (get circle-element :width))
+  (draw-input-assert-num= "circle tool stores height"
+                          30.0
+                          (get circle-element :height)))
+
+(let [line-created (draw-input-copy-state
+                     (draw-apply-input-event!
+                       (draw-apply-input-event! (draw-set-tool-core! (default-state) :line)
+                                                {:kind :mouse-down
+                                                 :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=18.0 y=28.0"
+                                                 :mouse-x 18.0
+                                                 :mouse-y 28.0
+                                                 :pressure 1.0
+                                                 :shift? false})
+                       {:kind :mouse-up
+                        :desc "SDL_EVENT_MOUSE_BUTTON_UP x=48.0 y=58.0"
+                        :mouse-x 48.0
+                        :mouse-y 58.0
+                        :pressure 1.0
+                        :shift? false}))
+      line-element (first (get line-created :elements))]
+  (draw-input-assert-str= "line tool creates line element"
+                          ":line"
+                          (pr-str (get line-element :kind)))
+  (draw-input-assert-str= "line tool stores start point"
+                          "[18.0 28.0 1.0]"
+                          (pr-str (get line-element :start)))
+  (draw-input-assert-str= "line tool stores end point"
+                          "[48.0 58.0 1.0]"
+                          (pr-str (get line-element :end))))
 
 (let [text-created (draw-input-copy-state
                      (draw-apply-input-event!

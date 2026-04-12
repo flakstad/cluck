@@ -28,38 +28,24 @@
 
 (defn draw-preview-segment!
   "Render just the newest segment from PREVIOUS to POINT into the preview texture."
-  [state previous point size color with-preview! with-stroke-color render-stroke-segment!]
+  [state previous point size color opacity with-preview! with-stroke-color render-stroke-segment!]
   (with-preview!
     (lambda (renderer)
       (with-stroke-color color
         (lambda ()
-          (render-stroke-segment! renderer state previous point size)))
+          (render-stroke-segment! renderer state previous point size opacity)))
       nil)))
-
-(defn draw-preview-batch-render!
-  "Render active stroke points from START-INDEX up to END-INDEX."
-  [renderer state points start-index end-index size render-stroke-segment!]
-  (if (>= start-index end-index)
-    nil
-    (let [previous (nth points (- start-index 1))
-          point (nth points start-index)]
-      (render-stroke-segment! renderer state previous point size)
-      (draw-preview-batch-render! renderer
-                                  state
-                                  points
-                                  (+ start-index 1)
-                                  end-index
-                                  size
-                                  render-stroke-segment!))))
 
 (defn draw-render-canvas!
   "Render the cached canvas texture, or fall back to stroke replay."
-  [ctx state canvas-ready? preview-ready? render-elements! render-stroke! render-active-box! render-active-arrow! render-active-frame! render-active-text! render-selection!]
+  [ctx state canvas-ready? preview-ready? render-elements! render-stroke! render-active-box! render-active-circle! render-active-line! render-active-arrow! render-active-frame! render-active-text! render-selection!]
   (let [renderer (get ctx :renderer)
         canvas (if ctx (get ctx :canvas) nil)
         preview (if ctx (get ctx :preview) nil)
         active (get state :active-stroke)
         active-box (get state :active-box)
+        active-circle (get state :active-circle)
+        active-line (get state :active-line)
         active-arrow (get state :active-arrow)
         active-frame (get state :active-frame)
         active-text (get state :active-text)]
@@ -73,6 +59,12 @@
             nil))
         (if active-box
           (render-active-box! renderer state active-box)
+          nil)
+        (if active-circle
+          (render-active-circle! renderer state active-circle)
+          nil)
+        (if active-line
+          (render-active-line! renderer state active-line)
           nil)
         (if active-arrow
           (render-active-arrow! renderer state active-arrow)

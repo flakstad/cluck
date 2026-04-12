@@ -28,6 +28,67 @@
   [arrow]
   (>= (draw-arrow-length arrow) (draw-box-min-size)))
 
+(defn draw-line-record
+  "Build a fresh active-line record."
+  [start end color size]
+  {:start start
+   :end end
+   :color color
+   :size size})
+
+(defn draw-line-length
+  "Return the world-space length of LINE."
+  [line]
+  (draw-arrow-length line))
+
+(defn draw-line-visible?
+  "Return true when LINE is long enough to commit."
+  [line]
+  (draw-arrow-visible? line))
+
+(defn draw-line-element
+  "Build a committed line element from ACTIVE-LINE."
+  [active-line]
+  {:kind :line
+   :start (get active-line :start)
+   :end (get active-line :end)
+   :color (get active-line :color)
+   :size (get active-line :size)
+   :opacity (draw-state/draw-element-opacity active-line)})
+
+(defn draw-circle-record
+  "Build a fresh active-circle record."
+  [start end color size]
+  {:start start
+   :end end
+   :color color
+   :size size})
+
+(defn draw-circle-rect
+  "Return a normalized circle bounding rect from START and END world points."
+  [start end]
+  (draw-box-rect start end))
+
+(defn draw-circle-element
+  "Build a committed circle element from ACTIVE-CIRCLE."
+  [active-circle]
+  (let [rect (draw-circle-rect (get active-circle :start)
+                               (get active-circle :end))]
+    {:kind :circle
+     :x (get rect :x)
+     :y (get rect :y)
+     :width (get rect :width)
+     :height (get rect :height)
+     :rotation 0.0
+     :color (get active-circle :color)
+     :size (get active-circle :size)
+     :opacity (draw-state/draw-element-opacity active-circle)}))
+
+(defn draw-circle-visible?
+  "Return true when CIRCLE is large enough to commit."
+  [circle]
+  (draw-box-visible? circle))
+
 (defn draw-translate-point
   "Offset POINT by DX and DY, preserving pressure."
   [point dx dy]
@@ -38,7 +99,8 @@
 (defn draw-translate-element
   "Return ELEMENT moved by DX and DY."
   [element dx dy]
-  (if (draw-state/draw-box-element? element)
+  (cond
+    (draw-state/draw-box-element? element)
     {:id (get element :id)
      :kind :box
      :x (+ (get element :x) dx)
@@ -47,38 +109,69 @@
      :height (get element :height)
      :rotation (draw-box-rotation element)
      :color (get element :color)
-     :size (get element :size)}
-    (if (draw-state/draw-arrow-element? element)
-      {:id (get element :id)
-       :kind :arrow
-       :start (draw-translate-point (get element :start) dx dy)
-       :end (draw-translate-point (get element :end) dx dy)
-       :color (get element :color)
-       :size (get element :size)}
-      (if (draw-state/draw-frame-element? element)
-        {:id (get element :id)
-         :kind :frame
-         :x (+ (get element :x) dx)
-         :y (+ (get element :y) dy)
-         :width (get element :width)
-         :height (get element :height)
-         :color (get element :color)
-         :size (get element :size)}
-        (if (draw-state/draw-text-element? element)
-          {:id (get element :id)
-           :kind :text
-           :x (+ (get element :x) dx)
-           :y (+ (get element :y) dy)
-           :text (get element :text)
-           :color (get element :color)
-           :size (get element :size)}
-          {:id (get element :id)
-           :kind :ink
-           :points (vec (map (fn [point]
-                               (draw-translate-point point dx dy))
-                             (get element :points)))
-           :color (get element :color)
-           :size (get element :size)})))))
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}
+
+    (draw-state/draw-circle-element? element)
+    {:id (get element :id)
+     :kind :circle
+     :x (+ (get element :x) dx)
+     :y (+ (get element :y) dy)
+     :width (get element :width)
+     :height (get element :height)
+     :rotation 0.0
+     :color (get element :color)
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}
+
+    (draw-state/draw-line-element? element)
+    {:id (get element :id)
+     :kind :line
+     :start (draw-translate-point (get element :start) dx dy)
+     :end (draw-translate-point (get element :end) dx dy)
+     :color (get element :color)
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}
+
+    (draw-state/draw-arrow-element? element)
+    {:id (get element :id)
+     :kind :arrow
+     :start (draw-translate-point (get element :start) dx dy)
+     :end (draw-translate-point (get element :end) dx dy)
+     :color (get element :color)
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}
+
+    (draw-state/draw-frame-element? element)
+    {:id (get element :id)
+     :kind :frame
+     :x (+ (get element :x) dx)
+     :y (+ (get element :y) dy)
+     :width (get element :width)
+     :height (get element :height)
+     :color (get element :color)
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}
+
+    (draw-state/draw-text-element? element)
+    {:id (get element :id)
+     :kind :text
+     :x (+ (get element :x) dx)
+     :y (+ (get element :y) dy)
+     :text (get element :text)
+     :color (get element :color)
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}
+
+    :else
+    {:id (get element :id)
+     :kind :ink
+     :points (vec (map (fn [point]
+                         (draw-translate-point point dx dy))
+                       (get element :points)))
+     :color (get element :color)
+     :size (get element :size)
+     :opacity (draw-state/draw-element-opacity element)}))
 
 (defn draw-find-element-by-id
   "Return the element with ELEMENT-ID from ELEMENTS, or false."
@@ -155,7 +248,8 @@
      :height (get rect :height)
      :rotation 0.0
      :color (get active-box :color)
-     :size (get active-box :size)}))
+     :size (get active-box :size)
+     :opacity (draw-state/draw-element-opacity active-box)}))
 
 (defn draw-box-rotation
   "Return the rotation in radians for BOX."
@@ -258,7 +352,8 @@
      :width (get rect :width)
      :height (get rect :height)
      :color (get active-frame :color)
-     :size (get active-frame :size)}))
+     :size (get active-frame :size)
+     :opacity (draw-state/draw-element-opacity active-frame)}))
 
 (defn draw-frame-visible?
   "Return true when FRAME is large enough to commit."
@@ -286,7 +381,8 @@
    :y (nth (get active-text :point) 1)
    :text (or (get active-text :text) (draw-text-default-value))
    :color (get active-text :color)
-   :size (get active-text :size)})
+   :size (get active-text :size)
+   :opacity (draw-state/draw-element-opacity active-text)})
 
 (defn draw-text-visible?
   "Return true when TEXT-ELEMENT has visible content."
@@ -367,32 +463,105 @@
                      (get bounds :y))
                   (* padding 2.0))})))
 
+(defn draw-point-distance-to-segment
+  "Return the distance from POINT to the line segment A-B."
+  [point a b]
+  (let [px (nth point 0)
+        py (nth point 1)
+        ax (nth a 0)
+        ay (nth a 1)
+        bx (nth b 0)
+        by (nth b 1)
+        dx (- bx ax)
+        dy (- by ay)
+        length-squared (+ (* dx dx) (* dy dy))]
+    (if (<= length-squared 0.0)
+      (math/sqrt (+ (* (- px ax) (- px ax))
+                    (* (- py ay) (- py ay))))
+      (let [projection (/ (+ (* (- px ax) dx)
+                             (* (- py ay) dy))
+                          length-squared)
+            t (if (< projection 0.0)
+                0.0
+                (if (> projection 1.0)
+                  1.0
+                  projection))
+            closest-x (+ ax (* t dx))
+            closest-y (+ ay (* t dy))
+            ddx (- px closest-x)
+            ddy (- py closest-y)]
+        (math/sqrt (+ (* ddx ddx)
+                      (* ddy ddy)))))))
+
+(defn draw-point-in-circle?
+  "Return true when POINT lies inside CIRCLE, accounting for padding."
+  [point circle padding]
+  (let [x (get circle :x)
+        y (get circle :y)
+        width (get circle :width)
+        height (get circle :height)
+        center-x (+ x (/ width 2.0))
+        center-y (+ y (/ height 2.0))
+        radius-x (+ (/ width 2.0) padding)
+        radius-y (+ (/ height 2.0) padding)]
+    (if (or (<= radius-x 0.0)
+            (<= radius-y 0.0))
+      (draw-point-in-bounds? point
+                             {:x (- x padding)
+                              :y (- y padding)
+                              :width (+ width (* padding 2.0))
+                              :height (+ height (* padding 2.0))})
+      (let [dx (/ (- (nth point 0) center-x) radius-x)
+            dy (/ (- (nth point 1) center-y) radius-y)]
+        (<= (+ (* dx dx) (* dy dy)) 1.0)))))
+
+(defn draw-point-near-line?
+  "Return true when POINT lies near LINE within PADDING."
+  [point line padding]
+  (<= (draw-point-distance-to-segment point
+                                      (get line :start)
+                                      (get line :end))
+      padding))
+
 (defn draw-element-bounds
   "Return world-space bounds for ELEMENT, expanded for selection."
   [state element]
   (let [padding (+ (draw-selection-world-padding state)
                    (or (get element :size) 1.0))]
-    (if (draw-state/draw-box-element? element)
+    (cond
+      (draw-state/draw-box-element? element)
       (draw-point-bounds [(get (draw-box-corner-points element) :nw)
                           (get (draw-box-corner-points element) :ne)
                           (get (draw-box-corner-points element) :se)
                           (get (draw-box-corner-points element) :sw)]
                          padding)
-      (if (draw-state/draw-arrow-element? element)
-        (draw-point-bounds [(get element :start) (get element :end)] padding)
-        (if (draw-state/draw-frame-element? element)
-          {:x (- (get element :x) padding)
-           :y (- (get element :y) padding)
-           :width (+ (get element :width) (* padding 2.0))
-           :height (+ (get element :height) (* padding 2.0))}
-          (if (draw-state/draw-text-element? element)
-            {:x (- (get element :x) padding)
-             :y (- (get element :y) padding)
-             :width (+ (draw-text-world-width state (get element :text))
-                       (* padding 2.0))
-             :height (+ (draw-text-world-height state)
-                        (* padding 2.0))}
-            (draw-point-bounds (get element :points) padding)))))))
+
+      (draw-state/draw-circle-element? element)
+      {:x (- (get element :x) padding)
+       :y (- (get element :y) padding)
+       :width (+ (get element :width) (* padding 2.0))
+       :height (+ (get element :height) (* padding 2.0))}
+
+      (or (draw-state/draw-line-element? element)
+          (draw-state/draw-arrow-element? element))
+      (draw-point-bounds [(get element :start) (get element :end)] padding)
+
+      (draw-state/draw-frame-element? element)
+      {:x (- (get element :x) padding)
+       :y (- (get element :y) padding)
+       :width (+ (get element :width) (* padding 2.0))
+       :height (+ (get element :height) (* padding 2.0))}
+
+      (draw-state/draw-text-element? element)
+      {:x (- (get element :x) padding)
+       :y (- (get element :y) padding)
+       :width (+ (draw-text-world-width state (get element :text))
+                 (* padding 2.0))
+       :height (+ (draw-text-world-height state)
+                  (* padding 2.0))}
+
+      :else
+      (draw-point-bounds (get element :points) padding))))
 
 (defn draw-point-in-bounds?
   "Return true when POINT lies within BOUNDS."
@@ -523,10 +692,16 @@
 (defn draw-selection-handle-screen-rects
   "Return screen-space handle rectangles for the currently selected editable object."
   [state element]
-  (if (draw-state/draw-box-element? element)
+  (if (or (draw-state/draw-box-element? element)
+          (draw-state/draw-circle-element? element))
     (let [size (draw-selection-handle-screen-size)
           points (draw-rectangle-handle-world-points element)
-          rotate-point (draw-rotation-handle-screen-point state element)]
+          rotate-point (if (draw-state/draw-box-element? element)
+                         (draw-rotation-handle-screen-point state element)
+                         false)
+          handles (if (draw-state/draw-box-element? element)
+                    [:nw :ne :se :sw :rotate]
+                    [:nw :ne :se :sw])]
       (reduce (fn [handles handle]
                 (let [screen-point (if (draw-state/draw-kind=? handle :rotate)
                                      rotate-point
@@ -536,8 +711,9 @@
                          handle
                          (draw-screen-point-rect screen-point size))))
               {}
-              [:nw :ne :se :sw :rotate]))
-    (if (draw-state/draw-arrow-element? element)
+              handles))
+    (if (or (draw-state/draw-line-element? element)
+            (draw-state/draw-arrow-element? element))
       (draw-arrow-handle-screen-rects state element)
       {})))
 
@@ -567,3 +743,16 @@
    :rotation (draw-box-rotation box)
    :color (get box :color)
    :size (get box :size)})
+
+(defn draw-circle-with-rect
+  "Return CIRCLE with X/Y/WIDTH/HEIGHT from RECT, preserving style."
+  [circle rect]
+  {:id (get circle :id)
+   :kind :circle
+   :x (get rect :x)
+   :y (get rect :y)
+   :width (get rect :width)
+   :height (get rect :height)
+   :rotation 0.0
+   :color (get circle :color)
+   :size (get circle :size)})

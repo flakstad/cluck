@@ -62,7 +62,6 @@
 (def *draw-preview-ready?* false)
 (def *draw-brush-ready?* false)
 (def *draw-strip-ready?* false)
-(def *draw-preview-point-count* 0)
 (def *draw-io-lock* (make-mutex 'cluck-draw-io))
 (def *draw-current-stroke-color* false)
 
@@ -76,16 +75,23 @@
 (def draw-set-status-note draw-state/draw-set-status-note)
 (def draw-status-note-text draw-state/draw-status-note-text)
 (def draw-persisted-state draw-state/draw-persisted-state)
+(def draw-normalize-opacity draw-state/draw-normalize-opacity)
 (def draw-element-kind draw-state/draw-element-kind)
 (def draw-ink-element? draw-state/draw-ink-element?)
 (def draw-box-element? draw-state/draw-box-element?)
 (def draw-arrow-element? draw-state/draw-arrow-element?)
+(def draw-circle-element? draw-state/draw-circle-element?)
+(def draw-line-element? draw-state/draw-line-element?)
 (def draw-frame-element? draw-state/draw-frame-element?)
 (def draw-text-element? draw-state/draw-text-element?)
 (def draw-selection-has-id? draw-state/draw-selection-has-id?)
 (def draw-selected-element-ids draw-state/draw-selected-element-ids)
 (def draw-selected? draw-state/draw-selected?)
 (def draw-selected-elements draw-state/draw-selected-elements)
+(def draw-element-opacity draw-state/draw-element-opacity)
+(def draw-current-opacity draw-state/draw-current-opacity)
+(def draw-set-element-opacity draw-state/draw-set-element-opacity)
+(def draw-set-selected-elements-opacity draw-state/draw-set-selected-elements-opacity)
 (def draw-sync-elements draw-state/draw-sync-elements)
 (def draw-normalize-state draw-state/draw-normalize-state)
 (def draw-next-element-id draw-state/draw-next-element-id)
@@ -93,6 +99,9 @@
 (def draw-append-element draw-state/draw-append-element)
 (def draw-set-tool-core! draw-state/draw-set-tool-core!)
 (def draw-box-tool? draw-state/draw-box-tool?)
+(def draw-circle-tool? draw-state/draw-circle-tool?)
+(def draw-picker-tool? draw-state/draw-picker-tool?)
+(def draw-line-tool? draw-state/draw-line-tool?)
 (def draw-arrow-tool? draw-state/draw-arrow-tool?)
 (def draw-frame-tool? draw-state/draw-frame-tool?)
 (def draw-text-tool? draw-state/draw-text-tool?)
@@ -118,6 +127,7 @@
 (def draw-pointer-screen-anchor draw-view/draw-pointer-screen-anchor)
 (def draw-screen-point->world-point draw-view/draw-screen-point->world-point)
 (def draw-world-point->screen-point draw-view/draw-world-point->screen-point)
+(def draw-world-point->screen-fpoint draw-view/draw-world-point->screen-fpoint)
 (def draw-point-screen-size draw-view/draw-point-screen-size)
 (def draw-world-rect->screen-rect draw-view/draw-world-rect->screen-rect)
 (def draw-wheel-zoom-factor draw-view/draw-wheel-zoom-factor)
@@ -165,6 +175,15 @@
 (def draw-arrow-record draw-geometry/draw-arrow-record)
 (def draw-arrow-length draw-geometry/draw-arrow-length)
 (def draw-arrow-visible? draw-geometry/draw-arrow-visible?)
+(def draw-line-record draw-geometry/draw-line-record)
+(def draw-line-length draw-geometry/draw-line-length)
+(def draw-line-visible? draw-geometry/draw-line-visible?)
+(def draw-line-element draw-geometry/draw-line-element)
+(def draw-circle-record draw-geometry/draw-circle-record)
+(def draw-circle-rect draw-geometry/draw-circle-rect)
+(def draw-circle-element draw-geometry/draw-circle-element)
+(def draw-circle-visible? draw-geometry/draw-circle-visible?)
+(def draw-circle-with-rect draw-geometry/draw-circle-with-rect)
 (def draw-translate-point draw-geometry/draw-translate-point)
 (def draw-translate-element draw-geometry/draw-translate-element)
 (def draw-find-element-by-id draw-geometry/draw-find-element-by-id)
@@ -269,7 +288,6 @@
 (def draw-segment-stroke draw-stroke/draw-segment-stroke)
 (def draw-point-screen-distance draw-stroke/draw-point-screen-distance)
 (def draw-min-point-spacing draw-stroke/draw-min-point-spacing)
-(def draw-replace-last draw-stroke/draw-replace-last)
 (def draw-append-stroke-point draw-stroke/draw-append-stroke-point)
 
 (def draw-history-limit draw-history/draw-history-limit)
@@ -338,11 +356,6 @@
   []
   (draw-chooser-run!
     "POSIX path of (choose file name with prompt \"Save Cluck Draw document as\")"))
-
-(defn draw-preview-segment-budget
-  "Return the maximum number of new stroke points to preview in one frame."
-  []
-  24)
 
 (defn draw-heartbeat-interval-ms
   "Return the minimum spacing between heartbeat file writes."
@@ -476,7 +489,7 @@
 (defn draw-reset-preview-sync!
   "Forget any cached active-stroke preview progress."
   []
-  (set! *draw-preview-point-count* 0))
+  nil)
 
 (defn draw-set-log-path!
   "Override the draw session log path."
@@ -947,6 +960,11 @@
   [color]
   (draw-set-brush-color! (or (current-state) (default-state)) color))
 
+(defn set-opacity!
+  "Update the current opacity to a value between 0.0 and 1.0."
+  [opacity]
+  (draw-set-opacity! (or (current-state) (default-state)) opacity))
+
 (defn set-render-fn!
   "Install a custom render function of (lambda [ctx state] ...)."
   [render-fn]
@@ -1240,6 +1258,23 @@
     (lambda ()
       (draw-set-state-core! (draw-set-brush-color-core! state color)))))
 
+(defn draw-set-opacity-core!
+  "Set the current opacity or selected element opacity and record undo history."
+  [state opacity]
+  (draw-actions/draw-set-opacity-core! state
+                                       opacity
+                                       draw-push-history!
+                                       draw-sync-elements
+                                       draw-state-snapshot
+                                       draw-log-entry!))
+
+(defn draw-set-opacity!
+  "Set the current opacity or selected element opacity and record undo history."
+  [state opacity]
+  (draw-with-lock
+    (lambda ()
+      (draw-set-state-core! (draw-set-opacity-core! state opacity)))))
+
 (defn draw-toggle-eraser-core!
   "Toggle eraser mode for STATE and record undo history."
   [state]
@@ -1368,6 +1403,8 @@
                      :active-stroke false
                      :active-box false
                      :active-arrow false
+                     :active-circle false
+                     :active-line false
                      :active-frame false
                      :active-text false
                      :panning? false
@@ -1375,29 +1412,40 @@
                      :canvas-dirty? true)]
     state))
 
-(defn draw-focus-lost-core!
-  "Record that the window lost focus and cancel any active stroke."
-  [state]
-  (let [next-state (draw-cancel-active-stroke-core!
-                     (assoc state
-                            :window-focused? false
-                            :space-down? false
-                            :ctrl-down? false
-                            :canvas-dirty? true))]
-    (draw-log-entry! :focus-lost {:state (draw-state-snapshot next-state)})
-    next-state))
-
-(defn draw-focus-gained-core!
-  "Record that the window regained focus."
-  [state]
-  (let [next-state (assoc state
-                          :window-focused? true
+(defn draw-window-focus-core!
+  "Record a window focus change and optionally cancel the active stroke."
+  [state focused? cancel-active? log-kind]
+  (let [state (if cancel-active?
+                (draw-cancel-active-stroke-core! state)
+                state)
+        next-state (assoc state
+                          :window-focused? focused?
                           :canvas-dirty? true
                           :space-down? false
                           :ctrl-down? false
                           :pen-pressure 1.0)]
-    (draw-log-entry! :focus-gained {:state (draw-state-snapshot next-state)})
+    (draw-log-entry! log-kind {:state (draw-state-snapshot next-state)})
     next-state))
+
+(defn draw-focus-lost-core!
+  "Record that the window lost focus and cancel any active stroke."
+  [state]
+  (draw-window-focus-core! state false true :focus-lost))
+
+(defn draw-focus-gained-core!
+  "Record that the window regained focus."
+  [state]
+  (draw-window-focus-core! state true false :focus-gained))
+
+(defn draw-window-occluded-core!
+  "Record that the window became occluded and cancel any active stroke."
+  [state]
+  (draw-window-focus-core! state false true :window-occluded))
+
+(defn draw-window-exposed-core!
+  "Record that the window became exposed."
+  [state]
+  (draw-window-focus-core! state true false :window-exposed))
 
 (defn draw-mouse-leave-core!
   "Handle the pointer leaving the window without changing focus state."
@@ -1419,7 +1467,7 @@
 (defn draw-ensure-system-cursor!
   "Return a cached system cursor pointer for KIND, creating it when needed."
   [kind]
-  (let [result (draw-resources/draw-ensure-system-cursor! *draw-context* kind)]
+  (let [result (draw-resources/draw-resource-ensure-system-cursor! *draw-context* kind)]
     (set! *draw-context* (get result :context))
     (get result :cursor)))
 
@@ -1452,11 +1500,15 @@
       (draw-kind=? kind :save)
       (draw-save-canvas-core! base-state)
 
-      (draw-kind=? kind :brush-color)
+      (or (draw-kind=? kind :brush-color)
+          (draw-kind=? kind :recent-brush-color))
       (draw-set-brush-color-core! base-state (get button :color))
 
       (draw-kind=? kind :background-color)
       (draw-set-background-core! base-state (get button :color))
+
+      (draw-kind=? kind :opacity)
+      (draw-set-opacity-core! base-state (get button :opacity))
 
       (draw-kind=? kind :save-as)
       (draw-request-save-document-as! base-state)
@@ -1470,9 +1522,11 @@
   "Start a new stroke from WORLD-POINT and SCREEN-POINT."
   [state point screen-point pointer-source]
   (let [state (draw-push-history! state)
+        opacity (draw-current-opacity state)
         stroke (draw-stroke-record [point]
                                    (draw-stroke-color state)
                                    (get state :brush-size))
+        stroke (assoc stroke :opacity opacity)
         next-state (draw-sync-pointer-state
                      (assoc state
                             :pointer-down? true
@@ -1483,6 +1537,8 @@
                             :active-selection-marquee false
                             :active-box false
                             :active-arrow false
+                            :active-circle false
+                            :active-line false
                             :active-frame false
                             :active-text false
                             :active-stroke stroke)
@@ -1508,6 +1564,7 @@
             next-stroke (draw-stroke-record next-points
                                             (get stroke :color)
                                             (get stroke :size))
+            next-stroke (assoc next-stroke :opacity (get stroke :opacity))
             next-state (draw-sync-pointer-state
                          (assoc state
                                 :active-stroke next-stroke)
@@ -1518,7 +1575,8 @@
                                  previous
                                  point
                                  (get stroke :size)
-                                 (get stroke :color))
+                                 (get stroke :color)
+                                 (get stroke :opacity))
           nil)
         next-state)
       (draw-start-stroke state point screen-point :mouse))))
@@ -1533,6 +1591,7 @@
               finished (draw-stroke-record finished-points
                                            (get stroke :color)
                                            (get stroke :size))
+              finished (assoc finished :opacity (get stroke :opacity))
               next-state (draw-sync-pointer-state
                            (assoc state
                                   :pointer-down? false
@@ -1566,6 +1625,166 @@
                :active-stroke false)
         point
         screen-point))))
+
+(defn draw-start-creation-interaction
+  "Start the active non-selection creation interaction for STATE."
+  [state point screen-point pointer-source]
+  (cond
+    (draw-picker-tool? state)
+    (draw-pick-canvas-color-core! state point screen-point)
+
+    (draw-box-tool? state)
+    (draw-start-box state point screen-point)
+
+    (draw-circle-tool? state)
+    (draw-start-circle state point screen-point)
+
+    (draw-line-tool? state)
+    (draw-start-line state point screen-point)
+
+    (draw-arrow-tool? state)
+    (draw-start-arrow state point screen-point)
+
+    (draw-frame-tool? state)
+    (draw-start-frame state point screen-point)
+
+    (draw-text-tool? state)
+    (draw-start-text state point screen-point)
+
+    :else
+    (draw-start-stroke state point screen-point pointer-source)))
+
+(defn draw-extend-creation-interaction
+  "Extend the active non-selection creation interaction for STATE."
+  [state point screen-point]
+  (cond
+    (get state :active-box)
+    (draw-extend-box state point screen-point)
+
+    (get state :active-circle)
+    (draw-extend-circle state point screen-point)
+
+    (get state :active-line)
+    (draw-extend-line state point screen-point)
+
+    (get state :active-arrow)
+    (draw-extend-arrow state point screen-point)
+
+    (get state :active-frame)
+    (draw-extend-frame state point screen-point)
+
+    (get state :active-text)
+    (draw-extend-text state point screen-point)
+
+    :else
+    (draw-extend-stroke state point screen-point)))
+
+(defn draw-finish-creation-interaction
+  "Finish the active non-selection creation interaction for STATE."
+  [state point screen-point]
+  (cond
+    (get state :active-box)
+    (draw-finish-box state point screen-point)
+
+    (get state :active-circle)
+    (draw-finish-circle state point screen-point)
+
+    (get state :active-line)
+    (draw-finish-line state point screen-point)
+
+    (get state :active-arrow)
+    (draw-finish-arrow state point screen-point)
+
+    (get state :active-frame)
+    (draw-finish-frame state point screen-point)
+
+    (get state :active-text)
+    (draw-finish-text state point screen-point)
+
+    :else
+    (draw-finish-stroke state point screen-point)))
+
+(defn draw-handle-pointer-down-interaction
+  "Handle a pointer-down event for either mouse or pen input."
+  [state event pointer-source]
+  (let [point (draw-input-event-point state event)
+        screen-point (draw-input-event-screen-point event)
+        panel-button (draw-find-tool-panel-button state screen-point)
+        resize-handle (if (draw-selection-tool? state)
+                        (draw-find-selection-handle state screen-point)
+                        false)]
+    (cond
+      panel-button
+      (draw-apply-tool-panel-button state panel-button point screen-point)
+
+      (draw-tool-panel-hit? state screen-point)
+      (draw-sync-pointer-state state point screen-point)
+
+      (draw-selection-tool? state)
+      (if resize-handle
+        (if (draw-kind=? resize-handle :rotate)
+          (draw-start-selection-rotate state
+                                       point
+                                       screen-point
+                                       pointer-source)
+          (draw-start-selection-resize state
+                                       point
+                                       screen-point
+                                       pointer-source
+                                       resize-handle))
+        (draw-start-selection-interaction state
+                                         point
+                                         screen-point
+                                         pointer-source
+                                         (if (get event :shift?) true false)))
+
+      :else
+      (draw-start-creation-interaction state
+                                       point
+                                       screen-point
+                                       pointer-source))))
+
+(defn draw-handle-pointer-up-interaction
+  "Handle a pointer-up event for either mouse or pen input."
+  [state event]
+  (let [point (draw-input-event-point state event)
+        screen-point (draw-input-event-screen-point event)]
+    (cond
+      (get state :active-selection-rotate)
+      (draw-finish-selection-rotate state point screen-point)
+
+      (get state :active-selection-resize)
+      (draw-finish-selection-resize state point screen-point)
+
+      (get state :active-selection-marquee)
+      (draw-finish-selection-marquee state point screen-point)
+
+      (get state :active-selection-drag)
+      (draw-finish-selection-drag state point screen-point)
+
+      :else
+      (draw-finish-creation-interaction state point screen-point))))
+
+(defn draw-handle-pointer-motion-interaction
+  "Handle a pointer-motion event while a pointer is held down."
+  [state event]
+  (let [point (draw-input-event-point state event)
+        screen-point (draw-input-event-screen-point event)]
+    (cond
+      (get state :active-selection-rotate)
+      (draw-extend-selection-rotate state point screen-point)
+
+      (get state :active-selection-resize)
+      (draw-extend-selection-resize state point screen-point)
+
+      (get state :active-selection-marquee)
+      (draw-extend-selection-marquee state point screen-point)
+
+      (get state :active-selection-drag)
+      (draw-extend-selection-drag state point screen-point)
+
+      :else
+      (draw-extend-creation-interaction state point screen-point))))
 
 (defn draw-bump-frame!
   "Advance the frame counter in STATE."
@@ -1655,6 +1874,12 @@
       (draw-kind=? kind :focus-gained)
       (draw-focus-gained-core! state)
 
+      (draw-kind=? kind :window-occluded)
+      (draw-window-occluded-core! state)
+
+      (draw-kind=? kind :window-exposed)
+      (draw-window-exposed-core! state)
+
       (draw-kind=? kind :mouse-leave)
       (draw-mouse-leave-core! state)
 
@@ -1678,91 +1903,20 @@
             (draw-start-pan-core! state (draw-input-event-screen-point event))
 
             (draw-kind=? kind :mouse-down)
-            (let [point (draw-input-event-point state event)
-                  screen-point (draw-input-event-screen-point event)
-                  panel-button (draw-find-tool-panel-button state screen-point)
-                  resize-handle (if (draw-selection-tool? state)
-                                  (draw-find-selection-handle state screen-point)
-                                  false)]
-                (if panel-button
-                  (draw-apply-tool-panel-button state panel-button point screen-point)
-                (if (draw-tool-panel-hit? state screen-point)
-                  (draw-sync-pointer-state state point screen-point)
-                (if (draw-selection-tool? state)
-                (if resize-handle
-                  (if (draw-kind=? resize-handle :rotate)
-                    (draw-start-selection-rotate state
-                                                 point
-                                                 screen-point
-                                                 :mouse)
-                    (draw-start-selection-resize state
-                                                 point
-                                                 screen-point
-                                                 :mouse
-                                                 resize-handle))
-                  (draw-start-selection-interaction state
-                                                   point
-                                                   screen-point
-                                                   :mouse
-                                                   (if (get event :shift?) true false)))
-                (if (draw-box-tool? state)
-                  (draw-start-box state point screen-point)
-                  (if (draw-arrow-tool? state)
-                    (draw-start-arrow state point screen-point)
-                    (if (draw-frame-tool? state)
-                      (draw-start-frame state point screen-point)
-                      (if (draw-text-tool? state)
-                        (draw-start-text state point screen-point)
-                        (draw-start-stroke state point screen-point :mouse)))))))))
+            (draw-handle-pointer-down-interaction state event :mouse)
 
             (and (draw-kind=? kind :mouse-up)
                  (get state :panning?))
             (draw-finish-pan-core! state)
 
             (draw-kind=? kind :mouse-up)
-            (let [point (draw-input-event-point state event)
-                  screen-point (draw-input-event-screen-point event)]
-              (if (get state :active-selection-rotate)
-                (draw-finish-selection-rotate state point screen-point)
-                (if (get state :active-selection-resize)
-                (draw-finish-selection-resize state point screen-point)
-                (if (get state :active-selection-marquee)
-                (draw-finish-selection-marquee state point screen-point)
-                (if (get state :active-selection-drag)
-                (draw-finish-selection-drag state point screen-point)
-                (if (get state :active-box)
-                  (draw-finish-box state point screen-point)
-                  (if (get state :active-arrow)
-                    (draw-finish-arrow state point screen-point)
-                    (if (get state :active-frame)
-                      (draw-finish-frame state point screen-point)
-                      (if (get state :active-text)
-                        (draw-finish-text state point screen-point)
-                        (draw-finish-stroke state point screen-point))))))))))
+            (draw-handle-pointer-up-interaction state event)
 
             (get state :panning?)
             (draw-pan-core! state (draw-input-event-screen-point event))
 
             (get state :pointer-down?)
-            (let [point (draw-input-event-point state event)
-                  screen-point (draw-input-event-screen-point event)]
-              (if (get state :active-selection-rotate)
-                (draw-extend-selection-rotate state point screen-point)
-                (if (get state :active-selection-resize)
-                (draw-extend-selection-resize state point screen-point)
-                (if (get state :active-selection-marquee)
-                (draw-extend-selection-marquee state point screen-point)
-                (if (get state :active-selection-drag)
-                (draw-extend-selection-drag state point screen-point)
-                (if (get state :active-box)
-                  (draw-extend-box state point screen-point)
-                  (if (get state :active-arrow)
-                    (draw-extend-arrow state point screen-point)
-                    (if (get state :active-frame)
-                      (draw-extend-frame state point screen-point)
-                      (if (get state :active-text)
-                        (draw-extend-text state point screen-point)
-                        (draw-extend-stroke state point screen-point))))))))))
+            (draw-handle-pointer-motion-interaction state event)
 
             :else
             (let [point (draw-input-event-point state event)
@@ -1782,42 +1936,7 @@
           (draw-start-pan-core! state (draw-input-event-screen-point event))
 
           (draw-kind=? kind :pen-down)
-          (let [point (draw-input-event-point state event)
-                screen-point (draw-input-event-screen-point event)
-                panel-button (draw-find-tool-panel-button state screen-point)
-                resize-handle (if (draw-selection-tool? state)
-                                (draw-find-selection-handle state screen-point)
-                                false)]
-              (if panel-button
-                (draw-apply-tool-panel-button state panel-button point screen-point)
-              (if (draw-tool-panel-hit? state screen-point)
-                (draw-sync-pointer-state state point screen-point)
-              (if (draw-selection-tool? state)
-              (if resize-handle
-                (if (draw-kind=? resize-handle :rotate)
-                  (draw-start-selection-rotate state
-                                               point
-                                               screen-point
-                                               :pen)
-                  (draw-start-selection-resize state
-                                               point
-                                               screen-point
-                                               :pen
-                                               resize-handle))
-                (draw-start-selection-interaction state
-                                                 point
-                                                 screen-point
-                                                 :pen
-                                                 (if (get event :shift?) true false)))
-              (if (draw-box-tool? state)
-                (draw-start-box state point screen-point)
-                (if (draw-arrow-tool? state)
-                  (draw-start-arrow state point screen-point)
-                  (if (draw-frame-tool? state)
-                    (draw-start-frame state point screen-point)
-                    (if (draw-text-tool? state)
-                      (draw-start-text state point screen-point)
-                      (draw-start-stroke state point screen-point :pen)))))))))
+          (draw-handle-pointer-down-interaction state event :pen)
 
           (and (or (draw-kind=? kind :pen-up)
                    (draw-kind=? kind :pen-button-up))
@@ -1826,49 +1945,13 @@
 
           (or (draw-kind=? kind :pen-up)
               (draw-kind=? kind :pen-button-up))
-          (let [point (draw-input-event-point state event)
-                screen-point (draw-input-event-screen-point event)]
-            (if (get state :active-selection-rotate)
-              (draw-finish-selection-rotate state point screen-point)
-              (if (get state :active-selection-resize)
-              (draw-finish-selection-resize state point screen-point)
-              (if (get state :active-selection-marquee)
-              (draw-finish-selection-marquee state point screen-point)
-              (if (get state :active-selection-drag)
-              (draw-finish-selection-drag state point screen-point)
-              (if (get state :active-box)
-                (draw-finish-box state point screen-point)
-                (if (get state :active-arrow)
-                  (draw-finish-arrow state point screen-point)
-                  (if (get state :active-frame)
-                    (draw-finish-frame state point screen-point)
-                    (if (get state :active-text)
-                      (draw-finish-text state point screen-point)
-                      (draw-finish-stroke state point screen-point))))))))))
+          (draw-handle-pointer-up-interaction state event)
 
           (get state :panning?)
           (draw-pan-core! state (draw-input-event-screen-point event))
 
           (get state :pointer-down?)
-          (let [point (draw-input-event-point state event)
-                screen-point (draw-input-event-screen-point event)]
-            (if (get state :active-selection-rotate)
-              (draw-extend-selection-rotate state point screen-point)
-              (if (get state :active-selection-resize)
-              (draw-extend-selection-resize state point screen-point)
-              (if (get state :active-selection-marquee)
-              (draw-extend-selection-marquee state point screen-point)
-              (if (get state :active-selection-drag)
-              (draw-extend-selection-drag state point screen-point)
-              (if (get state :active-box)
-                (draw-extend-box state point screen-point)
-                (if (get state :active-arrow)
-                  (draw-extend-arrow state point screen-point)
-                  (if (get state :active-frame)
-                    (draw-extend-frame state point screen-point)
-                    (if (get state :active-text)
-                      (draw-extend-text state point screen-point)
-                      (draw-extend-stroke state point screen-point))))))))))
+          (draw-handle-pointer-motion-interaction state event)
 
           :else
           (let [point (draw-input-event-point state event)
@@ -2095,14 +2178,20 @@
     (draw-exact-int size)
     1))
 
+(defn draw-opacity-alpha
+  "Return an SDL alpha value for OPACITY."
+  [opacity]
+  (draw-exact-int (math/round (* 255.0 (draw-normalize-opacity opacity)))))
+
+(defn draw-combine-alpha
+  "Return ALPHA scaled by OPACITY."
+  [alpha opacity]
+  (draw-exact-int (math/round (* alpha (draw-normalize-opacity opacity)))))
+
 (defn draw-point-alpha
-  "Scale the stroke alpha by POINT pressure."
-  [point]
-  (let [pressure (draw-normalize-pressure (draw-point-pressure point))
-        alpha (draw-exact-int (math/ceiling (+ 72 (* 183 pressure))))]
-    (if (> alpha 255)
-      255
-      alpha)))
+  "Return the stroke alpha for OPACITY."
+  [point opacity]
+  (draw-opacity-alpha opacity))
 
 (defn draw-stroke-color-value
   "Return the current stroke color, defaulting to white."
@@ -2110,6 +2199,55 @@
   (if *draw-current-stroke-color*
     *draw-current-stroke-color*
     [255 255 255]))
+
+(defn draw-parse-rgba-sample
+  "Parse an SDL RGBA sample string into a color vector."
+  [sample]
+  (let [parts (vec (map str/trim (str/split (or sample "") ",")))]
+    (if (= (count parts) 4)
+      [(parse-long (nth parts 0))
+       (parse-long (nth parts 1))
+       (parse-long (nth parts 2))
+       (parse-long (nth parts 3))]
+      false)))
+
+(defn draw-composite-rgba-over-background
+  "Composite RGBA over BACKGROUND and return an opaque RGB color."
+  [rgba background]
+  (let [alpha (/ (nth rgba 3) 255.0)
+        inverse (- 1.0 alpha)]
+    [(draw-exact-int (math/round (+ (* (nth rgba 0) alpha)
+                                    (* (nth background 0) inverse))))
+     (draw-exact-int (math/round (+ (* (nth rgba 1) alpha)
+                                    (* (nth background 1) inverse))))
+     (draw-exact-int (math/round (+ (* (nth rgba 2) alpha)
+                                    (* (nth background 2) inverse))))]))
+
+(defn draw-sample-canvas-color!
+  "Return the visible canvas color at SCREEN-POINT, or false when unavailable."
+  [state screen-point]
+  (let [world-point (draw-screen-point->world-point state screen-point)
+        element (draw-find-hit-element state world-point)]
+    (if element
+      (let [color (or (get element :color) [0 0 0])
+            opacity (draw-normalize-opacity (or (get element :opacity) 1.0))]
+        (draw-composite-rgba-over-background
+          [(nth color 0)
+           (nth color 1)
+           (nth color 2)
+           (draw-exact-int (math/round (* 255.0 opacity)))]
+          (get state :background)))
+      (get state :background))))
+
+(defn draw-pick-canvas-color-core!
+  "Sample the canvas at SCREEN-POINT and update the brush color."
+  [state point screen-point]
+  (let [state (draw-sync-pointer-state state point screen-point)
+        state (draw-sync-canvas! state)
+        sampled (draw-sample-canvas-color! state screen-point)]
+    (if sampled
+      (draw-set-brush-color-core! state sampled)
+      state)))
 
 (defn draw-set-stroke-color!
   "Set the draw color for the current stroke with ALPHA."
@@ -2123,12 +2261,12 @@
 
 (defn draw-render-soft-brush!
   "Render the soft brush texture at POINT with SIZE."
-  [renderer state point size]
+  [renderer state point size opacity]
   (let [brush (draw-brush-texture)
         color (draw-stroke-color-value)
-        screen-point (draw-world-point->screen-point state point)
+        screen-point (draw-world-point->screen-fpoint state point)
         stamp-size (draw-point-screen-size state point size)
-        alpha (draw-point-alpha point)]
+        alpha (draw-point-alpha point opacity)]
     (if (draw-brush-texture-ready?)
       (begin
         (sdl/set-texture-color-mod! brush
@@ -2146,29 +2284,31 @@
       (begin
         (draw-set-stroke-color! renderer alpha)
         (sdl/render-fill-rect! renderer
-                               (- (nth screen-point 0) (/ stamp-size 2.0))
-                               (- (nth screen-point 1) (/ stamp-size 2.0))
+                               (draw-exact-int (math/round (- (nth screen-point 0)
+                                                               (/ stamp-size 2.0))))
+                               (draw-exact-int (math/round (- (nth screen-point 1)
+                                                               (/ stamp-size 2.0))))
                                stamp-size
                                stamp-size)
         false))))
 
 (defn draw-render-stroke-point!
   "Render a single stroke sample at POINT."
-  [renderer state point size]
-  (draw-render-soft-brush! renderer state point size))
+  [renderer state point size opacity]
+  (draw-render-soft-brush! renderer state point size opacity))
 
 (defn draw-render-soft-segment!
   "Render a smooth segment from A to B using the compiled SDL helper."
-  [renderer state a b size]
+  [renderer state a b size opacity]
   (let [brush (draw-brush-texture)
         strip (draw-strip-texture)
         color (draw-stroke-color-value)
-        screen-a (draw-world-point->screen-point state a)
-        screen-b (draw-world-point->screen-point state b)
+        screen-a (draw-world-point->screen-fpoint state a)
+        screen-b (draw-world-point->screen-fpoint state b)
         size-a (draw-point-screen-size state a size)
         size-b (draw-point-screen-size state b size)
-        alpha-a (draw-point-alpha a)
-        alpha-b (draw-point-alpha b)]
+        alpha-a (draw-point-alpha a opacity)
+        alpha-b (draw-point-alpha b opacity)]
     (if (and (draw-brush-texture-ready?)
              (draw-strip-texture-ready?))
       (sdl/render-soft-segment! renderer
@@ -2188,63 +2328,59 @@
       (begin
         (draw-set-stroke-color! renderer (if (> alpha-a alpha-b) alpha-a alpha-b))
         (sdl/render-line! renderer
-                          (nth screen-a 0)
-                          (nth screen-a 1)
-                          (nth screen-b 0)
-                          (nth screen-b 1))
-        (draw-render-soft-brush! renderer state a size)
-        (draw-render-soft-brush! renderer state b size)
+                          (draw-exact-int (math/round (nth screen-a 0)))
+                          (draw-exact-int (math/round (nth screen-a 1)))
+                          (draw-exact-int (math/round (nth screen-b 0)))
+                          (draw-exact-int (math/round (nth screen-b 1))))
+        (draw-render-soft-brush! renderer state a size opacity)
+        (draw-render-soft-brush! renderer state b size opacity)
         true))))
 
 (defn draw-render-stroke-segment!
   "Render a line segment from A to B."
-  [renderer state a b size]
-  (draw-render-soft-segment! renderer state a b size))
+  [renderer state a b size opacity]
+  (draw-render-soft-segment! renderer state a b size opacity))
 
-(defn draw-render-stroke-segments!
-  "Render a line strip from POINTS."
-  [renderer state points size]
-  (let [total (count points)]
-    (if (<= total 1)
-      nil
-      (reduce (fn [previous point]
-                (begin
-                  (draw-render-stroke-segment! renderer state previous point size)
-                  point))
-              (first points)
-              (rest points)))))
+(def draw-render-stroke-segments! draw-render/draw-render-stroke-segments!)
 
 (defn draw-render-stroke!
   "Render a stroke map."
   [renderer state stroke]
   (let [points (get stroke :points)
         color (get stroke :color)
-        size (get stroke :size)]
+        size (get stroke :size)
+        opacity (draw-normalize-opacity (get stroke :opacity))]
     (if (empty? points)
       nil
-      (draw-with-stroke-color color
+        (draw-with-stroke-color color
         (lambda ()
           (if (<= (count points) 1)
-            (draw-render-stroke-point! renderer state (first points) size)
-            (draw-render-stroke-segments! renderer state points size)))))))
+            (draw-render-stroke-point! renderer state (first points) size opacity)
+            (draw-render-stroke-segments! renderer
+                                          state
+                                          points
+                                          size
+                                          opacity
+                                          draw-render-stroke-segment!)))))))
 
 (defn draw-render-box-edge!
   "Render one edge of a box from A to B."
-  [renderer state color size a b]
+  [renderer state color size opacity a b]
   (draw-with-stroke-color color
     (lambda ()
       (draw-render-stroke-segment! renderer
                                    state
                                    [(nth a 0) (nth a 1) 1.0]
                                    [(nth b 0) (nth b 1) 1.0]
-                                   size))))
+                                   size
+                                   opacity))))
 
 (defn draw-render-screen-soft-segment!
   "Render a soft segment directly in screen coordinates."
-  [renderer color size x1 y1 x2 y2]
+  [renderer color size opacity x1 y1 x2 y2]
   (let [brush (draw-brush-texture)
         strip (draw-strip-texture)
-        alpha 255]
+        alpha (draw-opacity-alpha opacity)]
     (draw-with-stroke-color color
       (lambda ()
         (if (and (draw-brush-texture-ready?)
@@ -2280,15 +2416,15 @@
 
 (defn draw-render-screen-rect!
   "Render a rectangle outline directly in screen coordinates."
-  [renderer x y width height color size]
+  [renderer x y width height color size opacity]
   (let [left x
         top y
         right (+ x width)
         bottom (+ y height)]
-    (draw-render-screen-soft-segment! renderer color size left top right top)
-    (draw-render-screen-soft-segment! renderer color size right top right bottom)
-    (draw-render-screen-soft-segment! renderer color size right bottom left bottom)
-    (draw-render-screen-soft-segment! renderer color size left bottom left top)))
+    (draw-render-screen-soft-segment! renderer color size opacity left top right top)
+    (draw-render-screen-soft-segment! renderer color size opacity right top right bottom)
+    (draw-render-screen-soft-segment! renderer color size opacity right bottom left bottom)
+    (draw-render-screen-soft-segment! renderer color size opacity left bottom left top)))
 
 (defn draw-render-box!
   "Render a rectangle element."
@@ -2314,17 +2450,17 @@
 
 (defn draw-render-arrow-segment!
   "Render an arrow segment using COLOR as the active stroke color."
-  [renderer state a b size color]
+  [renderer state a b size color opacity]
   (draw-with-stroke-color color
     (lambda ()
-      (draw-render-stroke-segment! renderer state a b size))))
+      (draw-render-stroke-segment! renderer state a b size opacity))))
 
 (defn draw-render-arrow-point!
   "Render an arrow endpoint using COLOR as the active stroke color."
-  [renderer state point size color]
+  [renderer state point size color opacity]
   (draw-with-stroke-color color
     (lambda ()
-      (draw-render-stroke-point! renderer state point size))))
+      (draw-render-stroke-point! renderer state point size opacity))))
 
 (defn draw-render-arrow!
   "Render an arrow element."
@@ -2335,6 +2471,22 @@
                                   draw-render-arrow-point!
                                   draw-render-arrow-segment!))
 
+(defn draw-render-circle!
+  "Render a circle element."
+  [renderer state circle]
+  (draw-render/draw-render-circle! renderer
+                                   state
+                                   circle
+                                   draw-render-arrow-segment!))
+
+(defn draw-render-line!
+  "Render a line element."
+  [renderer state line]
+  (draw-render/draw-render-line! renderer
+                                 state
+                                 line
+                                 draw-render-arrow-segment!))
+
 (defn draw-render-element!
   "Render a committed canvas element."
   [renderer state element]
@@ -2342,6 +2494,8 @@
                                     state
                                     element
                                     draw-render-box!
+                                    draw-render-circle!
+                                    draw-render-line!
                                     draw-render-arrow!
                                     draw-render-frame!
                                     draw-render-text!
@@ -2354,6 +2508,22 @@
                                        state
                                        active-box
                                        draw-render-box!))
+
+(defn draw-render-active-circle!
+  "Render the current active circle preview."
+  [renderer state active-circle]
+  (draw-render/draw-render-active-circle! renderer
+                                          state
+                                          active-circle
+                                          draw-render-circle!))
+
+(defn draw-render-active-line!
+  "Render the current active line preview."
+  [renderer state active-line]
+  (draw-render/draw-render-active-line! renderer
+                                        state
+                                        active-line
+                                        draw-render-line!))
 
 (defn draw-render-active-arrow!
   "Render the current active arrow preview."
@@ -2404,83 +2574,16 @@
 
 (defn draw-preview-segment!
   "Render just the newest segment from PREVIOUS to POINT into the preview texture."
-  [state previous point size color]
+  [state previous point size color opacity]
   (draw-canvas/draw-preview-segment! state
                                      previous
                                      point
                                      size
                                      color
+                                     opacity
                                      draw-with-preview!
                                      draw-with-stroke-color
                                      draw-render-stroke-segment!))
-
-(defn draw-preview-batch-render!
-  "Render active stroke points from START-INDEX up to END-INDEX."
-  [renderer state points start-index end-index size]
-  (draw-canvas/draw-preview-batch-render! renderer
-                                          state
-                                          points
-                                          start-index
-                                          end-index
-                                          size
-                                          draw-render-stroke-segment!))
-
-(defn draw-sync-preview!
-  "Render only the missing active-stroke segments into the preview texture."
-  [state]
-  (let [active (get state :active-stroke)]
-    (if (and active (draw-preview-ready?))
-      (let [points (get active :points)
-            total (count points)
-            rendered (if (and (integer? *draw-preview-point-count*)
-                              (>= *draw-preview-point-count* 0)
-                              (<= *draw-preview-point-count* total))
-                       *draw-preview-point-count*
-                       0)]
-        (if (= rendered 0)
-          (begin
-            (draw-clear-preview!)
-            (if (> total 0)
-              (draw-with-preview!
-                (lambda (renderer)
-                  (draw-with-stroke-color (get active :color)
-                    (lambda ()
-                      (draw-render-stroke-point! renderer
-                                                 state
-                                                 (first points)
-                                                 (get active :size))))))
-              nil)
-            (set! *draw-preview-point-count* (if (> total 0) 1 0)))
-          nil)
-        (if (< *draw-preview-point-count* total)
-          (let [end-index (if (> (+ *draw-preview-point-count*
-                                    (draw-preview-segment-budget))
-                                 total)
-                            total
-                            (+ *draw-preview-point-count*
-                               (draw-preview-segment-budget)))
-                batch-count (- end-index *draw-preview-point-count*)]
-            (if (> batch-count 0)
-              (draw-with-preview!
-                (lambda (renderer)
-                  (draw-with-stroke-color (get active :color)
-                    (lambda ()
-                      (draw-preview-batch-render! renderer
-                                                  state
-                                                  points
-                                                  *draw-preview-point-count*
-                                                  end-index
-                                                  (get active :size))))))
-              nil)
-            (set! *draw-preview-point-count* end-index))
-          nil)
-        true)
-      (begin
-        (if (> *draw-preview-point-count* 0)
-          (draw-clear-preview!)
-          nil)
-        (draw-reset-preview-sync!)
-        false))))
 
 (defn draw-render-elements!
   "Render all committed elements plus active previews."
@@ -2490,6 +2593,8 @@
                                      draw-render-element!
                                      draw-render-stroke!
                                      draw-render-active-box!
+                                     draw-render-active-circle!
+                                     draw-render-active-line!
                                      draw-render-active-arrow!
                                      draw-render-active-frame!
                                      draw-render-active-text!
@@ -2505,6 +2610,8 @@
                                    draw-render-elements!
                                    draw-render-stroke!
                                    draw-render-active-box!
+                                   draw-render-active-circle!
+                                   draw-render-active-line!
                                    draw-render-active-arrow!
                                    draw-render-active-frame!
                                    draw-render-active-text!

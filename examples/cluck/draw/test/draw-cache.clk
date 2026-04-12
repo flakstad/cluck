@@ -24,6 +24,11 @@
       (draw-cache-pass label)
       (draw-cache-fail label "falsey value" (pr-str value))))
 
+(define (draw-cache-assert-str= label expected actual)
+  (if (string=? expected actual)
+      (draw-cache-pass label)
+      (draw-cache-fail label expected actual)))
+
 (draw-cache-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 (draw-cache-assert-true "start! opens a context" (start!))
 (draw-cache-assert-true "canvas ready after start!" (draw-canvas-ready?))
@@ -47,4 +52,53 @@
                           (draw-rebuild-canvas! (current-state)))
   (draw-cache-assert-true "canvas stays ready after rebuild"
                           (draw-canvas-ready?)))
+
+(let [blank-state (assoc (default-state)
+                         :tool :picker
+                         :background [24 24 28])
+      stroke-color [255 112 122]
+      stroke-state (draw-sync-elements
+                     (assoc (default-state)
+                            :tool :picker
+                            :background [24 24 28])
+                     [{:kind :ink
+                       :points [[20.0 40.0 1.0]
+                                [120.0 40.0 1.0]]
+                       :color stroke-color
+                       :size 20
+                       :opacity 1.0}])]
+  (set-state! blank-state)
+  (let [blank-picked (draw-simulate-input!
+                       {:kind :mouse-down
+                        :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=120.0 y=120.0"
+                        :mouse-x 120.0
+                        :mouse-y 120.0
+                        :pressure 1.0
+                        :shift? false})]
+    (draw-cache-assert-str= "picker keeps picker tool on blank canvas"
+                            "picker"
+                            (draw-tool-mode blank-picked))
+    (draw-cache-assert-str= "picker samples blank canvas background"
+                            "[24 24 28]"
+                            (pr-str (get blank-picked :brush-color)))
+    (draw-cache-assert-str= "picker keeps recent color history in sync"
+                            "[24 24 28]"
+                            (pr-str (first (get blank-picked :recent-brush-colors)))))
+  (set-state! stroke-state)
+  (let [stroke-picked (draw-simulate-input!
+                        {:kind :mouse-down
+                         :desc "SDL_EVENT_MOUSE_BUTTON_DOWN x=80.0 y=40.0"
+                         :mouse-x 80.0
+                         :mouse-y 40.0
+                         :pressure 1.0
+                         :shift? false})]
+    (draw-cache-assert-str= "picker keeps picker tool on drawn canvas"
+                            "picker"
+                            (draw-tool-mode stroke-picked))
+    (draw-cache-assert-str= "picker samples stroke color from canvas"
+                            (pr-str stroke-color)
+                            (pr-str (get stroke-picked :brush-color)))
+    (draw-cache-assert-str= "picker promotes sampled stroke color to recents"
+                            (pr-str stroke-color)
+                            (pr-str (first (get stroke-picked :recent-brush-colors))))))
 (stop!)

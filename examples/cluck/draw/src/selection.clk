@@ -15,15 +15,25 @@
       (if (< index 0)
         false
         (let [element (nth elements index)]
-          (if (if (draw-state/draw-box-element? element)
-                (draw-geometry/draw-point-in-box? point
-                                                  element
-                                                  (+ (draw-geometry/draw-selection-world-padding state)
-                                                     (or (get element :size) 1.0)))
-                (draw-geometry/draw-point-in-bounds? point
-                                                    (draw-geometry/draw-element-bounds state element)))
-            element
-            (loop (- index 1))))))))
+          (let [padding (+ (draw-geometry/draw-selection-world-padding state)
+                           (or (get element :size) 1.0))
+                hit? (cond
+                       (draw-state/draw-box-element? element)
+                       (draw-geometry/draw-point-in-box? point element padding)
+
+                       (draw-state/draw-circle-element? element)
+                       (draw-geometry/draw-point-in-circle? point element padding)
+
+                       (draw-state/draw-line-element? element)
+                       (draw-geometry/draw-point-near-line? point element padding)
+
+                       :else
+                       (draw-geometry/draw-point-in-bounds?
+                         point
+                         (draw-geometry/draw-element-bounds state element)))]
+            (if hit?
+              element
+              (loop (- index 1)))))))))
 
 (defn draw-selection-ids
   "Return a normalized single-selection vector for ELEMENT."
@@ -179,9 +189,12 @@
       :text
 
       (or (draw-state/draw-box-tool? state)
+          (draw-state/draw-circle-tool? state)
+          (draw-state/draw-line-tool? state)
           (draw-state/draw-arrow-tool? state)
           (draw-state/draw-frame-tool? state)
           (draw-state/draw-text-tool? state)
+          (draw-state/draw-picker-tool? state)
           (draw-state/draw-kind=? (or (get state :tool) :ink) :ink)
           (get state :eraser?))
       :crosshair
@@ -203,5 +216,7 @@
          :active-stroke false
          :active-box false
          :active-arrow false
+         :active-circle false
+         :active-line false
          :active-frame false
          :active-text false))

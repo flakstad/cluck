@@ -6,72 +6,138 @@
             [cluck.examples.draw.view :as draw.view]
             [cluck.examples.draw.geometry :as draw.geometry]))
 
+(defn draw-active-opacity
+  "Return the opacity setting used for new or updated active elements."
+  [state]
+  (draw.state/draw-current-opacity state))
+
 (defn draw-start-box
   "Start a rectangle drag from WORLD-POINT and SCREEN-POINT."
   [state point screen-point]
   (let [state (draw.history/draw-push-history! state)
-        active-box (draw.geometry/draw-box-record point
-                                                  point
-                                                  (draw.history/draw-stroke-color state)
-                                                  (get state :brush-size))]
-    (draw.view/draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :box
-             :active-stroke false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-arrow false
-             :active-frame false
-             :active-text false
-             :active-box active-box)
-      point
+        active-box (assoc (draw.geometry/draw-box-record point
+                                                         point
+                                                         (draw.history/draw-stroke-color state)
+                                                         (get state :brush-size))
+                          :opacity (draw-active-opacity state))]
+  (draw.view/draw-sync-pointer-state
+    (assoc state
+           :pointer-down? true
+           :pointer-source :box
+           :active-stroke false
+           :active-selection-resize false
+           :active-selection-rotate false
+           :active-selection-marquee false
+           :active-arrow false
+           :active-circle false
+           :active-line false
+           :active-frame false
+           :active-text false
+           :active-box active-box)
+    point
       screen-point)))
 
 (defn draw-start-arrow
   "Start an arrow drag from WORLD-POINT and SCREEN-POINT."
   [state point screen-point]
   (let [state (draw.history/draw-push-history! state)
-        active-arrow (draw.geometry/draw-arrow-record point
-                                                      point
-                                                      (draw.history/draw-stroke-color state)
-                                                      (get state :brush-size))]
-    (draw.view/draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :arrow
-             :active-stroke false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-box false
-             :active-frame false
-             :active-text false
-             :active-arrow active-arrow)
-      point
+        active-arrow (assoc (draw.geometry/draw-arrow-record point
+                                                             point
+                                                             (draw.history/draw-stroke-color state)
+                                                             (get state :brush-size))
+                            :opacity (draw-active-opacity state))]
+  (draw.view/draw-sync-pointer-state
+    (assoc state
+           :pointer-down? true
+           :pointer-source :arrow
+           :active-stroke false
+           :active-selection-resize false
+           :active-selection-rotate false
+           :active-selection-marquee false
+           :active-box false
+           :active-circle false
+           :active-line false
+           :active-frame false
+           :active-text false
+           :active-arrow active-arrow)
+    point
       screen-point)))
 
 (defn draw-start-frame
   "Start a legacy frame drag from WORLD-POINT and SCREEN-POINT."
   [state point screen-point]
   (let [state (draw.history/draw-push-history! state)
-        active-frame (draw.geometry/draw-frame-record point
-                                                      point
-                                                      (draw.history/draw-stroke-color state)
-                                                      (get state :brush-size))]
+        active-frame (assoc (draw.geometry/draw-frame-record point
+                                                             point
+                                                             (draw.history/draw-stroke-color state)
+                                                             (get state :brush-size))
+                            :opacity (draw-active-opacity state))]
+  (draw.view/draw-sync-pointer-state
+    (assoc state
+           :pointer-down? true
+           :pointer-source :frame
+           :active-stroke false
+           :active-selection-resize false
+           :active-selection-rotate false
+           :active-selection-marquee false
+           :active-box false
+           :active-arrow false
+           :active-circle false
+           :active-line false
+           :active-text false
+           :active-frame active-frame)
+    point
+    screen-point)))
+
+(defn draw-start-circle
+  "Start a circle drag from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [state (draw.history/draw-push-history! state)
+        active-circle (assoc (draw.geometry/draw-circle-record point
+                                                               point
+                                                               (draw.history/draw-stroke-color state)
+                                                               (get state :brush-size))
+                             :opacity (draw-active-opacity state))]
     (draw.view/draw-sync-pointer-state
       (assoc state
              :pointer-down? true
-             :pointer-source :frame
+             :pointer-source :circle
              :active-stroke false
              :active-selection-resize false
              :active-selection-rotate false
              :active-selection-marquee false
              :active-box false
              :active-arrow false
+             :active-line false
+             :active-frame false
              :active-text false
-             :active-frame active-frame)
+             :active-circle active-circle)
+      point
+      screen-point)))
+
+(defn draw-start-line
+  "Start a line drag from WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [state (draw.history/draw-push-history! state)
+        active-line (assoc (draw.geometry/draw-line-record point
+                                                           point
+                                                           (draw.history/draw-stroke-color state)
+                                                           (get state :brush-size))
+                           :opacity (draw-active-opacity state))]
+    (draw.view/draw-sync-pointer-state
+      (assoc state
+             :pointer-down? true
+             :pointer-source :line
+             :active-stroke false
+             :active-selection-resize false
+             :active-selection-rotate false
+             :active-selection-marquee false
+             :active-box false
+             :active-arrow false
+             :active-circle false
+             :active-frame false
+             :active-text false
+             :active-line active-line)
       point
       screen-point)))
 
@@ -81,22 +147,26 @@
   (let [active-text (draw.geometry/draw-text-record point
                                                     (draw.geometry/draw-text-default-value)
                                                     (draw.history/draw-stroke-color state)
-                                                    (get state :brush-size))]
-    (draw.view/draw-sync-pointer-state
-      (assoc state
-             :pointer-down? true
-             :pointer-source :text
-             :active-selection-drag false
-             :active-selection-resize false
-             :active-selection-rotate false
-             :active-selection-marquee false
-             :active-stroke false
-             :active-box false
-             :active-arrow false
-             :active-frame false
-             :active-text active-text)
-      point
-      screen-point)))
+                                                    (get state :brush-size))
+        active-text (assoc active-text
+                           :opacity (draw-active-opacity state))]
+  (draw.view/draw-sync-pointer-state
+    (assoc state
+           :pointer-down? true
+           :pointer-source :text
+           :active-selection-drag false
+           :active-selection-resize false
+           :active-selection-rotate false
+           :active-selection-marquee false
+           :active-stroke false
+           :active-box false
+           :active-arrow false
+           :active-circle false
+           :active-line false
+           :active-frame false
+           :active-text active-text)
+    point
+    screen-point)))
 
 (defn draw-extend-box
   "Update the active rectangle drag to WORLD-POINT and SCREEN-POINT."
@@ -105,10 +175,11 @@
     (if active-box
       (draw.view/draw-sync-pointer-state
         (assoc state
-               :active-box (draw.geometry/draw-box-record (get active-box :start)
-                                                          point
-                                                          (get active-box :color)
-                                                          (get active-box :size)))
+               :active-box (assoc (draw.geometry/draw-box-record (get active-box :start)
+                                                                 point
+                                                                 (get active-box :color)
+                                                                 (get active-box :size))
+                                  :opacity (draw-active-opacity state)))
         point
         screen-point)
       (draw-start-box state point screen-point))))
@@ -120,13 +191,46 @@
     (if active-arrow
       (draw.view/draw-sync-pointer-state
         (assoc state
-               :active-arrow (draw.geometry/draw-arrow-record (get active-arrow :start)
-                                                              point
-                                                              (get active-arrow :color)
-                                                              (get active-arrow :size)))
+               :active-arrow (assoc (draw.geometry/draw-arrow-record (get active-arrow :start)
+                                                                     point
+                                                                     (get active-arrow :color)
+                                                                     (get active-arrow :size))
+                                    :opacity (get active-arrow :opacity)))
         point
         screen-point)
       (draw-start-arrow state point screen-point))))
+
+(defn draw-extend-circle
+  "Update the active circle drag to WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [active-circle (get state :active-circle)]
+    (if active-circle
+      (draw.view/draw-sync-pointer-state
+        (assoc state
+               :active-circle (assoc (draw.geometry/draw-circle-record (get active-circle :start)
+                                                                        point
+                                                                        (get active-circle :color)
+                                                                        (get active-circle :size))
+                                     :opacity (get active-circle :opacity)))
+        point
+        screen-point)
+      (draw-start-circle state point screen-point))))
+
+(defn draw-extend-line
+  "Update the active line drag to WORLD-POINT and SCREEN-POINT."
+  [state point screen-point]
+  (let [active-line (get state :active-line)]
+    (if active-line
+      (draw.view/draw-sync-pointer-state
+        (assoc state
+               :active-line (assoc (draw.geometry/draw-line-record (get active-line :start)
+                                                                    point
+                                                                    (get active-line :color)
+                                                                    (get active-line :size))
+                                   :opacity (get active-line :opacity)))
+        point
+        screen-point)
+      (draw-start-line state point screen-point))))
 
 (defn draw-extend-frame
   "Update the active legacy frame drag to WORLD-POINT and SCREEN-POINT."
@@ -135,10 +239,11 @@
     (if active-frame
       (draw.view/draw-sync-pointer-state
         (assoc state
-               :active-frame (draw.geometry/draw-frame-record (get active-frame :start)
-                                                              point
-                                                              (get active-frame :color)
-                                                              (get active-frame :size)))
+               :active-frame (assoc (draw.geometry/draw-frame-record (get active-frame :start)
+                                                                      point
+                                                                      (get active-frame :color)
+                                                                      (get active-frame :size))
+                                    :opacity (get active-frame :opacity)))
         point
         screen-point)
       (draw-start-frame state point screen-point))))
@@ -150,10 +255,11 @@
     (if active-text
       (draw.view/draw-sync-pointer-state
         (assoc state
-               :active-text (draw.geometry/draw-text-record point
-                                                            (get active-text :text)
-                                                            (get active-text :color)
-                                                            (get active-text :size)))
+               :active-text (assoc (draw.geometry/draw-text-record point
+                                                                    (get active-text :text)
+                                                                    (get active-text :color)
+                                                                    (get active-text :size))
+                                   :opacity (get active-text :opacity)))
         point
         screen-point)
       (draw-start-text state point screen-point))))
@@ -164,10 +270,11 @@
   (let [active-box (get state :active-box)]
     (if active-box
       (let [box (draw.geometry/draw-box-element
-                  (draw.geometry/draw-box-record (get active-box :start)
-                                                 point
-                                                 (get active-box :color)
-                                                 (get active-box :size)))
+                  (assoc (draw.geometry/draw-box-record (get active-box :start)
+                                                       point
+                                                       (get active-box :color)
+                                                       (get active-box :size))
+                         :opacity (get active-box :opacity)))
             next-state (draw.view/draw-sync-pointer-state
                          (assoc state
                                 :pointer-down? false
@@ -187,15 +294,46 @@
         point
         screen-point))))
 
+(defn draw-finish-circle
+  "Commit the active circle drag when it is large enough."
+  [state point screen-point]
+  (let [active-circle (get state :active-circle)]
+    (if active-circle
+      (let [circle (draw.geometry/draw-circle-element
+                     (assoc (draw.geometry/draw-circle-record (get active-circle :start)
+                                                              point
+                                                              (get active-circle :color)
+                                                              (get active-circle :size))
+                            :opacity (get active-circle :opacity)))
+            next-state (draw.view/draw-sync-pointer-state
+                         (assoc state
+                                :pointer-down? false
+                                :pointer-source false
+                                :active-circle false
+                                :canvas-dirty? true)
+                         point
+                         screen-point)]
+        (if (draw.geometry/draw-circle-visible? circle)
+          (draw.state/draw-append-element next-state circle)
+          next-state))
+      (draw.view/draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-circle false)
+        point
+        screen-point))))
+
 (defn draw-finish-arrow
   "Commit the active arrow drag when it is large enough."
   [state point screen-point]
   (let [active-arrow (get state :active-arrow)]
     (if active-arrow
-      (let [arrow (draw.geometry/draw-arrow-record (get active-arrow :start)
-                                                   point
-                                                   (get active-arrow :color)
-                                                   (get active-arrow :size))
+      (let [arrow (assoc (draw.geometry/draw-arrow-record (get active-arrow :start)
+                                                          point
+                                                          (get active-arrow :color)
+                                                          (get active-arrow :size))
+                         :opacity (get active-arrow :opacity))
             next-state (draw.view/draw-sync-pointer-state
                          (assoc state
                                 :pointer-down? false
@@ -216,16 +354,47 @@
         point
         screen-point))))
 
+(defn draw-finish-line
+  "Commit the active line drag when it is large enough."
+  [state point screen-point]
+  (let [active-line (get state :active-line)]
+    (if active-line
+      (let [line (draw.geometry/draw-line-element
+                   (assoc (draw.geometry/draw-line-record (get active-line :start)
+                                                          point
+                                                          (get active-line :color)
+                                                          (get active-line :size))
+                          :opacity (get active-line :opacity)))
+            next-state (draw.view/draw-sync-pointer-state
+                         (assoc state
+                                :pointer-down? false
+                                :pointer-source false
+                                :active-line false
+                                :canvas-dirty? true)
+                         point
+                         screen-point)]
+        (if (draw.geometry/draw-line-visible? line)
+          (draw.state/draw-append-element next-state line)
+          next-state))
+      (draw.view/draw-sync-pointer-state
+        (assoc state
+               :pointer-down? false
+               :pointer-source false
+               :active-line false)
+        point
+        screen-point))))
+
 (defn draw-finish-frame
   "Commit the active legacy frame drag when it is large enough."
   [state point screen-point]
   (let [active-frame (get state :active-frame)]
     (if active-frame
       (let [frame (draw.geometry/draw-frame-element
-                    (draw.geometry/draw-frame-record (get active-frame :start)
-                                                     point
-                                                     (get active-frame :color)
-                                                     (get active-frame :size)))
+                    (assoc (draw.geometry/draw-frame-record (get active-frame :start)
+                                                            point
+                                                            (get active-frame :color)
+                                                            (get active-frame :size))
+                           :opacity (get active-frame :opacity)))
             next-state (draw.view/draw-sync-pointer-state
                          (assoc state
                                 :pointer-down? false
@@ -251,10 +420,11 @@
   (let [active-text (get state :active-text)]
     (if active-text
       (let [text-element (draw.geometry/draw-text-element
-                           (draw.geometry/draw-text-record point
-                                                           (get active-text :text)
-                                                           (get active-text :color)
-                                                           (get active-text :size)))
+                           (assoc (draw.geometry/draw-text-record point
+                                                                  (get active-text :text)
+                                                                  (get active-text :color)
+                                                                  (get active-text :size))
+                                  :opacity (get active-text :opacity)))
             next-state (draw.view/draw-sync-pointer-state
                          (assoc state
                                 :pointer-down? false

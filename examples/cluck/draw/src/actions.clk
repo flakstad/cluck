@@ -1,6 +1,7 @@
 ;; Draw tool action helpers.
 
-(ns cluck.examples.draw.actions)
+(ns cluck.examples.draw.actions
+  (:require [cluck.examples.draw.state :as draw.state]))
 
 (defn draw-set-brush-size-core!
   "Set the brush size and return to brush mode, recording undo history."
@@ -25,7 +26,8 @@
       (let [state (push-history! state)
             next-state (assoc state
                               :brush-color color
-                              :eraser? false)]
+                              :eraser? false)
+            next-state (draw.state/draw-remember-brush-color next-state color)]
         (log-entry! :brush-color
                     {:color color
                      :state (state-snapshot next-state)})
@@ -56,6 +58,41 @@
                    :state (state-snapshot next-state)})
       next-state)))
 
+(defn draw-set-opacity-core!
+  "Set the current opacity or apply it to the active selection."
+  [state opacity push-history! sync-elements state-snapshot log-entry!]
+  (let [opacity (draw.state/draw-normalize-opacity opacity)
+        selection (or (get state :selection) [])
+        selected-elements (draw.state/draw-selected-elements state)
+        state-opacity (draw.state/draw-normalize-opacity (get state :opacity))
+        selected-different? (reduce (fn [changed? element]
+                                      (if changed?
+                                        true
+                                        (not (= (draw.state/draw-element-opacity element)
+                                                opacity))))
+                                    false
+                                    selected-elements)
+        state-different? (not (= state-opacity opacity))]
+    (if (not (or state-different? selected-different?))
+      state
+      (let [state (push-history! state)
+            next-state (if selected-different?
+                         (sync-elements
+                           (assoc state
+                                  :opacity opacity
+                                  :canvas-dirty? true)
+                           (draw.state/draw-set-selected-elements-opacity
+                             (get state :elements)
+                             selection
+                             opacity))
+                         (assoc state
+                                :opacity opacity))]
+        (log-entry! :opacity
+                    {:opacity opacity
+                     :selection (count selection)
+                     :state (state-snapshot next-state)})
+        next-state))))
+
 (defn draw-clear-strokes-core!
   "Clear all finished and active strokes from STATE and record undo history."
   [state push-history! clear-preview! sync-elements state-snapshot log-entry!]
@@ -70,6 +107,8 @@
                               :active-stroke false
                               :active-box false
                               :active-arrow false
+                              :active-circle false
+                              :active-line false
                               :active-frame false
                               :active-text false
                               :pointer-down? false

@@ -27,7 +27,7 @@
   [point base-size]
   (let [pressure (draw-normalize-pressure (draw-point-pressure point))
         scaled (draw-exact-int (math/ceiling (* base-size
-                                                (+ 0.5 (* 1.5 pressure)))))]
+                                                (+ 0.25 (* 0.75 pressure)))))]
     (if (> scaled 0)
       scaled
       1)))
@@ -43,17 +43,17 @@
 (defn draw-world-bound
   "Return the viewport world bound used for navigation clamping."
   []
-  1000000000.0)
+  1000000000000.0)
 
 (defn draw-min-zoom
   "Return the minimum supported zoom level."
   []
-  0.0005)
+  0.000001)
 
 (defn draw-max-zoom
   "Return the maximum supported zoom level."
   []
-  2048.0)
+  1000000.0)
 
 (defn draw-zoom-factor
   "Return the zoom multiplier used by keyboard shortcuts."
@@ -136,17 +136,32 @@
         vy (draw-view-y state)
         ax (draw-view-anchor-x state)
         ay (draw-view-anchor-y state)]
-    [(draw-exact-int (math/round (+ (* (- (nth point 0) vx) zoom)
+     [(draw-exact-int (math/round (+ (* (- (nth point 0) vx) zoom)
                                      ax)))
      (draw-exact-int (math/round (+ (* (- (nth point 1) vy) zoom)
                                      ay)))
      (draw-point-pressure point)]))
 
+(defn draw-world-point->screen-fpoint
+  "Convert a world POINT into screen coordinates without rounding."
+  [state point]
+  (let [zoom (draw-view-zoom state)
+        vx (draw-view-x state)
+        vy (draw-view-y state)
+        ax (draw-view-anchor-x state)
+        ay (draw-view-anchor-y state)]
+    [(+ (* (- (nth point 0) vx) zoom)
+        ax)
+     (+ (* (- (nth point 1) vy) zoom)
+        ay)
+     (draw-point-pressure point)]))
+
 (defn draw-point-screen-size
-  "Scale BASE-SIZE by POINT pressure in screen space."
+  "Scale BASE-SIZE into screen space using the current zoom."
   [state point base-size]
-  (let [scaled (draw-exact-int (math/ceiling (* base-size
-                                                 (draw-point-pressure point))))]
+  (let [zoom (draw-view-zoom state)
+        scaled (draw-exact-int (math/ceiling (/ (draw-point-size point base-size)
+                                                 zoom)))]
     (if (> scaled 0)
       scaled
       1)))

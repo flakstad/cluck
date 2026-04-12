@@ -1,7 +1,8 @@
 ;; Pure draw state and model helpers.
 
 (ns cluck.examples.draw.state
-  (:require [cluck.fs :as fs]))
+  (:require [cluck.edn :as edn]
+            [cluck.fs :as fs]))
 
 (defn draw-window-title
   "Return the static window title for the draw app."
@@ -22,7 +23,9 @@
    :file-path (draw-document-file-path)
    :background [24 24 28]
    :brush-color [245 245 245]
+   :recent-brush-colors [[245 245 245]]
    :brush-size 2
+   :opacity 1.0
    :pen-pressure 1.0
    :window-focused? true
    :view-x 0.0
@@ -60,6 +63,8 @@
    :active-stroke false
    :active-box false
    :active-arrow false
+   :active-circle false
+   :active-line false
    :active-frame false
    :active-text false
    :last-key ""
@@ -82,17 +87,34 @@
 (defn draw-tool-mode
   "Return the current tool mode label."
   [state]
-  (if (get state :eraser?)
-    "eraser"
-    (if (draw-kind=? (or (get state :tool) :ink) :box)
+  (let [tool (or (get state :tool) :ink)]
+    (cond
+      (get state :eraser?)
+      "eraser"
+
+      (draw-kind=? tool :box)
       "rectangle"
-      (if (draw-kind=? (or (get state :tool) :ink) :arrow)
-        "arrow"
-        (if (draw-kind=? (or (get state :tool) :ink) :text)
-          "text"
-          (if (draw-kind=? (or (get state :tool) :ink) :select)
-            "select"
-            "ink"))))))
+
+      (draw-kind=? tool :circle)
+      "circle"
+
+      (draw-kind=? tool :picker)
+      "picker"
+
+      (draw-kind=? tool :line)
+      "line"
+
+      (draw-kind=? tool :arrow)
+      "arrow"
+
+      (draw-kind=? tool :text)
+      "text"
+
+      (draw-kind=? tool :select)
+      "select"
+
+      :else
+      "ink")))
 
 (defn draw-state-snapshot
   "Return a compact diagnostic snapshot for STATE."
@@ -109,6 +131,7 @@
      :view-anchor-y (or (get state :view-anchor-y) 0.0)
      :zoom (or (get state :zoom) 1.0)
      :pressure (or (get state :pen-pressure) 1.0)
+     :opacity (or (get state :opacity) 1.0)
      :pointer-down? (get state :pointer-down?)
      :panning? (get state :panning?)
      :space-down? (get state :space-down?)
@@ -126,6 +149,8 @@
                       0)
      :active-box? (if (get state :active-box) true false)
      :active-arrow? (if (get state :active-arrow) true false)
+     :active-circle? (if (get state :active-circle) true false)
+     :active-line? (if (get state :active-line) true false)
      :active-frame? (if (get state :active-frame) true false)
      :active-text? (if (get state :active-text) true false)
      :history (count (get state :history))
@@ -167,6 +192,71 @@
     (dissoc state :status-note :status-note-frame :file-path)
     state))
 
+(defn draw-normalize-opacity
+  "Clamp OPACITY into the supported range."
+  [opacity]
+  (let [opacity (or opacity 1.0)]
+    (cond
+      (< opacity 0.0)
+      0.0
+
+      (> opacity 1.0)
+      1.0
+
+      :else
+      opacity)))
+
+(defn draw-recent-brush-color-limit
+  "Return the maximum number of recently used brush colors to keep."
+  []
+  4)
+
+(defn draw-normalize-recent-brush-colors
+  "Return COLORS normalized into a bounded most-recent-first palette."
+  [colors fallback-color]
+  (let [fallback-color (edn/read-string (pr-str (or fallback-color [245 245 245])))
+        colors (or colors [])
+        limit (draw-recent-brush-color-limit)
+        total (count colors)]
+    (if (empty? colors)
+      [fallback-color]
+      (let loop ((index 0)
+                 (result []))
+        (if (or (>= index total)
+                (>= (count result) limit))
+          result
+          (let [color (nth colors index)]
+            (loop (+ index 1)
+                  (conj result (edn/read-string (pr-str color))))))))))
+
+(defn draw-recent-brush-colors
+  "Return the active recent brush color list for STATE."
+  [state]
+  (draw-normalize-recent-brush-colors (get state :recent-brush-colors)
+                                      (get state :brush-color)))
+
+(defn draw-remember-brush-color
+  "Return STATE with COLOR moved to the front of the recent brush list."
+  [state color]
+  (let [color (edn/read-string (pr-str color))
+        colors (draw-normalize-recent-brush-colors
+                 (get state :recent-brush-colors)
+                 (get state :brush-color))
+        total (count colors)
+        limit (draw-recent-brush-color-limit)]
+    (assoc state
+           :recent-brush-colors
+           (let loop ((index 0)
+                      (result [color]))
+             (if (or (>= index total)
+                     (>= (count result) limit))
+               result
+               (let [existing (nth colors index)]
+                 (if (equal? existing color)
+                   (loop (+ index 1) result)
+                   (loop (+ index 1)
+                         (conj result (edn/read-string (pr-str existing)))))))))))
+
 (defn draw-element-kind
   "Return the normalized kind keyword for ELEMENT."
   [element]
@@ -190,6 +280,16 @@
   [element]
   (draw-kind=? (draw-element-kind element) :arrow))
 
+(defn draw-circle-element?
+  "Return true when ELEMENT is a circle."
+  [element]
+  (draw-kind=? (draw-element-kind element) :circle))
+
+(defn draw-line-element?
+  "Return true when ELEMENT is a line."
+  [element]
+  (draw-kind=? (draw-element-kind element) :line))
+
 (defn draw-frame-element?
   "Return true when ELEMENT is a frame."
   [element]
@@ -207,7 +307,8 @@
    :kind :ink
    :points (vec (get element :points))
    :color (get element :color)
-   :size (get element :size)})
+   :size (get element :size)
+   :opacity (draw-normalize-opacity (get element :opacity))})
 
 (defn draw-normalize-box-element
   "Return ELEMENT in canonical box-element form."
@@ -220,7 +321,8 @@
    :height (or (get element :height) 0.0)
    :rotation (or (get element :rotation) 0.0)
    :color (get element :color)
-   :size (or (get element :size) 1)})
+   :size (or (get element :size) 1)
+   :opacity (draw-normalize-opacity (get element :opacity))})
 
 (defn draw-normalize-arrow-point
   "Return POINT in canonical [x y pressure] form."
@@ -245,7 +347,40 @@
                (or (get element :y2) 0.0)
                1.0]))
    :color (get element :color)
+   :size (or (get element :size) 1)
+   :opacity (draw-normalize-opacity (get element :opacity))})
+
+(defn draw-normalize-circle-element
+  "Return ELEMENT in canonical circle-element form."
+  [element]
+  {:id (get element :id)
+   :kind :circle
+   :x (or (get element :x) 0.0)
+   :y (or (get element :y) 0.0)
+   :width (or (get element :width) 0.0)
+   :height (or (get element :height) 0.0)
+   :rotation 0.0
+   :color (get element :color)
    :size (or (get element :size) 1)})
+
+(defn draw-normalize-line-element
+  "Return ELEMENT in canonical line-element form."
+  [element]
+  {:id (get element :id)
+   :kind :line
+   :start (draw-normalize-arrow-point
+            (or (get element :start)
+                [(or (get element :x1) 0.0)
+                 (or (get element :y1) 0.0)
+                 1.0]))
+   :end (draw-normalize-arrow-point
+          (or (get element :end)
+              [(or (get element :x2) 0.0)
+               (or (get element :y2) 0.0)
+               1.0]))
+   :color (get element :color)
+   :size (or (get element :size) 1)
+   :opacity (draw-normalize-opacity (get element :opacity))})
 
 (defn draw-normalize-frame-element
   "Upgrade a legacy frame ELEMENT into canonical rectangle form."
@@ -258,7 +393,8 @@
    :height (or (get element :height) 0.0)
    :rotation 0.0
    :color (get element :color)
-   :size (or (get element :size) 1)})
+   :size (or (get element :size) 1)
+   :opacity (draw-normalize-opacity (get element :opacity))})
 
 (defn draw-normalize-text-element
   "Return ELEMENT in canonical text-element form."
@@ -269,33 +405,47 @@
    :y (or (get element :y) 0.0)
    :text (or (get element :text) "Text")
    :color (get element :color)
-   :size (or (get element :size) 1)})
+   :size (or (get element :size) 1)
+   :opacity (draw-normalize-opacity (get element :opacity))})
 
 (defn draw-normalize-element
   "Return ELEMENT in canonical element form."
   [element]
-  (if (draw-box-element? element)
+  (cond
+    (draw-box-element? element)
     (draw-normalize-box-element element)
-    (if (draw-arrow-element? element)
-      (draw-normalize-arrow-element element)
-      (if (draw-frame-element? element)
-        (draw-normalize-frame-element element)
-        (if (draw-text-element? element)
-          (draw-normalize-text-element element)
-          (draw-normalize-ink-element element))))))
+
+    (draw-circle-element? element)
+    (draw-normalize-circle-element element)
+
+    (draw-line-element? element)
+    (draw-normalize-line-element element)
+
+    (draw-arrow-element? element)
+    (draw-normalize-arrow-element element)
+
+    (draw-frame-element? element)
+    (draw-normalize-frame-element element)
+
+    (draw-text-element? element)
+    (draw-normalize-text-element element)
+
+    :else
+    (draw-normalize-ink-element element)))
 
 (defn draw-legacy-strokes->elements
   "Upgrade legacy stroke maps into ink elements."
   [strokes]
   (let [next-id 1]
-    (reduce (lambda (result stroke)
+  (reduce (lambda (result stroke)
               (let [id (count result)]
                 (conj result
                       {:id (+ id next-id)
                        :kind :ink
                        :points (vec (get stroke :points))
                        :color (get stroke :color)
-                       :size (get stroke :size)})))
+                       :size (get stroke :size)
+                       :opacity (draw-normalize-opacity (get stroke :opacity))})))
             []
             strokes)))
 
@@ -307,7 +457,8 @@
               (conj strokes
                     {:points (vec (get element :points))
                      :color (get element :color)
-                     :size (get element :size)})
+                     :size (get element :size)
+                     :opacity (draw-element-opacity element)})
               strokes))
           []
           elements))
@@ -332,9 +483,47 @@
 (defn draw-selected?
   "Return true when ELEMENT is selected in STATE."
   [state element]
-  (draw-selection-has-id?
-    (draw-selected-element-ids state)
-    (get element :id)))
+    (draw-selection-has-id?
+      (draw-selected-element-ids state)
+      (get element :id)))
+
+(defn draw-element-opacity
+  "Return the normalized opacity for ELEMENT."
+  [element]
+  (draw-normalize-opacity (get element :opacity)))
+
+(defn draw-current-opacity
+  "Return the active opacity for STATE, preferring a uniform selection value."
+  [state]
+  (let [elements (draw-selected-elements state)]
+    (if (empty? elements)
+      (draw-normalize-opacity (get state :opacity))
+      (let [first-opacity (draw-element-opacity (first elements))
+            all-same? (reduce (fn [same? element]
+                                (if same?
+                                  (= (draw-element-opacity element) first-opacity)
+                                  false))
+                              true
+                              (rest elements))]
+        (if all-same?
+          first-opacity
+          (draw-normalize-opacity (get state :opacity)))))))
+
+(defn draw-set-element-opacity
+  "Return ELEMENT with OPACITY applied."
+  [element opacity]
+  (assoc element :opacity (draw-normalize-opacity opacity)))
+
+(defn draw-set-selected-elements-opacity
+  "Return ELEMENTS with OPACITY applied to the selected ids."
+  [elements selection opacity]
+  (let [opacity (draw-normalize-opacity opacity)]
+    (vec
+      (map (fn [element]
+             (if (draw-selection-has-id? selection (get element :id))
+               (draw-set-element-opacity element opacity)
+               element))
+           elements))))
 
 (defn draw-selected-elements
   "Return the selected elements from STATE in canvas order."
@@ -429,6 +618,12 @@
         state (if (contains? state :active-selection-marquee)
                 state
                 (assoc state :active-selection-marquee false))
+        state (if (contains? state :active-circle)
+                state
+                (assoc state :active-circle false))
+        state (if (contains? state :active-line)
+                state
+                (assoc state :active-line false))
         state (if (contains? state :view-anchor-x)
                 state
                 (assoc state :view-anchor-x 0.0))
@@ -441,6 +636,14 @@
         state (if (contains? state :status-note)
                 state
                 (assoc state :status-note "" :status-note-frame 0))
+        state (if (contains? state :opacity)
+                state
+                (assoc state :opacity 1.0))
+        state (assoc state
+                     :recent-brush-colors
+                     (draw-normalize-recent-brush-colors
+                       (get state :recent-brush-colors)
+                       (get state :brush-color)))
         state (if (contains? state :file-path)
                 state
                 (assoc state :file-path (draw-document-file-path)))]
@@ -478,6 +681,21 @@
   "Return true when STATE is currently in box mode."
   [state]
   (draw-kind=? (or (get state :tool) :ink) :box))
+
+(defn draw-circle-tool?
+  "Return true when STATE is currently in circle mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :circle))
+
+(defn draw-picker-tool?
+  "Return true when STATE is currently in picker mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :picker))
+
+(defn draw-line-tool?
+  "Return true when STATE is currently in line mode."
+  [state]
+  (draw-kind=? (or (get state :tool) :ink) :line))
 
 (defn draw-arrow-tool?
   "Return true when STATE is currently in arrow mode."

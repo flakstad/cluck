@@ -26,6 +26,8 @@
                :active-selection-marquee false
                :active-box false
                :active-arrow false
+               :active-circle false
+               :active-line false
                :active-frame false
                :active-text false
                :active-selection-drag {:ids ids
@@ -48,6 +50,8 @@
                :active-selection-rotate false
                :active-box false
                :active-arrow false
+               :active-circle false
+               :active-line false
                :active-frame false
                :active-text false
                :active-selection-marquee {:anchor point
@@ -108,6 +112,8 @@
                  :pointer-source pointer-source
                  :active-selection-drag false
                  :active-selection-resize false
+                 :active-circle false
+                 :active-line false
                  :active-selection-rotate {:id (get box :id)
                                            :anchor-angle angle
                                            :original-rotation (draw.geometry/draw-box-rotation box)
@@ -123,13 +129,17 @@
   [state point screen-point pointer-source handle]
   (let [element (draw.selection/draw-single-selected-element state)]
     (if (or (draw.selection/draw-single-selected-rectangle state)
-            (draw.selection/draw-single-selected-arrow state))
+            (draw.state/draw-circle-element? element)
+            (draw.state/draw-arrow-element? element)
+            (draw.state/draw-line-element? element))
       (draw.view/draw-sync-pointer-state
         (assoc state
                :pointer-down? true
                :pointer-source pointer-source
                :active-selection-drag false
                :active-selection-rotate false
+               :active-circle false
+               :active-line false
                :active-selection-resize {:id (get element :id)
                                          :element-kind (get element :kind)
                                          :handle handle
@@ -193,7 +203,8 @@
             original-element (draw.geometry/draw-find-element-by-id original-elements element-id)
             element-kind (or (get resize :element-kind)
                              (if original-element (get original-element :kind) false))]
-        (if (and original-element (draw.state/draw-kind=? element-kind :box))
+        (cond
+          (and original-element (draw.state/draw-kind=? element-kind :box))
           (let [fixed (draw.geometry/draw-rectangle-opposite-corner original-element (get resize :handle))
                 moved? (or (get resize :moved?)
                            (not (= (nth point 0) (nth fixed 0)))
@@ -219,34 +230,86 @@
                              point
                              screen-point)]
             next-state)
-          (if (and original-element (draw.state/draw-kind=? element-kind :arrow))
-            (let [handle (get resize :handle)
-                  original-point (get original-element handle)
-                  moved? (or (get resize :moved?)
-                             (not (and (= (nth point 0) (nth original-point 0))
-                                       (= (nth point 1) (nth original-point 1))
-                                       (= (nth point 2) (nth original-point 2)))))
-                  state (if (and moved?
-                                 (not (get resize :moved?)))
-                          (draw.history/draw-push-history! state)
-                          state)
-                  next-arrow (assoc original-element handle point)
-                  next-elements (draw.geometry/draw-replace-element-by-id original-elements
-                                                                          element-id
-                                                                          next-arrow)
-                  next-state (draw.view/draw-sync-pointer-state
-                               (draw.state/draw-sync-elements
-                                 (assoc state
-                                        :active-selection-resize (assoc resize :moved? moved?)
-                                        :canvas-dirty? moved?)
-                                 next-elements)
-                               point
-                               screen-point)]
-              next-state)
-            (draw.view/draw-sync-pointer-state
-              (assoc state :active-selection-resize false)
-              point
-              screen-point))))
+
+          (and original-element (draw.state/draw-kind=? element-kind :circle))
+          (let [fixed (draw.geometry/draw-rectangle-opposite-corner original-element (get resize :handle))
+                moved? (or (get resize :moved?)
+                           (not (= (nth point 0) (nth fixed 0)))
+                           (not (= (nth point 1) (nth fixed 1))))
+                state (if (and moved?
+                               (not (get resize :moved?)))
+                        (draw.history/draw-push-history! state)
+                        state)
+                next-circle (draw.geometry/draw-circle-with-rect original-element
+                                                                 (draw.geometry/draw-circle-rect fixed point))
+                next-elements (draw.geometry/draw-replace-element-by-id original-elements
+                                                                        element-id
+                                                                        next-circle)
+                next-state (draw.view/draw-sync-pointer-state
+                             (draw.state/draw-sync-elements
+                               (assoc state
+                                      :active-selection-resize (assoc resize :moved? moved?)
+                                      :canvas-dirty? moved?)
+                               next-elements)
+                             point
+                             screen-point)]
+            next-state)
+
+          (and original-element (draw.state/draw-kind=? element-kind :arrow))
+          (let [handle (get resize :handle)
+                original-point (get original-element handle)
+                moved? (or (get resize :moved?)
+                           (not (and (= (nth point 0) (nth original-point 0))
+                                     (= (nth point 1) (nth original-point 1))
+                                     (= (nth point 2) (nth original-point 2)))))
+                state (if (and moved?
+                               (not (get resize :moved?)))
+                        (draw.history/draw-push-history! state)
+                        state)
+                next-arrow (assoc original-element handle point)
+                next-elements (draw.geometry/draw-replace-element-by-id original-elements
+                                                                        element-id
+                                                                        next-arrow)
+                next-state (draw.view/draw-sync-pointer-state
+                             (draw.state/draw-sync-elements
+                               (assoc state
+                                      :active-selection-resize (assoc resize :moved? moved?)
+                                      :canvas-dirty? moved?)
+                               next-elements)
+                             point
+                             screen-point)]
+            next-state)
+
+          (and original-element (draw.state/draw-kind=? element-kind :line))
+          (let [handle (get resize :handle)
+                original-point (get original-element handle)
+                moved? (or (get resize :moved?)
+                           (not (and (= (nth point 0) (nth original-point 0))
+                                     (= (nth point 1) (nth original-point 1))
+                                     (= (nth point 2) (nth original-point 2)))))
+                state (if (and moved?
+                               (not (get resize :moved?)))
+                        (draw.history/draw-push-history! state)
+                        state)
+                next-line (assoc original-element handle point)
+                next-elements (draw.geometry/draw-replace-element-by-id original-elements
+                                                                        element-id
+                                                                        next-line)
+                next-state (draw.view/draw-sync-pointer-state
+                             (draw.state/draw-sync-elements
+                               (assoc state
+                                      :active-selection-resize (assoc resize :moved? moved?)
+                                      :canvas-dirty? moved?)
+                               next-elements)
+                             point
+                             screen-point)]
+            next-state)
+
+          :else
+          (draw.view/draw-sync-pointer-state
+            (assoc state :active-selection-resize false)
+            point
+            screen-point)))
       (draw.view/draw-sync-pointer-state state point screen-point))))
 
 (defn draw-extend-selection-rotate

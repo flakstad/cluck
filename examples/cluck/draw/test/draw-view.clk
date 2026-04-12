@@ -32,11 +32,11 @@
 (draw-view-assert-true "draw namespace exists" (find-ns 'cluck.examples.draw))
 
 (draw-view-assert-true "world bound is very large"
-                       (> (draw-world-bound) 100000000.0))
+                       (> (draw-world-bound) 100000000000.0))
 (draw-view-assert-true "min zoom supports deep zoom out"
-                       (< (draw-min-zoom) 0.001))
+                       (< (draw-min-zoom) 0.00001))
 (draw-view-assert-true "max zoom supports deep zoom in"
-                       (> (draw-max-zoom) 1000.0))
+                       (> (draw-max-zoom) 100000.0))
 
 (draw-view-assert-str= "screen point converts to world at default zoom"
                        "[12.0 34.0 1.0]"
@@ -50,13 +50,24 @@
   (draw-view-assert-str= "world point converts to screen with viewport"
                          "[10 12 1.0]"
                          (pr-str (draw-world-point->screen-point state [15 26 1.0])))
-  (draw-view-assert-num= "screen brush size stays constant across zoom"
-                         4
-                         (draw-point-screen-size state [15 26 1.0] 4))
+  (draw-view-assert-str= "world point keeps subpixel screen precision"
+                         "[10.5 13.0 1.0]"
+                         (pr-str (draw-world-point->screen-fpoint state [15.25 26.5 1.0])))
   (draw-view-assert-str= "event point uses viewport transform"
                          "[17.0 32.0 1.0]"
                          (pr-str (draw-event-point state
                                                   "SDL_EVENT_MOUSE_MOTION x=14.0 y=24.0"))))
+
+(let [zoomed-out (assoc (default-state)
+                        :zoom 0.5)
+      zoomed-in (assoc (default-state)
+                       :zoom 2.0)]
+  (draw-view-assert-num= "screen brush size grows when zoomed out"
+                         8
+                         (draw-point-screen-size zoomed-out [15 26 1.0] 4))
+  (draw-view-assert-num= "screen brush size shrinks when zoomed in"
+                         2
+                         (draw-point-screen-size zoomed-in [15 26 1.0] 4)))
 
 (let [state (assoc (default-state)
                    :view-x 100.0

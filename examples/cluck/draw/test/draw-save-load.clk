@@ -36,12 +36,16 @@
 
 (let [path (fs/path (fs/temp-dir) "cluck-draw-save-load.edn")
       original (draw-sync-elements
-                 (assoc (default-state)
-                        :title "Saved Draw"
-                        :brush-size 7
-                        :tool :box
-                        :status-note "saved note"
-                        :status-note-frame 42
+        (assoc (default-state)
+               :title "Saved Draw"
+               :brush-size 7
+               :opacity 0.75
+               :recent-brush-colors [[103 169 255]
+                                     [255 112 122]
+                                     [245 245 245]]
+               :tool :box
+               :status-note "saved note"
+               :status-note-frame 42
                         :history [(draw-history-snapshot
                                     (draw-sync-elements
                                       (assoc (default-state)
@@ -55,33 +59,53 @@
                  [{:kind :ink
                    :points [[10 10 1.0] [20 20 0.5]]
                    :color [1 2 3]
-                   :size 4}
-                  {:kind :box
+                   :size 4
+                   :opacity 0.5}
+                 {:kind :box
                    :x 30.0
                    :y 40.0
                    :width 50.0
                    :height 60.0
                    :rotation 0.5
                    :color [4 5 6]
-                   :size 3}
-                  {:kind :arrow
-                   :start [90.0 100.0 1.0]
-                   :end [120.0 140.0 1.0]
+                   :size 3
+                   :opacity 0.25}
+                 {:kind :circle
+                   :x 90.0
+                   :y 100.0
+                   :width 20.0
+                   :height 30.0
+                   :rotation 0.0
                    :color [7 8 9]
-                   :size 2}
-                  {:kind :frame
-                   :x 150.0
-                   :y 160.0
-                   :width 70.0
-                   :height 80.0
+                   :size 2
+                   :opacity 1.0}
+                 {:kind :line
+                   :start [120.0 130.0 1.0]
+                   :end [150.0 170.0 1.0]
                    :color [10 11 12]
-                   :size 3}
-                  {:kind :text
+                   :size 3
+                   :opacity 0.6}
+                 {:kind :arrow
+                   :start [180.0 190.0 1.0]
+                   :end [210.0 230.0 1.0]
+                   :color [13 14 15]
+                   :size 2
+                   :opacity 0.8}
+                 {:kind :frame
                    :x 240.0
                    :y 260.0
+                   :width 70.0
+                   :height 80.0
+                   :color [16 17 18]
+                   :size 3
+                   :opacity 0.9}
+                 {:kind :text
+                   :x 320.0
+                   :y 340.0
                    :text "Text"
-                   :color [13 14 15]
-                   :size 2}])]
+                   :color [19 20 21]
+                   :size 2
+                   :opacity 0.3}])]
   (dynamic-wind
     (lambda ()
       (set-state! original)
@@ -111,15 +135,36 @@
       (draw-save-load-assert-num= "load restored brush size"
                                   7
                                   (get (current-state) :brush-size))
+      (draw-save-load-assert-str= "load restored recent brush colors"
+                                  "[103 169 255]"
+                                  (pr-str (first (get (current-state) :recent-brush-colors))))
+      (draw-save-load-assert-num= "load restored opacity"
+                                  0.75
+                                  (get (current-state) :opacity))
       (draw-save-load-assert-str= "load restored tool"
                                   ":box"
                                   (pr-str (get (current-state) :tool)))
       (draw-save-load-assert-num= "load restored element count"
-                                  5
+                                  7
                                   (count (get (current-state) :elements)))
       (draw-save-load-assert-num= "load restored rectangle rotation"
                                   0.5
                                   (get (nth (get (current-state) :elements) 1) :rotation))
+      (draw-save-load-assert-num= "load restored box opacity"
+                                  0.25
+                                  (get (nth (get (current-state) :elements) 1) :opacity))
+      (draw-save-load-assert-str= "load restored circle kind"
+                                  ":circle"
+                                  (pr-str (get (nth (get (current-state) :elements) 2) :kind)))
+      (draw-save-load-assert-str= "load restored line kind"
+                                  ":line"
+                                  (pr-str (get (nth (get (current-state) :elements) 3) :kind)))
+      (draw-save-load-assert-str= "load restored line start"
+                                  "[120.0 130.0 1.0]"
+                                  (pr-str (get (nth (get (current-state) :elements) 3) :start)))
+      (draw-save-load-assert-num= "load restored line opacity"
+                                  0.6
+                                  (get (nth (get (current-state) :elements) 3) :opacity))
       (draw-save-load-assert-num= "load restored stroke count"
                                   1
                                   (count (get (current-state) :strokes)))
