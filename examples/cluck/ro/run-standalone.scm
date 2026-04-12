@@ -48,6 +48,12 @@
 (include "examples/cluck/ro/core/projects.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.projects #t)
 
+(include "examples/cluck/ro/core/worklog.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.worklog #t)
+
+(include "examples/cluck/ro/core/outlines.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.outlines #t)
+
 (include "examples/cluck/ro/core/items.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.items #t)
 

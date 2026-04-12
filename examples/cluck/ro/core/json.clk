@@ -21,12 +21,12 @@
 
 (defn json-find-entry
   [entries key]
-  (let ((items (if (vector? entries)
-                   (vector->list entries)
-                   (if (or (not entries)
-                           (null? entries))
-                       '()
-                       (seq entries)))))
+  (let [items (if (vector? entries)
+                (vector->list entries)
+                (if (or (not entries)
+                        (null? entries))
+                    '()
+                    (seq entries)))]
     (if (empty? items)
         false
         (let loop ((xs items))
@@ -37,7 +37,7 @@
 
 (defn json-field-value
   [entries key default]
-  (let ((entry (json-find-entry entries key)))
+  (let [entry (json-find-entry entries key)]
     (if entry
         (cdr entry)
         default)))
@@ -47,7 +47,7 @@
   (if (or (not keys)
           (null? keys))
       default
-      (let ((entry (json-find-entry entries (car keys))))
+      (let [entry (json-find-entry entries (car keys))]
         (if entry
             (cdr entry)
             (json-first-field-value entries (cdr keys) default)))))

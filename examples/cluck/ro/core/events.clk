@@ -4,6 +4,9 @@
   (:require [cluck.io :as io]
             [json :as json]))
 
+(def json-output
+  (ns-resolve 'cluck.examples.ro.core.json 'json-output))
+
 (defn json-key->text
   [key]
   (cond
@@ -14,12 +17,12 @@
 
 (defn json-find-entry
   [entries key]
-  (let ((items (if (vector? entries)
-                   (vector->list entries)
-                   (if (or (not entries)
-                           (null? entries))
-                       '()
-                       (seq entries)))))
+  (let [items (if (vector? entries)
+                (vector->list entries)
+                (if (or (not entries)
+                        (null? entries))
+                    '()
+                    (seq entries)))]
     (if (empty? items)
         false
         (let loop ((xs items))
@@ -30,7 +33,7 @@
 
 (defn json-field-value
   [entries key default]
-  (let ((entry (json-find-entry entries key)))
+  (let [entry (json-find-entry entries key)]
     (if entry
         (cdr entry)
         default)))
@@ -40,7 +43,7 @@
   (if (or (not keys)
           (null? keys))
       default
-      (let ((entry (json-find-entry entries (car keys))))
+      (let [entry (json-find-entry entries (car keys))]
         (if entry
             (cdr entry)
             (json-first-field-value entries (cdr keys) default)))))
@@ -74,29 +77,219 @@
   [text]
   (compact-json-step text 0 (string-length text) false false '()))
 
+(defn json-skip-whitespace
+  [text i len]
+  (let loop ((j i))
+    (if (and (< j len)
+             (char-whitespace? (string-ref text j)))
+        (loop (+ j 1))
+        j)))
+
+(defn json-string-end-index
+  [text i len]
+  (let loop ((j (+ i 1))
+             (escaped? false))
+    (if (>= j len)
+        len
+        (let ((ch (string-ref text j)))
+          (cond
+            escaped?
+            (loop (+ j 1) false)
+
+            (char=? ch #\\)
+            (loop (+ j 1) true)
+
+            (char=? ch #\")
+            (+ j 1)
+
+            :else
+            (loop (+ j 1) false))))))
+
+(defn json-balanced-end-index
+  [text i len open close]
+  (let loop ((j (+ i 1))
+             (depth 1)
+             (in-string? false)
+             (escaped? false))
+    (if (>= j len)
+        len
+        (let ((ch (string-ref text j)))
+          (cond
+            escaped?
+            (loop (+ j 1) depth in-string? false)
+
+            (and in-string?
+                 (char=? ch #\\))
+            (loop (+ j 1) depth true true)
+
+            (char=? ch #\")
+            (loop (+ j 1) depth (not in-string?) false)
+
+            in-string?
+            (loop (+ j 1) depth true false)
+
+            (char=? ch open)
+            (loop (+ j 1) (+ depth 1) false false)
+
+            (char=? ch close)
+            (if (= depth 1)
+                (+ j 1)
+                (loop (+ j 1) (- depth 1) false false))
+
+            :else
+            (loop (+ j 1) depth false false))))))
+
+(defn json-value-end-index
+  [text i len]
+  (let ((i (json-skip-whitespace text i len)))
+    (if (>= i len)
+        len
+        (let ((ch (string-ref text i)))
+          (cond
+            (char=? ch #\")
+            (json-string-end-index text i len)
+
+            (char=? ch #\{)
+            (json-balanced-end-index text i len #\{ #\})
+
+            (char=? ch #\[)
+            (json-balanced-end-index text i len #\[ #\])
+
+            :else
+            (let loop ((j i))
+              (if (>= j len)
+                  len
+                  (let ((c (string-ref text j)))
+                    (if (or (char=? c #\,)
+                            (char=? c #\}))
+                        j
+                        (loop (+ j 1)))))))))))
+
+(defn json-object-field-json-text
+  [text target-key]
+  (let ((len (string-length text)))
+    (let loop ((i (json-skip-whitespace text 0 len)))
+      (if (>= i len)
+          #f
+          (if (char=? (string-ref text i) #\{)
+              (let loop-entries ((j (+ i 1)))
+                (let ((j (json-skip-whitespace text j len)))
+                  (cond
+                    (>= j len) #f
+                    (char=? (string-ref text j) #\}) #f
+                    (char=? (string-ref text j) #\")
+                    (let* ((key-end (json-string-end-index text j len))
+                           (key (substring text (+ j 1) (- key-end 1)))
+                           (after-key (json-skip-whitespace text key-end len)))
+                      (if (or (>= after-key len)
+                              (not (char=? (string-ref text after-key) #\:)))
+                          #f
+                          (let* ((value-start (json-skip-whitespace text (+ after-key 1) len))
+                                 (value-end (json-value-end-index text value-start len)))
+                            (if (string=? key target-key)
+                                (substring text value-start value-end)
+                                (let ((next (json-skip-whitespace text value-end len)))
+                                  (cond
+                                    (and (< next len)
+                                         (char=? (string-ref text next) #\,))
+                                    (loop-entries (+ next 1))
+
+                                    (and (< next len)
+                                         (char=? (string-ref text next) #\}))
+                                    #f
+
+                                    :else
+                                    (loop-entries next))))))))
+                    :else #f))))
+              #f)))
+
+(defn event-payload-json
+  [typ payload raw-payload-json]
+  (let ((ordered-pairs
+         (cond
+           (string=? typ "identity.create")
+           (and (json-field-value payload "kind" false)
+                (list
+                 (cons 'name (json-field-value payload "name" ""))
+                 (cons 'ts (json-field-value payload "ts" ""))
+                 (cons 'kind (json-field-value payload "kind" ""))
+                 (cons 'use (json-field-value payload "use" false))))
+
+           (string=? typ "project.create")
+           (and (json-field-value payload "createdBy" false)
+                (list
+                 (cons 'id (json-field-value payload "id" ""))
+                 (cons 'createdBy (json-field-value payload "createdBy" ""))
+                 (cons 'name (json-field-value payload "name" ""))
+                 (cons 'createdAt (json-field-value payload "createdAt" ""))))
+
+           (string=? typ "item.create")
+           (and (or (json-field-value payload "projectId" false)
+                    (json-field-value payload "outlineId" false)
+                    (json-field-value payload "createdBy" false)
+                    (json-field-value payload "updatedAt" false))
+                (list
+                 (cons 'archived (json-field-value payload "archived" false))
+                 (cons 'updatedAt (json-field-value payload "updatedAt" ""))
+                 (cons 'order (json-field-value payload "order" 0))
+                 (cons 'ownerActorId (json-field-value payload "ownerActorId" ""))
+                 (cons 'onHold (json-field-value payload "onHold" false))
+                 (cons 'id (json-field-value payload "id" ""))
+                 (cons 'projectId (json-field-value payload "projectId" ""))
+                 (cons 'createdBy (json-field-value payload "createdBy" ""))
+                 (cons 'outlineId (json-field-value payload "outlineId" ""))
+                 (cons 'title (json-field-value payload "title" ""))
+                 (cons 'description (json-field-value payload "description" ""))
+                 (cons 'priority (json-field-value payload "priority" false))
+                 (cons 'createdAt (json-field-value payload "createdAt" ""))
+                 (cons 'status (json-field-value payload "status" ""))))
+
+           :else
+           #f)))
+    (cond
+      ordered-pairs
+      (compact-json-text
+       (io/with-output-string
+        (fn [port]
+          (json/json-write (list->vector ordered-pairs) port))))
+
+      (and raw-payload-json
+           (not (string=? raw-payload-json "")))
+      (compact-json-text raw-payload-json)
+
+      :else
+      (compact-json-text
+       (io/with-output-string
+        (fn [port]
+          (json/json-write payload port)))))))
+
 (defn event-line->record
   [path line-number line]
-  (let ((raw-event
-         (call-with-input-string
-          line
-          (fn [port]
-            (json/json-read port))))
-        (event-id (or (json-first-field-value raw-event (list "eventId" "event_id") "") ""))
-        (workspace-id (or (json-first-field-value raw-event (list "workspaceId" "workspace_id") "") ""))
-        (replica-id (or (json-first-field-value raw-event (list "replicaId" "replica_id") "") ""))
-        (entity-kind (or (json-first-field-value raw-event (list "entityKind" "entity_kind") "") ""))
-        (entity-id (or (json-first-field-value raw-event (list "entityId" "entity_id") "") ""))
-        (entity-seq (or (json-first-field-value raw-event (list "entitySeq" "entity_seq") 0) 0))
-        (typ (or (json-first-field-value raw-event (list "type" "typ") "") ""))
-        (parents (or (json-first-field-value raw-event (list "parents") '()) '()))
-        (issued-at (or (json-first-field-value raw-event (list "issuedAt" "issued_at") "") ""))
-        (actor-id (or (json-first-field-value raw-event (list "actorId" "actor_id") "") ""))
-        (payload (or (json-first-field-value raw-event (list "payload") '()) '()))
-        (local-status (or (json-first-field-value raw-event (list "localStatus" "local_status") "local") "local"))
-        (server-status (or (json-first-field-value raw-event (list "serverStatus" "server_status") "pending") "pending"))
-        (rejection-reason (or (json-first-field-value raw-event (list "rejectionReason" "rejection_reason") "") ""))
-        (published-at-unixms (or (json-first-field-value raw-event (list "publishedAtUnixms" "published_at_unixms") 0) 0))
-        (has-published-at (or (json-first-field-value raw-event (list "hasPublishedAt" "has_published_at") false) false)))
+  (let [raw-event
+        (call-with-input-string
+         line
+         (fn [port]
+           (json/json-read port)))
+        event-id (or (json-first-field-value raw-event (list "eventId" "event_id") "") "")
+        workspace-id (or (json-first-field-value raw-event (list "workspaceId" "workspace_id") "") "")
+        replica-id (or (json-first-field-value raw-event (list "replicaId" "replica_id") "") "")
+        entity-kind (or (json-first-field-value raw-event (list "entityKind" "entity_kind") "") "")
+        entity-id (or (json-first-field-value raw-event (list "entityId" "entity_id") "") "")
+        entity-seq (or (json-first-field-value raw-event (list "entitySeq" "entity_seq") 0) 0)
+        typ (or (json-first-field-value raw-event (list "type" "typ") "") "")
+        parents (or (json-first-field-value raw-event (list "parents") '()) '())
+        issued-at (or (json-first-field-value raw-event (list "issuedAt" "issued_at") "") "")
+        actor-id (or (json-first-field-value raw-event (list "actorId" "actor_id") "") "")
+        payload (or (json-first-field-value raw-event (list "payload") '()) '())
+        local-status (or (json-first-field-value raw-event (list "localStatus" "local_status") "local") "local")
+        server-status (or (json-first-field-value raw-event (list "serverStatus" "server_status") "pending") "pending")
+        rejection-reason (or (json-first-field-value raw-event (list "rejectionReason" "rejection_reason") "") "")
+        published-at-unixms (or (json-first-field-value raw-event (list "publishedAtUnixms" "published_at_unixms") 0) 0)
+        has-published-at (or (json-first-field-value raw-event (list "hasPublishedAt" "has_published_at") false) false)
+        payload-json-raw (json-object-field-json-text line "payload")
+        payload-json (if payload-json-raw
+                         (compact-json-text payload-json-raw)
+                         "")]
     (vector
      (cons 'path path)
      (cons 'line line-number)
@@ -115,22 +308,23 @@
      (cons 'server_status server-status)
      (cons 'rejection_reason rejection-reason)
      (cons 'published_at_unixms published-at-unixms)
-     (cons 'has_published_at has-published-at))))
+     (cons 'has_published_at has-published-at)
+     (cons 'payload_json payload-json))))
 
 (defn event-materialize-record
   [issued-at->unixms record]
-  (let ((issued-at (or (json-field-value record "issued_at" "") ""))
-        (payload (or (json-field-value record "payload" '()) '()))
-        (payload-json
-         (compact-json-text
-          (io/with-output-string
-           (fn [port]
-             (json/json-write payload port)))))
-        (issued-at-unixms
-         (if (or (not issued-at)
-                 (string=? issued-at ""))
-             0
-             (issued-at->unixms issued-at))))
+  (let [issued-at (or (json-field-value record "issued_at" "") "")
+        payload (or (json-field-value record "payload" '()) '())
+        payload-json
+        (event-payload-json
+         (or (json-field-value record "typ" "") "")
+         payload
+         (or (json-field-value record "payload_json" "") ""))
+        issued-at-unixms
+        (if (or (not issued-at)
+                (string=? issued-at ""))
+            0
+            (issued-at->unixms issued-at))]
     (vector
      (cons 'path (json-field-value record "path" ""))
      (cons 'line (json-field-value record "line" 0))
@@ -155,16 +349,16 @@
 
 (defn event-record<?
   [left right]
-  (let ((left-issued-at (or (json-field-value left "issued_at" "") ""))
-        (right-issued-at (or (json-field-value right "issued_at" "") ""))
-        (left-event-id (or (json-field-value left "event_id" "") ""))
-        (right-event-id (or (json-field-value right "event_id" "") ""))
-        (left-replica-id (or (json-field-value left "replica_id" "") ""))
-        (right-replica-id (or (json-field-value right "replica_id" "") ""))
-        (left-path (or (json-field-value left "path" "") ""))
-        (right-path (or (json-field-value right "path" "") ""))
-        (left-line (or (json-field-value left "line" 0) 0))
-        (right-line (or (json-field-value right "line" 0) 0)))
+  (let [left-issued-at (or (json-field-value left "issued_at" "") "")
+        right-issued-at (or (json-field-value right "issued_at" "") "")
+        left-event-id (or (json-field-value left "event_id" "") "")
+        right-event-id (or (json-field-value right "event_id" "") "")
+        left-replica-id (or (json-field-value left "replica_id" "") "")
+        right-replica-id (or (json-field-value right "replica_id" "") "")
+        left-path (or (json-field-value left "path" "") "")
+        right-path (or (json-field-value right "path" "") "")
+        left-line (or (json-field-value left "line" 0) 0)
+        right-line (or (json-field-value right "line" 0) 0)]
     (cond
       (string<? left-issued-at right-issued-at) true
       (string<? right-issued-at left-issued-at) false
@@ -207,9 +401,9 @@
   (if (or (empty? records)
           (empty? (cdr records)))
       records
-      (let ((parts (events-split-records records))
-            (left (car parts))
-            (right (cdr parts)))
+      (let [parts (events-split-records records)
+            left (car parts)
+            right (cdr parts)]
         (events-merge-record-lists (events-sort-records left)
                                    (events-sort-records right)))))
 
@@ -256,14 +450,14 @@
           (string=? (first xs) "--limit")
           (if (empty? (rest xs))
               (vector 'error "ro events list expects a value after --limit" args)
-              (let ((next-limit (parse-long (first (rest xs)))))
+              (let [next-limit (parse-long (first (rest xs)))]
                 (if (< next-limit 0)
                     (vector 'error "ro events list expects a non-negative --limit" next-limit)
                     (loop (cddr xs) next-limit))))
 
           (str/starts-with? (first xs) "--limit=")
-          (let ((value (substring (first xs) 8 (string-length (first xs))))
-                (next-limit (parse-long value)))
+          (let [value (substring (first xs) 8 (string-length (first xs)))
+                next-limit (parse-long value)]
             (if (< next-limit 0)
                 (vector 'error "ro events list expects a non-negative --limit" next-limit)
                 (loop (cdr xs) next-limit)))

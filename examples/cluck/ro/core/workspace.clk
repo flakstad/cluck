@@ -19,12 +19,12 @@
 
 (defn json-find-entry
   [entries key]
-  (let ((items (if (vector? entries)
-                   (vector->list entries)
-                   (if (or (not entries)
-                           (null? entries))
-                       '()
-                       (seq entries)))))
+  (let [items (if (vector? entries)
+                (vector->list entries)
+                (if (or (not entries)
+                        (null? entries))
+                    '()
+                    (seq entries)))]
     (if (empty? items)
         false
         (let loop ((xs items))
@@ -35,7 +35,7 @@
 
 (defn json-field-value
   [entries key default]
-  (let ((entry (json-find-entry entries key)))
+  (let [entry (json-find-entry entries key)]
     (if entry
         (cdr entry)
         default)))
@@ -45,7 +45,7 @@
   (if (or (not keys)
           (null? keys))
       default
-      (let ((entry (json-find-entry entries (car keys))))
+      (let [entry (json-find-entry entries (car keys))]
         (if entry
             (cdr entry)
             (json-first-field-value entries (cdr keys) default)))))
@@ -106,7 +106,7 @@
 
 (defn workspace-detail-value
   [detail key]
-  (let ((entry (json-find-entry detail key)))
+  (let [entry (json-find-entry detail key)]
     (and entry (cdr entry))))
 
 (defn workspace-current-detail
@@ -124,26 +124,26 @@
 
 (defn workspace-current-info
   [root]
-  (let ((data-entry (json-find-entry root "data"))
-        (data (and data-entry (cdr data-entry)))
-        (current-entry (json-find-entry data "currentWorkspace"))
-        (current-workspace (and current-entry (cdr current-entry)))
-        (meta-entry (json-find-entry root "meta"))
-        (meta (and meta-entry (cdr meta-entry)))
-        (details-entry (json-find-entry meta "details"))
-        (details (and details-entry (cdr details-entry)))
-        (detail (workspace-current-detail details current-workspace))
-        (path (and detail (workspace-detail-value detail "path"))))
+  (let [data-entry (json-find-entry root "data")
+        data (and data-entry (cdr data-entry))
+        current-entry (json-find-entry data "currentWorkspace")
+        current-workspace (and current-entry (cdr current-entry))
+        meta-entry (json-find-entry root "meta")
+        meta (and meta-entry (cdr meta-entry))
+        details-entry (json-find-entry meta "details")
+        details (and details-entry (cdr details-entry))
+        detail (workspace-current-detail details current-workspace)
+        path (and detail (workspace-detail-value detail "path"))]
     (and detail (cons current-workspace path))))
 
 (defn workspace-current-name
   [root]
-  (let ((info (workspace-current-info root)))
+  (let [info (workspace-current-info root)]
     (and info (car info))))
 
 (defn workspace-current-path
   [root]
-  (let ((info (workspace-current-info root)))
+  (let [info (workspace-current-info root)]
     (and info (cdr info))))
 
 (defn actor-record
@@ -158,8 +158,8 @@
 (defn workspace-current-write-actor-id
   [actor current-actor-id]
   (if actor
-      (let ((kind (or (workspace-detail-value actor "kind") ""))
-            (user-id (or (workspace-detail-value actor "userId") "")))
+      (let [kind (or (workspace-detail-value actor "kind") "")
+            user-id (or (workspace-detail-value actor "userId") "")]
         (if (and (string=? kind "agent")
                  (not (string=? user-id "")))
             user-id
@@ -368,12 +368,12 @@
 
 (defn workspace-use-plan
   [args]
-  (let ((workspace-name (if (empty? args)
-                            ""
-                            (first args)))
-        (more (if (empty? args)
-                  '()
-                  (rest args))))
+  (let [workspace-name (if (empty? args)
+                         ""
+                         (first args))
+        more (if (empty? args)
+               '()
+               (rest args))]
     (cond
       (help-flag? workspace-name)
       (vector 'subhelp workspace-use-usage-output)

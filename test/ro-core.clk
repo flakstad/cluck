@@ -5,7 +5,9 @@
             [cluck.string :as str]
             [cluck.test.support :refer [assert-str=
                                         assert-num=
-                                        assert-true]]))
+                                        assert-true
+                                        pass
+                                        fail]]))
 
 (def ro-help-help-request? (ns-resolve 'cluck.examples.ro.core.help 'help-request?))
 (def ro-help-completion-output (ns-resolve 'cluck.examples.ro.core.help 'completion-output))
@@ -21,6 +23,9 @@
 (def ro-docs-docs-topic-markdown (ns-resolve 'cluck.examples.ro.core.docs 'docs-topic-markdown))
 (def ro-docs-docs-topic-output (ns-resolve 'cluck.examples.ro.core.docs 'docs-topic-output))
 (def ro-docs-docs-main-plan (ns-resolve 'cluck.examples.ro.core.docs 'docs-main-plan))
+(def ro-outlines-outlines-help-output (ns-resolve 'cluck.examples.ro.core.outlines 'outlines-help-output))
+(def ro-outlines-outlines-main-plan (ns-resolve 'cluck.examples.ro.core.outlines 'outlines-main-plan))
+(def ro-outlines-outlines-status-main-plan (ns-resolve 'cluck.examples.ro.core.outlines 'outlines-status-main-plan))
 (def ro-items-items-help-output (ns-resolve 'cluck.examples.ro.core.items 'items-help-output))
 (def ro-items-item-show-summary (ns-resolve 'cluck.examples.ro.core.items 'item-show-summary))
 (def ro-items-items-main-plan (ns-resolve 'cluck.examples.ro.core.items 'items-main-plan))
@@ -71,6 +76,10 @@
 (def ro-projects-projects-list-output (ns-resolve 'cluck.examples.ro.core.projects 'projects-list-output))
 (def ro-projects-projects-current-output (ns-resolve 'cluck.examples.ro.core.projects 'projects-current-output))
 (def ro-projects-projects-main-plan (ns-resolve 'cluck.examples.ro.core.projects 'projects-main-plan))
+(def ro-worklog-worklog-help-output (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-help-output))
+(def ro-worklog-worklog-list-plan (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-list-plan))
+(def ro-worklog-worklog-add-plan (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-add-plan))
+(def ro-worklog-worklog-main-plan (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-main-plan))
 
 (defn parse-output
   [output]
@@ -86,6 +95,55 @@
     (vector? value) (vector-ref value 0)
     (pair? value) (car (seq value))
     :else value))
+
+(defn json-key-text
+  [key]
+  (cond
+    (string? key) key
+    (keyword? key) (name key)
+    (symbol? key) (symbol->string key)
+    :else (str key)))
+
+(defn json-object-like?
+  [value]
+  (let [items (cond
+                (vector? value) (vector->list value)
+                (pair? value) (seq value)
+                :else '())]
+    (and (not (empty? items))
+         (every? pair? items))))
+
+(defn normalize-json-value
+  [value]
+  (cond
+    (json-object-like? value)
+    (let [items (cond
+                  (vector? value) (vector->list value)
+                  (pair? value) (seq value)
+                  :else '())
+          sorted (cluck-sort-list items
+                                  (lambda (a b)
+                                    (string<? (json-key-text (car a))
+                                              (json-key-text (car b)))))]
+      (map (lambda (entry)
+             (let [key (car entry)]
+               (cons key (normalize-json-value (cdr entry)))))
+           sorted))
+
+    (vector? value)
+    (map normalize-json-value (vector->list value))
+
+    (pair? value)
+    (map normalize-json-value (seq value))
+
+    :else value))
+
+(defn assert-json=
+  [label expected actual]
+  (if (equal? (normalize-json-value expected)
+              (normalize-json-value actual))
+      (pass label)
+      (fail label expected actual)))
 
 (def sample-detail
   (vector (cons 'name "alpha")
@@ -169,6 +227,8 @@
              (ro-commands-command-implemented? 'init))
 (assert-true "core command registry implements projects"
              (ro-commands-command-implemented? 'projects))
+(assert-true "core command registry implements outlines"
+             (ro-commands-command-implemented? 'outlines))
 (assert-true "core command registry implements items"
              (ro-commands-command-implemented? 'items))
 (assert-str= "core command registry root help first"
@@ -194,6 +254,82 @@
 (assert-num= "core item show summary worklog count"
              15
              (ro-json-json-field-value sample-item-show-summary "worklogCount" 0))
+
+(assert-str= "core outlines help output starts with ro outlines"
+             "ro outlines"
+             (first (str/split-lines ro-outlines-outlines-help-output)))
+
+(define sample-outlines-main-help-plan
+  (ro-outlines-outlines-main-plan '("help")))
+(define sample-outlines-create-plan
+  (ro-outlines-outlines-main-plan '("create" "--project" "proj-1" "--name" "Inbox")))
+(define sample-outlines-list-plan
+  (ro-outlines-outlines-main-plan '("list" "--project" "proj-1")))
+(define sample-outlines-show-plan
+  (ro-outlines-outlines-main-plan '("show" "out-1")))
+(define sample-outlines-archive-plan
+  (ro-outlines-outlines-main-plan '("archive" "out-1" "--unarchive")))
+(define sample-outlines-status-list-plan
+  (ro-outlines-outlines-status-main-plan '("list" "out-1")))
+(define sample-outlines-status-add-plan
+  (ro-outlines-outlines-status-main-plan '("add" "out-1" "--label" "Doing")))
+(define sample-outlines-status-update-plan
+  (ro-outlines-outlines-status-main-plan '("update" "out-1" "--id" "doing" "--label" "Doing" "--end-state")))
+(define sample-outlines-status-remove-plan
+  (ro-outlines-outlines-status-main-plan '("remove" "out-1" "--id" "doing")))
+(define sample-outlines-status-reorder-plan
+  (ro-outlines-outlines-status-main-plan '("reorder" "out-1" "--label" "TODO" "--label" "DOING")))
+
+(assert-true "core outlines main help plan ok"
+             (get sample-outlines-main-help-plan :ok? false))
+(assert-str= "core outlines main help plan effect tuple"
+             "[:outlines/help {}]"
+             (pr-str (vector-ref (get sample-outlines-main-help-plan :effects '()) 0)))
+(assert-true "core outlines create plan ok"
+             (get sample-outlines-create-plan :ok? false))
+(assert-str= "core outlines create plan effect tuple"
+             "[:outlines/create {:name \"Inbox\" :project-id \"proj-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-create-plan :effects '()) 0)))
+(assert-true "core outlines list plan ok"
+             (get sample-outlines-list-plan :ok? false))
+(assert-str= "core outlines list plan effect tuple"
+             "[:outlines/list {:project-id \"proj-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-list-plan :effects '()) 0)))
+(assert-true "core outlines show plan ok"
+             (get sample-outlines-show-plan :ok? false))
+(assert-str= "core outlines show plan effect tuple"
+             "[:outlines/show {:outline-id \"out-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-show-plan :effects '()) 0)))
+(assert-true "core outlines archive plan ok"
+             (get sample-outlines-archive-plan :ok? false))
+(assert-str= "core outlines archive plan effect tuple"
+             "[:outlines/archive {:archived false :outline-id \"out-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-archive-plan :effects '()) 0)))
+(assert-true "core outlines status list plan ok"
+             (get sample-outlines-status-list-plan :ok? false))
+(assert-str= "core outlines status list plan effect tuple"
+             "[:outlines/status-list {:outline-id \"out-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-status-list-plan :effects '()) 0)))
+(assert-true "core outlines status add plan ok"
+             (get sample-outlines-status-add-plan :ok? false))
+(assert-str= "core outlines status add plan effect tuple"
+             "[:outlines/status-add {:label \"Doing\" :outline-id \"out-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-status-add-plan :effects '()) 0)))
+(assert-true "core outlines status update plan ok"
+             (get sample-outlines-status-update-plan :ok? false))
+(assert-str= "core outlines status update plan effect tuple"
+             "[:outlines/status-update {:end-state? true :label \"Doing\" :outline-id \"out-1\" :requires-note? false :status-id \"doing\"}]"
+             (pr-str (vector-ref (get sample-outlines-status-update-plan :effects '()) 0)))
+(assert-true "core outlines status remove plan ok"
+             (get sample-outlines-status-remove-plan :ok? false))
+(assert-str= "core outlines status remove plan effect tuple"
+             "[:outlines/status-remove {:outline-id \"out-1\" :status-id \"doing\"}]"
+             (pr-str (vector-ref (get sample-outlines-status-remove-plan :effects '()) 0)))
+(assert-true "core outlines status reorder plan ok"
+             (get sample-outlines-status-reorder-plan :ok? false))
+(assert-str= "core outlines status reorder plan effect tuple"
+             "[:outlines/status-reorder {:labels (\"TODO\" \"DOING\") :outline-id \"out-1\"}]"
+             (pr-str (vector-ref (get sample-outlines-status-reorder-plan :effects '()) 0)))
 
 (define help-route (ro-route-main-route '()))
 (define docs-route (ro-route-main-route '("docs")))
@@ -301,12 +437,26 @@
    (lambda (issued-at) 4242)
    sample-event-record))
 
+(def sample-event-line-ordered
+  "{\"eventId\":\"evt-3\",\"workspaceId\":\"ws-1\",\"replicaId\":\"rep-1\",\"entityKind\":\"item\",\"entityId\":\"item-3\",\"entitySeq\":4,\"type\":\"item.create\",\"parents\":[],\"issuedAt\":\"2026-01-04T03:04:05Z\",\"actorId\":\"act-3\",\"payload\":{\"z\":true,\"a\":1},\"localStatus\":\"local\",\"serverStatus\":\"pending\",\"rejectionReason\":\"\",\"publishedAtUnixms\":789,\"hasPublishedAt\":true}")
+
+(define sample-event-record-ordered
+  (ro-events-event-line->record "events.1.jsonl" 9 sample-event-line-ordered))
+
+(define sample-materialized-event-ordered
+  (ro-events-event-materialize-record
+   (lambda (issued-at) 4242)
+   sample-event-record-ordered))
+
 (assert-num= "core events materialized issued at"
              4242
              (ro-json-json-field-value sample-materialized-event "issued_at_unixms" 0))
 (assert-str= "core events materialized payload json"
              "{\"title\":\"Hello world\"}"
              (ro-json-json-field-value sample-materialized-event "payload_json" ""))
+(assert-str= "core events materialized payload json order"
+             "{\"z\":true,\"a\":1}"
+             (ro-json-json-field-value sample-materialized-event-ordered "payload_json" ""))
 
 (assert-true "core events record ordering"
              (ro-events-event-record<?
@@ -356,6 +506,10 @@
              (ro-reindex-reindex-type-recognized? "item.create"))
 (assert-true "core reindex recognizes project.set_description"
              (ro-reindex-reindex-type-recognized? "project.set_description"))
+(assert-true "core reindex recognizes item.set_schedule"
+             (ro-reindex-reindex-type-recognized? "item.set_schedule"))
+(assert-true "core reindex recognizes item.move_under"
+             (ro-reindex-reindex-type-recognized? "item.move_under"))
 (assert-true "core reindex rejects unknown type"
              (not (ro-reindex-reindex-type-recognized? "bogus.type")))
 
@@ -651,38 +805,131 @@
   (ro-projects-projects-main-plan '("list" "--help")))
 (define sample-projects-current-plan
   (ro-projects-projects-main-plan '("current" "--help")))
+(define sample-projects-help-effect
+  (vector-ref (get sample-projects-help-plan :effects '()) 0))
+(define sample-projects-create-effect
+  (vector-ref (get sample-projects-create-plan :effects '()) 0))
+(define sample-projects-archive-effect
+  (vector-ref (get sample-projects-archive-plan :effects '()) 0))
+(define sample-projects-use-effect
+  (vector-ref (get sample-projects-use-plan :effects '()) 0))
+(define sample-projects-list-effect
+  (vector-ref (get sample-projects-list-plan :effects '()) 0))
+(define sample-projects-current-effect
+  (vector-ref (get sample-projects-current-plan :effects '()) 0))
 
-(assert-str= "core projects help plan tag"
-             "help"
-             (symbol->string (vector-ref sample-projects-help-plan 0)))
-(assert-str= "core projects create plan tag"
-             "create"
-             (symbol->string (vector-ref sample-projects-create-plan 0)))
-(assert-str= "core projects create plan name"
+(assert-num= "core projects help plan effect count"
+             1
+             (count (get sample-projects-help-plan :effects '())))
+(assert-str= "core projects help plan effect tag"
+             ":projects/help"
+             (pr-str (vector-ref sample-projects-help-effect 0)))
+(assert-num= "core projects help plan effect arg count"
+             0
+             (count (vector-ref sample-projects-help-effect 1)))
+(assert-num= "core projects create plan effect count"
+             1
+             (count (get sample-projects-create-plan :effects '())))
+(assert-str= "core projects create plan effect tag"
+             ":projects/create"
+             (pr-str (vector-ref sample-projects-create-effect 0)))
+(assert-str= "core projects create plan effect name"
              "Project Two"
-             (vector-ref sample-projects-create-plan 1))
-(assert-true "core projects create plan use"
-             (vector-ref sample-projects-create-plan 2))
-(assert-str= "core projects archive plan tag"
-             "archive"
-             (symbol->string (vector-ref sample-projects-archive-plan 0)))
+             (get (vector-ref sample-projects-create-effect 1) :name ""))
+(assert-true "core projects create plan effect use"
+             (get (vector-ref sample-projects-create-effect 1) :use? false))
+(assert-num= "core projects archive plan effect count"
+             1
+             (count (get sample-projects-archive-plan :effects '())))
+(assert-str= "core projects archive plan effect tag"
+             ":projects/archive"
+             (pr-str (vector-ref sample-projects-archive-effect 0)))
 (assert-str= "core projects archive plan project id"
              "proj-1"
-             (vector-ref sample-projects-archive-plan 1))
-(assert-true "core projects archive plan unarchive"
-             (not (vector-ref sample-projects-archive-plan 2)))
-(assert-str= "core projects use plan tag"
-             "use"
-             (symbol->string (vector-ref sample-projects-use-plan 0)))
+             (get (vector-ref sample-projects-archive-effect 1) :project-id ""))
+(assert-true "core projects archive plan effect archived"
+             (not (get (vector-ref sample-projects-archive-effect 1) :archived true)))
+(assert-num= "core projects use plan effect count"
+             1
+             (count (get sample-projects-use-plan :effects '())))
+(assert-str= "core projects use plan effect tag"
+             ":projects/use"
+             (pr-str (vector-ref sample-projects-use-effect 0)))
 (assert-str= "core projects use plan help arg stays positional"
              "--help"
-             (vector-ref sample-projects-use-plan 1))
-(assert-str= "core projects list plan tag"
-             "list"
-             (symbol->string (vector-ref sample-projects-list-plan 0)))
-(assert-str= "core projects current plan tag"
-             "current"
-             (symbol->string (vector-ref sample-projects-current-plan 0)))
+             (get (vector-ref sample-projects-use-effect 1) :project-id ""))
+(assert-num= "core projects list plan effect count"
+             1
+             (count (get sample-projects-list-plan :effects '())))
+(assert-str= "core projects list plan effect tag"
+             ":projects/list"
+             (pr-str (vector-ref sample-projects-list-effect 0)))
+(assert-num= "core projects list plan effect arg count"
+             0
+             (count (vector-ref sample-projects-list-effect 1)))
+(assert-num= "core projects current plan effect count"
+             1
+             (count (get sample-projects-current-plan :effects '())))
+(assert-str= "core projects current plan effect tag"
+             ":projects/current"
+             (pr-str (vector-ref sample-projects-current-effect 0)))
+(assert-num= "core projects current plan effect arg count"
+             0
+             (count (vector-ref sample-projects-current-effect 1)))
+
+(define sample-worklog-help-plan
+  (ro-worklog-worklog-main-plan '()))
+(define sample-worklog-list-plan
+  (ro-worklog-worklog-list-plan '("item-vvo" "--limit" "3" "--offset" "2")))
+(define sample-worklog-add-plan
+  (ro-worklog-worklog-add-plan '("item-vvo" "--body" "Worklog note")))
+
+(assert-str= "core worklog help output starts with ro worklog"
+             "ro worklog"
+             (first (str/split-lines ro-worklog-worklog-help-output)))
+(assert-true "core worklog help plan ok"
+             (get sample-worklog-help-plan :ok? false))
+(assert-num= "core worklog help plan effect count"
+             1
+             (count (get sample-worklog-help-plan :effects '())))
+(assert-true "core worklog help plan effect tag"
+             (string=? ":worklog/help"
+                       (pr-str (vector-ref (vector-ref (get sample-worklog-help-plan :effects '()) 0) 0))))
+(assert-true "core worklog list plan ok"
+             (get sample-worklog-list-plan :ok? false))
+(assert-true "core worklog list plan effect tag"
+             (string=? ":worklog/list"
+                       (pr-str (vector-ref (vector-ref (get sample-worklog-list-plan :effects '()) 0) 0))))
+(assert-str= "core worklog list plan item id"
+             "item-vvo"
+             (get (vector-ref (vector-ref (get sample-worklog-list-plan :effects '()) 0) 1)
+                  :item-id
+                  ""))
+(assert-num= "core worklog list plan limit"
+             3
+             (get (vector-ref (vector-ref (get sample-worklog-list-plan :effects '()) 0) 1)
+                  :limit
+                  0))
+(assert-num= "core worklog list plan offset"
+             2
+             (get (vector-ref (vector-ref (get sample-worklog-list-plan :effects '()) 0) 1)
+                  :offset
+                  0))
+(assert-true "core worklog add plan ok"
+             (get sample-worklog-add-plan :ok? false))
+(assert-true "core worklog add plan effect tag"
+             (string=? ":worklog/add"
+                       (pr-str (vector-ref (vector-ref (get sample-worklog-add-plan :effects '()) 0) 0))))
+(assert-str= "core worklog add plan item id"
+             "item-vvo"
+             (get (vector-ref (vector-ref (get sample-worklog-add-plan :effects '()) 0) 1)
+                  :item-id
+                  ""))
+(assert-str= "core worklog add plan body"
+             "Worklog note"
+             (get (vector-ref (vector-ref (get sample-worklog-add-plan :effects '()) 0) 1)
+                  :body
+                  ""))
 
 (assert-str= "core write actor id maps agent to user id"
              "human-1"
@@ -755,38 +1002,123 @@
   (ro-items-items-main-plan '("events" "item-vvo" "--limit" "3")))
 (define sample-item-main-plan
   (ro-items-item-main-plan '("item-vvo")))
+(define sample-items-show-plan
+  (ro-items-items-show-plan '("item-vvo")))
+(define sample-items-list-plan
+  (ro-items-items-list-plan '("--project" "proj-d1743158")))
+(define sample-items-ready-plan
+  (ro-items-items-ready-plan '()))
+(define sample-items-ready-help-plan
+  (ro-items-items-ready-plan '("--help")))
+(define sample-items-events-plan
+  (ro-items-items-events-plan '("item-vvo" "--limit" "3")))
 
-(assert-str= "core items main help plan tag"
-             "help"
-             (symbol->string (vector-ref sample-items-main-help-plan 0)))
-(assert-str= "core items main show plan tag"
-             "show"
-             (symbol->string (vector-ref sample-items-main-show-plan 0)))
-(assert-str= "core items main list plan tag"
-             "list"
-             (symbol->string (vector-ref sample-items-main-list-plan 0)))
-(assert-str= "core items main ready plan tag"
-             "ready"
-             (symbol->string (vector-ref sample-items-main-ready-plan 0)))
-(assert-str= "core items main events plan tag"
-             "events"
-             (symbol->string (vector-ref sample-items-main-events-plan 0)))
-(assert-str= "core item main plan tag"
-             "show"
-             (symbol->string (vector-ref sample-item-main-plan 0)))
+(assert-true "core items main help plan ok"
+             (get sample-items-main-help-plan :ok? false))
+(assert-str= "core items main help plan effect tuple"
+             "[:items/help {}]"
+             (pr-str (vector-ref (get sample-items-main-help-plan :effects '()) 0)))
+(assert-true "core items main show plan ok"
+             (get sample-items-main-show-plan :ok? false))
+(assert-str= "core items main show plan effect tuple"
+             "[:items/show {:item-id \"item-vvo\"}]"
+             (pr-str (vector-ref (get sample-items-main-show-plan :effects '()) 0)))
+(assert-true "core items main list plan ok"
+             (get sample-items-main-list-plan :ok? false))
+(assert-str= "core items main list plan effect tag"
+             ":items/list"
+             (pr-str (vector-ref (vector-ref (get sample-items-main-list-plan :effects '()) 0) 0)))
+(assert-str= "core items main list plan project id"
+             "proj-d1743158"
+             (get (vector-ref (vector-ref (get sample-items-main-list-plan :effects '()) 0) 1)
+                  :project-id
+                  ""))
+(assert-str= "core items main list plan outline id"
+             "out-a5341a59"
+             (get (vector-ref (vector-ref (get sample-items-main-list-plan :effects '()) 0) 1)
+                  :outline-id
+                  ""))
+(assert-str= "core items main list plan status"
+             "doing"
+             (get (vector-ref (vector-ref (get sample-items-main-list-plan :effects '()) 0) 1)
+                  :status
+                  ""))
+(assert-true "core items main ready plan ok"
+             (get sample-items-main-ready-plan :ok? false))
+(assert-str= "core items main ready plan effect tuple"
+             "[:items/ready {}]"
+             (pr-str (vector-ref (get sample-items-main-ready-plan :effects '()) 0)))
+(assert-true "core items main events plan ok"
+             (get sample-items-main-events-plan :ok? false))
+(assert-str= "core items main events plan effect tag"
+             ":items/events"
+             (pr-str (vector-ref (vector-ref (get sample-items-main-events-plan :effects '()) 0) 0)))
+(assert-str= "core items main events plan item id"
+             "item-vvo"
+             (get (vector-ref (vector-ref (get sample-items-main-events-plan :effects '()) 0) 1)
+                  :item-id
+                  ""))
+(assert-num= "core items main events plan limit"
+             3
+             (get (vector-ref (vector-ref (get sample-items-main-events-plan :effects '()) 0) 1)
+                  :limit
+                  0))
+(assert-true "core item main plan ok"
+             (get sample-item-main-plan :ok? false))
+(assert-str= "core item main plan effect tuple"
+             "[:items/show {:item-id \"item-vvo\"}]"
+             (pr-str (vector-ref (get sample-item-main-plan :effects '()) 0)))
 
-(assert-str= "core items show plan tag"
-             "show"
-             (symbol->string (vector-ref (ro-items-items-show-plan '("item-vvo")) 0)))
-(assert-str= "core items list plan tag"
-             "list"
-             (symbol->string (vector-ref (ro-items-items-list-plan '("--project" "proj-d1743158")) 0)))
-(assert-str= "core items ready plan tag"
-             "ready"
-             (symbol->string (vector-ref (ro-items-items-ready-plan '("--help")) 0)))
-(assert-str= "core items events plan tag"
-             "events"
-             (symbol->string (vector-ref (ro-items-items-events-plan '("item-vvo" "--limit" "3")) 0)))
+(assert-true "core items show plan ok"
+             (get sample-items-show-plan :ok? false))
+(assert-str= "core items show plan effect tuple"
+             "[:items/show {:item-id \"item-vvo\"}]"
+             (pr-str (vector-ref (get sample-items-show-plan :effects '()) 0)))
+(assert-true "core items list plan ok"
+             (get sample-items-list-plan :ok? false))
+(assert-str= "core items list plan effect tag"
+             ":items/list"
+             (pr-str (vector-ref (vector-ref (get sample-items-list-plan :effects '()) 0) 0)))
+(assert-str= "core items list plan project id"
+             "proj-d1743158"
+             (get (vector-ref (vector-ref (get sample-items-list-plan :effects '()) 0) 1)
+                  :project-id
+                  ""))
+(assert-str= "core items list plan outline id"
+             ""
+             (get (vector-ref (vector-ref (get sample-items-list-plan :effects '()) 0) 1)
+                  :outline-id
+                  ""))
+(assert-str= "core items list plan status"
+             ""
+             (get (vector-ref (vector-ref (get sample-items-list-plan :effects '()) 0) 1)
+                  :status
+                  ""))
+(assert-true "core items ready plan ok"
+             (get sample-items-ready-plan :ok? false))
+(assert-str= "core items ready plan effect tuple"
+             "[:items/ready {}]"
+             (pr-str (vector-ref (get sample-items-ready-plan :effects '()) 0)))
+(assert-true "core items ready help plan ok"
+             (get sample-items-ready-help-plan :ok? false))
+(assert-str= "core items ready help plan effect tuple"
+             "[:items/help {}]"
+             (pr-str (vector-ref (get sample-items-ready-help-plan :effects '()) 0)))
+(assert-true "core items events plan ok"
+             (get sample-items-events-plan :ok? false))
+(assert-str= "core items events plan effect tag"
+             ":items/events"
+             (pr-str (vector-ref (vector-ref (get sample-items-events-plan :effects '()) 0) 0)))
+(assert-str= "core items events plan item id"
+             "item-vvo"
+             (get (vector-ref (vector-ref (get sample-items-events-plan :effects '()) 0) 1)
+                  :item-id
+                  ""))
+(assert-num= "core items events plan limit"
+             3
+             (get (vector-ref (vector-ref (get sample-items-events-plan :effects '()) 0) 1)
+                  :limit
+                  0))
 
 (define identity-list-output-data
   (output-data (ro-workspace-identity-list-output "actor-1" sample-actors)))

@@ -36,15 +36,20 @@ The first concrete split in this spike lives under
 - `cluck.examples.ro.core.json` for pure JSON shaping helpers
 - `cluck.examples.ro.core.workspace` for workspace/init/status/identity
   planners and registry formatters
+- `cluck.examples.ro.core.worklog` for the first inline-effect planner slice
+  in the CLI contract
 - `cluck.examples.ro.core.events` for event record parsing, ordering, and
   materialization helpers
 - `cluck.examples.ro.core.doctor` for doctor issue parsing, summaries, and
   dedupe planning helpers
-- `cluck.examples.ro.core.projects` for pure project-surface planning and
-  project JSON envelopes
+- `cluck.examples.ro.core.projects` for project-surface planning, inline-effect
+  tuples, and project JSON envelopes
 - `cluck.examples.ro.core.sync` for pure git-status parsing helpers
 - `cluck.examples.ro.core.reindex` for the reindex recognized-event-type table
 - `cluck.examples.ro.core.route` for the pure top-level CLI router
+
+The current inline-effect planner slices are `cluck.examples.ro.core.worklog`
+and `cluck.examples.ro.core.projects`.
 
 `cluck.examples.ro.app` remains the shell entrypoint and command executor for
 now.
@@ -57,10 +62,11 @@ directly.
 A simple shape is enough:
 
 ```clojure
-{:effects [[:store/write {:kind :item/create
-                          :payload {...}}]
-           [:io/print {:stream :stdout
-                       :value {...}}]]}
+{:ok? true
+ :effects [[:worklog/list {:item-id "item-1"
+                           :limit 20
+                           :offset 0}]
+           [:worklog/help {}]]}
 ```
 
 Rules:
@@ -69,6 +75,8 @@ Rules:
 - core planning must be deterministic
 - shell code executes effects in order
 - output shaping should happen in core where possible, not in the shell
+- write the effect tuple inline in the planner body; do not hide it behind
+  builder helpers or extra planner layers
 
 ## Test seams
 

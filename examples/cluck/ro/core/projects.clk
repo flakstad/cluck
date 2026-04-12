@@ -15,12 +15,12 @@
 
 (defn json-find-entry
   [entries key]
-  (let ((items (if (vector? entries)
-                   (vector->list entries)
-                   (if (or (not entries)
-                           (null? entries))
-                       '()
-                       (seq entries)))))
+  (let [items (if (vector? entries)
+                (vector->list entries)
+                (if (or (not entries)
+                        (null? entries))
+                    '()
+                    (seq entries)))]
     (if (empty? items)
         false
         (let loop ((xs items))
@@ -31,7 +31,7 @@
 
 (defn json-field-value
   [entries key default]
-  (let ((entry (json-find-entry entries key)))
+  (let [entry (json-find-entry entries key)]
     (if entry
         (cdr entry)
         default)))
@@ -92,10 +92,10 @@
 
 (defn project-summary<?
   [left right]
-  (let ((left-name (or (json-field-value left "name" "") ""))
-        (right-name (or (json-field-value right "name" "") ""))
-        (left-id (or (json-field-value left "id" "") ""))
-        (right-id (or (json-field-value right "id" "") "")))
+  (let [left-name (or (json-field-value left "name" "") "")
+        right-name (or (json-field-value right "name" "") "")
+        left-id (or (json-field-value left "id" "") "")
+        right-id (or (json-field-value right "id" "") "")]
     (cond
       (string<? left-name right-name) true
       (string<? right-name left-name) false
@@ -127,11 +127,16 @@
     (cond
       (empty? xs)
       (if (string=? name "")
-          (vector 'error "ro projects create expects --name" args)
-          (vector 'create name use?))
+          {:ok? false
+           :error "ro projects create expects --name"
+           :command args}
+          {:ok? true
+           :effects [[:projects/create {:name name
+                                        :use? use?}]]})
 
       (help-flag? (first xs))
-      (vector 'help '())
+      {:ok? true
+       :effects [[:projects/help {}]]}
 
       (string=? (first xs) "--use")
       (loop (rest xs) name true)
@@ -139,7 +144,9 @@
       (string=? (first xs) "--name")
       (cond
         (empty? (rest xs))
-        (vector 'error "missing project name" args)
+        {:ok? false
+         :error "missing project name"
+         :command args}
 
         :else
         (loop (rest (rest xs))
@@ -152,10 +159,14 @@
             use?)
 
       (str/starts-with? (first xs) "-")
-      (vector 'error "unsupported projects flag" args)
+      {:ok? false
+       :error "unsupported projects flag"
+       :command args}
 
       :else
-      (vector 'error "unexpected projects create argument" args))))
+      {:ok? false
+       :error "unexpected projects create argument"
+       :command args})))
 
 (defn projects-archive-plan
   [args]
@@ -165,57 +176,74 @@
     (cond
       (empty? xs)
       (if (string=? project-id "")
-          (vector 'error "ro projects archive expects <project-id>" args)
-          (vector 'archive project-id (not unarchive?)))
+          {:ok? false
+           :error "ro projects archive expects <project-id>"
+           :command args}
+          {:ok? true
+           :effects [[:projects/archive {:project-id project-id
+                                         :archived (not unarchive?)}]]})
 
       (help-flag? (first xs))
-      (vector 'help '())
+      {:ok? true
+       :effects [[:projects/help {}]]}
 
       (string=? (first xs) "--unarchive")
       (loop (rest xs) project-id true)
 
       (str/starts-with? (first xs) "-")
-      (vector 'error "unsupported projects flag" args)
+      {:ok? false
+       :error "unsupported projects flag"
+       :command args}
 
       (string=? project-id "")
       (loop (rest xs) (first xs) unarchive?)
 
       :else
-      (vector 'error "unexpected projects archive argument" args))))
+      {:ok? false
+       :error "unexpected projects archive argument"
+       :command args})))
 
 (defn projects-use-plan
   [args]
-  (let ((project-id (if (empty? args)
-                        ""
-                        (first args)))
-        (more (if (empty? args)
-                  '()
-                  (rest args))))
+  (let [project-id (if (empty? args)
+                     ""
+                     (first args))
+        more (if (empty? args)
+               '()
+               (rest args))]
     (cond
       (string=? project-id "")
-      (vector 'error "ro projects use expects <project-id>" args)
+      {:ok? false
+       :error "ro projects use expects <project-id>"
+       :command args}
 
       (not (empty? more))
-      (vector 'error "unexpected projects use argument" args)
+      {:ok? false
+       :error "unexpected projects use argument"
+       :command args}
 
       :else
-      (vector 'use project-id))))
+      {:ok? true
+       :effects [[:projects/use {:project-id project-id}]]})))
 
 (defn projects-main-plan
   [args]
   (cond
     (or (empty? args)
         (help-flag? (first args)))
-    (vector 'help '())
+    {:ok? true
+     :effects [[:projects/help {}]]}
 
     (string=? (first args) "help")
-    (vector 'help '())
+    {:ok? true
+     :effects [[:projects/help {}]]}
 
     (string=? (first args) "create")
     (projects-create-plan (rest args))
 
     (string=? (first args) "list")
-    (vector 'list '())
+    {:ok? true
+     :effects [[:projects/list {}]]}
 
     (string=? (first args) "archive")
     (projects-archive-plan (rest args))
@@ -224,7 +252,10 @@
     (projects-use-plan (rest args))
 
     (string=? (first args) "current")
-    (vector 'current '())
+    {:ok? true
+     :effects [[:projects/current {}]]}
 
     :else
-    (vector 'error "ro projects commands are not implemented yet" args)))
+    {:ok? false
+     :error "ro projects commands are not implemented yet"
+     :command args}))

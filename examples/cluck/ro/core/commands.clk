@@ -85,7 +85,7 @@
                  "  ro projects current"))
    (vector "outlines"
            'outlines
-           false
+           true
            false
            (list "  ro outlines create --project <project-id> --name <name>"
                  "  ro outlines list [--project <project-id>]"
@@ -150,7 +150,7 @@
                  "  ro attachments export <attachment-id> <dest-path>"))
    (vector "worklog"
            'worklog
-           false
+           true
            true
            (list "  ro worklog list <item-id> [--limit N] [--offset N]"
                  "  ro worklog add <item-id> --body \"...\""))

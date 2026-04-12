@@ -1,0 +1,185 @@
+;; Pure worklog-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.worklog
+  (:require [cluck.string :as str]))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn any-help-arg?
+  [args]
+  (let loop ((xs (seq args)))
+    (cond
+      (empty? xs) false
+      (help-flag? (car xs)) true
+      :else (loop (cdr xs)))))
+
+(def worklog-help-lines
+  (list
+   "ro worklog"
+   ""
+   "usage:"
+   "  ro worklog list <item-id> [--limit N] [--offset N]"
+   "  ro worklog add <item-id> --body \"...\""))
+
+(def worklog-help-text
+  (str/join "\n" worklog-help-lines))
+
+(def worklog-help-output
+  (string-append worklog-help-text "\n"))
+
+(defn worklog-list-plan
+  [args]
+  (let loop ((xs args)
+             (item-id "")
+             (limit 200)
+             (offset 0))
+    (cond
+      (empty? xs)
+      (if (string=? item-id "")
+          {:ok? false
+           :error "ro worklog list expects <item-id>"
+           :command args}
+          {:ok? true
+           :effects [[:worklog/list {:item-id item-id
+                                     :limit limit
+                                     :offset offset}]]})
+
+      (any-help-arg? xs)
+      {:ok? true
+       :effects [[:worklog/help {}]]}
+
+      (string=? (first xs) "--limit")
+      (if (empty? (rest xs))
+          {:ok? false
+           :error "ro worklog list expects a value after --limit"
+           :command args}
+          (let [next-limit (parse-long (first (rest xs)))]
+            (if (< next-limit 0)
+                {:ok? false
+                 :error "ro worklog list expects a non-negative --limit"
+                 :command args}
+                (loop (cddr xs) item-id next-limit offset))))
+
+      (str/starts-with? (first xs) "--limit=")
+      (let [next-limit (parse-long (substring (first xs) 8 (string-length (first xs))))]
+        (if (< next-limit 0)
+            {:ok? false
+             :error "ro worklog list expects a non-negative --limit"
+             :command args}
+            (loop (rest xs) item-id next-limit offset)))
+
+      (string=? (first xs) "--offset")
+      (if (empty? (rest xs))
+          {:ok? false
+           :error "ro worklog list expects a value after --offset"
+           :command args}
+          (let [next-offset (parse-long (first (rest xs)))]
+            (if (< next-offset 0)
+                {:ok? false
+                 :error "ro worklog list expects a non-negative --offset"
+                 :command args}
+                (loop (cddr xs) item-id limit next-offset))))
+
+      (str/starts-with? (first xs) "--offset=")
+      (let [next-offset (parse-long (substring (first xs) 9 (string-length (first xs))))]
+        (if (< next-offset 0)
+            {:ok? false
+             :error "ro worklog list expects a non-negative --offset"
+             :command args}
+            (loop (rest xs) item-id limit next-offset)))
+
+      (str/starts-with? (first xs) "-")
+      {:ok? false
+       :error "unsupported worklog list flag"
+       :command args}
+
+      (string=? item-id "")
+      (loop (rest xs) (first xs) limit offset)
+
+      :else
+      {:ok? false
+       :error "unexpected worklog list argument"
+       :command args})))
+
+(defn worklog-add-plan
+  [args]
+  (let loop ((xs args)
+             (item-id "")
+             (body ""))
+    (cond
+      (empty? xs)
+      (cond
+        (string=? item-id "")
+        {:ok? false
+         :error "ro worklog add expects <item-id>"
+         :command args}
+
+        (string=? body "")
+        {:ok? false
+         :error "ro worklog add expects --body"
+         :command args}
+
+        :else
+        {:ok? true
+         :effects [[:worklog/add {:item-id item-id
+                                  :body body}]]})
+
+      (any-help-arg? xs)
+      {:ok? true
+       :effects [[:worklog/help {}]]}
+
+      (string=? (first xs) "--body")
+      (if (empty? (rest xs))
+          {:ok? false
+           :error "ro worklog add expects a value after --body"
+           :command args}
+          (loop (cddr xs)
+                item-id
+                (first (rest xs))))
+
+      (str/starts-with? (first xs) "--body=")
+      (loop (rest xs)
+            item-id
+            (substring (first xs) 7 (string-length (first xs))))
+
+      (str/starts-with? (first xs) "-")
+      {:ok? false
+       :error "unsupported worklog add flag"
+       :command args}
+
+      (string=? item-id "")
+      (loop (rest xs)
+            (first xs)
+            body)
+
+      :else
+      {:ok? false
+       :error "unexpected worklog add argument"
+       :command args})))
+
+(defn worklog-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    {:ok? true
+     :effects [[:worklog/help {}]]}
+
+    (string=? (first args) "help")
+    {:ok? true
+     :effects [[:worklog/help {}]]}
+
+    (string=? (first args) "list")
+    (worklog-list-plan (rest args))
+
+    (string=? (first args) "add")
+    (worklog-add-plan (rest args))
+
+    :else
+    {:ok? false
+     :error "ro worklog commands are not implemented yet"
+     :command args}))

@@ -32,8 +32,8 @@
       :else (loop (cdr xs)))))
 
 (def items-help-lines
-  (let ((entry (and command-entry-for-name
-                    (command-entry-for-name "items"))))
+  (let [entry (and command-entry-for-name
+                 (command-entry-for-name "items"))]
     (append
      (list
       "ro items"
@@ -52,15 +52,15 @@
 
 (defn json-envelope-output
   [data meta hints]
-  (let ((pairs (list (cons 'data data))))
-    (let ((pairs (if meta
-                     (append pairs (list (cons 'meta meta)))
-                     pairs)))
-      (let ((pairs (if (and hints
-                            (not (empty? hints)))
-                       (append pairs (list (cons '_hints hints)))
-                       pairs)))
-        (json-write-output (list->vector pairs))))))
+  (let [pairs (list (cons 'data data))
+        pairs (if meta
+                (append pairs (list (cons 'meta meta)))
+                pairs)
+        pairs (if (and hints
+                       (not (empty? hints)))
+                (append pairs (list (cons '_hints hints)))
+                pairs)]
+    (json-write-output (list->vector pairs))))
 
 (def items-show-hints
   (list "ro items list"
@@ -139,9 +139,20 @@
 
 (defn items-show-plan
   [args]
-  (if (empty? args)
-      (vector 'error "ro items show expects <item-id>" args)
-      (vector 'show (first args))))
+  (cond
+    (empty? args)
+    {:ok? false
+     :error "ro items show expects <item-id>"
+     :command args}
+
+    (not (empty? (rest args)))
+    {:ok? false
+     :error "unexpected items show argument"
+     :command args}
+
+    :else
+    {:ok? true
+     :effects [[:items/show {:item-id (first args)}]]}))
 
 (defn items-list-plan
   [args]
@@ -151,11 +162,20 @@
              (status ""))
     (cond
       (empty? xs)
-      (vector 'list project-id outline-id status)
+      {:ok? true
+       :effects [[:items/list {:project-id project-id
+                               :outline-id outline-id
+                               :status status}]]}
+
+      (any-help-arg? xs)
+      {:ok? true
+       :effects [[:items/help {}]]}
 
       (string=? (first xs) "--project")
       (if (empty? (rest xs))
-          (vector 'error "missing items project id" args)
+          {:ok? false
+           :error "missing items project id"
+           :command args}
           (loop (cddr xs)
                 (first (rest xs))
                 outline-id
@@ -169,7 +189,9 @@
 
       (string=? (first xs) "--outline")
       (if (empty? (rest xs))
-          (vector 'error "missing items outline id" args)
+          {:ok? false
+           :error "missing items outline id"
+           :command args}
           (loop (cddr xs)
                 project-id
                 (first (rest xs))
@@ -183,7 +205,9 @@
 
       (string=? (first xs) "--status")
       (if (empty? (rest xs))
-          (vector 'error "missing items status" args)
+          {:ok? false
+           :error "missing items status"
+           :command args}
           (loop (cddr xs)
                 project-id
                 outline-id
@@ -196,65 +220,110 @@
             (substring (first xs) 9 (string-length (first xs))))
 
       (str/starts-with? (first xs) "-")
-      (vector 'error "unsupported items list flag" args)
+      {:ok? false
+       :error "unsupported items list flag"
+       :command args}
 
       :else
-      (vector 'error "unexpected items list argument" args))))
+      {:ok? false
+       :error "unexpected items list argument"
+       :command args})))
 
 (defn items-ready-plan
   [args]
-  (vector 'ready args))
+  (cond
+    (any-help-arg? args)
+    {:ok? true
+     :effects [[:items/help {}]]}
+
+    (empty? args)
+    {:ok? true
+     :effects [[:items/ready {}]]}
+
+    :else
+    {:ok? false
+     :error "unexpected items ready argument"
+     :command args}))
 
 (defn items-events-plan
   [args]
-  (let ((item-id (if (empty? args)
-                     ""
-                     (first args)))
-        (more (if (empty? args)
-                  '()
-                  (rest args))))
+  (let [item-id (if (empty? args)
+                  ""
+                  (first args))
+        more (if (empty? args)
+               '()
+               (rest args))]
     (cond
       (string=? item-id "")
-      (vector 'error "ro items events expects <item-id>" args)
+      {:ok? false
+       :error "ro items events expects <item-id>"
+       :command args}
+
+      (any-help-arg? more)
+      {:ok? true
+       :effects [[:items/help {}]]}
 
       (empty? more)
-      (vector 'events item-id 0)
+      {:ok? true
+       :effects [[:items/events {:item-id item-id
+                                 :limit 0}]]}
 
       (string=? (first more) "--limit")
       (if (empty? (rest more))
-          (vector 'error "ro items events expects a value after --limit" args)
-          (let ((next-limit (parse-long (first (rest more)))))
+          {:ok? false
+           :error "ro items events expects a value after --limit"
+           :command args}
+          (let [next-limit (parse-long (first (rest more)))]
             (if (< next-limit 0)
-                (vector 'error "ro items events expects a non-negative --limit" next-limit)
+                {:ok? false
+                 :error "ro items events expects a non-negative --limit"
+                 :command args}
                 (if (empty? (cddr more))
-                    (vector 'events item-id next-limit)
-                    (vector 'error "unexpected items events argument" args)))))
+                    {:ok? true
+                     :effects [[:items/events {:item-id item-id
+                                               :limit next-limit}]]}
+                    {:ok? false
+                     :error "unexpected items events argument"
+                     :command args}))))
 
       (str/starts-with? (first more) "--limit=")
-      (let ((next-limit (parse-long (substring (first more) 8 (string-length (first more))))))
+      (let [next-limit (parse-long (substring (first more) 8 (string-length (first more))))]
         (if (< next-limit 0)
-            (vector 'error "ro items events expects a non-negative --limit" next-limit)
+            {:ok? false
+             :error "ro items events expects a non-negative --limit"
+             :command args}
             (if (empty? (rest more))
-                (vector 'events item-id next-limit)
-                (vector 'error "unexpected items events argument" args))))
+                {:ok? true
+                 :effects [[:items/events {:item-id item-id
+                                           :limit next-limit}]]}
+                {:ok? false
+                 :error "unexpected items events argument"
+                 :command args})))
 
       (str/starts-with? (first more) "-")
-      (vector 'error "unsupported items events flag" args)
+      {:ok? false
+       :error "unsupported items events flag"
+       :command args}
 
       :else
-      (vector 'error "unexpected items events argument" args))))
+      {:ok? false
+       :error "unexpected items events argument"
+       :command args})))
 
 (defn items-main-plan
   [args]
   (cond
     (empty? args)
-    (vector 'help '())
+    {:ok? true
+     :effects [[:items/help {}]]}
 
     (help-flag? (first args))
-    (vector 'help '())
+    {:ok? true
+     :effects [[:items/help {}]]}
 
     (string=? (first args) "help")
-    (vector 'help '())
+    {:ok? true
+     :effects [[:items/help {}]]}
 
     (string=? (first args) "show")
     (items-show-plan (rest args))
@@ -269,22 +338,29 @@
     (items-events-plan (rest args))
 
     :else
-    (vector 'error "ro items commands are not implemented yet" args)))
+    {:ok? false
+     :error "ro items commands are not implemented yet"
+     :command args}))
 
 (defn item-main-plan
   [args]
-  (let ((item-id (if (empty? args)
-                     ""
-                     (first args)))
-        (more (if (empty? args)
-                  '()
-                  (rest args))))
+  (let [item-id (if (empty? args)
+                  ""
+                  (first args))
+        more (if (empty? args)
+               '()
+               (rest args))]
     (cond
       (string=? item-id "")
-      (vector 'error "ro item expects <item-id>" args)
+      {:ok? false
+       :error "ro item expects <item-id>"
+       :command args}
 
       (not (empty? more))
-      (vector 'error "unexpected item argument" args)
+      {:ok? false
+       :error "unexpected item argument"
+       :command args}
 
       :else
-      (vector 'show item-id))))
+      {:ok? true
+       :effects [[:items/show {:item-id item-id}]]})))

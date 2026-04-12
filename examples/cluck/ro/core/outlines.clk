@@ -1,0 +1,749 @@
+;; Pure outline-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.outlines
+  (:require [cluck.io :as io]
+            [cluck.string :as str]
+            [json :as json]))
+
+(def json-write-output
+  (ns-resolve 'cluck.examples.ro.core.json 'json-write-output))
+
+(def json-field-value
+  (ns-resolve 'cluck.examples.ro.core.json 'json-field-value))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn outlines-help-lines
+  []
+  (list
+   "ro outlines"
+   ""
+   "usage:"
+   "  ro outlines create --project <project-id> --name <name>"
+   "  ro outlines list [--project <project-id>]"
+   "  ro outlines show <outline-id>"
+   "  ro outlines archive <outline-id> [--unarchive]"
+   "  ro outlines status list <outline-id>"
+   "  ro outlines status add <outline-id> --label <label>"
+   "  ro outlines status update <outline-id> --id <status-id> [--label <label>] [--end-state] [--requires-note]"
+   "  ro outlines status remove <outline-id> --id <status-id>"
+   "  ro outlines status reorder <outline-id> --label <label> (repeatable)"))
+
+(def outlines-help-text
+  (str/join "\n" (outlines-help-lines)))
+
+(def outlines-help-output
+  (string-append outlines-help-text "\n"))
+
+(defn outline-status-id-from-label
+  [label]
+  (let ((text (str/lower-case (str/trim (or label "")))))
+    (let loop ((chars (string->list text))
+               (acc '())
+               (last-hyphen? false))
+      (cond
+        (empty? chars)
+        (let ((id (list->string (reverse acc))))
+          (if (and (> (string-length id) 0)
+                   (char=? (string-ref id (- (string-length id) 1)) #\-))
+              (substring id 0 (- (string-length id) 1))
+              id))
+
+        (or (char-alphabetic? (first chars))
+            (char-numeric? (first chars)))
+        (loop (rest chars)
+              (cons (first chars) acc)
+              false)
+
+        (or (char-whitespace? (first chars))
+            (char=? (first chars) #\-)
+            (char=? (first chars) #\_)
+            (char=? (first chars) #\/)
+            (char=? (first chars) #\.))
+        (if (or last-hyphen?
+                (empty? acc))
+            (loop (rest chars) acc last-hyphen?)
+            (loop (rest chars) (cons #\- acc) true))
+
+        :else
+        (loop (rest chars) acc last-hyphen?)))))
+
+(defn outline-status-def-record
+  [status-id label end-state requires-note]
+  (vector
+   (cons 'id (or status-id ""))
+   (cons 'label (or label ""))
+   (cons 'isEndState (or end-state false))
+   (cons 'requiresNote (or requires-note false))))
+
+(defn outline-default-status-defs
+  []
+  (list
+   (outline-status-def-record "todo" "TODO" false false)
+   (outline-status-def-record "doing" "DOING" false false)
+   (outline-status-def-record "done" "DONE" true false)))
+
+(defn outline-status-def-summary
+  [status-def]
+  (if status-def
+      (outline-status-def-record
+       (or (json-field-value status-def "id" "") "")
+       (or (json-field-value status-def "label" "") "")
+       (or (json-field-value status-def "isEndState" false) false)
+       (or (json-field-value status-def "requiresNote" false) false))
+      false))
+
+(defn outline-status-defs-summary
+  [status-defs]
+  (map outline-status-def-summary (or status-defs '())))
+
+(defn outline-summary
+  [outline]
+  (if outline
+      (vector
+       (cons 'id (or (json-field-value outline "id" "") ""))
+       (cons 'projectId (or (json-field-value outline "projectId" "") ""))
+       (cons 'name (or (json-field-value outline "name" "") ""))
+       (cons 'description (or (json-field-value outline "description" "") ""))
+       (cons 'archived (or (json-field-value outline "archived" false) false))
+       (cons 'statusDefs
+             (outline-status-defs-summary
+              (or (json-field-value outline "statusDefs" '()) '()))))
+      false))
+
+(defn outline-summary<?
+  [left right]
+  (let ((left-project-id (str/lower-case (or (json-field-value left "projectId" "") "")))
+        (right-project-id (str/lower-case (or (json-field-value right "projectId" "") "")))
+        (left-name (str/lower-case (or (json-field-value left "name" "") "")))
+        (right-name (str/lower-case (or (json-field-value right "name" "") "")))
+        (left-id (str/lower-case (or (json-field-value left "id" "") "")))
+        (right-id (str/lower-case (or (json-field-value right "id" "") ""))))
+    (cond
+      (string<? left-project-id right-project-id) true
+      (string<? right-project-id left-project-id) false
+      (string<? left-name right-name) true
+      (string<? right-name left-name) false
+      (string<? left-id right-id) true
+      :else false)))
+
+(defn outlines-list-output
+  [outlines]
+  (json-write-output
+   (vector
+    (cons 'data
+          (map outline-summary
+               (cluck-sort-list outlines outline-summary<?))))))
+
+(defn outlines-show-output
+  [outline]
+  (json-write-output
+   (vector
+    (cons 'data
+          (outline-summary outline)))))
+
+(defn outlines-status-list-output
+  [status-defs]
+  (json-write-output
+   (vector
+    (cons 'data
+          (outline-status-defs-summary status-defs)))))
+
+(defn outline-status-def-label-match?
+  [status-def label]
+  (let ((target (str/lower-case (or label "")))
+        (current-label (str/lower-case (or (json-field-value status-def "label" "") "")))
+        (current-id (str/lower-case (or (json-field-value status-def "id" "") ""))))
+    (or (string=? target current-label)
+        (string=? target current-id))))
+
+(defn outline-status-def-id-match?
+  [status-def status-id]
+  (string=? (or (json-field-value status-def "id" "") "")
+            (or status-id "")))
+
+(defn outline-status-defs-find
+  [status-defs status-id]
+  (let loop ((xs (or status-defs '())))
+    (cond
+      (empty? xs) false
+      (outline-status-def-id-match? (first xs) status-id)
+      (outline-status-def-summary (first xs))
+      :else
+      (loop (rest xs)))))
+
+(defn outline-status-defs-add
+  [status-defs label]
+  (append (or status-defs '())
+          (list (outline-status-def-record
+                 (outline-status-id-from-label label)
+                 label
+                 false
+                 false))))
+
+(defn outline-status-defs-update
+  [status-defs status-id label end-state? requires-note?]
+  (let loop ((xs (or status-defs '()))
+             (acc '())
+             (found? false))
+    (cond
+      (empty? xs)
+      (if found?
+          (reverse acc)
+          false)
+
+      (outline-status-def-id-match? (first xs) status-id)
+      (let ((current (first xs))
+            (current-label (or (json-field-value (first xs) "label" "") ""))
+            (current-end-state (or (json-field-value (first xs) "isEndState" false) false))
+            (current-requires-note (or (json-field-value (first xs) "requiresNote" false) false)))
+        (loop (rest xs)
+              (cons (outline-status-def-record
+                     status-id
+                     (if (and (string? label)
+                              (not (string=? label "")))
+                         label
+                         current-label)
+                     (if end-state?
+                         true
+                         current-end-state)
+                     (if requires-note?
+                         true
+                         current-requires-note))
+                    acc)
+              true))
+
+      :else
+      (loop (rest xs)
+            (cons (outline-status-def-summary (first xs)) acc)
+            found?))))
+
+(defn outline-status-defs-remove-first
+  [status-defs label]
+  (let loop ((xs (or status-defs '()))
+             (acc '())
+             (removed? false))
+    (cond
+      (empty? xs)
+      (vector (reverse acc) removed?)
+
+      (and (not removed?)
+           (outline-status-def-label-match? (first xs) label))
+      (loop (rest xs)
+            acc
+            true)
+
+      :else
+      (loop (rest xs)
+            (cons (outline-status-def-summary (first xs)) acc)
+            removed?))))
+
+(defn outline-status-defs-remove
+  [status-defs status-id]
+  (let loop ((xs (or status-defs '()))
+             (acc '())
+             (removed? false))
+    (cond
+      (empty? xs)
+      (if removed?
+          (reverse acc)
+          false)
+
+      (outline-status-def-id-match? (first xs) status-id)
+      (loop (rest xs)
+            acc
+            true)
+
+      :else
+      (loop (rest xs)
+            (cons (outline-status-def-summary (first xs)) acc)
+            removed?))))
+
+(defn outline-status-defs-reorder
+  [status-defs labels]
+  (let loop ((wanted (or labels '()))
+             (remaining (or status-defs '()))
+             (ordered '()))
+    (cond
+      (empty? wanted)
+      (append (reverse ordered) remaining)
+
+      :else
+      (let ((label (first wanted))
+            (found (outline-status-defs-find remaining (outline-status-id-from-label (first wanted)))))
+        (if found
+            (let ((picked (outline-status-defs-remove-first remaining label)))
+              (loop (rest wanted)
+                    (vector-ref picked 0)
+                    (cons found ordered)))
+            (loop (rest wanted)
+                  remaining
+                  ordered))))))
+
+(defn outlines-create-plan
+  [args]
+  (let loop ((xs args)
+             (project-id "")
+             (name ""))
+    (cond
+      (empty? xs)
+      {:ok? true
+       :effects [[:outlines/create {:project-id project-id
+                                    :name name}]]}
+
+      (string=? (first xs) "--project")
+      (cond
+        (empty? (rest xs))
+        {:ok? false
+         :error "missing outline project id"
+         :command args}
+
+        :else
+        (loop (rest (rest xs))
+              (first (rest xs))
+              name))
+
+      (str/starts-with? (first xs) "--project=")
+      (loop (rest xs)
+            (substring (first xs) 10 (string-length (first xs)))
+            name)
+
+      (string=? (first xs) "--name")
+      (cond
+        (empty? (rest xs))
+        {:ok? false
+         :error "missing outline name"
+         :command args}
+
+        :else
+        (loop (rest (rest xs))
+              project-id
+              (first (rest xs))))
+
+      (str/starts-with? (first xs) "--name=")
+      (loop (rest xs)
+            project-id
+            (substring (first xs) 7 (string-length (first xs))))
+
+      (str/starts-with? (first xs) "-")
+      {:ok? false
+       :error "unsupported outlines create flag"
+       :command args}
+
+      :else
+      {:ok? false
+       :error "unsupported outlines create flag"
+       :command args})))
+
+(defn outlines-list-plan
+  [args]
+  (let loop ((xs args)
+             (project-id ""))
+    (cond
+      (empty? xs)
+      {:ok? true
+       :effects [[:outlines/list {:project-id project-id}]]}
+
+      (string=? (first xs) "--project")
+      (cond
+        (empty? (rest xs))
+        {:ok? false
+         :error "missing outline project id"
+         :command args}
+
+        :else
+        (loop (rest (rest xs))
+              (first (rest xs))))
+
+      (str/starts-with? (first xs) "--project=")
+      (loop (rest xs)
+            (substring (first xs) 10 (string-length (first xs))))
+
+      (str/starts-with? (first xs) "-")
+      {:ok? false
+       :error "unsupported outlines list flag"
+       :command args}
+
+      :else
+      {:ok? false
+       :error "unsupported outlines list flag"
+       :command args})))
+
+(defn outlines-show-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      (not (empty? more))
+      {:ok? false
+       :error "unexpected outlines show argument"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:outlines/show {:outline-id outline-id}]]})))
+
+(defn outlines-archive-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      (empty? more)
+      {:ok? true
+       :effects [[:outlines/archive {:outline-id outline-id
+                                     :archived true}]]}
+
+      (string=? (first more) "--unarchive")
+      (if (empty? (rest more))
+          {:ok? true
+           :effects [[:outlines/archive {:outline-id outline-id
+                                         :archived false}]]}
+          {:ok? false
+           :error "unexpected outlines archive argument"
+           :command args})
+
+      (str/starts-with? (first more) "-")
+      {:ok? false
+       :error "unsupported outlines archive flag"
+       :command args}
+
+      :else
+      {:ok? false
+       :error "unexpected outlines archive argument"
+       :command args})))
+
+(defn outlines-status-list-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      (not (empty? more))
+      {:ok? false
+       :error "unexpected outlines status list argument"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:outlines/status-list {:outline-id outline-id}]]})))
+
+(defn outlines-status-add-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      :else
+      (let loop ((xs more)
+                 (label ""))
+        (cond
+          (empty? xs)
+          (if (string=? label "")
+              {:ok? false
+               :error "missing --label"
+               :command args}
+              {:ok? true
+               :effects [[:outlines/status-add {:outline-id outline-id
+                                                :label label}]]})
+
+          (string=? (first xs) "--label")
+          (cond
+            (empty? (rest xs))
+            {:ok? false
+             :error "missing --label"
+             :command args}
+
+            :else
+            (loop (rest (rest xs))
+                  (first (rest xs))))
+
+          (str/starts-with? (first xs) "--label=")
+          (loop (rest xs)
+                (substring (first xs) 8 (string-length (first xs))))
+
+          (str/starts-with? (first xs) "-")
+          {:ok? false
+           :error "unsupported outlines status add flag"
+           :command args}
+
+          :else
+          {:ok? false
+           :error "unexpected outlines status add argument"
+           :command args})))))
+
+(defn outlines-status-update-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      :else
+      (let loop ((xs more)
+                 (status-id "")
+                 (label "")
+                 (end-state? false)
+                 (requires-note? false))
+        (cond
+          (empty? xs)
+          (if (string=? status-id "")
+              {:ok? false
+               :error "missing --id"
+               :command args}
+              {:ok? true
+               :effects [[:outlines/status-update {:outline-id outline-id
+                                                   :status-id status-id
+                                                   :label label
+                                                   :end-state? end-state?
+                                                   :requires-note? requires-note?}]]})
+
+          (string=? (first xs) "--id")
+          (cond
+            (empty? (rest xs))
+            {:ok? false
+             :error "missing --id"
+             :command args}
+
+            :else
+            (loop (rest (rest xs))
+                  (first (rest xs))
+                  label
+                  end-state?
+                  requires-note?))
+
+          (str/starts-with? (first xs) "--id=")
+          (loop (rest xs)
+                (substring (first xs) 5 (string-length (first xs)))
+                label
+                end-state?
+                requires-note?)
+
+          (string=? (first xs) "--label")
+          (cond
+            (empty? (rest xs))
+            {:ok? false
+             :error "missing --label"
+             :command args}
+
+            :else
+            (loop (rest (rest xs))
+                  status-id
+                  (first (rest xs))
+                  end-state?
+                  requires-note?))
+
+          (str/starts-with? (first xs) "--label=")
+          (loop (rest xs)
+                status-id
+                (substring (first xs) 8 (string-length (first xs)))
+                end-state?
+                requires-note?)
+
+          (string=? (first xs) "--end-state")
+          (loop (rest xs)
+                status-id
+                label
+                true
+                requires-note?)
+
+          (string=? (first xs) "--requires-note")
+          (loop (rest xs)
+                status-id
+                label
+                end-state?
+                true)
+
+          (str/starts-with? (first xs) "-")
+          {:ok? false
+           :error "unsupported outlines status update flag"
+           :command args}
+
+          :else
+          {:ok? false
+           :error "unexpected outlines status update argument"
+           :command args})))))
+
+(defn outlines-status-remove-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      :else
+      (let loop ((xs more)
+                 (status-id ""))
+        (cond
+          (empty? xs)
+          (if (string=? status-id "")
+              {:ok? false
+               :error "missing --id"
+               :command args}
+              {:ok? true
+               :effects [[:outlines/status-remove {:outline-id outline-id
+                                                   :status-id status-id}]]})
+
+          (string=? (first xs) "--id")
+          (cond
+            (empty? (rest xs))
+            {:ok? false
+             :error "missing --id"
+             :command args}
+
+            :else
+            (loop (rest (rest xs))
+                  (first (rest xs))))
+
+          (str/starts-with? (first xs) "--id=")
+          (loop (rest xs)
+                (substring (first xs) 5 (string-length (first xs))))
+
+          (str/starts-with? (first xs) "-")
+          {:ok? false
+           :error "unsupported outlines status remove flag"
+           :command args}
+
+          :else
+          {:ok? false
+           :error "unexpected outlines status remove argument"
+           :command args})))))
+
+(defn outlines-status-reorder-plan
+  [args]
+  (let ((outline-id (if (empty? args) "" (first args)))
+        (more (if (empty? args) '() (rest args))))
+    (cond
+      (string=? outline-id "")
+      {:ok? false
+       :error "missing outline id"
+       :command args}
+
+      :else
+      (let loop ((xs more)
+                 (labels '()))
+        (cond
+          (empty? xs)
+          (if (empty? labels)
+              {:ok? false
+               :error "missing --label (repeatable)"
+               :command args}
+              {:ok? true
+               :effects [[:outlines/status-reorder {:outline-id outline-id
+                                                    :labels (reverse labels)}]]})
+
+          (string=? (first xs) "--label")
+          (cond
+            (empty? (rest xs))
+            {:ok? false
+             :error "missing --label (repeatable)"
+             :command args}
+
+            :else
+            (loop (rest (rest xs))
+                  (cons (first (rest xs)) labels)))
+
+          (str/starts-with? (first xs) "--label=")
+          (loop (rest xs)
+                (cons (substring (first xs) 8 (string-length (first xs))) labels))
+
+          (str/starts-with? (first xs) "-")
+          {:ok? false
+           :error "unsupported outlines status reorder flag"
+           :command args}
+
+          :else
+          {:ok? false
+           :error "unexpected outlines status reorder argument"
+           :command args})))))
+
+(defn outlines-status-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    {:ok? true
+     :effects [[:outlines/help {}]]}
+
+    (string=? (first args) "help")
+    {:ok? true
+     :effects [[:outlines/help {}]]}
+
+    (string=? (first args) "list")
+    (outlines-status-list-plan (rest args))
+
+    (string=? (first args) "add")
+    (outlines-status-add-plan (rest args))
+
+    (string=? (first args) "update")
+    (outlines-status-update-plan (rest args))
+
+    (string=? (first args) "remove")
+    (outlines-status-remove-plan (rest args))
+
+    (string=? (first args) "reorder")
+    (outlines-status-reorder-plan (rest args))
+
+    :else
+    {:ok? false
+     :error "unsupported outlines status subcommand"
+     :command args}))
+
+(defn outlines-main-plan
+  [args]
+  (cond
+    (or (empty? args)
+        (help-flag? (first args)))
+    {:ok? true
+     :effects [[:outlines/help {}]]}
+
+    (string=? (first args) "help")
+    {:ok? true
+     :effects [[:outlines/help {}]]}
+
+    (string=? (first args) "create")
+    (outlines-create-plan (rest args))
+
+    (string=? (first args) "list")
+    (outlines-list-plan (rest args))
+
+    (string=? (first args) "show")
+    (outlines-show-plan (rest args))
+
+    (string=? (first args) "archive")
+    (outlines-archive-plan (rest args))
+
+    (string=? (first args) "status")
+    (outlines-status-main-plan (rest args))
+
+    :else
+    {:ok? false
+     :error "unsupported outlines subcommand"
+     :command args}))

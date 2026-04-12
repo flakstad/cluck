@@ -20,6 +20,8 @@
   (load-file (string-append root "../examples/cluck/ro/core/help.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/workspace.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/projects.clk"))
+  (load-file (string-append root "../examples/cluck/ro/core/worklog.clk"))
+  (load-file (string-append root "../examples/cluck/ro/core/outlines.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/items.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/events.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/sync.clk"))

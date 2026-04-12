@@ -40,6 +40,57 @@
 (def app-print-projects-current (ns-resolve 'cluck.examples.ro.app 'print-projects-current))
 (def app-items-help-output (ns-resolve 'cluck.examples.ro.app 'items-help-output))
 (def app-main (ns-resolve 'cluck.examples.ro.app 'main))
+(def app-workspace-item-order<? (ns-resolve 'cluck.examples.ro.app 'workspace-item-order<?))
+(def order-item-a (vector (cons 'rank "a")))
+(def order-item-b (vector (cons 'rank "b")))
+(def order-item-equal-left (vector (cons 'rank "u")))
+(def order-item-equal-right (vector (cons 'rank "u")))
+(assert-true "workspace item order compares rank"
+             (app-workspace-item-order<? order-item-a order-item-b))
+(assert-true "workspace item order keeps equal ranks tied left"
+             (not (app-workspace-item-order<? order-item-equal-left order-item-equal-right)))
+(assert-true "workspace item order keeps equal ranks tied right"
+             (not (app-workspace-item-order<? order-item-equal-right order-item-equal-left)))
+(def current-project-output
+  (capture-output (fn [] (app-main '("projects" "current")))))
+(def current-project-output-data
+  (json/json-read (open-input-string current-project-output)))
+(def current-project-id
+  (ro-json-json-field-value
+   (ro-json-json-field-value current-project-output-data "data" '())
+   "projectId"
+   ""))
+(def live-items-list-output
+  (capture-output (fn [] (app-main '("items" "list" "--format" "json")))))
+(def live-items-list-output-data
+  (json/json-read (open-input-string live-items-list-output)))
+(def live-items-list
+  (ro-json-json-field-value live-items-list-output-data "data" '()))
+(def live-root-item
+  (if (empty? live-items-list)
+      false
+      (first live-items-list)))
+(def live-root-children
+  (and live-root-item
+       (ro-json-json-field-value
+        (ro-json-json-field-value live-root-item "children" '())
+        "items"
+        '())))
+(def live-item-record
+  (cond
+    (and live-root-children (not (empty? live-root-children)))
+    (first live-root-children)
+
+    live-root-item
+    live-root-item
+
+    :else
+    false))
+(def live-item-id
+  (and live-item-record
+       (ro-json-json-field-value live-item-record "id" "")))
+(assert-true "live item id available"
+             (and live-item-id (not (string=? live-item-id ""))))
 (def run-live-parity?
   (not (string=? (or (get-environment-variable "RO_CLI_SKIP_LIVE") "") "1")))
 
@@ -94,17 +145,51 @@
   [args]
   (proc/exec "ro" args))
 
+(defn run-clj-ro
+  [args]
+  (proc/exec "/Users/andreas/Projects/ro/ro-clj/bin/ro" args))
+
+(defn ready-summary-output
+  [binary]
+  (get
+   (proc/exec
+    "python3"
+    "-c"
+    (string-append
+     "import json,subprocess,sys;"
+     "p=subprocess.run(sys.argv[1:],capture_output=True,text=True);"
+     "if p.returncode!=0:"
+     " sys.stderr.write(p.stderr);"
+     " sys.stdout.write(p.stdout);"
+     " sys.exit(p.returncode);"
+     "obj=json.loads(p.stdout);"
+     "items=obj.get('data',[]);"
+     "summary={'count':len(items),'first_ids':[item.get('id','') for item in items[:5]],'_hints':obj.get('_hints',[])};"
+     "print(json.dumps(summary,sort_keys=True,separators=(',', ':'),ensure_ascii=False))")
+    binary
+    "items"
+    "ready"
+    "--format"
+    "json")
+   :out
+   ""))
+
 (defn temp-dir
   [prefix]
-  (let* ((result
-          (proc/exec
-           "python3"
-           "-c"
-           (string-append "import tempfile; print(tempfile.mkdtemp(prefix='"
-                          prefix
-                          "'))")))
-         (path (str/trim (get result :out ""))))
+  (let [result
+        (proc/exec
+         "python3"
+         "-c"
+         (string-append "import tempfile; print(tempfile.mkdtemp(prefix='"
+                        prefix
+                        "'))"))
+        path (str/trim (get result :out ""))]
     path))
+
+(defn temp-file-path
+  [prefix suffix]
+  (let [dir (temp-dir prefix)]
+    (fs/path dir (string-append "value" suffix))))
 
 (defn run-ro-in-config
   [binary config-dir args]
@@ -133,6 +218,65 @@
   [config-dir args]
   (run-ro-in-config "ro" config-dir args))
 
+(def live-workspace-output
+  (app-workspace-current-output))
+(def live-workspace-output-data
+  (json/json-read (open-input-string live-workspace-output)))
+(def live-workspace-name
+  (json-output-field live-workspace-output-data "workspace" ""))
+(def live-workspace-root
+  (json-output-field live-workspace-output-data "dir" ""))
+
+(defn clone-workspace-root
+  [source-root prefix]
+  (let [dest (temp-dir prefix)
+        result
+        (proc/exec
+         "python3"
+         "-c"
+         (string-append
+          "import os, shutil, subprocess, sys\n"
+          "src, dst = sys.argv[1], sys.argv[2]\n"
+          "for name in ('meta', '.ro', 'events'):\n"
+          "    src_path = os.path.join(src, name)\n"
+          "    if not os.path.exists(src_path):\n"
+          "        continue\n"
+          "    dst_path = os.path.join(dst, name)\n"
+          "    if os.path.isdir(src_path) and not os.path.islink(src_path):\n"
+          "        shutil.copytree(src_path, dst_path, dirs_exist_ok=True)\n"
+          "    else:\n"
+          "        os.makedirs(os.path.dirname(dst_path), exist_ok=True)\n"
+          "        shutil.copy2(src_path, dst_path)\n"
+          "subprocess.run(['git', 'init', '-q'], cwd=dst, check=True)\n")
+         source-root
+         dest)]
+    (if (= 0 (get result :exit 1))
+        dest
+        (error "failed to clone workspace root"
+               (get result :out "")
+               (get result :err "")))))
+
+(defn prepare-isolated-workspace-config
+  [prefix]
+  (let [config-dir (temp-dir (string-append prefix "-config-"))
+        workspace-root (clone-workspace-root live-workspace-root
+                                             (string-append prefix "-workspace-"))
+        workspace-name (string-append live-workspace-name "-" prefix)
+        result
+        (run-odin-ro-in-config
+         config-dir
+         (list "workspace"
+               "add"
+               workspace-name
+               "--dir"
+               workspace-root
+               "--use"))]
+    (if (= 0 (get result :exit 1))
+        config-dir
+        (error "failed to prepare isolated workspace config"
+               (get result :out "")
+               (get result :err "")))))
+
 (defn json-key-text
   [key]
   (cond
@@ -159,10 +303,10 @@
                   (pair? value) (seq value)
                   :else '())
           sorted (cluck-sort-list items
-                                  (lambda (a b)
+                                  (fn [a b]
                                     (string<? (json-key-text (car a))
                                               (json-key-text (car b)))))]
-      (map (lambda (entry)
+      (map (fn [entry]
              (let [key (car entry)
                    normalized-value
                    (if (and (string? key)
@@ -183,6 +327,42 @@
 
     :else value))
 
+(defn canonical-json-output
+  [text]
+  (let [path (temp-file-path "cluck-ro-json-" ".json")
+        result (begin
+                 (fs/spit path text)
+                 (proc/exec
+                  "python3"
+                  "-c"
+                  (string-append
+                   "import json,sys\n"
+                   "def norm(v):\n"
+                   "  if isinstance(v,dict):\n"
+                   "    out={}\n"
+                   "    for k in sorted(v.keys(), key=lambda x: str(x)):\n"
+                   "      val=v[k]\n"
+                   "      if k=='payload_json' and isinstance(val,str):\n"
+                   "        try:\n"
+                   "          val=norm(json.loads(val))\n"
+                   "        except Exception:\n"
+                   "          pass\n"
+                   "      else:\n"
+                   "        val=norm(val)\n"
+                   "      out[k]=val\n"
+                   "    return out\n"
+                   "  if isinstance(v,list):\n"
+                   "    return [norm(x) for x in v]\n"
+                   "  return v\n"
+                   "obj=json.load(open(sys.argv[1], encoding='utf-8'))\n"
+                   "sys.stdout.write(json.dumps(norm(obj), separators=(',', ':'), ensure_ascii=False))")
+                  path))]
+    (if (= 0 (get result :exit 1))
+        (get result :out "")
+        (error "failed to canonicalize json output"
+               (get result :out "")
+               (get result :err "")))))
+
 (defn assert-json=
   [label expected actual]
   (if (equal? (normalize-json-value expected)
@@ -198,14 +378,32 @@
         odin-out (get odin :out "")
         cluck-err (get cluck :err "")
         odin-err (get odin :err "")]
-    (assert-json= (string-append label " stdout json parity")
-                  (json/json-read (open-input-string odin-out))
-                  (json/json-read (open-input-string cluck-out)))
+    (assert-str= (string-append label " stdout json parity")
+                 (canonical-json-output odin-out)
+                 (canonical-json-output cluck-out))
     (assert-str= (string-append label " stderr parity")
                  odin-err
                  cluck-err)
     (assert-num= (string-append label " exit parity")
                  (get odin :exit)
+                 (get cluck :exit))))
+
+(defn assert-cli-json-parity-against
+  [label run-reference args]
+  (let [cluck (run-cluck-ro args)
+        reference (run-reference args)
+        cluck-out (get cluck :out "")
+        reference-out (get reference :out "")
+        cluck-err (get cluck :err "")
+        reference-err (get reference :err "")]
+    (assert-str= (string-append label " stdout json parity")
+                 (canonical-json-output reference-out)
+                 (canonical-json-output cluck-out))
+    (assert-str= (string-append label " stderr parity")
+                 reference-err
+                 cluck-err)
+    (assert-num= (string-append label " exit parity")
+                 (get reference :exit)
                  (get cluck :exit))))
 
 (defn assert-cli-case
@@ -303,9 +501,33 @@
         odin (run-odin-ro-in-config odin-config-dir args)
         cluck-out (get cluck :out "")
         odin-out (get odin :out "")]
+    (assert-str= (string-append label " stdout json parity")
+                 (canonical-json-output odin-out)
+                 (canonical-json-output cluck-out))
+    (assert-num= (string-append label " exit parity")
+                 (get odin :exit)
+                 (get cluck :exit))))
+
+(defn reindex-output-summary
+  [output]
+  (let ((data (ro-json-json-field-value output "data" '()))
+        (hints (ro-json-json-field-value output "_hints" '())))
+    (vector
+     (cons 'data
+           (vector
+            (cons 'applied (ro-json-json-field-value data "applied" 0))
+            (cons 'skipped (ro-json-json-field-value data "skipped" 0))))
+     (cons '_hints hints))))
+
+(defn assert-cli-json-summary-parity-in-config
+  [label cluck-config-dir odin-config-dir args]
+  (let [cluck (run-cluck-ro-in-config cluck-config-dir args)
+        odin (run-odin-ro-in-config odin-config-dir args)
+        cluck-out (get cluck :out "")
+        odin-out (get odin :out "")]
     (assert-json= (string-append label " stdout json parity")
-                  (json/json-read (open-input-string odin-out))
-                  (json/json-read (open-input-string cluck-out)))
+                  (reindex-output-summary (json/json-read (open-input-string odin-out)))
+                  (reindex-output-summary (json/json-read (open-input-string cluck-out))))
     (assert-num= (string-append label " exit parity")
                  (get odin :exit)
                  (get cluck :exit))))
@@ -475,7 +697,7 @@
              (capture-output (lambda () (app-main '("projects" "current")))))
 (assert-str= "main prints projects use on current project"
              (capture-output (lambda () (app-main '("projects" "current"))))
-             (capture-output (lambda () (app-main '("projects" "use" "proj-d1743158")))))
+             (capture-output (lambda () (app-main (list "projects" "use" current-project-id)))))
 (assert-str= "main prints projects archive missing project not found"
              "project not found\n"
              (capture-error-output (lambda () (app-main '("projects" "archive" "proj-nope")))))
@@ -527,13 +749,14 @@
 (assert-cli-case "workspace use --help" "workspace-use-help" '("workspace" "use" "--help"))
 (assert-cli-case "projects --help" "projects-help" '("projects" "--help"))
 (assert-cli-case "projects help" "projects-help" '("projects" "help"))
+(assert-cli-parity "worklog help" '("worklog"))
 (assert-cli-case "completion bash" "completion-bash" '("completion" "bash"))
 (assert-cli-case "completion zsh" "completion-zsh" '("completion" "zsh"))
 (assert-cli-case "completion fish" "completion-fish" '("completion" "fish"))
 
-(define workspace-init-root-dir (temp-dir "cluck-ro-init-workspace-"))
-(define workspace-init-cluck-config-dir (temp-dir "cluck-ro-init-config-cluck-"))
-(define workspace-init-output
+(def workspace-init-root-dir (temp-dir "cluck-ro-init-workspace-"))
+(def workspace-init-cluck-config-dir (temp-dir "cluck-ro-init-config-cluck-"))
+(def workspace-init-output
   (cluck-json-output-in-config workspace-init-cluck-config-dir
                                (list "workspace"
                                      "init"
@@ -549,7 +772,7 @@
              (json-output-field workspace-init-output "kind" ""))
 (assert-true "workspace init used"
              (json-output-field workspace-init-output "used" false))
-(define workspace-init-created-dir
+(def workspace-init-created-dir
   (json-output-field workspace-init-output "dir" ""))
 (assert-true "workspace init created workspace meta"
              (fs/file? (fs/path workspace-init-created-dir "meta" "workspace.json")))
@@ -557,7 +780,7 @@
              (fs/file? (fs/path workspace-init-created-dir ".ro" "device.json")))
 (assert-true "workspace init created sqlite file"
              (fs/file? (fs/path workspace-init-created-dir ".ro" "index.sqlite")))
-(define workspace-use-after-init-output
+(def workspace-use-after-init-output
   (cluck-json-output-in-config workspace-init-cluck-config-dir
                                (list "workspace"
                                      "use"
@@ -569,9 +792,9 @@
              workspace-init-created-dir
              (json-output-field workspace-use-after-init-output "dir" ""))
 
-(define workspace-add-root-dir (temp-dir "cluck-ro-add-workspace-"))
-(define workspace-add-cluck-config-dir (temp-dir "cluck-ro-add-config-cluck-"))
-(define workspace-add-output
+(def workspace-add-root-dir (temp-dir "cluck-ro-add-workspace-"))
+(def workspace-add-cluck-config-dir (temp-dir "cluck-ro-add-config-cluck-"))
+(def workspace-add-output
   (cluck-json-output-in-config workspace-add-cluck-config-dir
                                (list "workspace"
                                      "add"
@@ -589,7 +812,7 @@
              (json-output-field workspace-add-output "kind" ""))
 (assert-true "workspace add used"
              (json-output-field workspace-add-output "used" false))
-(define workspace-add-created-dir
+(def workspace-add-created-dir
   (json-output-field workspace-add-output "dir" ""))
 (assert-true "workspace add created workspace meta"
              (fs/file? (fs/path workspace-add-created-dir "meta" "workspace.json")))
@@ -597,7 +820,7 @@
              (fs/file? (fs/path workspace-add-created-dir ".ro" "device.json")))
 (assert-true "workspace add created sqlite file"
              (fs/file? (fs/path workspace-add-created-dir ".ro" "index.sqlite")))
-(define workspace-use-after-add-output
+(def workspace-use-after-add-output
   (cluck-json-output-in-config workspace-add-cluck-config-dir
                                (list "workspace"
                                      "use"
@@ -610,12 +833,19 @@
              (json-output-field workspace-use-after-add-output "dir" ""))
 
 (if run-live-parity?
-    (begin
-      (assert-cli-json-parity "items show" '("items" "show" "item-vvo" "--format" "json"))
-      (assert-cli-json-parity "item shortcut" '("item-vvo" "--format" "json"))
+    (let [reindex-cluck-config (prepare-isolated-workspace-config "reindex-cluck")
+          reindex-odin-config (prepare-isolated-workspace-config "reindex-odin")
+          sync-reindex-cluck-config (prepare-isolated-workspace-config "sync-reindex-cluck")
+          sync-reindex-odin-config (prepare-isolated-workspace-config "sync-reindex-odin")]
+      (assert-cli-json-parity "items show" (list "items" "show" live-item-id "--format" "json"))
+      (assert-cli-json-parity "item shortcut" (list live-item-id "--format" "json"))
       (assert-cli-json-parity "items list" '("items" "list" "--format" "json"))
-      (assert-cli-json-parity "items ready" '("items" "ready" "--format" "json"))
-      (assert-cli-json-parity "items events" '("items" "events" "item-vvo" "--format" "json"))
+      ;; `ready-summary-output` already returns a canonical JSON string, so compare it
+      ;; directly instead of re-parsing through another canonicalization pass.
+      (assert-str= "items ready ready-summary parity"
+                   (ready-summary-output "/Users/andreas/Projects/ro/ro-clj/bin/ro")
+                   (ready-summary-output "build/ro-standalone"))
+      (assert-cli-json-parity "items events" (list "items" "events" live-item-id "--format" "json"))
       (assert-cli-json-parity "events list" '("events" "list" "--limit" "3"))
       (assert-cli-json-parity "doctor" '("doctor"))
       (assert-cli-json-parity "doctor --fail" '("doctor" "--fail"))
@@ -623,12 +853,18 @@
       (assert-cli-json-parity "doctor summary --fail" '("doctor" "summary" "--fail"))
       (assert-cli-json-parity "doctor dedupe" '("doctor" "dedupe"))
       (assert-cli-json-parity "doctor dedupe --write --force" '("doctor" "dedupe" "--write" "--force"))
-      (assert-cli-json-parity "reindex" '("reindex"))
+      (assert-cli-json-summary-parity-in-config "reindex"
+                                                reindex-cluck-config
+                                                reindex-odin-config
+                                                '("reindex"))
       (assert-cli-json-parity "sync status" '("sync" "status"))
       (assert-cli-json-parity "sync status --help" '("sync" "status" "--help"))
       (assert-cli-json-parity "sync remotes" '("sync" "remotes"))
       (assert-cli-json-parity "sync remotes --help" '("sync" "remotes" "--help"))
-      (assert-cli-json-parity "sync reindex" '("sync" "reindex"))
+      (assert-cli-json-summary-parity-in-config "sync reindex"
+                                                sync-reindex-cluck-config
+                                                sync-reindex-odin-config
+                                                '("sync" "reindex"))
       (assert-cli-json-parity "sync reindex --help" '("sync" "reindex" "--help"))
       (assert-cli-parity "status" '("status"))
       (assert-cli-parity "identity list" '("identity" "list"))
@@ -637,7 +873,7 @@
       (assert-cli-parity "workspace list" '("workspace" "list"))
       (assert-cli-json-parity "projects list" '("projects" "list"))
       (assert-cli-json-parity "projects list --help" '("projects" "list" "--help"))
-      (assert-cli-parity "projects use current project" '("projects" "use" "proj-d1743158"))
+      (assert-cli-parity "projects use current project" (list "projects" "use" current-project-id))
       (assert-cli-parity "projects use --help" '("projects" "use" "--help"))
       (assert-cli-parity "projects use help" '("projects" "use" "help"))
       (assert-cli-json-parity "projects current" '("projects" "current"))

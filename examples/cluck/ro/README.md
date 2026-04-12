@@ -11,6 +11,10 @@ What is in place:
 - `src/app.clk` as the shell entrypoint and command dispatcher
 - `core/*.clk` as the pure helper split for the command registry, help,
   routing, event parsing, JSON shaping, and workspace formatting
+- `core/worklog.clk` as the first explicit inline-effect planner slice in the
+  Ro FC/IS contract
+- `core/projects.clk` as the second explicit inline-effect planner slice in the
+  Ro FC/IS contract
 - `run.scm` for source-mode runs
 - `run-standalone.scm` for a compiled launcher
 - `docs/FCIS.md` for the intended functional-core / imperative-shell split
@@ -27,7 +31,10 @@ Current implementation slice:
 - `core/docs.clk` owns the built-in docs topics and topic envelope shaping
 - `core/events.clk` owns event-record parsing, ordering, and materialization
 - `core/doctor.clk` owns doctor issue parsing, summaries, and dedupe planning
-- `core/projects.clk` owns pure project-surface planning and project envelopes
+- `core/projects.clk` owns project-surface planning with inline effect tuples
+  and project envelopes
+- `core/worklog.clk` owns the first planner output that returns inline effect
+  tuples directly
 - `core/workspace.clk` owns workspace/init/status/identity planning and envelopes
 - `core/sync.clk` owns pure git-status parsing helpers for sync
 - `core/reindex.clk` owns the reindex recognized-event-type table
@@ -54,7 +61,10 @@ Current implementation slice:
 - `ro identity` prints the identity usage surface
 - `ro identity list` returns the current actor list envelope
 - `ro identity whoami` returns the active actor envelope
-- `ro projects` routes through a pure core planner before touching SQLite
+- `ro projects` routes through the inline-effect planner shape in
+  `core.projects`
+- `ro worklog` routes through the new inline-effect planner shape in
+  `core.worklog`
 - the top-level help/completion/router surface is driven from `core.commands`
 - the help text mirrors the Odin `ro` binary on `PATH`
 - unknown commands still fail explicitly; the rest of the surface will be built

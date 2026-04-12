@@ -7,6 +7,11 @@ Current active work:
 - `examples/cluck/ro` is the Ro recreation spike.
 - The spike is CLI-first and test-driven.
 - Compare behavior against the Odin `ro` binary on `PATH`.
+- Treat `examples/cluck/ro/docs/FCIS.md` as the local architectural contract
+  for that spike, and mirror the `ro-clj` FC/IS pattern for mutations and
+  planner output.
+- This FC/IS/effect-vector guidance is specific to the Ro example app and
+  should not be generalized to other example apps.
 - Keep TUI work out of the path until the CLI surface is stable.
 - `examples/cluck/draw` is a drawing app for thinking
 
@@ -19,6 +24,14 @@ Code style:
   it necessary.
 - Do not reach for Scheme forms in `.clk` files when an ordinary Cluck form or
   small helper is enough.
+- For Ro CLI planners, return inline effect vectors in the FC/IS style used by
+  the Clojure Ro codebase. Write the `{:ok? true :effects [[:some/effect {}]]}`
+  map literally in the planner body so the return shape is obvious at a glance.
+  Do not hide planner effects behind constructor helpers, ad hoc planner tags,
+  or shell-decided mutation branching when a command can be expressed as pure
+  effects.
+- When a `.clk` file still needs bootstrap interop, keep that Scheme confined
+  to the narrow edge and document why it cannot be expressed as Cluck forms.
 
 Semantics caveat:
 - Cluck is currently experimenting with mutable-by-default collections.

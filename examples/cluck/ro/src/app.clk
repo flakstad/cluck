@@ -16,7 +16,7 @@
 
 (defn workspace-config-dir
   []
-  (let ((override (or (get-environment-variable "RO_CONFIG_DIR") "")))
+  (let [override (or (get-environment-variable "RO_CONFIG_DIR") "")]
     (if (string=? (str/trim override) "")
         (fs/path (fs/home) ".ro")
         (fs/path override))))
@@ -27,12 +27,12 @@
 (defn workspace-json-root
   []
   (call-with-input-file workspace-json-path
-    (lambda (port)
+    (fn [port]
       (json/json-read port))))
 
 (defn workspace-detail-value
   [detail key]
-  (let ((entry (json-find-entry detail key)))
+  (let [entry (json-find-entry detail key)]
     (and entry (cdr entry))))
 
 (defn workspace-current-detail
@@ -40,7 +40,7 @@
   (if (or (not details)
           (null? details))
       #f
-      (##core#let loop ((xs (seq details)))
+      (let loop ((xs (seq details)))
         (cond
           (empty? xs) #f
           (string=? (or (workspace-detail-value (car xs) "name") "")
@@ -50,36 +50,27 @@
 
 (defn workspace-current-output
   []
-  (let* ((root (workspace-json-root))
-         (data-entry (json-find-entry root "data"))
-         (data (and data-entry (cdr data-entry)))
-         (current-entry (json-find-entry data "currentWorkspace"))
-         (current-workspace (and current-entry (cdr current-entry)))
-         (meta-entry (json-find-entry root "meta"))
-         (meta (and meta-entry (cdr meta-entry)))
-         (details-entry (json-find-entry meta "details"))
-         (details (and details-entry (cdr details-entry)))
-         (detail (workspace-current-detail details current-workspace))
-         (path (and detail (workspace-detail-value detail "path"))))
-    (ro-workspace/workspace-current-output current-workspace path)))
+  (let [info (workspace-current-info)]
+    (and info
+         (ro-workspace/workspace-current-output (car info) (cdr info)))))
 
 (defn workspace-registry-output
   [root]
-  (let* ((compact
-          (io/with-output-string
-           (lambda (port)
-             (json/json-write root port))))
-         (result
+  (let [compact
+        (io/with-output-string
+         (fn [port]
+           (json/json-write root port)))]
+    (let [result
           (proc/exec
            "python3"
            "-c"
            "import json,sys; print(json.dumps(json.loads(sys.argv[1]), indent=2))"
-           compact))
-         (exit (or (get result :exit) 1))
-         (out (or (get result :out) "")))
-    (if (= exit 0)
-        out
-        (string-append compact "\n"))))
+           compact)]
+      (let [exit (or (get result :exit) 1)
+            out (or (get result :out) "")]
+        (if (= exit 0)
+            out
+            (string-append compact "\n"))))))
 
 (defn workspace-list-output
   []
@@ -87,39 +78,39 @@
 
 (defn workspace-current-info
   []
-  (let* ((root (workspace-json-root))
-         (data-entry (json-find-entry root "data"))
-         (data (and data-entry (cdr data-entry)))
-         (current-entry (json-find-entry data "currentWorkspace"))
-         (current-workspace (and current-entry (cdr current-entry)))
-         (meta-entry (json-find-entry root "meta"))
-         (meta (and meta-entry (cdr meta-entry)))
-         (details-entry (json-find-entry meta "details"))
-         (details (and details-entry (cdr details-entry)))
-         (detail (workspace-current-detail details current-workspace))
-         (path (and detail (workspace-detail-value detail "path"))))
-    (and detail (cons current-workspace path))))
+  (let [root (workspace-json-root)]
+    (let [data-entry (json-find-entry root "data")
+          data (and data-entry (cdr data-entry))]
+      (let [current-entry (json-find-entry data "currentWorkspace")
+            current-workspace (and current-entry (cdr current-entry))]
+        (let [meta-entry (json-find-entry root "meta")
+              meta (and meta-entry (cdr meta-entry))]
+          (let [details-entry (json-find-entry meta "details")
+                details (and details-entry (cdr details-entry))]
+            (let [detail (workspace-current-detail details current-workspace)
+                  path (and detail (workspace-detail-value detail "path"))]
+              (and detail (cons current-workspace path)))))))))
 
 (defn workspace-current-name
   []
-  (let ((info (workspace-current-info)))
+  (let [info (workspace-current-info)]
     (and info (car info))))
 
 (defn workspace-current-path
   []
-  (let ((info (workspace-current-info)))
+  (let [info (workspace-current-info)]
     (and info (cdr info))))
 
 (defn workspace-db-path
   []
-  (let ((path (workspace-current-path)))
+  (let [path (workspace-current-path)]
     (and path (fs/path path ".ro" "index.sqlite"))))
 
 (defn open-workspace-db
   []
-  (let ((db-path (workspace-db-path)))
+  (let [db-path (workspace-db-path)]
     (if (and db-path (fs/exists? db-path))
-        (let ((conn (db/open-database db-path)))
+        (let [conn (db/open-database db-path)]
           (db/set-busy-handler! conn (db/make-busy-timeout 1000))
           conn)
         (error "ro workspace database is unavailable" db-path))))
@@ -136,11 +127,11 @@
 
 (defn workspace-status-current-project-id
   [conn]
-  (let ((rows
-         (db/map-row
-          (lambda (v) v)
-          conn
-          "select v from state_meta where k='current_project_id' limit 1")))
+  (let [rows
+        (db/map-row
+         (fn [v] v)
+         conn
+         "select v from state_meta where k='current_project_id' limit 1")]
     (if (or (not rows)
             (null? rows))
         ""
@@ -152,33 +143,33 @@
 
 (defn workspace-current-write-actor-id
   [conn current-actor-id]
-  (let ((actor (workspace-actor-by-id conn current-actor-id)))
+  (let [actor (workspace-actor-by-id conn current-actor-id)]
     (ro-workspace/workspace-current-write-actor-id actor current-actor-id)))
 
 (defn project-json-record
   [json-text]
   (call-with-input-string
    json-text
-   (lambda (port)
+   (fn [port]
      (json/json-read port))))
 
 (defn workspace-projects
   [conn]
   (db/map-row
-   (lambda (json-text)
+   (fn [json-text]
      (project-json-record json-text))
    conn
    "select json from projects where archived = 0 order by updated_at_unixms desc"))
 
 (defn workspace-project-by-id
   [conn project-id]
-  (let ((rows
-         (db/map-row
-          (lambda (json-text)
-            (project-json-record json-text))
-          conn
-          "select json from projects where id = ?1 limit 1"
-          project-id)))
+  (let [rows
+        (db/map-row
+         (fn [json-text]
+           (project-json-record json-text))
+         conn
+         "select json from projects where id = ?1 limit 1"
+         project-id)]
     (if (or (not rows)
             (null? rows))
         #f
@@ -186,16 +177,16 @@
 
 (defn workspace-current-project-output
   [conn]
-  (let* ((current-project-id (or (workspace-status-current-project-id conn) ""))
-         (project (if (string=? current-project-id "")
-                      #f
-                      (workspace-project-by-id conn current-project-id))))
+  (let [current-project-id (or (workspace-status-current-project-id conn) "")
+        project (if (string=? current-project-id "")
+                  #f
+                  (workspace-project-by-id conn current-project-id))]
     (ro-projects/projects-current-output current-project-id project)))
 
 (defn json-write-text
   [value]
-  (let* ((output (json-write-output value))
-         (len (string-length output)))
+  (let [output (json-write-output value)
+        len (string-length output)]
     (if (and (> len 0)
              (char=? (string-ref output (- len 1)) #\newline))
         (substring output 0 (- len 1))
@@ -203,29 +194,29 @@
 
 (defn workspace-bootstrap-context
   []
-  (let* ((result
-          (proc/exec
-           "python3"
-           "-c"
-           "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'workspaceId':str(uuid.uuid4()),'deviceId':str(uuid.uuid4()),'replicaId':str(uuid.uuid4()),'createdAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'modifiedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z')}, ensure_ascii=False))"))
-         (exit (or (get result :exit) 1)))
+  (let [result
+        (proc/exec
+         "python3"
+         "-c"
+         "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'workspaceId':str(uuid.uuid4()),'deviceId':str(uuid.uuid4()),'replicaId':str(uuid.uuid4()),'createdAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'modifiedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z')}, ensure_ascii=False))")
+        exit (or (get result :exit) 1)]
     (if (= exit 0)
         (call-with-input-string
          (or (get result :out) "")
-         (lambda (port)
+         (fn [port]
            (json/json-read port)))
         (error "unable to generate workspace bootstrap metadata" result))))
 
 (defn workspace-canonical-path
   [path]
-  (let* ((result
-          (proc/exec
-           "python3"
-           "-c"
-           "import os,sys; print(os.path.realpath(sys.argv[1]))"
-           path))
-         (exit (or (get result :exit) 1))
-         (out (str/trim (or (get result :out) ""))))
+  (let [result
+        (proc/exec
+         "python3"
+         "-c"
+         "import os,sys; print(os.path.realpath(sys.argv[1]))"
+         path)
+        exit (or (get result :exit) 1)
+        out (str/trim (or (get result :out) ""))]
     (if (= exit 0)
         out
         (fs/absolute-path path))))
@@ -256,7 +247,7 @@
   [path]
   (if (and path (fs/file? path))
       (call-with-input-file path
-        (lambda (port)
+        (fn [port]
           (json/json-read port)))
       #f))
 
@@ -315,55 +306,55 @@
 
 (defn workspace-ensure-gitignore!
   [workspace-root]
-  (let ((gitignore-path (fs/path workspace-root ".gitignore"))
-        (git-dir-path (fs/path workspace-root ".git")))
+  (let [gitignore-path (fs/path workspace-root ".gitignore")
+        git-dir-path (fs/path workspace-root ".git")]
     (if (or (fs/exists? gitignore-path)
             (fs/exists? git-dir-path))
-        (let* ((existing (if (fs/exists? gitignore-path)
-                             (fs/slurp gitignore-path)
-                             ""))
-               (want ".ro/")
-               (lines (str/split-lines existing))
-               (has-want (let loop ((xs lines))
-                           (cond
-                             (empty? xs) false
-                             (string=? (str/trim (first xs)) want) true
-                             :else (loop (rest xs))))))
+        (let [existing (if (fs/exists? gitignore-path)
+                         (fs/slurp gitignore-path)
+                         "")
+              want ".ro/"
+              lines (str/split-lines existing)
+              has-want (let loop ((xs lines))
+                         (cond
+                           (empty? xs) false
+                           (string=? (str/trim (first xs)) want) true
+                           :else (loop (rest xs))))]
           (if has-want
               gitignore-path
-              (let ((prefix (if (string=? (str/trimr existing) "")
-                                ""
-                                (string-append (str/trimr existing) "\n")))
-                    (body "# Ro (derived/local-only)\n.ro/\n"))
+              (let [prefix (if (string=? (str/trimr existing) "")
+                             ""
+                             (string-append (str/trimr existing) "\n"))
+                    body "# Ro (derived/local-only)\n.ro/\n"]
                 (fs/spit gitignore-path (string-append prefix body))
                 gitignore-path)))
         #t)))
 
 (defn workspace-ensure-local-layout!
   [workspace-root]
-  (let* ((root (workspace-canonical-path (fs/absolute-path workspace-root)))
-         (bootstrap (workspace-bootstrap-context))
-         (meta-path (workspace-root-meta-path root))
-         (device-path (workspace-root-device-path root))
-         (index-path (workspace-root-index-path root))
-         (events-dir (workspace-root-events-dir root))
-         (existing-meta (workspace-read-json-file meta-path))
-         (existing-device (workspace-read-json-file device-path))
-         (workspace-id (or (json-field-value existing-meta "workspaceId" "")
-                           (json-field-value bootstrap "workspaceId" "")
-                           ""))
-         (created-at (or (json-field-value existing-meta "createdAt" "")
-                         (json-field-value bootstrap "createdAt" "")
-                         ""))
-         (device-id (or (json-field-value existing-device "deviceId" "")
-                        (json-field-value bootstrap "deviceId" "")
-                        ""))
-         (replica-id (or (json-field-value existing-device "replicaId" "")
-                         (json-field-value bootstrap "replicaId" "")
-                         ""))
-         (modified-at (or (json-field-value existing-device "modifiedAt" "")
-                          (json-field-value bootstrap "modifiedAt" "")
-                          "")))
+  (let [root (workspace-canonical-path (fs/absolute-path workspace-root))
+        bootstrap (workspace-bootstrap-context)
+        meta-path (workspace-root-meta-path root)
+        device-path (workspace-root-device-path root)
+        index-path (workspace-root-index-path root)
+        events-dir (workspace-root-events-dir root)
+        existing-meta (workspace-read-json-file meta-path)
+        existing-device (workspace-read-json-file device-path)
+        workspace-id (or (json-field-value existing-meta "workspaceId" "")
+                         (json-field-value bootstrap "workspaceId" "")
+                         "")
+        created-at (or (json-field-value existing-meta "createdAt" "")
+                       (json-field-value bootstrap "createdAt" "")
+                       "")
+        device-id (or (json-field-value existing-device "deviceId" "")
+                      (json-field-value bootstrap "deviceId" "")
+                      "")
+        replica-id (or (json-field-value existing-device "replicaId" "")
+                       (json-field-value bootstrap "replicaId" "")
+                       "")
+        modified-at (or (json-field-value existing-device "modifiedAt" "")
+                        (json-field-value bootstrap "modifiedAt" "")
+                        "")]
     (ensure-directory! root)
     (ensure-directory! (fs/path root "meta"))
     (ensure-directory! (fs/path root ".ro"))
@@ -419,23 +410,23 @@
 
 (defn workspace-registry-workspaces
   [root]
-  (let* ((data-entry (json-find-entry root "data"))
-         (data (and data-entry (cdr data-entry)))
-         (workspaces-entry (json-find-entry data "workspaces")))
+  (let [data-entry (json-find-entry root "data")
+        data (and data-entry (cdr data-entry))
+        workspaces-entry (json-find-entry data "workspaces")]
     (and workspaces-entry (cdr workspaces-entry))))
 
 (defn workspace-registry-details
   [root]
-  (let* ((meta-entry (json-find-entry root "meta"))
-         (meta (and meta-entry (cdr meta-entry)))
-         (details-entry (json-find-entry meta "details")))
+  (let [meta-entry (json-find-entry root "meta")
+        meta (and meta-entry (cdr meta-entry))
+        details-entry (json-find-entry meta "details")]
     (and details-entry (cdr details-entry))))
 
 (defn workspace-registry-current-name
   [root]
-  (let* ((data-entry (json-find-entry root "data"))
-         (data (and data-entry (cdr data-entry)))
-         (current-entry (json-find-entry data "currentWorkspace")))
+  (let [data-entry (json-find-entry root "data")
+        data (and data-entry (cdr data-entry))
+        current-entry (json-find-entry data "currentWorkspace")]
     (and current-entry (cdr current-entry))))
 
 (defn workspace-registry-detail
@@ -458,53 +449,53 @@
 
 (defn workspace-registry-upsert!
   [name path kind use?]
-  (let* ((root (workspace-registry-root))
-         (data-entry (json-find-entry root "data"))
-         (data (and data-entry (cdr data-entry)))
-         (meta-entry (json-find-entry root "meta"))
-         (meta (and meta-entry (cdr meta-entry)))
-         (workspaces (or (workspace-registry-workspaces root) '()))
-         (details (or (workspace-registry-details root) '()))
-         (existing-current (or (workspace-registry-current-name root) ""))
-         (current-name (if (or use?
-                               (string=? existing-current ""))
+  (let [root (workspace-registry-root)
+        data-entry (json-find-entry root "data")
+        data (and data-entry (cdr data-entry))
+        meta-entry (json-find-entry root "meta")
+        meta (and meta-entry (cdr meta-entry))
+        workspaces (or (workspace-registry-workspaces root) '())
+        details (or (workspace-registry-details root) '())
+        existing-current (or (workspace-registry-current-name root) "")
+        current-name (if (or use?
+                             (string=? existing-current ""))
+                       name
+                       existing-current)
+        names (let loop ((xs (seq workspaces)) (acc '()) (seen false))
+                (cond
+                  (empty? xs)
+                  (if seen
+                      (reverse acc)
+                      (reverse (cons name acc)))
+
+                  (string=? (or (first xs) "") name)
+                  (loop (rest xs) (cons name acc) true)
+
+                  :else
+                  (loop (rest xs) (cons (first xs) acc) seen)))
+        next-details
+        (let loop ((xs (seq details)) (acc '()) (seen false))
+          (cond
+            (empty? xs)
+            (let ((detail (workspace-registry-detail-record
                            name
-                           existing-current))
-         (names (let loop ((xs (seq workspaces)) (acc '()) (seen false))
-                  (cond
-                    (empty? xs)
-                    (if seen
-                        (reverse acc)
-                        (reverse (cons name acc)))
+                           path
+                           kind
+                           #f
+                           (string=? current-name name))))
+              (reverse (if seen acc (cons detail acc))))
 
-                    (string=? (or (first xs) "") name)
-                    (loop (rest xs) (cons name acc) true)
+            (string=? (or (workspace-detail-value (first xs) "name") "") name)
+            (let ((detail (workspace-registry-detail-record
+                           name
+                           path
+                           kind
+                           (or (workspace-detail-value (first xs) "archived") #f)
+                           (string=? current-name name))))
+              (loop (rest xs) (cons detail acc) true))
 
-                    :else
-                    (loop (rest xs) (cons (first xs) acc) seen))))
-         (next-details
-          (let loop ((xs (seq details)) (acc '()) (seen false))
-            (cond
-              (empty? xs)
-              (let ((detail (workspace-registry-detail-record
-                             name
-                             path
-                             kind
-                             #f
-                             (string=? current-name name))))
-                (reverse (if seen acc (cons detail acc))))
-
-              (string=? (or (workspace-detail-value (first xs) "name") "") name)
-              (let ((detail (workspace-registry-detail-record
-                             name
-                             path
-                             kind
-                             (or (workspace-detail-value (first xs) "archived") #f)
-                             (string=? current-name name))))
-                (loop (rest xs) (cons detail acc) true))
-
-              :else
-              (loop (rest xs) (cons (first xs) acc) seen)))))
+            :else
+            (loop (rest xs) (cons (first xs) acc) seen)))]
     (workspace-registry-write-root!
      (vector
       (cons 'data
@@ -515,7 +506,7 @@
     (list (string=? current-name name) path)))
 (defn workspace-device-json-path
   []
-  (let ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (and (not (string=? workspace-root ""))
          (fs/path workspace-root ".ro" "device.json"))))
 
@@ -523,17 +514,17 @@
   []
   (let ((path (workspace-device-json-path)))
     (if (and path (fs/exists? path))
-        (let* ((root (call-with-input-file path
-                       (lambda (port)
-                         (json/json-read port))))
-               (replica-id (or (workspace-detail-value root "replicaId") "")))
+        (let [root (call-with-input-file path
+                     (fn [port]
+                       (json/json-read port)))
+              replica-id (or (workspace-detail-value root "replicaId") "")]
           replica-id)
         "")))
 
 (defn workspace-event-log-path
   []
-  (let* ((workspace-root (or (workspace-current-path) ""))
-         (replica-id (workspace-replica-id)))
+  (let [workspace-root (or (workspace-current-path) "")
+        replica-id (workspace-replica-id)]
     (if (or (string=? workspace-root "")
             (string=? replica-id ""))
         #f
@@ -541,31 +532,31 @@
 
 (defn workspace-event-context
   []
-  (let* ((result
-          (proc/exec
-           "python3"
-           "-c"
-           "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))"))
-         (exit (or (get result :exit) 1)))
+  (let [result
+        (proc/exec
+         "python3"
+         "-c"
+         "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))")
+        exit (or (get result :exit) 1)]
     (if (= exit 0)
         (call-with-input-string
          (or (get result :out) "")
-         (lambda (port)
+         (fn [port]
            (json/json-read port)))
         (error "unable to generate event metadata" result))))
 
 (defn workspace-project-create-context
   []
-  (let* ((result
-          (proc/exec
-           "python3"
-           "-c"
-           "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'projectId':'proj-' + uuid.uuid4().hex[:8],'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))"))
-         (exit (or (get result :exit) 1)))
+  (let [result
+        (proc/exec
+         "python3"
+         "-c"
+         "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'projectId':'proj-' + uuid.uuid4().hex[:8],'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))")
+        exit (or (get result :exit) 1)]
     (if (= exit 0)
         (call-with-input-string
          (or (get result :out) "")
-         (lambda (port)
+         (fn [port]
            (json/json-read port)))
         (error "unable to generate project metadata" result))))
 
@@ -598,11 +589,11 @@
 
 (defn workspace-project-save!
   [conn project]
-  (let* ((project-id (or (json-field-value project "id" "") ""))
-         (name (or (json-field-value project "name" "") ""))
-         (archived (or (json-field-value project "archived" false) false))
-         (updated-at-unixms (or (json-field-value project "updatedAtUnixms" 0) 0))
-         (json-text (json-write-text project)))
+  (let [project-id (or (json-field-value project "id" "") "")
+        name (or (json-field-value project "name" "") "")
+        archived (or (json-field-value project "archived" false) false)
+        updated-at-unixms (or (json-field-value project "updatedAtUnixms" 0) 0)
+        json-text (json-write-text project)]
     (db/execute
      conn
      "insert or replace into projects(id, name, archived, json, updated_at_unixms) values(?1, ?2, ?3, ?4, ?5)"
@@ -624,9 +615,17 @@
           (fs/spit path (string-append existing (json-write-output event)))
           event))))
 
+(defn workspace-item-append-event!
+  [event]
+  (workspace-project-append-event! event))
+
+(defn workspace-outline-append-event!
+  [event]
+  (workspace-project-append-event! event))
+
 (defn workspace-project-next-seq
   [project-id]
-  (let ((path (workspace-event-log-path)))
+  (let [path (workspace-event-log-path)]
     (if (not path)
         1
         (let loop ((records (if (fs/exists? path)
@@ -635,10 +634,10 @@
                    (max-seq 0))
           (if (empty? records)
               (+ max-seq 1)
-              (let* ((record (first records))
-                     (kind (or (json-field-value record "entity_kind" "") ""))
-                     (entity-id (or (json-field-value record "entity_id" "") ""))
-                     (entity-seq (or (json-field-value record "entity_seq" 0) 0)))
+              (let [record (first records)
+                    kind (or (json-field-value record "entity_kind" "") "")
+                    entity-id (or (json-field-value record "entity_id" "") "")
+                    entity-seq (or (json-field-value record "entity_seq" 0) 0)]
                 (loop (rest records)
                       (if (and (string=? kind "project")
                                (string=? entity-id project-id)
@@ -648,29 +647,29 @@
 
 (defn workspace-project-create!
   [conn name use?]
-  (let* ((workspace-id (or (workspace-status-workspace-id conn) ""))
-         (actor-id (or (workspace-status-current-actor-id conn) ""))
-         (name (or name ""))
-         (meta (workspace-project-create-context))
-         (event-id (or (json-field-value meta "eventId" "") ""))
-         (project-id (or (json-field-value meta "projectId" "") ""))
-         (issued-at (or (json-field-value meta "issuedAt" "") ""))
-         (issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0))
-         (project (workspace-project-record project-id name "" false issued-at-unixms actor-id issued-at))
-         (event-seq (workspace-project-next-seq project-id))
-         (event (vector
-                 (cons 'eventId event-id)
-                 (cons 'workspaceId workspace-id)
-                 (cons 'replicaId (workspace-replica-id))
-                 (cons 'entityKind "project")
-                 (cons 'entityId project-id)
-                 (cons 'entitySeq event-seq)
-                 (cons 'type "project.create")
-                 (cons 'issuedAt issued-at)
-                 (cons 'actorId actor-id)
-                 (cons 'payload project)
-                 (cons 'localStatus "local")
-                 (cons 'serverStatus "pending"))))
+  (let [workspace-id (or (workspace-status-workspace-id conn) "")
+        actor-id (or (workspace-status-current-actor-id conn) "")
+        name (or name "")
+        meta (workspace-project-create-context)
+        event-id (or (json-field-value meta "eventId" "") "")
+        project-id (or (json-field-value meta "projectId" "") "")
+        issued-at (or (json-field-value meta "issuedAt" "") "")
+        issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+        project (workspace-project-record project-id name "" false issued-at-unixms actor-id issued-at)
+        event-seq (workspace-project-next-seq project-id)
+        event (vector
+               (cons 'eventId event-id)
+               (cons 'workspaceId workspace-id)
+               (cons 'replicaId (workspace-replica-id))
+               (cons 'entityKind "project")
+               (cons 'entityId project-id)
+               (cons 'entitySeq event-seq)
+               (cons 'type "project.create")
+               (cons 'issuedAt issued-at)
+               (cons 'actorId actor-id)
+               (cons 'payload project)
+               (cons 'localStatus "local")
+               (cons 'serverStatus "pending"))]
     (if (string=? name "")
         (error "project name is required" name)
         #t)
@@ -690,31 +689,31 @@
 
 (defn workspace-project-archive!
   [conn project-id archived?]
-  (let* ((project-id (or project-id ""))
-         (current (workspace-project-by-id conn project-id)))
+  (let [project-id (or project-id "")
+        current (workspace-project-by-id conn project-id)]
     (if (not current)
         #f
-        (let* ((meta (workspace-event-context))
-               (workspace-id (or (workspace-status-workspace-id conn) ""))
-               (actor-id (or (workspace-status-current-actor-id conn) ""))
-               (event-id (or (json-field-value meta "eventId" "") ""))
-               (issued-at (or (json-field-value meta "issuedAt" "") ""))
-               (issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0))
-               (updated (workspace-project-record-archived current archived? issued-at-unixms))
-               (event-seq (workspace-project-next-seq project-id))
-               (event (vector
-                       (cons 'eventId event-id)
-                       (cons 'workspaceId workspace-id)
-                       (cons 'replicaId (workspace-replica-id))
-                       (cons 'entityKind "project")
-                       (cons 'entityId project-id)
-                       (cons 'entitySeq event-seq)
-                       (cons 'type "project.archive")
-                       (cons 'issuedAt issued-at)
-                       (cons 'actorId actor-id)
-                       (cons 'payload (vector (cons 'archived archived?)))
-                       (cons 'localStatus "local")
-                       (cons 'serverStatus "pending"))))
+        (let [meta (workspace-event-context)
+              workspace-id (or (workspace-status-workspace-id conn) "")
+              actor-id (or (workspace-status-current-actor-id conn) "")
+              event-id (or (json-field-value meta "eventId" "") "")
+              issued-at (or (json-field-value meta "issuedAt" "") "")
+              issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+              updated (workspace-project-record-archived current archived? issued-at-unixms)
+              event-seq (workspace-project-next-seq project-id)
+              event (vector
+                     (cons 'eventId event-id)
+                     (cons 'workspaceId workspace-id)
+                     (cons 'replicaId (workspace-replica-id))
+                     (cons 'entityKind "project")
+                     (cons 'entityId project-id)
+                     (cons 'entitySeq event-seq)
+                     (cons 'type "project.archive")
+                     (cons 'issuedAt issued-at)
+                     (cons 'actorId actor-id)
+                     (cons 'payload (vector (cons 'archived archived?)))
+                     (cons 'localStatus "local")
+                     (cons 'serverStatus "pending"))]
           (if (string=? workspace-id "")
               (error "ro workspace id is unavailable" workspace-id)
               #t)
@@ -739,6 +738,650 @@
                       project-id)
           project))))
 
+(defn workspace-outline-create-context
+  []
+  (let [result
+        (proc/exec
+         "python3"
+         "-c"
+         "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'outlineId':'out-' + uuid.uuid4().hex[:8],'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))")
+        exit (or (get result :exit) 1)]
+    (if (= exit 0)
+        (call-with-input-string
+         (or (get result :out) "")
+         (fn [port]
+           (json/json-read port)))
+        (error "unable to generate outline metadata" result))))
+
+(defn workspace-outline-next-seq
+  [outline-id]
+  (let ((path (workspace-event-log-path)))
+    (if (not path)
+        1
+        (let loop ((records (if (fs/exists? path)
+                                (events-file-records path 0)
+                                '()))
+                   (max-seq 0))
+          (if (empty? records)
+              (+ max-seq 1)
+              (let ((record (first records))
+                    (kind (or (json-field-value record "entity_kind" "") ""))
+                    (entity-id (or (json-field-value record "entity_id" "") ""))
+                    (entity-seq (or (json-field-value record "entity_seq" 0) 0)))
+                (loop (rest records)
+                      (if (and (string=? kind "outline")
+                               (string=? entity-id outline-id)
+                               (> entity-seq max-seq))
+                          entity-seq
+                          max-seq))))))))
+
+(defn workspace-outline-record
+  [outline-id project-id name description archived status-defs updated-at-unixms]
+  (vector
+   (cons 'id outline-id)
+   (cons 'projectId project-id)
+   (cons 'name name)
+   (cons 'description description)
+   (cons 'archived archived)
+   (cons 'statusDefs status-defs)
+   (cons 'updatedAtUnixms updated-at-unixms)))
+
+(defn workspace-outline-record-archived
+  [outline archived updated-at-unixms]
+  (if outline
+      (workspace-outline-record
+       (or (json-field-value outline "id" "") "")
+       (or (json-field-value outline "projectId" "") "")
+       (or (json-field-value outline "name" "") "")
+       (or (json-field-value outline "description" "") "")
+       archived
+       (or (json-field-value outline "statusDefs" '()) '())
+       updated-at-unixms)
+      #f))
+
+(defn workspace-outline-save!
+  [conn outline]
+  (let [outline-id (or (json-field-value outline "id" "") "")
+        project-id (or (json-field-value outline "projectId" "") "")
+        name (or (json-field-value outline "name" "") "")
+        description (or (json-field-value outline "description" "") "")
+        archived (or (json-field-value outline "archived" false) false)
+        status-defs (or (json-field-value outline "statusDefs" '()) '())
+        updated-at-unixms (or (json-field-value outline "updatedAtUnixms" 0) 0)
+        json-text (json-write-text outline)
+        status-defs-json (json-write-text status-defs)]
+    (db/execute
+     conn
+     "insert or replace into outlines(id, project_id, name, description, archived, status_defs_json, json, updated_at_unixms) values(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+     outline-id
+     project-id
+     name
+     description
+     (if archived 1 0)
+     status-defs-json
+     json-text
+     updated-at-unixms)
+    outline))
+
+(defn workspace-outline-by-id
+  [conn outline-id]
+  (let ((rows
+         (db/map-row
+          (fn [json-text]
+            (item-json-record json-text))
+          conn
+          "select json from outlines where id = ?1 and archived = 0 limit 1"
+          outline-id)))
+    (if (or (not rows)
+            (null? rows))
+        #f
+        (car (seq rows)))))
+
+(defn workspace-outline-by-id-any
+  [conn outline-id]
+  (let ((rows
+         (db/map-row
+          (fn [json-text]
+            (item-json-record json-text))
+          conn
+          "select json from outlines where id = ?1 limit 1"
+          outline-id)))
+    (if (or (not rows)
+            (null? rows))
+        #f
+        (car (seq rows)))))
+
+(defn workspace-outlines-by-project
+  [conn project-id]
+  (db/map-row
+   (fn [json-text]
+     (item-json-record json-text))
+   conn
+   "select json from outlines where project_id = ?1 and archived = 0 order by updated_at_unixms desc, id desc"
+   project-id))
+
+(defn workspace-outlines
+  [conn]
+  (let loop ((projects (workspace-projects conn))
+             (acc '()))
+    (if (empty? projects)
+        acc
+        (let ((project-id (or (json-field-value (first projects) "id" "") ""))
+              (outlines (if (string=? project-id)
+                          '()
+                          (workspace-outlines-by-project conn project-id))))
+          (loop (rest projects)
+                (append acc outlines))))))
+
+(defn workspace-outline-write-event!
+  [conn outline-id event-type payload]
+  (let [workspace-id (or (workspace-status-workspace-id conn) "")
+        actor-id (or (workspace-status-current-actor-id conn) "")
+        meta (workspace-event-context)
+        event-id (or (json-field-value meta "eventId" "") "")
+        issued-at (or (json-field-value meta "issuedAt" "") "")
+        issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+        event-seq (workspace-outline-next-seq outline-id)
+        event (vector
+               (cons 'eventId event-id)
+               (cons 'workspaceId workspace-id)
+               (cons 'replicaId (workspace-replica-id))
+               (cons 'entityKind "outline")
+               (cons 'entityId outline-id)
+               (cons 'entitySeq event-seq)
+               (cons 'type event-type)
+               (cons 'issuedAt issued-at)
+               (cons 'actorId actor-id)
+               (cons 'payload payload)
+               (cons 'localStatus "local")
+               (cons 'serverStatus "pending"))]
+    (if (string=? workspace-id "")
+        (error "ro workspace id is unavailable" workspace-id)
+        #t)
+    (if (string=? actor-id "")
+        (error "no current actor" actor-id)
+        #t)
+    (workspace-outline-append-event! event)
+    event))
+
+(defn workspace-outline-create!
+  [conn project-id name]
+  (let [workspace-id (or (workspace-status-workspace-id conn) "")
+        actor-id (or (workspace-status-current-actor-id conn) "")
+        project-id (or project-id "")
+        name (or name "")
+        current (workspace-project-by-id conn project-id)]
+    (if (string=? workspace-id "")
+        (error "ro workspace id is unavailable" workspace-id)
+        #t)
+    (if (string=? actor-id "")
+        (error "no current actor" actor-id)
+        #t)
+    (if (not current)
+        #f
+        (let [meta (workspace-outline-create-context)
+              event-id (or (json-field-value meta "eventId" "") "")
+              outline-id (or (json-field-value meta "outlineId" "") "")
+              issued-at (or (json-field-value meta "issuedAt" "") "")
+              issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+              outline (workspace-outline-record
+                       outline-id
+                       project-id
+                       name
+                       ""
+                       false
+                       (ro-outlines/outline-default-status-defs)
+                       issued-at-unixms)
+              event-seq (workspace-outline-next-seq outline-id)
+              event (vector
+                     (cons 'eventId event-id)
+                     (cons 'workspaceId workspace-id)
+                     (cons 'replicaId (workspace-replica-id))
+                     (cons 'entityKind "outline")
+                     (cons 'entityId outline-id)
+                     (cons 'entitySeq event-seq)
+                     (cons 'type "outline.create")
+                     (cons 'issuedAt issued-at)
+                     (cons 'actorId actor-id)
+                     (cons 'payload outline)
+                     (cons 'localStatus "local")
+                     (cons 'serverStatus "pending"))]
+          (workspace-outline-save! conn outline)
+          (workspace-outline-append-event! event)
+          outline))))
+
+(defn workspace-outline-archive!
+  [conn outline-id archived?]
+  (let [outline-id (or outline-id "")
+        current (workspace-outline-by-id-any conn outline-id)]
+    (if (not current)
+        #f
+        (let [meta (workspace-event-context)
+              workspace-id (or (workspace-status-workspace-id conn) "")
+              actor-id (or (workspace-status-current-actor-id conn) "")
+              event-id (or (json-field-value meta "eventId" "") "")
+              issued-at (or (json-field-value meta "issuedAt" "") "")
+              issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+              updated (workspace-outline-record-archived current archived? issued-at-unixms)
+              event-seq (workspace-outline-next-seq outline-id)
+              event (vector
+                     (cons 'eventId event-id)
+                     (cons 'workspaceId workspace-id)
+                     (cons 'replicaId (workspace-replica-id))
+                     (cons 'entityKind "outline")
+                     (cons 'entityId outline-id)
+                     (cons 'entitySeq event-seq)
+                     (cons 'type "outline.archive")
+                     (cons 'issuedAt issued-at)
+                     (cons 'actorId actor-id)
+                     (cons 'payload (vector (cons 'archived archived?)))
+                     (cons 'localStatus "local")
+                     (cons 'serverStatus "pending"))]
+          (if (string=? workspace-id "")
+              (error "ro workspace id is unavailable" workspace-id)
+              #t)
+          (if (string=? actor-id "")
+              (error "no current actor" actor-id)
+              #t)
+          (workspace-outline-save! conn updated)
+          (workspace-outline-append-event! event)
+          updated))))
+
+(defn workspace-outline-status-add!
+  [conn outline-id label]
+  (let [outline-id (or outline-id "")
+        current (workspace-outline-by-id conn outline-id)
+        status-defs (if current
+                      (or (json-field-value current "statusDefs" '()) '())
+                      '())]
+    (if (not current)
+        #f
+        (let ((duplicate?
+               (let loop ((xs (seq status-defs)))
+                 (cond
+                   (empty? xs) false
+                   (ro-outlines/outline-status-def-label-match? (first xs) label) true
+                   :else (loop (rest xs))))))
+          (if duplicate?
+              (error "status label already exists on this outline" outline-id)
+              (let [next-defs (ro-outlines/outline-status-defs-add status-defs label)
+                    meta (workspace-event-context)
+                    workspace-id (or (workspace-status-workspace-id conn) "")
+                    actor-id (or (workspace-status-current-actor-id conn) "")
+                    event-id (or (json-field-value meta "eventId" "") "")
+                    issued-at (or (json-field-value meta "issuedAt" "") "")
+                    issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+                    updated (workspace-outline-record
+                             outline-id
+                             (or (json-field-value current "projectId" "") "")
+                             (or (json-field-value current "name" "") "")
+                             (or (json-field-value current "description" "") "")
+                             (or (json-field-value current "archived" false) false)
+                             next-defs
+                             issued-at-unixms)
+                    status-id (ro-outlines/outline-status-id-from-label label)
+                    event-seq (workspace-outline-next-seq outline-id)
+                    event (vector
+                           (cons 'eventId event-id)
+                           (cons 'workspaceId workspace-id)
+                           (cons 'replicaId (workspace-replica-id))
+                           (cons 'entityKind "outline")
+                           (cons 'entityId outline-id)
+                           (cons 'entitySeq event-seq)
+                           (cons 'type "outline.status.add")
+                           (cons 'issuedAt issued-at)
+                           (cons 'actorId actor-id)
+                           (cons 'payload (vector
+                                           (cons 'id status-id)
+                                           (cons 'label label)
+                                           (cons 'isEndState false)
+                                           (cons 'requiresNote false)))
+                           (cons 'localStatus "local")
+                           (cons 'serverStatus "pending"))]
+                (if (string=? workspace-id "")
+                    (error "ro workspace id is unavailable" workspace-id)
+                    #t)
+                (if (string=? actor-id "")
+                    (error "no current actor" actor-id)
+                    #t)
+                (workspace-outline-save! conn updated)
+                (workspace-outline-append-event! event)
+                updated))))))
+
+(defn workspace-outline-status-update!
+  [conn outline-id status-id label end-state? requires-note?]
+  (let [outline-id (or outline-id "")
+        status-id (or status-id "")
+        current (workspace-outline-by-id conn outline-id)
+        status-defs (if current
+                      (or (json-field-value current "statusDefs" '()) '())
+                      '())]
+    (if (not current)
+        #f
+        (let [next-defs
+              (ro-outlines/outline-status-defs-update
+               status-defs
+               status-id
+               label
+               end-state?
+               requires-note?)]
+          (if (not next-defs)
+              #f
+              (let [meta (workspace-event-context)
+                    workspace-id (or (workspace-status-workspace-id conn) "")
+                    actor-id (or (workspace-status-current-actor-id conn) "")
+                    event-id (or (json-field-value meta "eventId" "") "")
+                    issued-at (or (json-field-value meta "issuedAt" "") "")
+                    issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+                    updated (workspace-outline-record
+                             outline-id
+                             (or (json-field-value current "projectId" "") "")
+                             (or (json-field-value current "name" "") "")
+                             (or (json-field-value current "description" "") "")
+                             (or (json-field-value current "archived" false) false)
+                             next-defs
+                             issued-at-unixms)
+                    payload (vector
+                             (cons 'id status-id)
+                             (cons 'label label)
+                             (cons 'isEndState (if end-state? true false))
+                             (cons 'requiresNote (if requires-note? true false))
+                             (cons 'ts issued-at))
+                    event-seq (workspace-outline-next-seq outline-id)
+                    event (vector
+                           (cons 'eventId event-id)
+                           (cons 'workspaceId workspace-id)
+                           (cons 'replicaId (workspace-replica-id))
+                           (cons 'entityKind "outline")
+                           (cons 'entityId outline-id)
+                           (cons 'entitySeq event-seq)
+                           (cons 'type "outline.status.update")
+                           (cons 'issuedAt issued-at)
+                           (cons 'actorId actor-id)
+                           (cons 'payload payload)
+                           (cons 'localStatus "local")
+                           (cons 'serverStatus "pending"))]
+                (if (string=? workspace-id "")
+                    (error "ro workspace id is unavailable" workspace-id)
+                    #t)
+                (if (string=? actor-id "")
+                    (error "no current actor" actor-id)
+                    #t)
+                (workspace-outline-save! conn updated)
+                (workspace-outline-append-event! event)
+                updated))))))
+
+(defn workspace-outline-status-remove!
+  [conn outline-id status-id]
+  (let [outline-id (or outline-id "")
+        status-id (or status-id "")
+        current (workspace-outline-by-id conn outline-id)
+        status-defs (if current
+                      (or (json-field-value current "statusDefs" '()) '())
+                      '())
+        in-use? (> (or (db/first-result
+                        conn
+                        "select count(*) from items where outline_id = ?1 and status_id = ?2 and archived = 0"
+                        outline-id
+                        status-id)
+                       0)
+                   0)]
+    (cond
+      (not current)
+      #f
+
+      in-use?
+      (error "cannot remove status: in use by items" outline-id status-id)
+
+      :else
+      (let ((next-defs (ro-outlines/outline-status-defs-remove status-defs status-id)))
+        (if (not next-defs)
+            #f
+            (let [meta (workspace-event-context)
+                  workspace-id (or (workspace-status-workspace-id conn) "")
+                  actor-id (or (workspace-status-current-actor-id conn) "")
+                  event-id (or (json-field-value meta "eventId" "") "")
+                  issued-at (or (json-field-value meta "issuedAt" "") "")
+                  issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+                  updated (workspace-outline-record
+                           outline-id
+                           (or (json-field-value current "projectId" "") "")
+                           (or (json-field-value current "name" "") "")
+                           (or (json-field-value current "description" "") "")
+                           (or (json-field-value current "archived" false) false)
+                           next-defs
+                           issued-at-unixms)
+                  event-seq (workspace-outline-next-seq outline-id)
+                  event (vector
+                         (cons 'eventId event-id)
+                         (cons 'workspaceId workspace-id)
+                         (cons 'replicaId (workspace-replica-id))
+                         (cons 'entityKind "outline")
+                         (cons 'entityId outline-id)
+                         (cons 'entitySeq event-seq)
+                         (cons 'type "outline.status.remove")
+                         (cons 'issuedAt issued-at)
+                         (cons 'actorId actor-id)
+                         (cons 'payload (vector (cons 'id status-id)))
+                         (cons 'localStatus "local")
+                         (cons 'serverStatus "pending"))]
+              (if (string=? workspace-id "")
+                  (error "ro workspace id is unavailable" workspace-id)
+                  #t)
+              (if (string=? actor-id "")
+                  (error "no current actor" actor-id)
+                  #t)
+              (workspace-outline-save! conn updated)
+              (workspace-outline-append-event! event)
+              updated))))))
+
+(defn workspace-outline-status-reorder!
+  [conn outline-id labels]
+  (let [outline-id (or outline-id "")
+        current (workspace-outline-by-id conn outline-id)
+        status-defs (if current
+                      (or (json-field-value current "statusDefs" '()) '())
+                      '())
+        next-defs (if current
+                    (ro-outlines/outline-status-defs-reorder status-defs labels)
+                    #f)]
+    (if (not current)
+        #f
+        (if (not next-defs)
+            #f
+            (let [meta (workspace-event-context)
+                  workspace-id (or (workspace-status-workspace-id conn) "")
+                  actor-id (or (workspace-status-current-actor-id conn) "")
+                  event-id (or (json-field-value meta "eventId" "") "")
+                  issued-at (or (json-field-value meta "issuedAt" "") "")
+                  issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+                  updated (workspace-outline-record
+                           outline-id
+                           (or (json-field-value current "projectId" "") "")
+                           (or (json-field-value current "name" "") "")
+                           (or (json-field-value current "description" "") "")
+                           (or (json-field-value current "archived" false) false)
+                           next-defs
+                           issued-at-unixms)
+                  labels (if (vector? labels) labels labels)
+                  event-seq (workspace-outline-next-seq outline-id)
+                  event (vector
+                         (cons 'eventId event-id)
+                         (cons 'workspaceId workspace-id)
+                         (cons 'replicaId (workspace-replica-id))
+                         (cons 'entityKind "outline")
+                         (cons 'entityId outline-id)
+                         (cons 'entitySeq event-seq)
+                         (cons 'type "outline.status.reorder")
+                         (cons 'issuedAt issued-at)
+                         (cons 'actorId actor-id)
+                         (cons 'payload (vector (cons 'labels labels)))
+                         (cons 'localStatus "local")
+                         (cons 'serverStatus "pending"))]
+                (if (string=? workspace-id "")
+                    (error "ro workspace id is unavailable" workspace-id)
+                    #t)
+              (if (string=? actor-id "")
+                  (error "no current actor" actor-id)
+                  #t)
+              (workspace-outline-save! conn updated)
+              (workspace-outline-append-event! event)
+              updated)))))
+
+(defn workspace-outlines-list-output
+  [outlines]
+  (ro-outlines/outlines-list-output outlines))
+
+(defn workspace-outline-show-output
+  [outline]
+  (ro-outlines/outlines-show-output outline))
+
+(defn workspace-outline-status-list-output
+  [outline]
+  (ro-outlines/outlines-status-list-output
+   (or (json-field-value outline "statusDefs" '()) '())))
+
+(defn workspace-worklog-create-context
+  []
+  (let ((result
+         (proc/exec
+          "python3"
+          "-c"
+          "from datetime import datetime, timezone; import json, uuid; now=datetime.now(timezone.utc); print(json.dumps({'eventId':'evt-' + uuid.uuid4().hex,'worklogId':'worklog-' + uuid.uuid4().hex[:8],'issuedAt':now.isoformat(timespec='microseconds').replace('+00:00','Z'),'issuedAtUnixms':int(now.timestamp()*1000)}, ensure_ascii=False))"))
+        (exit (or (get result :exit) 1)))
+    (if (= exit 0)
+        (call-with-input-string
+         (or (get result :out) "")
+         (fn [port]
+           (json/json-read port)))
+        (error "unable to generate worklog metadata" result))))
+
+(defn workspace-worklog-next-seq
+  [worklog-id]
+  (let ((path (workspace-event-log-path)))
+    (if (not path)
+        1
+        (let loop ((records (if (fs/exists? path)
+                                (events-file-records path 0)
+                                '()))
+                   (max-seq 0))
+          (if (empty? records)
+              (+ max-seq 1)
+              (let ((record (first records))
+                    (kind (or (json-field-value record "entity_kind" "") ""))
+                    (entity-id (or (json-field-value record "entity_id" "") ""))
+                    (entity-seq (or (json-field-value record "entity_seq" 0) 0)))
+                (loop (rest records)
+                      (if (and (string=? kind "worklog")
+                               (string=? entity-id worklog-id)
+                               (> entity-seq max-seq))
+                          entity-seq
+                          max-seq))))))))
+
+(defn workspace-worklog-record
+  [worklog-id entity-kind entity-id body author-id created-at updated-at updated-at-unixms]
+  (vector
+   (cons 'id worklog-id)
+   (cons 'entityKind entity-kind)
+   (cons 'entityId entity-id)
+   (cons 'body body)
+   (cons 'authorId author-id)
+   (cons 'createdAt created-at)
+   (cons 'updatedAt updated-at)
+   (cons 'updatedAtUnixms updated-at-unixms)))
+
+(defn workspace-worklog-save!
+  [conn worklog]
+  (let ((worklog-id (or (json-field-value worklog "id" "") ""))
+        (entity-kind (or (json-field-value worklog "entityKind" "") ""))
+        (entity-id (or (json-field-value worklog "entityId" "") ""))
+        (author-id (or (json-field-value worklog "authorId" "") ""))
+        (updated-at-unixms (or (json-field-value worklog "updatedAtUnixms" 0) 0))
+        (json-text (json-write-text worklog)))
+    (db/execute
+     conn
+     "insert or replace into worklog(id, entity_kind, entity_id, author_id, created_at_unixms, json, updated_at_unixms) values(?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+     worklog-id
+     entity-kind
+     entity-id
+     author-id
+     updated-at-unixms
+     json-text
+     updated-at-unixms)
+    worklog))
+
+(defn workspace-worklog-records
+  [conn item-id limit offset]
+  (db/map-row
+   (fn [json-text]
+     (call-with-input-string
+      json-text
+      (fn [port]
+        (json/json-read port))))
+   conn
+   "select json from worklog where entity_kind = 'item' and entity_id = ?1 order by created_at_unixms asc, id asc limit ?2 offset ?3"
+   item-id
+   limit
+   offset))
+
+(defn workspace-worklog-list-output
+  [conn item-id limit offset]
+  (json-write-output
+   (vector
+    (cons 'data (workspace-worklog-records conn item-id limit offset)))))
+
+(defn workspace-worklog-add!
+  [conn item-id body]
+  (let ((item-id (or item-id ""))
+        (current (workspace-item-by-id conn item-id)))
+    (if (not current)
+        false
+        (let ((workspace-id (or (workspace-status-workspace-id conn) ""))
+               (actor-id (or (workspace-status-current-actor-id conn) ""))
+               (body (or body ""))
+               (body-text (str/trim (or body ""))))
+          (if (string=? workspace-id "")
+              (error "ro workspace id is unavailable" workspace-id)
+              true)
+          (if (string=? actor-id "")
+              (error "no current actor" actor-id)
+              true)
+          (if (string=? body-text "")
+              (error "worklog body is required" body)
+              true)
+          (let [meta (workspace-worklog-create-context)
+                event-id (or (json-field-value meta "eventId" "") "")
+                worklog-id (or (json-field-value meta "worklogId" "") "")
+                issued-at (or (json-field-value meta "issuedAt" "") "")
+                issued-at-unixms (or (json-field-value meta "issuedAtUnixms" 0) 0)
+                worklog (workspace-worklog-record
+                         worklog-id
+                         "item"
+                         item-id
+                         body
+                         actor-id
+                         issued-at
+                         issued-at
+                         issued-at-unixms)
+                event-seq (workspace-worklog-next-seq worklog-id)
+                event (vector
+                       (cons 'eventId event-id)
+                       (cons 'workspaceId workspace-id)
+                       (cons 'replicaId (workspace-replica-id))
+                       (cons 'entityKind "worklog")
+                       (cons 'entityId worklog-id)
+                       (cons 'entitySeq event-seq)
+                       (cons 'type "worklog.add")
+                       (cons 'parents (list item-id))
+                       (cons 'issuedAt issued-at)
+                       (cons 'actorId actor-id)
+                       (cons 'payload worklog)
+                       (cons 'localStatus "local")
+                       (cons 'serverStatus "pending"))]
+            (workspace-worklog-save! conn worklog)
+            (workspace-item-append-event! event)
+            worklog)))))
+
 (defn workspace-status-visible-worklog-count
   [conn current-write-actor-id]
   (db/first-result
@@ -758,20 +1401,20 @@
 (defn workspace-actors
   [conn]
   (db/map-row
-   (lambda (id name kind user-id session)
+   (fn [id name kind user-id session]
      (actor-record id name kind user-id session))
    conn
    "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors order by case lower(coalesce(json_extract(json, '$.kind'), '')) when 'human' then 0 when 'agent' then 1 else 2 end, lower(coalesce(json_extract(json, '$.name'), id)), id"))
 
 (defn workspace-actor-by-id
   [conn actor-id]
-  (let ((rows
-         (db/map-row
-          (lambda (id name kind user-id session)
-            (actor-record id name kind user-id session))
-          conn
-          "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors where id = ?1 limit 1"
-          actor-id)))
+  (let [rows
+        (db/map-row
+         (fn [id name kind user-id session]
+           (actor-record id name kind user-id session))
+         conn
+         "select id, coalesce(json_extract(json, '$.name'), id), coalesce(json_extract(json, '$.kind'), ''), coalesce(json_extract(json, '$.userId'), ''), coalesce(json_extract(json, '$.session'), '') from actors where id = ?1 limit 1"
+         actor-id)]
     (if (or (not rows)
             (null? rows))
         #f
@@ -781,18 +1424,18 @@
   [json-text]
   (call-with-input-string
    json-text
-   (lambda (port)
+   (fn [port]
      (json/json-read port))))
 
 (defn workspace-item-by-id
   [conn item-id]
-  (let ((rows
-         (db/map-row
-          (lambda (json-text)
-            (item-json-record json-text))
-          conn
-          "select json from items where id = ?1 limit 1"
-          item-id)))
+  (let [rows
+        (db/map-row
+         (fn [json-text]
+           (item-json-record json-text))
+         conn
+         "select json from items where id = ?1 limit 1"
+         item-id)]
     (if (or (not rows)
             (null? rows))
         #f
@@ -801,16 +1444,16 @@
 (defn workspace-item-children
   [conn item-id]
   (db/map-row
-   (lambda (json-text)
+   (fn [json-text]
      (item-json-record json-text))
    conn
-   "select json from items where parent_id = ?1 order by lower(rank) asc, id asc"
+   "select json from items where parent_id = ?1 and archived = 0 order by lower(rank) asc, id asc"
    item-id))
 
 (defn workspace-item-deps
   [conn item-id]
   (db/map-row
-   (lambda (json-text)
+   (fn [json-text]
      (item-json-record json-text))
    conn
    "select json from deps where from_item_id = ?1 or to_item_id = ?1 order by updated_at_unixms desc, id desc"
@@ -832,7 +1475,7 @@
         (let ((defs
                (call-with-input-string
                 json-text
-                (lambda (port)
+                (fn [port]
                   (json/json-read port)))))
           (##core#let loop ((xs (seq defs))
                             (acc '()))
@@ -856,18 +1499,18 @@
 
 (defn workspace-item-child-summary
   [conn item]
-  (let* ((item-id (or (json-field-value item "id" "") ""))
-         (comments-count
-          (workspace-item-count
-           conn
-           "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
-           item-id))
-         (worklog-count
-          (workspace-item-count
-           conn
-           "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1"
-           item-id))
-         (has-children? (> (workspace-item-count conn "select count(*) from items where parent_id = ?1" item-id) 0)))
+  (let [item-id (or (json-field-value item "id" "") "")
+        comments-count
+        (workspace-item-count
+         conn
+         "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
+         item-id)
+        worklog-count
+        (workspace-item-count
+         conn
+         "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1"
+         item-id)
+        has-children? (> (workspace-item-count conn "select count(*) from items where parent_id = ?1 and archived = 0" item-id) 0)]
     (ro-items/item-show-summary item comments-count worklog-count has-children?)))
 
 (defn workspace-item-counts
@@ -883,11 +1526,11 @@
            (cons 'open open)
            (cons 'done done)
            (cons 'archived archived)))
-        (let* ((child (first xs))
-               (child-archived (workspace-item-archived? child))
-               (child-status (workspace-item-status child))
-               (child-done (and (not child-archived)
-                                (member child-status end-status-ids))))
+        (let [child (first xs)
+              child-archived (workspace-item-archived? child)
+              child-status (workspace-item-status child)
+              child-done (and (not child-archived)
+                              (member child-status end-status-ids))]
           (loop (rest xs)
                 (+ total 1)
                 (if child-archived (+ archived 1) archived)
@@ -897,27 +1540,227 @@
   [conn sql item-id]
   (or (db/first-result conn sql item-id) 0))
 
+(defn workspace-item-summary
+  [conn item current-write-actor-id]
+  (let [item-id (or (json-field-value item "id" "") "")
+        comments-count
+        (workspace-item-count
+         conn
+         "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
+         item-id)
+        worklog-count
+        (if (string=? (or current-write-actor-id "") "")
+            0
+            (db/first-result
+             conn
+             "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1 and author_id in (select id from actors where coalesce(nullif(trim(json_extract(json, '$.userId')), ''), id) = ?2)"
+             item-id
+             current-write-actor-id))
+        has-children? (> (workspace-item-count conn "select count(*) from items where parent_id = ?1 and archived = 0" item-id) 0)]
+    (ro-items/item-show-summary item comments-count worklog-count has-children?)))
+
+(defn workspace-item-id
+  [item]
+  (or (json-field-value item "id" "") ""))
+
+(defn workspace-item-outline-id
+  [item]
+  (or (json-field-value item "outlineId" "") ""))
+
+(defn workspace-item-parent-id
+  [item]
+  (or (json-field-value item "parentId" "") ""))
+
+(defn workspace-item-rank
+  [item]
+  (or (json-field-value item "rank" "") ""))
+
+(defn workspace-item-created-at
+  [item]
+  (or (json-field-value item "createdAt" "") ""))
+
+(defn workspace-item-assigned-actor-id
+  [item]
+  (or (json-field-value item "assignedActorId" "") ""))
+
+(defn workspace-item-on-hold?
+  [item]
+  (or (json-field-value item "onHold" false) false))
+
+(defn workspace-item-status-order
+  [status]
+  (cond
+    (string=? status "done") 0
+    (string=? status "doing") 1
+    (string=? status "todo") 2
+    (string=? status "") 3
+    :else 4))
+
+(defn workspace-item-order<?
+  [left right]
+  (let [left-rank (workspace-item-rank left)
+        right-rank (workspace-item-rank right)]
+    (cond
+      (string<? left-rank right-rank) true
+      (string<? right-rank left-rank) false
+      :else false)))
+
+(defn workspace-item-order-outline-items
+  [items]
+  (let [present (make-hash-table)]
+    (let loop-present ((xs items))
+      (if (empty? xs)
+          (let [children (make-hash-table)]
+            (letrec ((build-groups
+                      (fn [xs roots]
+                        (if (empty? xs)
+                            (vector roots children)
+                            (let [item (first xs)
+                                  parent-id (workspace-item-parent-id item)]
+                              (if (or (string=? parent-id "")
+                                      (not (hash-table-ref/default present parent-id #f)))
+                                  (build-groups (rest xs) (cons item roots))
+                                  (let [current-children
+                                        (hash-table-ref/default children parent-id '())]
+                                    (hash-table-set! children parent-id
+                                                     (cons item current-children))
+                                    (build-groups (rest xs) roots)))))))
+                     (walk
+                      (fn [nodes acc]
+                        (let loop ((xs (seq nodes))
+                                   (acc acc))
+                          (if (empty? xs)
+                              acc
+                              (let [item (first xs)
+                                    item-id (workspace-item-id item)
+                                    raw-children
+                                    (hash-table-ref/default children item-id '())
+                                    child-items
+                                    (if (or (nil? raw-children)
+                                            (null? raw-children))
+                                        '()
+                                        (cluck-sort-list raw-children
+                                                         workspace-item-order<?))
+                                    acc-with-item (cons item acc)
+                                    acc-after-children (walk child-items acc-with-item)]
+                                (loop (rest xs) acc-after-children)))))))
+              (let [built (build-groups items '())
+                    roots (vector-ref built 0)
+                    sorted-roots (cluck-sort-list roots workspace-item-order<?)]
+                (reverse (walk sorted-roots '())))))
+          (let ((item-id (workspace-item-id (first xs))))
+            (if (not (string=? item-id ""))
+                (hash-table-set! present item-id #t))
+            (loop-present (rest xs)))))))
+
+(defn workspace-item-order-rows
+  [rows]
+  (let [outline-id-set (make-hash-table)
+        outline-ids '()
+        by-outline (make-hash-table)]
+    (let loop ((xs rows))
+      (if (empty? xs)
+          (let [sorted-outline-ids (cluck-sort-list outline-ids string<?)]
+            (let loop-outlines ((oids sorted-outline-ids)
+                                (acc '()))
+              (if (empty? oids)
+                  (reverse acc)
+                  (let [outline-id (first oids)
+                        outline-items
+                        (hash-table-ref/default by-outline outline-id '())
+                        ordered-items
+                        (workspace-item-order-outline-items outline-items)]
+                    (let loop-items ((ys (seq ordered-items))
+                                     (next-acc acc))
+                      (if (empty? ys)
+                          (loop-outlines (rest oids) next-acc)
+                          (loop-items (rest ys)
+                                      (cons (first ys) next-acc))))))))
+          (let [item (first xs)
+                outline-id (workspace-item-outline-id item)
+                current-items (hash-table-ref/default by-outline outline-id '())]
+            (if (not (hash-table-ref/default outline-id-set outline-id #f))
+                (begin
+                  (hash-table-set! outline-id-set outline-id #t)
+                  (set! outline-ids (cons outline-id outline-ids))))
+            (hash-table-set! by-outline outline-id (cons item current-items))
+            (loop (rest xs)))))))
+
+(defn workspace-item-ready-blocking-set
+  [conn outline-end-status-cache item-cache]
+  (let [blocking-set (make-hash-table)
+        deps-rows
+        (db/map-row
+         (fn [from-id to-id]
+           (cons from-id to-id))
+         conn
+         "select from_item_id, to_item_id from deps where type = 'blocks'")]
+    (let loop ((xs deps-rows))
+      (if (empty? xs)
+          blocking-set
+          (let [dep (first xs)
+                from-id (or (car dep) "")
+                to-id (or (cdr dep) "")
+                other (hash-table-ref/default item-cache to-id #f)
+                other-outline-id (and other (workspace-item-outline-id other))
+                other-status (and other (workspace-item-status other))
+                other-end-status-ids
+                (and other
+                     (hash-table-ref/default outline-end-status-cache other-outline-id '()))]
+            (if (and (not (string=? from-id ""))
+                     (not (string=? to-id ""))
+                     other
+                     other-outline-id
+                     other-status
+                     (not (member other-status other-end-status-ids)))
+                (hash-table-set! blocking-set from-id #t))
+            (loop (rest xs)))))))
+
+(defn workspace-item-ready-class
+  [item outline-end-status-cache blocking-set current-actor-id current-actor-kind]
+  (let [outline-id (workspace-item-outline-id item)
+        status (workspace-item-status item)
+        assigned-actor-id (workspace-item-assigned-actor-id item)
+        end-status-ids
+        (hash-table-ref/default outline-end-status-cache outline-id '())
+        item-id (workspace-item-id item)]
+    (and (not (workspace-item-archived? item))
+         (not (workspace-item-on-hold? item))
+         (not (member status end-status-ids))
+         (not (hash-table-ref/default blocking-set item-id #f))
+         (cond
+           (and (not (string=? assigned-actor-id ""))
+                (string=? assigned-actor-id current-actor-id)
+                (string=? current-actor-kind "agent"))
+           'mine
+
+           (string=? assigned-actor-id "")
+           'out
+
+           :else
+           #f))))
+
 (defn workspace-status-output
   []
-  (let* ((workspace-name (or (workspace-current-name) ""))
-         (workspace-root (or (workspace-current-path) "")))
+  (let [workspace-name (or (workspace-current-name) "")
+        workspace-root (or (workspace-current-path) "")]
     (if (and (not (string=? workspace-name ""))
              (not (string=? workspace-root "")))
-        (let* ((conn (open-workspace-db))
-               (workspace-id (or (workspace-status-workspace-id conn) ""))
-               (current-actor-id (or (workspace-status-current-actor-id conn) ""))
-               (current-project-id (or (workspace-status-current-project-id conn) ""))
-               (actor-count (workspace-status-count conn "select count(*) from actors"))
-               (project-count (workspace-status-count conn "select count(*) from projects where archived = 0"))
-               (outline-count (workspace-status-count conn "select count(*) from outlines where archived = 0"))
-               (item-count (workspace-status-count conn "select count(*) from items where archived = 0"))
-               (dep-count (workspace-status-count conn "select count(*) from deps"))
-               (comment-count (workspace-status-count conn "select count(*) from comments where entity_kind = 'item'"))
-               (discussion-count (workspace-status-count conn "select count(*) from discussions"))
-               (actor (workspace-actor-by-id conn current-actor-id))
-               (current-write-actor-id (ro-workspace/workspace-current-write-actor-id actor current-actor-id))
-               (worklog-count (workspace-status-visible-worklog-count conn current-write-actor-id))
-               (attachment-count (workspace-status-count conn "select count(*) from attachments")))
+        (let [conn (open-workspace-db)
+              workspace-id (or (workspace-status-workspace-id conn) "")
+              current-actor-id (or (workspace-status-current-actor-id conn) "")
+              current-project-id (or (workspace-status-current-project-id conn) "")
+              actor-count (workspace-status-count conn "select count(*) from actors")
+              project-count (workspace-status-count conn "select count(*) from projects where archived = 0")
+              outline-count (workspace-status-count conn "select count(*) from outlines where archived = 0")
+              item-count (workspace-status-count conn "select count(*) from items where archived = 0")
+              dep-count (workspace-status-count conn "select count(*) from deps")
+              comment-count (workspace-status-count conn "select count(*) from comments where entity_kind = 'item'")
+              discussion-count (workspace-status-count conn "select count(*) from discussions")
+              actor (workspace-actor-by-id conn current-actor-id)
+              current-write-actor-id (ro-workspace/workspace-current-write-actor-id actor current-actor-id)
+              worklog-count (workspace-status-visible-worklog-count conn current-write-actor-id)
+              attachment-count (workspace-status-count conn "select count(*) from attachments")]
           (ro-workspace/workspace-status-output
            workspace-name
            workspace-id
@@ -936,23 +1779,23 @@
 
 (defn identity-list-output
   []
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (current-actor-id (or (workspace-status-current-actor-id conn) ""))
-               (actors (workspace-actors conn)))
+        (let [conn (open-workspace-db)
+              current-actor-id (or (workspace-status-current-actor-id conn) "")
+              actors (workspace-actors conn)]
           (ro-workspace/identity-list-output
            current-actor-id
            actors)))))
 
 (defn identity-whoami-output
   []
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (current-actor-id (or (workspace-status-current-actor-id conn) "")))
+        (let [conn (open-workspace-db)
+              current-actor-id (or (workspace-status-current-actor-id conn) "")]
           (if (string=? current-actor-id "")
               (error "no current actor" current-actor-id)
               (let ((actor (workspace-actor-by-id conn current-actor-id)))
@@ -1051,64 +1894,64 @@
 
 (defn print-workspace-add
   [name dir kind use?]
-  (let* ((workspace-root (or (if (string=? (or dir "") "")
-                                 (current-directory)
-                                 dir)
-                             ""))
-         (layout (workspace-ensure-local-layout! workspace-root))
-         (actual-path (or (json-field-value layout "dir" workspace-root) workspace-root))
-         (result (workspace-registry-upsert! name actual-path kind use?))
-         (current? (first result))
-         (output
-          (json-write-output
-           (vector
-            (cons 'data
-                  (vector
-                   (cons 'workspace name)
-                   (cons 'dir actual-path)
-                   (cons 'kind kind)
-                   (cons 'used current?)))))))
+  (let [workspace-root (or (if (string=? (or dir "") "")
+                               (current-directory)
+                               dir)
+                           "")
+        layout (workspace-ensure-local-layout! workspace-root)
+        actual-path (or (json-field-value layout "dir" workspace-root) workspace-root)
+        result (workspace-registry-upsert! name actual-path kind use?)
+        current? (first result)
+        output
+        (json-write-output
+         (vector
+          (cons 'data
+                (vector
+                 (cons 'workspace name)
+                 (cons 'dir actual-path)
+                 (cons 'kind kind)
+                 (cons 'used current?)))))]
     (display output)
     output))
 
 (defn print-workspace-init
   [name dir use?]
-  (let* ((workspace-root (or (if (string=? (or dir "") "")
-                                 (current-directory)
-                                 dir)
-                             ""))
-         (layout (workspace-ensure-local-layout! workspace-root))
-         (actual-path (or (json-field-value layout "dir" workspace-root) workspace-root))
-         (result (workspace-registry-upsert! name actual-path "local" use?))
-         (current? (first result))
-         (output
-          (json-write-output
-           (vector
-            (cons 'data
-                  (vector
-                   (cons 'workspace name)
-                   (cons 'dir actual-path)
-                   (cons 'kind "local")
-                   (cons 'used current?)))))))
+  (let [workspace-root (or (if (string=? (or dir "") "")
+                               (current-directory)
+                               dir)
+                           "")
+        layout (workspace-ensure-local-layout! workspace-root)
+        actual-path (or (json-field-value layout "dir" workspace-root) workspace-root)
+        result (workspace-registry-upsert! name actual-path "local" use?)
+        current? (first result)
+        output
+        (json-write-output
+         (vector
+          (cons 'data
+                (vector
+                 (cons 'workspace name)
+                 (cons 'dir actual-path)
+                 (cons 'kind "local")
+                 (cons 'used current?)))))]
     (display output)
     output))
 
 (defn print-workspace-use
   [name]
-  (let* ((root (workspace-registry-root))
-         (detail (workspace-registry-detail root name)))
+  (let [root (workspace-registry-root)
+        detail (workspace-registry-detail root name)]
     (if (not detail)
         (begin
           (display "workspace not found\n" (current-error-port))
           1)
-        (let* ((path (or (workspace-detail-value detail "path") ""))
-               (kind (or (workspace-detail-value detail "kind") ""))
-               (output (json-write-output
-                        (vector
-                         (cons 'data
-                               (vector
-                                (cons 'workspace name)
-                                (cons 'dir path)))))))
+        (let [path (or (workspace-detail-value detail "path") "")
+              kind (or (workspace-detail-value detail "kind") "")
+              output (json-write-output
+                       (vector
+                        (cons 'data
+                              (vector
+                               (cons 'workspace name)
+                               (cons 'dir path)))))]
           (workspace-registry-upsert! name path kind true)
           (display output)
           output))))
@@ -1120,21 +1963,21 @@
 
 (defn print-init-output
   []
-  (let* ((name "default")
-         (workspace-root (current-directory))
-         (layout (workspace-ensure-local-layout! workspace-root))
-         (actual-path (or (json-field-value layout "dir" workspace-root) workspace-root))
-         (result (workspace-registry-upsert! name actual-path "local" true))
-         (current? (first result))
-         (output
-          (json-write-output
-           (vector
-            (cons 'data
-                  (vector
-                   (cons 'workspace name)
-                   (cons 'dir actual-path)
-                   (cons 'kind "local")
-                   (cons 'used current?)))))))
+  (let [name "default"
+        workspace-root (current-directory)
+        layout (workspace-ensure-local-layout! workspace-root)
+        actual-path (or (json-field-value layout "dir" workspace-root) workspace-root)
+        result (workspace-registry-upsert! name actual-path "local" true)
+        current? (first result)
+        output
+        (json-write-output
+         (vector
+          (cons 'data
+                (vector
+                 (cons 'workspace name)
+                 (cons 'dir actual-path)
+                 (cons 'kind "local")
+                 (cons 'used current?)))))]
     (display output)
     output))
 
@@ -1173,34 +2016,34 @@
 
 (defn print-projects-list
   []
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (projects (workspace-projects conn))
-               (output (ro-projects/projects-list-output projects)))
+        (let [conn (open-workspace-db)
+              projects (workspace-projects conn)
+              output (ro-projects/projects-list-output projects)]
           (db/finalize! conn)
           (display output)
           output))))
 
 (defn print-projects-current
   []
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (output (workspace-current-project-output conn)))
+        (let [conn (open-workspace-db)
+              output (workspace-current-project-output conn)]
           (db/finalize! conn)
           (display output)
           output))))
 
 (defn print-projects-use
   [project-id]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (project (workspace-project-use! conn project-id)))
+        (let [conn (open-workspace-db)
+              project (workspace-project-use! conn project-id)]
           (if (not project)
               (begin
                 (db/finalize! conn)
@@ -1213,23 +2056,23 @@
 
 (defn print-projects-create
   [name use?]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (project (workspace-project-create! conn name use?))
-               (output (json-write-output (vector (cons 'data project)))))
+        (let [conn (open-workspace-db)
+              project (workspace-project-create! conn name use?)
+              output (json-write-output (vector (cons 'data project)))]
           (db/finalize! conn)
           (display output)
           output))))
 
 (defn print-projects-archive
   [project-id archived?]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (project (workspace-project-archive! conn project-id archived?)))
+        (let [conn (open-workspace-db)
+              project (workspace-project-archive! conn project-id archived?)]
           (if (not project)
               (begin
                 (db/finalize! conn)
@@ -1240,6 +2083,248 @@
                 (display output)
                 output))))))
 
+(defn projects-run-effect
+  [effect]
+  (let ((op (pr-str (vector-ref effect 0)))
+        (args (vector-ref effect 1)))
+    (cond
+      (string=? op ":projects/help")
+      (print-projects-help)
+
+      (string=? op ":projects/list")
+      (print-projects-list)
+
+      (string=? op ":projects/current")
+      (print-projects-current)
+
+      (string=? op ":projects/create")
+      (print-projects-create (or (get args :name) "")
+                             (or (get args :use?) false))
+
+      (string=? op ":projects/archive")
+      (print-projects-archive (or (get args :project-id) "")
+                              (or (get args :archived) false))
+
+      (string=? op ":projects/use")
+      (print-projects-use (or (get args :project-id) ""))
+
+      :else
+      (error "unsupported projects effect" effect))))
+
+(defn projects-run-effects
+  [effects]
+  (let loop ((xs (or effects '()))
+             (result 0))
+    (cond
+      (empty? xs)
+      result
+
+      :else
+      (loop (rest xs)
+            (projects-run-effect (first xs))))))
+
+(defn print-outlines-help
+  []
+  (display outlines-help-output)
+  outlines-help-output)
+
+(defn print-outlines-list
+  [project-id]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outlines (if (string=? (or project-id "") "")
+                         (workspace-outlines conn)
+                         (workspace-outlines-by-project conn project-id))
+              output (workspace-outlines-list-output outlines)]
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-outlines-show
+  [outline-id]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-by-id conn outline-id)]
+          (db/finalize! conn)
+          (if (not outline)
+              (begin
+                (display "outline not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-show-output outline)))
+                (display output)
+                output))))))
+
+(defn print-outlines-archive
+  [outline-id archived?]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-archive! conn outline-id archived?)]
+          (if (not outline)
+              (begin
+                (db/finalize! conn)
+                (display "outline not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-show-output outline)))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn print-outlines-status-list
+  [outline-id]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-by-id conn outline-id)]
+          (db/finalize! conn)
+          (if (not outline)
+              (begin
+                (display "outline not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-status-list-output outline)))
+                (display output)
+                output))))))
+
+(defn print-outlines-status-add
+  [outline-id label]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-status-add! conn outline-id label)]
+          (if (not outline)
+              (begin
+                (db/finalize! conn)
+                (display "outline not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-show-output outline)))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn print-outlines-status-update
+  [outline-id status-id label end-state? requires-note?]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-status-update!
+                       conn outline-id status-id label end-state? requires-note?)]
+          (if (not outline)
+              (begin
+                (db/finalize! conn)
+                (display "status not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-show-output outline)))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn print-outlines-status-remove
+  [outline-id status-id]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-status-remove! conn outline-id status-id)]
+          (if (not outline)
+              (begin
+                (db/finalize! conn)
+                (display "status not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-show-output outline)))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn print-outlines-status-reorder
+  [outline-id labels]
+  (let [workspace-root (or (workspace-current-path) "")]
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              outline (workspace-outline-status-reorder! conn outline-id labels)]
+          (if (not outline)
+              (begin
+                (db/finalize! conn)
+                (display "status not found\n" (current-error-port))
+                1)
+              (let ((output (workspace-outline-show-output outline)))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn outlines-run-effect
+  [effect]
+  (let ((op (pr-str (vector-ref effect 0)))
+        (args (vector-ref effect 1)))
+    (cond
+      (string=? op ":outlines/help")
+      (print-outlines-help)
+
+      (string=? op ":outlines/list")
+      (print-outlines-list (or (get args :project-id) ""))
+
+      (string=? op ":outlines/show")
+      (print-outlines-show (or (get args :outline-id) ""))
+
+      (string=? op ":outlines/archive")
+      (print-outlines-archive (or (get args :outline-id) "")
+                              (or (get args :archived) false))
+
+      (string=? op ":outlines/status-list")
+      (print-outlines-status-list (or (get args :outline-id) ""))
+
+      (string=? op ":outlines/status-add")
+      (print-outlines-status-add (or (get args :outline-id) "")
+                                 (or (get args :label) ""))
+
+      (string=? op ":outlines/status-update")
+      (print-outlines-status-update (or (get args :outline-id) "")
+                                    (or (get args :status-id) "")
+                                    (or (get args :label) "")
+                                    (or (get args :end-state?) false)
+                                    (or (get args :requires-note?) false))
+
+      (string=? op ":outlines/status-remove")
+      (print-outlines-status-remove (or (get args :outline-id) "")
+                                    (or (get args :status-id) ""))
+
+      (string=? op ":outlines/status-reorder")
+      (print-outlines-status-reorder (or (get args :outline-id) "")
+                                     (or (get args :labels) '()))
+
+      :else
+      (error "unsupported outlines effect" effect))))
+
+(defn outlines-run-effects
+  [effects]
+  (let loop ((xs (or effects '()))
+             (result 0))
+    (cond
+      (empty? xs)
+      result
+
+      :else
+      (loop (rest xs)
+            (outlines-run-effect (first xs))))))
+
+(defn outlines-main
+  [args]
+  (let ((plan (ro-outlines/outlines-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (outlines-run-effects (get plan :effects '())))))
+
 (defn print-items-help
   []
   (display items-help-output)
@@ -1247,11 +2332,11 @@
 
 (defn print-item-show
   [item-id]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (output (workspace-item-show-output conn item-id)))
+        (let [conn (open-workspace-db)
+              output (workspace-item-show-output conn item-id)]
           (db/finalize! conn)
           (if (not output)
               (begin
@@ -1263,34 +2348,134 @@
 
 (defn print-items-list
   [project-id outline-id status]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (output (workspace-item-list-output conn project-id outline-id status)))
+        (let [conn (open-workspace-db)
+              output (workspace-item-list-output conn project-id outline-id status)]
           (db/finalize! conn)
           (display output)
           output))))
 
 (defn print-items-ready
   []
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((conn (open-workspace-db))
-               (output (workspace-item-ready-output conn)))
+        (let [conn (open-workspace-db)
+              output (workspace-item-ready-output conn)]
           (db/finalize! conn)
           (display output)
           output))))
 
 (defn print-items-events
   [item-id limit]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
         (let ((output (workspace-item-events-output workspace-root item-id limit)))
           (display output)
           output))))
+
+(defn items-run-effect
+  [effect]
+  (let ((op (pr-str (vector-ref effect 0)))
+        (args (vector-ref effect 1)))
+    (cond
+      (string=? op ":items/help")
+      (print-items-help)
+
+      (string=? op ":items/show")
+      (print-item-show (or (get args :item-id) ""))
+
+      (string=? op ":items/list")
+      (print-items-list (or (get args :project-id) "")
+                        (or (get args :outline-id) "")
+                        (or (get args :status) ""))
+
+      (string=? op ":items/ready")
+      (print-items-ready)
+
+      (string=? op ":items/events")
+      (print-items-events (or (get args :item-id) "")
+                          (or (get args :limit) 0))
+
+      :else
+      (error "unsupported items effect" effect))))
+
+(defn items-run-effects
+  [effects]
+  (let loop ((xs (or effects '()))
+             (result 0))
+    (cond
+      (empty? xs)
+      result
+
+      :else
+      (loop (rest xs)
+            (items-run-effect (first xs))))))
+
+(defn print-worklog-help
+  []
+  (display worklog-help-output)
+  worklog-help-output)
+
+(defn print-worklog-list
+  [item-id limit offset]
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              output (workspace-worklog-list-output conn item-id limit offset)]
+          (db/finalize! conn)
+          (display output)
+          output))))
+
+(defn print-worklog-add
+  [item-id body]
+  (let ((workspace-root (or (workspace-current-path) "")))
+    (if (string=? workspace-root "")
+        (error "ro workspace current is unavailable" workspace-json-path)
+        (let [conn (open-workspace-db)
+              worklog (workspace-worklog-add! conn item-id body)]
+          (if (not worklog)
+              (begin
+                (db/finalize! conn)
+                (display "item not found\n" (current-error-port))
+                1)
+              (let ((output (json-write-output (vector (cons 'data worklog)))))
+                (db/finalize! conn)
+                (display output)
+                output))))))
+
+(defn worklog-run-effect
+  [effect]
+  (let ((op (pr-str (vector-ref effect 0)))
+        (args (vector-ref effect 1)))
+    (cond
+      (string=? op ":worklog/help")
+      (print-worklog-help)
+
+      (string=? op ":worklog/list")
+      (print-worklog-list (or (get args :item-id) "")
+                          (or (get args :limit) 0)
+                          (or (get args :offset) 0))
+
+      (string=? op ":worklog/add")
+      (print-worklog-add (or (get args :item-id) "")
+                         (or (get args :body) ""))
+
+      :else
+      (error "unsupported worklog effect" effect))))
+
+(defn worklog-run-effects
+  [effects]
+  (let loop ((xs (or effects '()))
+             (result 0))
+    (if (empty? xs)
+        result
+        (loop (rest xs)
+              (worklog-run-effect (first xs))))))
 
 (def events-default-limit 200)
 
@@ -1307,57 +2492,57 @@
 
 (defn workspace-item-edge-other-done?
   [conn other-item]
-  (let* ((outline-id (or (json-field-value other-item "outlineId" "") ""))
-         (status (workspace-item-status other-item))
-         (end-status-ids (workspace-outline-end-status-ids conn outline-id)))
+  (let [outline-id (or (json-field-value other-item "outlineId" "") "")
+        status (workspace-item-status other-item)
+        end-status-ids (workspace-outline-end-status-ids conn outline-id)]
     (and (not (string=? outline-id ""))
          (member status end-status-ids))))
 
 (defn workspace-item-edge-for
   [conn current-item-id item-cache end-status-cache dep]
-  (let* ((dep-type (or (json-first-field-value dep (list "type" "typ") "") ""))
-         (from-id (or (json-first-field-value dep (list "fromItemId" "from_item_id") "") ""))
-         (to-id (or (json-first-field-value dep (list "toItemId" "to_item_id") "") ""))
-         (out? (string=? from-id current-item-id))
-         (in? (string=? to-id current-item-id))
-         (other-id (cond
-                     (and (string=? dep-type "blocks") out?) to-id
-                     (and (string=? dep-type "blocks") in?) from-id
-                     (string=? dep-type "related")
-                     (if (string=? to-id current-item-id) from-id to-id)
-                     :else ""))
-         (direction (cond
-                      (and (string=? dep-type "blocks") out?) "out"
-                      (and (string=? dep-type "blocks") in?) "in"
-                      (string=? dep-type "related")
-                      (if (string=? to-id current-item-id) "in" "out")
-                      :else "")))
+  (let [dep-type (or (json-first-field-value dep (list "type" "typ") "") "")
+        from-id (or (json-first-field-value dep (list "fromItemId" "from_item_id") "") "")
+        to-id (or (json-first-field-value dep (list "toItemId" "to_item_id") "") "")
+        out? (string=? from-id current-item-id)
+        in? (string=? to-id current-item-id)
+        other-id (cond
+                   (and (string=? dep-type "blocks") out?) to-id
+                   (and (string=? dep-type "blocks") in?) from-id
+                   (string=? dep-type "related")
+                   (if (string=? to-id current-item-id) from-id to-id)
+                   :else "")
+        direction (cond
+                    (and (string=? dep-type "blocks") out?) "out"
+                    (and (string=? dep-type "blocks") in?) "in"
+                    (string=? dep-type "related")
+                    (if (string=? to-id current-item-id) "in" "out")
+                    :else "")]
     (if (or (string=? dep-type "")
             (string=? other-id "")
             (string=? direction ""))
         #f
-        (let* ((cached-other (hash-table-ref/default item-cache other-id #f))
-               (other (if cached-other
-                          cached-other
-                          (let ((lookup (workspace-item-by-id conn other-id)))
-                            (when lookup
-                              (hash-table-set! item-cache other-id lookup))
-                            lookup))))
+        (let [cached-other (hash-table-ref/default item-cache other-id #f)
+              other (if cached-other
+                        cached-other
+                        (let [lookup (workspace-item-by-id conn other-id)]
+                          (when lookup
+                            (hash-table-set! item-cache other-id lookup))
+                          lookup))]
           (if (or (not other)
                   (workspace-item-archived? other))
               #f
-              (let* ((other-outline-id (or (json-field-value other "outlineId" "") ""))
-                     (other-end-status-ids
-                      (hash-table-ref/default end-status-cache other-outline-id #f))
-                     (other-end-status-ids
-                      (if other-end-status-ids
-                          other-end-status-ids
-                          (let ((lookup (workspace-outline-end-status-ids conn other-outline-id)))
-                            (hash-table-set! end-status-cache other-outline-id lookup)
-                            lookup)))
-                     (other-done (and (not (string=? other-outline-id ""))
-                                      (member (workspace-item-status other)
-                                              other-end-status-ids))))
+              (let [other-outline-id (or (json-field-value other "outlineId" "") "")
+                    other-end-status-ids
+                    (hash-table-ref/default end-status-cache other-outline-id #f)
+                    other-end-status-ids
+                    (if other-end-status-ids
+                        other-end-status-ids
+                        (let [lookup (workspace-outline-end-status-ids conn other-outline-id)]
+                          (hash-table-set! end-status-cache other-outline-id lookup)
+                          lookup))
+                    other-done (and (not (string=? other-outline-id ""))
+                                    (member (workspace-item-status other)
+                                            other-end-status-ids))]
                 (vector
                  (cons 'type dep-type)
                  (cons 'direction direction)
@@ -1366,25 +2551,30 @@
 
 (defn workspace-item-show-output
   [conn item-id]
-  (let* ((item (workspace-item-by-id conn item-id)))
+  (let [item (workspace-item-by-id conn item-id)]
     (if (not item)
         #f
-        (let* ((outline-id (or (json-field-value item "outlineId" "") ""))
-               (children (workspace-item-children conn item-id))
-               (children-summaries (map (lambda (child)
-                                          (workspace-item-child-summary conn child))
-                                        children))
-               (end-status-ids (workspace-outline-end-status-ids conn outline-id))
-               (children-counts (workspace-item-counts children end-status-ids))
-               (item-cache (make-hash-table))
-               (end-status-cache (make-hash-table))
-               (deps-rows (workspace-item-deps conn item-id))
-               (worklog-count
-                (workspace-item-count
-                 conn
-                 "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1"
-                 item-id))
-               (has-children? (not (empty? children))))
+        (let [outline-id (or (json-field-value item "outlineId" "") "")
+              current-actor-id (or (workspace-status-current-actor-id conn) "")
+              current-write-actor-id (workspace-current-write-actor-id conn current-actor-id)
+              children (workspace-item-children conn item-id)
+              children-summaries (map (fn [child]
+                                        (workspace-item-child-summary conn child))
+                                      children)
+              end-status-ids (workspace-outline-end-status-ids conn outline-id)
+              children-counts (workspace-item-counts children end-status-ids)
+              item-cache (make-hash-table)
+              end-status-cache (make-hash-table)
+              deps-rows (workspace-item-deps conn item-id)
+              worklog-count
+              (if (string=? current-write-actor-id "")
+                  0
+                  (db/first-result
+                   conn
+                   "select count(*) from worklog where entity_kind = 'item' and entity_id = ?1 and author_id in (select id from actors where coalesce(nullif(trim(json_extract(json, '$.userId')), ''), id) = ?2)"
+                   item-id
+                   current-write-actor-id))
+              has-children? (not (empty? children))]
           (hash-table-set! item-cache item-id item)
           (hash-table-set! end-status-cache outline-id end-status-ids)
           (let loop ((xs deps-rows)
@@ -1392,27 +2582,27 @@
                      (blocks-out '())
                      (related '()))
             (if (empty? xs)
-                (let* ((blocks-in (reverse blocks-in))
-                       (blocks-out (reverse blocks-out))
-                       (related (reverse related))
-                       (deps (vector
-                              (cons 'blocks
-                                    (vector
-                                     (cons 'out blocks-out)
-                                     (cons 'in blocks-in)))
-                              (cons 'related related)))
-                       (comments-count
-                        (workspace-item-count
-                         conn
-                         "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
-                         item-id))
-                       (discussions-count
-                        (workspace-item-count
-                         conn
-                         "select count(*) from discussions where entity_kind = 'item' and entity_id = ?1"
-                         item-id))
-                       (meta-blocks-in (count blocks-in))
-                       (meta-blocks-out (count blocks-out)))
+                (let [blocks-in (reverse blocks-in)
+                      blocks-out (reverse blocks-out)
+                      related (reverse related)
+                      deps (vector
+                            (cons 'blocks
+                                  (vector
+                                   (cons 'incoming blocks-in)
+                                   (cons 'outgoing blocks-out)))
+                            (cons 'related related))
+                      comments-count
+                      (workspace-item-count
+                       conn
+                       "select count(*) from comments where entity_kind = 'item' and entity_id = ?1"
+                       item-id)
+                      discussions-count
+                      (workspace-item-count
+                       conn
+                       "select count(*) from discussions where entity_kind = 'item' and entity_id = ?1"
+                       item-id)
+                      meta-blocks-in (count blocks-in)
+                      meta-blocks-out (count blocks-out)]
                   (ro-items/items-show-output
                    item
                    children-summaries
@@ -1446,106 +2636,139 @@
 
 (defn workspace-item-list-output
   [conn project-id outline-id status]
-  (let* ((status (if (string=? (or status "") "none")
-                     ""
-                     (or status "")))
-         (rows
-          (db/map-row
-           (lambda (json-text)
-             (item-json-record json-text))
-           conn
-           "select json from items where archived = 0 and (?1 = '' or project_id = ?1) and (?2 = '' or outline_id = ?2) and (?3 = '' or status_id = ?3) order by project_id asc, outline_id asc, parent_id asc, lower(rank) asc, id asc"
-           (or project-id "")
-           (or outline-id "")
-           status)))
-    (ro-items/items-list-output rows)))
+  (let [status (if (string=? (or status "") "none")
+                 ""
+                 (or status ""))
+        current-actor-id (or (workspace-status-current-actor-id conn) "")
+        current-write-actor-id (workspace-current-write-actor-id conn current-actor-id)
+        current-actor (workspace-actor-by-id conn current-actor-id)
+        current-actor-kind (or (and current-actor (json-field-value current-actor "kind" "")) "")
+        rows
+        (db/map-row
+         (fn [json-text]
+           (item-json-record json-text))
+         conn
+         "select json from items where (?1 = '' or project_id = ?1) and (?2 = '' or outline_id = ?2) and (?3 = '' or status_id = ?3)"
+         (or project-id "")
+         (or outline-id "")
+         status)
+        visible-rows
+        (let loop ((xs rows)
+                   (acc '()))
+          (if (empty? xs)
+              (reverse acc)
+              (let ((item (first xs)))
+                (if (workspace-item-archived? item)
+                    (loop (rest xs) acc)
+                    (loop (rest xs) (cons item acc))))))
+        ordered-rows (workspace-item-order-rows visible-rows)
+        items (map (fn [item]
+                     (workspace-item-summary conn item current-write-actor-id))
+                   ordered-rows)]
+    (ro-items/items-list-output items)))
 
 (defn workspace-item-ready-output
   [conn]
-  (let* ((current-actor-id (or (workspace-status-current-actor-id conn) ""))
-         (actor (workspace-actor-by-id conn current-actor-id))
-         (actor-kind (or (json-field-value actor "kind" "") ""))
-         (is-agent? (string=? actor-kind "agent"))
-         (blocked-rows
-          (db/map-row
-           (lambda (from-item-id) from-item-id)
-           conn
-           "select distinct from_item_id from deps where type = 'blocks'"))
-         (blocked-set (make-hash-table)))
-    (let loop-blocked ((xs blocked-rows))
+  (let [current-actor-id (or (workspace-status-current-actor-id conn) "")
+        current-write-actor-id (workspace-current-write-actor-id conn current-actor-id)
+        current-actor (workspace-actor-by-id conn current-actor-id)
+        current-actor-kind (or (and current-actor (json-field-value current-actor "kind" "")) "")
+        rows
+        (db/map-row
+         (fn [json-text]
+           (item-json-record json-text))
+         conn
+         "select json from items where archived = 0 order by updated_at_unixms desc")
+        visible-rows
+        (let loop ((xs rows)
+                   (acc '()))
+          (if (empty? xs)
+              (reverse acc)
+              (let ((item (first xs)))
+                (if (workspace-item-archived? item)
+                    (loop (rest xs) acc)
+                    (loop (rest xs) (cons item acc))))))
+        item-cache (make-hash-table)
+        outline-rows
+        (db/map-row
+         (fn [id status-defs-json]
+           (cons id status-defs-json))
+         conn
+         "select id, status_defs_json from outlines")
+        outline-end-status-cache (make-hash-table)]
+    (let loop-items ((xs visible-rows))
       (if (empty? xs)
           #t
           (begin
-            (hash-table-set! blocked-set (first xs) #t)
-            (loop-blocked (rest xs)))))
-    (let* ((outline-rows
-            (db/map-row
-             (lambda (id status-defs-json)
-               (cons id status-defs-json))
-             conn
-             "select id, status_defs_json from outlines"))
-           (outline-end-status-cache (make-hash-table)))
-      (let loop-outlines ((xs outline-rows))
+            (hash-table-set! item-cache (workspace-item-id (first xs)) (first xs))
+            (loop-items (rest xs)))))
+    (let loop-outlines ((xs outline-rows))
+      (if (empty? xs)
+          #t
+        (let [row (first xs)
+              outline-id (or (car row) "")
+              status-defs-json (or (cdr row) "")]
+            (if (string=? outline-id "")
+                (loop-outlines (rest xs))
+                (let ((defs (if (string=? status-defs-json "")
+                                '()
+                                (call-with-input-string
+                                 status-defs-json
+                                 (fn [port]
+                                   (json/json-read port))))))
+                  (hash-table-set!
+                   outline-end-status-cache
+                   outline-id
+                   (let loop-defs ((ds (seq defs))
+                                   (acc '()))
+                     (cond
+                       (empty? ds) (reverse acc)
+                       (or (json-field-value (car ds) "isEndState" false) false)
+                       (let ((status-id (or (json-field-value (car ds) "id" "") "")))
+                         (if (string=? status-id "")
+                             (loop-defs (cdr ds) acc)
+                             (loop-defs (cdr ds) (cons status-id acc))))
+                       :else
+                       (loop-defs (cdr ds) acc))))
+                  (loop-outlines (rest xs)))))))
+        (let ((blocking-set
+               (workspace-item-ready-blocking-set
+                conn
+                outline-end-status-cache
+                item-cache)))
+      (let loop ((xs visible-rows)
+                 (mine-items '())
+                 (out-items '()))
         (if (empty? xs)
-            #t
-            (let* ((row (first xs))
-                   (outline-id (or (car row) ""))
-                   (status-defs-json (or (cdr row) "")))
-              (if (string=? outline-id "")
-                  (loop-outlines (rest xs))
-                  (let ((defs (if (string=? status-defs-json "")
-                                  '()
-                                  (call-with-input-string
-                                   status-defs-json
-                                   (lambda (port)
-                                     (json/json-read port))))))
-                    (hash-table-set!
-                     outline-end-status-cache
-                     outline-id
-                     (let loop-defs ((ds (seq defs))
-                                     (acc '()))
-                       (cond
-                         (empty? ds) (reverse acc)
-                         (or (json-field-value (car ds) "isEndState" false) false)
-                         (let ((status-id (or (json-field-value (car ds) "id" "") "")))
-                           (if (string=? status-id "")
-                               (loop-defs (cdr ds) acc)
-                               (loop-defs (cdr ds) (cons status-id acc))))
-                         :else
-                         (loop-defs (cdr ds) acc))))
-                    (loop-outlines (rest xs)))))))
-      (let* ((rows
-              (db/map-row
-               (lambda (json-text)
-                 (item-json-record json-text))
-               conn
-               "select json from items where archived = 0 and on_hold = 0 order by updated_at_unixms desc"))
-             (mine '())
-             (out '()))
-        (let loop ((xs rows))
-          (if (empty? xs)
-              (let ((items (if (empty? mine)
-                               (reverse out)
-                               (append (reverse mine) (reverse out)))))
-                (ro-items/items-ready-output items))
-              (let* ((item (first xs))
-                     (id (or (json-field-value item "id" "") ""))
-                     (outline-id (or (json-field-value item "outlineId" "") ""))
-                     (status (workspace-item-status item))
-                     (assigned-to (or (json-field-value item "assignedActorId" "") ""))
-                     (assigned-to-me? (and (not (string=? assigned-to ""))
-                                           (string=? assigned-to current-actor-id)))
-                     (outline-end-status-ids
-                      (hash-table-ref/default outline-end-status-cache outline-id '())))
-                (if (or (string=? id "")
-                        (hash-table-ref/default blocked-set id #f)
-                        (member status outline-end-status-ids)
-                        (and (not (string=? assigned-to ""))
-                             (not (and is-agent? assigned-to-me?))))
-                    (loop (rest xs))
-                    (if (and is-agent? assigned-to-me?)
-                        (loop (rest xs) (cons item mine) out)
-                        (loop (rest xs) mine (cons item out)))))))))))
+            (ro-items/items-ready-output
+             (map (fn [item]
+                    (workspace-item-summary conn item current-write-actor-id))
+                  (append (reverse mine-items)
+                          (reverse out-items))))
+            (let [item (first xs)
+                  bucket
+                  (workspace-item-ready-class
+                   item
+                   outline-end-status-cache
+                   blocking-set
+                   current-actor-id
+                   current-actor-kind)]
+              (cond
+                (eq? bucket 'mine)
+                (loop (rest xs) (cons item mine-items) out-items)
+
+                (eq? bucket 'out)
+                (loop (rest xs) mine-items (cons item out-items))
+
+                :else
+                (loop (rest xs) mine-items out-items))))))))
+
+(defn workspace-item-event-issued-at
+  [record]
+  (let ((issued-at (or (json-field-value record "issued_at" "") "")))
+    (if (str/includes? issued-at ".")
+        (string-append (first (str/split issued-at ".")) "Z")
+        issued-at)))
 
 (defn workspace-item-events-output
   [workspace-root item-id limit]
@@ -1554,11 +2777,28 @@
     (let loop ((xs records)
                (acc '()))
       (if (empty? xs)
-          (let ((ordered (reverse acc))
-                (limited (if (> limit 0)
-                             (take limit (reverse acc))
-                             (reverse acc))))
-            (ro-items/items-events-output limited))
+          (let [ordered acc
+                limited (if (> limit 0)
+                          (take limit ordered)
+                          ordered)
+                events
+                (map (fn [record]
+                       (vector
+                        (cons 'eventId (or (json-field-value record "event_id" "") ""))
+                        (cons 'workspaceId (or (json-field-value record "workspace_id" "") ""))
+                        (cons 'replicaId (or (json-field-value record "replica_id" "") ""))
+                        (cons 'entityKind (or (json-field-value record "entity_kind" "") ""))
+                        (cons 'entityId (or (json-field-value record "entity_id" "") ""))
+                        (cons 'entitySeq (or (json-field-value record "entity_seq" 0) 0))
+                        (cons 'typ (or (json-field-value record "typ" "") ""))
+                        (cons 'parents (or (json-field-value record "parents" '()) '()))
+                        (cons 'issuedAt (workspace-item-event-issued-at record))
+                        (cons 'actorId (or (json-field-value record "actor_id" "") ""))
+                        (cons 'payload (or (json-field-value record "payload" '()) '()))
+                        (cons 'localStatus (or (json-field-value record "local_status" "local") "local"))
+                        (cons 'serverStatus (or (json-field-value record "server_status" "pending") "pending"))))
+                     limited)]
+            (ro-items/items-events-output events))
           (let ((record (first xs)))
             (let ((entity-kind (or (json-first-field-value record (list "entityKind" "entity_kind") "") ""))
                   (entity-id (or (json-first-field-value record (list "entityId" "entity_id") "") "")))
@@ -1591,7 +2831,7 @@
   [path limit]
   (call-with-input-file
    path
-   (lambda (port)
+   (fn [port]
      (let loop ((line-number 1)
                 (records '())
                 (count 0))
@@ -1621,29 +2861,30 @@
 
 (defn events-list-output
   [limit]
-  (let* ((workspace-root (or (workspace-current-path) "")))
+  (let [workspace-root (or (workspace-current-path) "")]
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((events-root (fs/path workspace-root "events"))
-               (time-db (db/open-database ":memory:"))
-               (records (events-records events-root limit))
-               (limited (if (> limit 0)
-                            (take limit records)
-                            records))
-               (output-records (map (lambda (record)
-                                      (ro-events/event-materialize-record
-                                       (lambda (issued-at)
-                                         (db/first-result
-                                          time-db
-                                          "select cast(round((julianday(?1) - 2440587.5) * 86400000.0) as integer)"
-                                          issued-at))
-                                       record))
-                                    limited))
-               (output
-                (json-write-output
-                 (vector
-                  (cons 'data output-records)
-                  (cons '_hints '())))))
+        (let [events-root (fs/path workspace-root "events")
+              time-db (db/open-database ":memory:")
+              records (events-records events-root limit)
+              limited (if (> limit 0)
+                        (take limit records)
+                        records)
+              output-records
+              (map (fn [record]
+                     (ro-events/event-materialize-record
+                      (fn [issued-at]
+                        (db/first-result
+                         time-db
+                         "select cast(round((julianday(?1) - 2440587.5) * 86400000.0) as integer)"
+                         issued-at))
+                      record))
+                   limited)
+              output
+              (json-write-output
+               (vector
+                (cons 'data output-records)
+                (cons '_hints '())))]
           (db/finalize! time-db)
           output))))
 
@@ -1701,32 +2942,12 @@
 (defn projects-main
   [args]
   (let ((plan (ro-projects/projects-main-plan args)))
-    (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-projects-help)
-
-      (eq? (vector-ref plan 0) 'create)
-      (print-projects-create (vector-ref plan 1)
-                             (vector-ref plan 2))
-
-      (eq? (vector-ref plan 0) 'list)
-      (print-projects-list)
-
-      (eq? (vector-ref plan 0) 'archive)
-      (print-projects-archive (vector-ref plan 1)
-                              (vector-ref plan 2))
-
-      (eq? (vector-ref plan 0) 'use)
-      (print-projects-use (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'current)
-      (print-projects-current)
-
-      (eq? (vector-ref plan 0) 'error)
-      (error (vector-ref plan 1) (vector-ref plan 2))
-
-      :else
-      (error "ro projects commands are not implemented yet" args))))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (projects-run-effects (get plan :effects '())))))
 
 (defn workspace-main
   [args]
@@ -1818,49 +3039,32 @@
 (defn item-main
   [args]
   (let ((plan (ro-items/item-main-plan args)))
-    (cond
-      (eq? (vector-ref plan 0) 'show)
-      (print-item-show (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'error)
-      (begin
-        (display (vector-ref plan 1) (current-error-port))
-        (newline (current-error-port))
-        1)
-
-      :else
-      (error "ro item lookup is not implemented yet" args))))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (items-run-effects (get plan :effects '())))))
 
 (defn items-main
   [args]
   (let ((plan (ro-items/items-main-plan args)))
-    (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-items-help)
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (items-run-effects (get plan :effects '())))))
 
-      (eq? (vector-ref plan 0) 'show)
-      (print-item-show (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'list)
-      (print-items-list (vector-ref plan 1)
-                        (vector-ref plan 2)
-                        (vector-ref plan 3))
-
-      (eq? (vector-ref plan 0) 'ready)
-      (print-items-ready)
-
-      (eq? (vector-ref plan 0) 'events)
-      (print-items-events (vector-ref plan 1)
-                          (vector-ref plan 2))
-
-      (eq? (vector-ref plan 0) 'error)
-      (begin
-        (display (vector-ref plan 1) (current-error-port))
-        (newline (current-error-port))
-        1)
-
-      :else
-      (error "ro items commands are not implemented yet" args))))
+(defn worklog-main
+  [args]
+  (let ((plan (ro-worklog/worklog-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (worklog-run-effects (get plan :effects '())))))
 
 (defn print-reindex-help
   []
@@ -1886,41 +3090,41 @@
 
 (defn git-sync-status
   [root]
-  (let* ((trimmed-root (or (str/trim root) "")))
+  (let [trimmed-root (or (str/trim root) "")]
     (if (string=? trimmed-root "")
         (ro-sync/git-sync-empty-status)
         (let ((repo-root (git-run-text (list "-C" trimmed-root "rev-parse" "--show-toplevel"))))
           (if (not repo-root)
               (ro-sync/git-sync-empty-status)
-              (let* ((branch (or (git-run-text (list "-C" repo-root "rev-parse" "--abbrev-ref" "HEAD")) ""))
-                     (head (or (git-run-text (list "-C" repo-root "rev-parse" "--short" "HEAD")) ""))
-                     (upstream (or (git-run-text (list "-C" repo-root "rev-parse" "--abbrev-ref" "--symbolic-full-name" "@{u}")) ""))
-                     (status-out (or (git-run-text (list "-C" repo-root "status" "--porcelain=v1")) ""))
-                     (status-flags (ro-sync/git-status-flags status-out))
-                     (dirty (first status-flags))
-                     (unmerged (first (rest status-flags)))
-                     (tracked-out (or (git-run-text (list "-C" repo-root "status" "--porcelain=v1" "--untracked-files=no")) ""))
-                     (tracked-flags (ro-sync/git-status-flags tracked-out))
-                     (dirty-tracked (first tracked-flags))
-                     (in-progress-kind (cond
-                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "MERGE_HEAD")) "merge"
-                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "REBASE_HEAD")) "rebase"
-                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "CHERRY_PICK_HEAD")) "cherry-pick"
-                                         (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "REVERT_HEAD")) "revert"
-                                         :else ""))
-                     (in-progress (not (string=? in-progress-kind "")))
-                     (upstream-remote (if (string=? upstream "")
-                                          ""
-                                          (first (str/split upstream "/"))))
-                     (upstream-remote-url (if (string=? upstream-remote "")
-                                              ""
-                                              (or (git-run-text (list "-C" repo-root "remote" "get-url" upstream-remote)) "")))
-                     (ahead-behind (if (string=? upstream "")
-                                       (list 0 0)
-                                       (ro-sync/git-ahead-behind
-                                        (git-run-text (list "-C" repo-root "rev-list" "--left-right" "--count" "HEAD...@{u}")))))
-                     (ahead (first ahead-behind))
-                     (behind (first (rest ahead-behind))))
+              (let [branch (or (git-run-text (list "-C" repo-root "rev-parse" "--abbrev-ref" "HEAD")) "")
+                    head (or (git-run-text (list "-C" repo-root "rev-parse" "--short" "HEAD")) "")
+                    upstream (or (git-run-text (list "-C" repo-root "rev-parse" "--abbrev-ref" "--symbolic-full-name" "@{u}")) "")
+                    status-out (or (git-run-text (list "-C" repo-root "status" "--porcelain=v1")) "")
+                    status-flags (ro-sync/git-status-flags status-out)
+                    dirty (first status-flags)
+                    unmerged (first (rest status-flags))
+                    tracked-out (or (git-run-text (list "-C" repo-root "status" "--porcelain=v1" "--untracked-files=no")) "")
+                    tracked-flags (ro-sync/git-status-flags tracked-out)
+                    dirty-tracked (first tracked-flags)
+                    in-progress-kind (cond
+                                        (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "MERGE_HEAD")) "merge"
+                                        (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "REBASE_HEAD")) "rebase"
+                                        (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "CHERRY_PICK_HEAD")) "cherry-pick"
+                                        (git-run-text (list "-C" repo-root "rev-parse" "--verify" "-q" "REVERT_HEAD")) "revert"
+                                        :else "")
+                    in-progress (not (string=? in-progress-kind ""))
+                    upstream-remote (if (string=? upstream "")
+                                        ""
+                                        (first (str/split upstream "/")))
+                    upstream-remote-url (if (string=? upstream-remote "")
+                                            ""
+                                            (or (git-run-text (list "-C" repo-root "remote" "get-url" upstream-remote)) ""))
+                    ahead-behind (if (string=? upstream "")
+                                      (list 0 0)
+                                      (ro-sync/git-ahead-behind
+                                       (git-run-text (list "-C" repo-root "rev-list" "--left-right" "--count" "HEAD...@{u}"))))
+                    ahead (first ahead-behind)
+                    behind (first (rest ahead-behind))]
                 (list->vector
                  (list (cons 'upstreamRemote upstream-remote)
                        (cons 'dirty dirty)
@@ -1939,20 +3143,20 @@
 
 (defn git-sync-remotes
   [root]
-  (let ((out (git-run-text (list "-C" root "remote"))))
+  (let [out (git-run-text (list "-C" root "remote"))]
     (if (not out)
         '()
         (##core#let loop ((lines (str/split-lines out))
                           (acc '()))
           (if (empty? lines)
               (reverse acc)
-              (let* ((name (str/trim (first lines)))
-                     (fetch-url (if (string=? name "")
-                                    ""
-                                    (or (git-run-text (list "-C" root "remote" "get-url" name)) "")))
-                     (push-url (if (string=? name "")
-                                   ""
-                                   (or (git-run-text (list "-C" root "remote" "get-url" "--push" name)) ""))))
+              (let [name (str/trim (first lines))
+                    fetch-url (if (string=? name "")
+                                  ""
+                                  (or (git-run-text (list "-C" root "remote" "get-url" name)) ""))
+                    push-url (if (string=? name "")
+                                 ""
+                                 (or (git-run-text (list "-C" root "remote" "get-url" "--push" name)) ""))]
                 (if (string=? name "")
                     (loop (rest lines) acc)
                     (loop (rest lines)
@@ -2002,7 +3206,7 @@
   [path]
   (call-with-input-file
    path
-   (lambda (port)
+   (fn [port]
      (let loop ((applied 0)
                 (skipped 0))
        (let ((line (read-line port)))
@@ -2012,8 +3216,8 @@
                  (loop applied skipped)
                 (handle-exceptions exn
                      (loop applied (+ skipped 1))
-                   (let* ((raw-event (call-with-input-string line
-                                      (lambda (event-port)
+                   (let ((raw-event (call-with-input-string line
+                                      (fn [event-port]
                                         (json/json-read event-port))))
                           (event-type (or (json-first-field-value raw-event (list "type" "typ") "") "")))
                      (if (ro-reindex/reindex-type-recognized? event-type)
@@ -2027,9 +3231,9 @@
              (skipped 0))
     (if (empty? files)
         (list applied skipped)
-        (let* ((counts (reindex-file-counts (first files)))
-               (next-applied (+ applied (first counts)))
-               (next-skipped (+ skipped (first (rest counts)))))
+        (let ((counts (reindex-file-counts (first files)))
+              (next-applied (+ applied (first counts)))
+              (next-skipped (+ skipped (first (rest counts)))))
           (loop (rest files) next-applied next-skipped)))))
 
 (defn print-reindex-output
@@ -2037,19 +3241,19 @@
   (let ((workspace-root (or (workspace-current-path) "")))
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((counts (reindex-counts workspace-root))
-               (applied (first counts))
-               (skipped (first (rest counts)))
-               (output
-                (json-write-output
-                 (vector
-                  (cons 'data
-                        (vector
-                         (cons 'dir workspace-root)
-                         (cons 'applied applied)
-                         (cons 'skipped skipped)))
-                  (cons '_hints (list "ro status"
-                                      "ro doctor --fail"))))))
+        (let ((counts (reindex-counts workspace-root))
+              (applied (first counts))
+              (skipped (first (rest counts)))
+              (output
+               (json-write-output
+                (vector
+                 (cons 'data
+                       (vector
+                        (cons 'dir workspace-root)
+                        (cons 'applied applied)
+                        (cons 'skipped skipped)))
+                 (cons '_hints (list "ro status"
+                                     "ro doctor --fail"))))))
           (display output)
           output))))
 
@@ -2058,19 +3262,19 @@
   (let ((workspace-root (or (workspace-current-path) "")))
     (if (string=? workspace-root "")
         (error "ro workspace current is unavailable" workspace-json-path)
-        (let* ((counts (reindex-counts workspace-root))
-               (applied (first counts))
-               (skipped (first (rest counts)))
-               (output
-                (json-write-output
-                 (vector
-                  (cons 'data
-                        (vector
-                         (cons 'dir workspace-root)
-                         (cons 'applied applied)
-                         (cons 'skipped skipped)))
-                  (cons '_hints (list "ro sync status"
-                                      "ro status"))))))
+        (let ((counts (reindex-counts workspace-root))
+              (applied (first counts))
+              (skipped (first (rest counts)))
+              (output
+               (json-write-output
+                (vector
+                 (cons 'data
+                       (vector
+                        (cons 'dir workspace-root)
+                        (cons 'applied applied)
+                        (cons 'skipped skipped)))
+                 (cons '_hints (list "ro sync status"
+                                     "ro status"))))))
           (display output)
           output))))
 
@@ -2128,12 +3332,12 @@
 
 (defn doctor-main-run
   [kind plan args]
-  (let* ((fail? (vector-ref plan 1))
-         (write? (vector-ref plan 2))
-         (force? (vector-ref plan 3))
-         (workspace-root (or (workspace-current-path) ""))
-         (issues (doctor-scan-report workspace-root))
-         (has-errors (ro-doctor/doctor-has-errors? issues)))
+  (let [fail? (vector-ref plan 1)
+        write? (vector-ref plan 2)
+        force? (vector-ref plan 3)
+        workspace-root (or (workspace-current-path) "")
+        issues (doctor-scan-report workspace-root)
+        has-errors (ro-doctor/doctor-has-errors? issues)]
     (cond
       (eq? kind 'report)
       (let ((output
@@ -2172,27 +3376,27 @@
             (display "refusing to rewrite canonical event logs without --force\n" (current-error-port))
             (display "run dry-run first: ro doctor dedupe\n" (current-error-port))
             1)
-          (let* ((dedupe-plan (ro-doctor/doctor-dedupe-plan-from-issues issues))
-                 (result (doctor-apply-dedupe dedupe-plan write?))
-                 (summary (ro-doctor/doctor-summary-from-issues issues))
-                 (output
-                  (json-write-output
-                   (vector
-                    (cons 'data
-                          (vector
-                           (cons 'doctorSummary summary)
-                           (cons 'dedupe result)))
-                    (cons 'meta
-                          (vector
-                           (cons 'issues (count issues))
-                           (cons 'hasErrors has-errors)))
-                    (cons '_hints (if write?
-                                      (list "ro reindex"
-                                            "ro doctor --fail"
-                                            "ro status")
-                                      (list "ro doctor dedupe --write --force"
-                                            "ro doctor --fail"
-                                            "ro status")))))))
+          (let [dedupe-plan (ro-doctor/doctor-dedupe-plan-from-issues issues)
+                result (doctor-apply-dedupe dedupe-plan write?)
+                summary (ro-doctor/doctor-summary-from-issues issues)
+                output
+                (json-write-output
+                 (vector
+                  (cons 'data
+                        (vector
+                         (cons 'doctorSummary summary)
+                         (cons 'dedupe result)))
+                  (cons 'meta
+                        (vector
+                         (cons 'issues (count issues))
+                         (cons 'hasErrors has-errors)))
+                  (cons '_hints (if write?
+                                    (list "ro reindex"
+                                          "ro doctor --fail"
+                                          "ro status")
+                                    (list "ro doctor dedupe --write --force"
+                                          "ro doctor --fail"
+                                          "ro status")))))]
             (display output)
             (if (and fail? has-errors) 2 0)))
 
@@ -2201,25 +3405,25 @@
 
 (defn doctor-dedupe-rewrite-file!
   [path remove-lines]
-  (let* ((backup-path (string-append path ".dedupe.bak"))
-         (original (fs/slurp path))
-         (lines (str/split-lines original))
-         (remove-set (let ((table (make-hash-table)))
-                       (let loop ((xs remove-lines))
-                         (if (empty? xs)
-                             table
-                             (begin
-                               (hash-table-set! table (first xs) #t)
-                               (loop (rest xs)))))))
-         (kept (let loop ((xs lines) (line-no 1) (acc '()))
-                 (if (empty? xs)
-                     (reverse acc)
-                     (if (hash-table-ref/default remove-set line-no #f)
-                         (loop (rest xs) (+ line-no 1) acc)
-                         (loop (rest xs) (+ line-no 1) (cons (first xs) acc))))))
-         (output (if (empty? kept)
-                     ""
-                     (string-append (str/join "\n" kept) "\n"))))
+  (let [backup-path (string-append path ".dedupe.bak")
+        original (fs/slurp path)
+        lines (str/split-lines original)
+        remove-set (let ((table (make-hash-table)))
+                     (let loop ((xs remove-lines))
+                       (if (empty? xs)
+                           table
+                           (begin
+                             (hash-table-set! table (first xs) #t)
+                             (loop (rest xs))))))
+        kept (let loop ((xs lines) (line-no 1) (acc '()))
+               (if (empty? xs)
+                   (reverse acc)
+                   (if (hash-table-ref/default remove-set line-no #f)
+                       (loop (rest xs) (+ line-no 1) acc)
+                       (loop (rest xs) (+ line-no 1) (cons (first xs) acc)))))
+        output (if (empty? kept)
+                 ""
+                 (string-append (str/join "\n" kept) "\n"))]
     (if (fs/exists? backup-path)
         (fs/delete! backup-path)
         #t)
@@ -2229,22 +3433,22 @@
 
 (defn doctor-apply-dedupe
   [plan write?]
-  (let* ((files (or (json-field-value plan "files" '()) '()))
-         (updated-files '())
-         (removed-lines 0))
+  (let [files (or (json-field-value plan "files" '()) '())
+        updated-files '()
+        removed-lines 0]
     (let loop ((xs files))
       (if (empty? xs)
           #t
-          (let* ((file (first xs))
-                 (path (or (json-field-value file "path" "") ""))
-                 (remove-lines (or (json-field-value file "removeLines" '()) '()))
-                 (remove-count (or (json-field-value file "removeCount" 0) 0))
-                 (event-ids (or (json-field-value file "eventIds" '()) '()))
-                 (backup-path (if (and write?
-                                       (not (str/blank? path))
-                                       (> remove-count 0))
-                                  (doctor-dedupe-rewrite-file! path remove-lines)
-                                  "")))
+          (let [file (first xs)
+                path (or (json-field-value file "path" "") "")
+                remove-lines (or (json-field-value file "removeLines" '()) '())
+                remove-count (or (json-field-value file "removeCount" 0) 0)
+                event-ids (or (json-field-value file "eventIds" '()) '())
+                backup-path (if (and write?
+                                     (not (str/blank? path))
+                                     (> remove-count 0))
+                              (doctor-dedupe-rewrite-file! path remove-lines)
+                              "")]
             (if (and write?
                      (not (str/blank? path))
                      (> remove-count 0))
@@ -2315,7 +3519,7 @@
                           (loop-files (rest files)))
                       (call-with-input-file
                        path
-                       (lambda (port)
+                       (fn [port]
                          (let loop-lines ((line-no 1))
                            (let ((line (read-line port)))
                              (if (eof-object? line)
@@ -2360,8 +3564,8 @@
                                                                 "")
                                                                issues))
                                                    (loop-lines (+ line-no 1)))
-                                                 (let* ((event-id (or (json-field-value record "eventId" "") ""))
-                                                        (parents (or (json-field-value record "parents" '()) '())))
+                                                 (let [event-id (or (json-field-value record "eventId" "") "")
+                                                       parents (or (json-field-value record "parents" '()) '())]
                                                    (if (and (not (str/blank? event-id))
                                                             (hash-table-ref/default seen event-id #f))
                                                        (let ((prev (hash-table-ref/default seen event-id #f)))
@@ -2396,8 +3600,8 @@
 
 (defn doctor-main
   [args]
-  (let* ((plan (ro-doctor/doctor-main-plan args))
-         (kind (vector-ref plan 0)))
+  (let [plan (ro-doctor/doctor-main-plan args)
+        kind (vector-ref plan 0)]
     (cond
       (eq? kind 'help)
       (begin
@@ -2431,9 +3635,11 @@
       (eq? kind 'status) (status-main route-args)
       (eq? kind 'identity) (identity-main route-args)
       (eq? kind 'projects) (projects-main route-args)
+      (eq? kind 'outlines) (outlines-main route-args)
       (eq? kind 'items) (items-main route-args)
       (eq? kind 'tasks) (items-main route-args)
       (eq? kind 'item) (item-main route-args)
+      (eq? kind 'worklog) (worklog-main route-args)
       (eq? kind 'workspace) (workspace-main route-args)
       (eq? kind 'events) (events-main route-args)
       (eq? kind 'doctor) (doctor-main route-args)
@@ -2485,6 +3691,12 @@
 (def items-events-plan ro-items/items-events-plan)
 (def items-main-plan ro-items/items-main-plan)
 (def item-main-plan ro-items/item-main-plan)
+(def worklog-help-lines ro-worklog/worklog-help-lines)
+(def worklog-help-text ro-worklog/worklog-help-text)
+(def worklog-help-output ro-worklog/worklog-help-output)
+(def worklog-add-plan ro-worklog/worklog-add-plan)
+(def worklog-list-plan ro-worklog/worklog-list-plan)
+(def worklog-main-plan ro-worklog/worklog-main-plan)
 (def identity-help-lines ro-help/identity-help-lines)
 (def identity-help-text ro-help/identity-help-text)
 (def identity-help-output ro-help/identity-help-output)
@@ -2504,6 +3716,23 @@
 (def projects-help-lines ro-help/projects-help-lines)
 (def projects-help-text ro-help/projects-help-text)
 (def projects-help-output ro-help/projects-help-output)
+(def outlines-help-lines ro-outlines/outlines-help-lines)
+(def outlines-help-text ro-outlines/outlines-help-text)
+(def outlines-help-output ro-outlines/outlines-help-output)
+(def outlines-list-output ro-outlines/outlines-list-output)
+(def outlines-show-output ro-outlines/outlines-show-output)
+(def outlines-status-list-output ro-outlines/outlines-status-list-output)
+(def outlines-create-plan ro-outlines/outlines-create-plan)
+(def outlines-list-plan ro-outlines/outlines-list-plan)
+(def outlines-show-plan ro-outlines/outlines-show-plan)
+(def outlines-archive-plan ro-outlines/outlines-archive-plan)
+(def outlines-status-list-plan ro-outlines/outlines-status-list-plan)
+(def outlines-status-add-plan ro-outlines/outlines-status-add-plan)
+(def outlines-status-update-plan ro-outlines/outlines-status-update-plan)
+(def outlines-status-remove-plan ro-outlines/outlines-status-remove-plan)
+(def outlines-status-reorder-plan ro-outlines/outlines-status-reorder-plan)
+(def outlines-status-main-plan ro-outlines/outlines-status-main-plan)
+(def outlines-main-plan ro-outlines/outlines-main-plan)
 (def docs-topic-markdown ro-docs/docs-topic-markdown)
 (def docs-topic-output ro-docs/docs-topic-output)
 (def json-key->text ro-json/json-key->text)

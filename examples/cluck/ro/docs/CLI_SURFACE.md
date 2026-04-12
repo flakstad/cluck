@@ -32,6 +32,8 @@ The first pure-helper split for the spike now lives in
 - `core.docs` owns the built-in docs topics and docs topic envelope shaping
 - `core.json` owns JSON envelope shaping
 - `core.workspace` owns workspace/current/status/identity formatting
+- `core.worklog` owns the first inline-effect planner slice for the shell/core
+  contract
 
 ## Top-level commands
 
@@ -158,6 +160,8 @@ Implemented now:
 - `ro identity` prints the usage surface
 - `ro identity list` returns the current actor list envelope
 - `ro identity whoami` returns the active actor envelope
+- `ro worklog` now demonstrates the FC/IS effect tuple contract directly in
+  the planner return value
 - fixture-backed parity tests now cover help and docs help
 - fixture-backed parity tests now cover completion and workspace help/scripts
 - fixture-backed parity tests now cover events help
