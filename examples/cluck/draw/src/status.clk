@@ -321,9 +321,12 @@
         mouse-x (get state :mouse-x)
         mouse-y (get state :mouse-y)
         pressure (or (get state :pen-pressure) 1.0)
-        marker-point [mouse-x mouse-y pressure]]
+        marker-point [mouse-x mouse-y pressure]
+        marker-size (draw.view/draw-current-brush-size state
+                                                       marker-point
+                                                       (or (get state :brush-size) 1))]
     (sdl/set-draw-color! renderer 220 180 90 255)
-    (render-stroke-point! renderer state marker-point 3 pressure)
+    (render-stroke-point! renderer state marker-point marker-size pressure)
     (if (get state :tool-panel?)
       (draw-render-tool-panel! renderer state)
       nil)
