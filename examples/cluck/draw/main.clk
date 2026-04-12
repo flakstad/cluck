@@ -1388,6 +1388,26 @@
   (println (format "Cluck Draw crashed: %s" exn))
   exn)
 
+(defn draw-recoverable-error!
+  "Record EXN, clear transient interaction state, and continue the loop."
+  [exn]
+  (set! *draw-last-error* exn)
+  (if *draw-state*
+    (begin
+      (draw-reset-preview-sync!)
+      (draw-clear-preview!)
+      (set! *draw-state*
+            (assoc (draw-clear-active-interactions *draw-state*)
+                   :canvas-dirty? true
+                   :status-note (format "recovered from runtime error: %s" exn))))
+    nil)
+  (draw-log-entry! :recoverable-error
+                   {:error (format "%s" exn)
+                    :state (draw-state-snapshot *draw-state*)})
+  (draw-write-crash-report! exn)
+  (println (format "Cluck Draw recovered from error: %s" exn))
+  exn)
+
 (defn draw-cancel-active-stroke-core!
   "Cancel the active stroke without recording history."
   [state]
@@ -2648,18 +2668,20 @@
 (defn draw-loop-step!
   "Drain input and render once when the window is active."
   []
-  (draw-with-lock
-    (lambda ()
-      (draw-write-heartbeat! :poll *draw-state*)
-      (draw-poll-control!)
-      (draw-poll-input!)
-      (draw-write-heartbeat! :render *draw-state*)
-      (if *draw-state*
-        (let [state (draw-render-current!)]
-          (draw-write-state-file! state false)
-          (draw-write-heartbeat! :idle state)
-          state)
-        *draw-state*))))
+  (handle-exceptions exn
+    (draw-recoverable-error! exn)
+    (draw-with-lock
+      (lambda ()
+        (draw-write-heartbeat! :poll *draw-state*)
+        (draw-poll-control!)
+        (draw-poll-input!)
+        (draw-write-heartbeat! :render *draw-state*)
+        (if *draw-state*
+          (let [state (draw-render-current!)]
+            (draw-write-state-file! state false)
+            (draw-write-heartbeat! :idle state)
+            state)
+          *draw-state*)))))
 
 (defn default-render-frame
   "Clear and present one frame using STATE."

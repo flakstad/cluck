@@ -116,7 +116,7 @@ While the window is live:
 - press `ctrl+s` to save and `ctrl+o` to load from the default save path
 - the tool panel now shows the default save filename and the EDN format directly in the window
 - hold `space` and drag to pan the viewport
-- zoomed drawing now scales brush width with the viewport, so zooming in produces thinner world-space detail and zooming out produces broader strokes across the canvas
+- zoomed drawing keeps brush width visually stable on screen, so zooming in lets you place finer world-space detail
 - cursor shape now reflects the current interaction mode, including selection move/resize and tool-panel button hover
 - call `(save-canvas!)` and `(load-canvas!)` from the REPL to round-trip the canvas state
 - draw session logging now writes to `build/cluck-draw.log`

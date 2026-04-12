@@ -518,12 +518,13 @@
   "Return ELEMENTS with OPACITY applied to the selected ids."
   [elements selection opacity]
   (let [opacity (draw-normalize-opacity opacity)]
-    (vec
-      (map (fn [element]
-             (if (draw-selection-has-id? selection (get element :id))
-               (draw-set-element-opacity element opacity)
-               element))
-           elements))))
+    (reduce (fn [out element]
+              (conj out
+                    (if (draw-selection-has-id? selection (get element :id))
+                      (draw-set-element-opacity element opacity)
+                      element)))
+            []
+            elements)))
 
 (defn draw-selected-elements
   "Return the selected elements from STATE in canvas order."
@@ -536,14 +537,14 @@
 (defn draw-normalize-selection
   "Return SELECTION filtered down to ids present in ELEMENTS."
   [selection elements]
-  (let [selection (or selection [])]
+  (let [selection (or selection [])
+        ids (reduce (fn [out element]
+                      (conj out (get element :id)))
+                    []
+                    elements)]
     (vec
       (filter (fn [element-id]
-                (draw-selection-has-id?
-                  (map (fn [element]
-                         (get element :id))
-                       elements)
-                  element-id))
+                (draw-selection-has-id? ids element-id))
               selection))))
 
 (defn draw-max-element-id

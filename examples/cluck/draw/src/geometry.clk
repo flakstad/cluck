@@ -166,9 +166,10 @@
     :else
     {:id (get element :id)
      :kind :ink
-     :points (vec (map (fn [point]
-                         (draw-translate-point point dx dy))
-                       (get element :points)))
+     :points (reduce (fn [points point]
+                       (conj points (draw-translate-point point dx dy)))
+                     []
+                     (get element :points))
      :color (get element :color)
      :size (get element :size)
      :opacity (draw-state/draw-element-opacity element)}))
@@ -187,22 +188,24 @@
 (defn draw-replace-element-by-id
   "Return ELEMENTS with ELEMENT-ID replaced by NEXT-ELEMENT."
   [elements element-id next-element]
-  (vec
-    (map (fn [element]
-           (if (= (get element :id) element-id)
-             next-element
-             element))
-         elements)))
+  (reduce (fn [out element]
+            (conj out
+                  (if (= (get element :id) element-id)
+                    next-element
+                    element)))
+          []
+          elements))
 
 (defn draw-translate-selected-elements
   "Return ELEMENTS with IDS translated by DX and DY."
   [elements ids dx dy]
-  (vec
-    (map (fn [element]
-           (if (draw-state/draw-selection-has-id? ids (get element :id))
-             (draw-translate-element element dx dy)
-             element))
-         elements)))
+  (reduce (fn [out element]
+            (conj out
+                  (if (draw-state/draw-selection-has-id? ids (get element :id))
+                    (draw-translate-element element dx dy)
+                    element)))
+          []
+          elements))
 
 (defn draw-stroke-record
   "Build a fresh stroke map."
