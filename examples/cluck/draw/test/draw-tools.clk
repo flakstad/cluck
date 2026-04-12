@@ -514,6 +514,42 @@
                             3
                             (count (get resized-stroke :points))))
 
+  (let [started (draw-start-stroke (default-state)
+                                   [10.0 10.0 1.0]
+                                   [10.0 10.0]
+                                   :mouse)
+        extended (draw-extend-stroke started
+                                     [30.0 10.0 1.0]
+                                     [30.0 10.0])
+        point (last (get (get extended :active-stroke) :points))]
+    (draw-tools-assert-str= "stroke smoothing preserves start point"
+                            "[10.0 10.0 1.0]"
+                            (pr-str (first (get (get extended :active-stroke) :points))))
+    (draw-tools-assert-num= "stroke smoothing tempers abrupt x movement"
+                            20.0
+                            (nth point 0))
+    (draw-tools-assert-num= "stroke smoothing keeps y on straight line"
+                            10.0
+                            (nth point 1)))
+
+  (let [started (draw-start-stroke (default-state)
+                                   [10.0 10.0 1.0]
+                                   [10.0 10.0]
+                                   :mouse)
+        extended (draw-extend-stroke started
+                                     [30.0 10.0 1.0]
+                                     [30.0 10.0])
+        finished (draw-finish-stroke extended
+                                     [50.0 10.0 1.0]
+                                     [50.0 10.0])
+        point (last (get (first (get finished :strokes)) :points))]
+    (draw-tools-assert-num= "stroke finish keeps exact final x"
+                            50.0
+                            (nth point 0))
+    (draw-tools-assert-num= "stroke finish keeps exact final y"
+                            10.0
+                            (nth point 1)))
+
   (let [box-tool (draw-set-tool-core! (default-state) :box)
         started (draw-start-box box-tool
                                 [10.0 20.0 1.0]

@@ -45,6 +45,7 @@
    :panning? false
    :pan-last-x 0
    :pan-last-y 0
+   :stroke-filter-point false
    :space-down? false
    :ctrl-down? false
    :canvas-dirty? false
@@ -211,7 +212,7 @@
   "Return STATE with transient UI-only fields removed."
   [state]
   (if state
-    (dissoc state :status-note :status-note-frame :file-path)
+    (dissoc state :status-note :status-note-frame :file-path :stroke-filter-point)
     state))
 
 (defn draw-normalize-opacity
@@ -656,6 +657,9 @@
         state (if (contains? state :tool-panel?)
                 state
                 (assoc state :tool-panel? false))
+        state (if (contains? state :stroke-filter-point)
+                state
+                (assoc state :stroke-filter-point false))
         state (if (contains? state :status-note)
                 state
                 (assoc state :status-note "" :status-note-frame 0))

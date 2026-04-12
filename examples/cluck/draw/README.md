@@ -84,10 +84,13 @@ Architecture notes:
 
 Stroke rendering quality notes and future steps:
 - current freehand rendering is built from sampled input points plus a soft strip per segment, which keeps the implementation simple but can show faceting on sharp turns and seams at angled joins
+- the first Milton-style step is cheap input filtering on live freehand motion only; exact stroke start/end points should stay raw so zoomed drawing and transformed endpoints remain predictable
 - the first quality lever is sample density; tighter spacing and path subdivision reduce visible straight-line interpolation without changing the native renderer
 - the next likely improvement is curve reconstruction before rendering, for example midpoint subdivision or Catmull-Rom-style interpolation between raw input samples
 - after that, the main remaining artifact source is join rendering; proper round joins or vertex coverage around corners would improve both freehand turns and angled rectangle corners
 - a more ambitious future path is to move from strip-per-segment rendering to repeated brush stamping or a true variable-width path mesh with explicit joins and caps
+- longer-term Milton parity likely means replacing the SDL strip renderer for ink with a dedicated native/GPU stroke raster path instead of continuing to tune segment blits
+- known issue to revisit in that renderer work: dynamic pen pressure can still produce visibly gapped strokes, even though the fixed/dynamic mode toggle itself works
 
 If you are editing the draw files in `cluck-mode`, `C-c C-z` jumps to the
 ordinary Cluck REPL. It does not load SDL automatically. When you want to

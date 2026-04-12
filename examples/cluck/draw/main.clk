@@ -1427,7 +1427,7 @@
   [state]
   (draw-reset-preview-sync!)
   (draw-clear-preview!)
-    (let [state (assoc state
+    (let [state (assoc (draw-reset-stroke-filter state)
                      :pointer-down? false
                      :pointer-source false
                      :active-selection-drag false
@@ -1498,6 +1498,32 @@
    :color color
    :size size})
 
+(defn draw-reset-stroke-filter
+  "Clear the transient freehand stroke smoothing state."
+  [state]
+  (assoc state :stroke-filter-point false))
+
+(defn draw-stroke-smoothing-alpha
+  "Return the interpolation weight for Milton-style freehand smoothing."
+  []
+  0.5)
+
+(defn draw-smooth-stroke-point
+  "Return [NEXT-STATE SMOOTHED-POINT] using a low-pass stroke filter."
+  [state point]
+  (let [previous (get state :stroke-filter-point)]
+    (if previous
+      (let [alpha (draw-stroke-smoothing-alpha)
+            smoothed [(+ (* alpha (nth point 0))
+                         (* (- 1.0 alpha) (nth previous 0)))
+                      (+ (* alpha (nth point 1))
+                         (* (- 1.0 alpha) (nth previous 1)))
+                      (draw-point-pressure point)]]
+        [(assoc state :stroke-filter-point smoothed)
+         smoothed])
+      [(assoc state :stroke-filter-point point)
+       point])))
+
 (defn draw-ensure-system-cursor!
   "Return a cached system cursor pointer for KIND, creating it when needed."
   [kind]
@@ -1556,6 +1582,7 @@
   "Start a new stroke from WORLD-POINT and SCREEN-POINT."
   [state point screen-point pointer-source]
   (let [state (draw-push-history! state)
+        state (assoc state :stroke-filter-point point)
         opacity (draw-current-opacity state)
         size (draw-current-brush-size state point (get state :brush-size))
         stroke (draw-stroke-record [point]
@@ -1592,7 +1619,8 @@
   [state point screen-point]
   (let [stroke (get state :active-stroke)]
     (if stroke
-      (let [points (get stroke :points)
+      (let [[state point] (draw-smooth-stroke-point state point)
+            points (get stroke :points)
             next-points (draw-append-stroke-point state stroke point)
             appended? (> (count next-points) (count points))
             previous (if (empty? points) nil (last points))
@@ -1631,6 +1659,7 @@
                            (assoc state
                                   :pointer-down? false
                                   :pointer-source false
+                                  :stroke-filter-point false
                                   :active-stroke false)
                            point
                            screen-point)
@@ -1657,6 +1686,7 @@
         (assoc state
                :pointer-down? false
                :pointer-source false
+               :stroke-filter-point false
                :active-stroke false)
         point
         screen-point))))
