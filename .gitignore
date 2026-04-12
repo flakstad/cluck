@@ -4,3 +4,6 @@ build/
 /.worktrees/
 .clj-kondo/
 .lsp/
+/.DS_Store
+/examples/.DS_Store
+/test/.DS_Store
