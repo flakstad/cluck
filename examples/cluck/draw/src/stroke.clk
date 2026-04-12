@@ -26,10 +26,15 @@
   "Return the minimum screen-space spacing between active stroke samples."
   [state point size]
   (let [stamp (draw.view/draw-point-screen-size state point size)
-        spacing (/ stamp 4.0)]
-    (if (> spacing 0.5)
+        spacing (/ stamp 3.0)]
+    (if (> spacing 1.0)
       spacing
-      0.5)))
+      1.0)))
+
+(defn draw-max-subdivision-steps
+  "Return the maximum number of interpolated segments added for one input move."
+  []
+  6)
 
 (defn draw-interpolate-point
   "Return the point at fraction T between A and B."
@@ -50,7 +55,9 @@
   (let [distance (draw-point-screen-distance state a b)]
     (if (< distance spacing)
       []
-      (let [steps (inexact->exact (math/ceiling (/ distance spacing)))]
+      (let [steps (inexact->exact
+                    (min (draw-max-subdivision-steps)
+                         (math/ceiling (/ distance spacing))))]
         (let loop ((index 1)
                    (points []))
           (if (> index steps)
