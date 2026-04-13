@@ -41,18 +41,18 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "worklog")
                              (cons "list" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:worklog/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-argument)
+        (equal? (get result :reason) :missing-argument)
         {:ok? false
          :error "ro worklog list expects <item-id>"
          :command args}
 
-        (equal? (:reason result) :missing-flag-value)
+        (equal? (get result :reason) :missing-flag-value)
         (if (and (not (empty? args))
                  (string=? (first args) "--offset"))
             {:ok? false
@@ -62,8 +62,8 @@
              :error "ro worklog list expects a value after --limit"
              :command args})
 
-        (equal? (:reason result) :invalid-flag-value)
-        (if (equal? (:flag result) :offset)
+        (equal? (get result :reason) :invalid-flag-value)
+        (if (equal? (get result :flag) :offset)
             {:ok? false
              :error "ro worklog list expects a non-negative --offset"
              :command args}
@@ -71,7 +71,7 @@
              :error "ro worklog list expects a non-negative --limit"
              :command args})
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         {:ok? false
          :error "unsupported worklog list flag"
          :command args}
@@ -82,9 +82,9 @@
          :command args})
 
       :else
-      (let [item-id (get (:arguments result) :item-id "")
-            limit (get (:flags result) :limit 200)
-            offset (get (:flags result) :offset 0)]
+      (let [item-id (get (get result :arguments) :item-id "")
+            limit (get (get result :flags) :limit 200)
+            offset (get (get result :flags) :offset 0)]
         (cond
           (< limit 0)
           {:ok? false
@@ -107,28 +107,28 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "worklog")
                              (cons "add" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:worklog/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-argument)
+        (equal? (get result :reason) :missing-argument)
         {:ok? false
          :error "ro worklog add expects <item-id>"
          :command args}
 
-        (equal? (:reason result) :missing-required-flag)
+        (equal? (get result :reason) :missing-required-flag)
         {:ok? false
          :error "ro worklog add expects --body"
          :command args}
 
-        (equal? (:reason result) :missing-flag-value)
+        (equal? (get result :reason) :missing-flag-value)
         {:ok? false
          :error "ro worklog add expects a value after --body"
          :command args}
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         {:ok? false
          :error "unsupported worklog add flag"
          :command args}
@@ -140,26 +140,26 @@
 
       :else
       {:ok? true
-       :effects [[:worklog/add {:item-id (get (:arguments result) :item-id "")
-                                :body (get (:flags result) :body "")}]]})))
+       :effects [[:worklog/add {:item-id (get (get result :arguments) :item-id "")
+                                :body (get (get result :flags) :body "")}]]})))
 
 (defn worklog-main-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "worklog") args)]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:worklog/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       {:ok? false
        :error "ro worklog commands are not implemented yet"
        :command args}
 
-      (string=? (:name (:spec result)) "list")
+      (string=? (get (get result :spec) :name) "list")
       (worklog-list-plan (rest args))
 
-      (string=? (:name (:spec result)) "add")
+      (string=? (get (get result :spec) :name) "add")
       (worklog-add-plan (rest args))
 
       :else

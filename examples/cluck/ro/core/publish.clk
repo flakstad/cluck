@@ -1,0 +1,138 @@
+;; Pure publish-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.publish
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
+
+(def publish-help-lines
+  (list
+   "ro publish"
+   ""
+   "usage:"
+   "  ro publish --to <dir> item <item-id> [--include-archived] [--include-worklog] [--overwrite]"
+   "  ro publish --to <dir> outline <outline-id> [--include-archived] [--include-worklog] [--overwrite]"))
+
+(def publish-help-text
+  (str/join "\n" publish-help-lines))
+
+(def publish-help-output
+  (string-append publish-help-text "\n"))
+
+(defn publish-parse
+  [args]
+  (let loop ((xs args)
+             (opts {:to ""
+                    :include-archived? false
+                    :include-worklog? false
+                    :overwrite? true})
+             (positionals '()))
+    (cond
+      (empty? xs)
+      {:ok? true
+       :options opts
+       :positionals (reverse positionals)}
+
+      (or (string=? (first xs) "help")
+          (string=? (first xs) "--help")
+          (string=? (first xs) "-h"))
+      {:ok? true :help? true}
+
+      (string=? (first xs) "--to")
+      (if (empty? (rest xs))
+          {:ok? false :error "ro publish expects a value after --to" :command args}
+          (loop (rest (rest xs))
+                (assoc opts :to (first (rest xs)))
+                positionals))
+
+      (str/starts-with? (first xs) "--to=")
+      (loop (rest xs)
+            (assoc opts :to (substring (first xs) 5 (string-length (first xs))))
+            positionals)
+
+      (string=? (first xs) "--include-archived")
+      (loop (rest xs)
+            (assoc opts :include-archived? true)
+            positionals)
+
+      (string=? (first xs) "--include-worklog")
+      (loop (rest xs)
+            (assoc opts :include-worklog? true)
+            positionals)
+
+      (string=? (first xs) "--overwrite")
+      (loop (rest xs)
+            (assoc opts :overwrite? true)
+            positionals)
+
+      (str/starts-with? (first xs) "--")
+      {:ok? false :error "unsupported publish flag" :command args}
+
+      :else
+      (loop (rest xs) opts (cons (first xs) positionals)))))
+
+(defn publish-item-plan
+  [options args]
+  (cond
+    (string=? (str/trim (or (get options :to) "")) "")
+    {:ok? true
+     :effects [[:publish/help {}]]}
+
+    :else
+    {:ok? true
+     :effects [[:publish/item {:item-id (first args)
+                               :to-dir (get options :to "")
+                               :include-archived? (get options :include-archived? false)
+                               :include-worklog? (get options :include-worklog? false)
+                               :overwrite? (get options :overwrite? true)}]]}))
+
+(defn publish-outline-plan
+  [options args]
+  (cond
+    (string=? (str/trim (or (get options :to) "")) "")
+    {:ok? true
+     :effects [[:publish/help {}]]}
+
+    :else
+    {:ok? true
+     :effects [[:publish/outline {:outline-id (first args)
+                                  :to-dir (get options :to "")
+                                  :include-archived? (get options :include-archived? false)
+                                  :include-worklog? (get options :include-worklog? false)
+                                  :overwrite? (get options :overwrite? true)}]]}))
+
+(defn publish-main-plan
+  [args]
+  (let [parsed (publish-parse args)]
+    (cond
+      (not (get parsed :ok? false))
+      parsed
+
+      (or (get parsed :help? false)
+          (empty? (get parsed :positionals '())))
+      {:ok? true
+       :effects [[:publish/help {}]]}
+
+      (string=? (first (get parsed :positionals '())) "item")
+      (if (empty? (rest (get parsed :positionals '())))
+          {:ok? false
+           :error "ro publish item expects <item-id>"
+           :command args}
+          (publish-item-plan (get parsed :options)
+                             (rest (get parsed :positionals '()))))
+
+      (string=? (first (get parsed :positionals '())) "outline")
+      (if (empty? (rest (get parsed :positionals '())))
+          {:ok? false
+           :error "ro publish outline expects <outline-id>"
+           :command args}
+          (publish-outline-plan (get parsed :options)
+                                (rest (get parsed :positionals '()))))
+
+      :else
+      {:ok? false
+       :error "unsupported publish subcommand"
+       :command args})))

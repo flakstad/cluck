@@ -1,0 +1,73 @@
+;; Pure clock-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.clock
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+(def cli-dispatch cli/dispatch)
+
+(def clock-help-lines
+  (list
+   "ro clock"
+   ""
+   "usage:"
+   "  ro clock status"
+   "  ro clock in <item-id>"
+   "  ro clock out [--body \"...\"]"))
+
+(def clock-help-text
+  (str/join "\n" clock-help-lines))
+
+(def clock-help-output
+  (string-append clock-help-text "\n"))
+
+(defn clock-status-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "clock") (cons "status" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:clock/help {}]]}
+      (equal? (get result :status) :error)
+      {:ok? false :error "unexpected clock status argument" :command args}
+      :else
+      {:ok? true :effects [[:clock/status {}]]})))
+
+(defn clock-in-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "clock") (cons "in" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:clock/help {}]]}
+      (equal? (get result :status) :error)
+      {:ok? false :error "ro clock in expects <item-id>" :command args}
+      :else
+      {:ok? true :effects [[:clock/in {:item-id (get (get result :arguments) :item-id "")}]]})))
+
+(defn clock-out-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "clock") (cons "out" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:clock/help {}]]}
+      (equal? (get result :status) :error)
+      {:ok? false :error "unsupported clock out flag" :command args}
+      :else
+      {:ok? true :effects [[:clock/out {:body (get (get result :flags) :body "")}]]})))
+
+(defn clock-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "clock") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:clock/help {}]]}
+      (equal? (get result :status) :error)
+      {:ok? false :error "unsupported clock subcommand" :command args}
+      (string=? (get (get result :spec) :name) "status")
+      (clock-status-plan (rest args))
+      (string=? (get (get result :spec) :name) "in")
+      (clock-in-plan (rest args))
+      (string=? (get (get result :spec) :name) "out")
+      (clock-out-plan (rest args))
+      :else
+      {:ok? false :error "unsupported clock subcommand" :command args})))

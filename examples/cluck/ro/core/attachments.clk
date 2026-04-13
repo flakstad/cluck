@@ -1,0 +1,118 @@
+;; Pure attachment-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.attachments
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+(def cli-dispatch cli/dispatch)
+
+(def attachments-help-lines
+  (list
+   "ro attachments"
+   ""
+   "usage:"
+   "  ro attachments add <entity-id> <path> [--kind item|comment] [--title \"...\"] [--alt \"...\"] [--max-mb N] [--link|--copy]"
+   "  ro attachments list <entity-id>"
+   "  ro attachments open <attachment-id> [--print-path]"
+   "  ro attachments export <attachment-id> <dest-path>"))
+
+(def attachments-help-text
+  (str/join "\n" attachments-help-lines))
+
+(def attachments-help-output
+  (string-append attachments-help-text "\n"))
+
+(defn attachments-add-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "attachments")
+                             (cons "add" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:attachments/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "unsupported attachments add argument" :command args}
+
+      :else
+      {:ok? true
+       :effects [[:attachments/add {:entity-id (get (get result :arguments) :entity-id "")
+                                    :path (get (get result :arguments) :path "")
+                                    :kind (get (get result :flags) :kind "")
+                                    :title (get (get result :flags) :title "")
+                                    :alt (get (get result :flags) :alt "")
+                                    :max-mb (get (get result :flags) :max-mb 0)
+                                    :link? (get (get result :flags) :link false)
+                                    :copy? (get (get result :flags) :copy false)}]]})))
+
+(defn attachments-list-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "attachments")
+                             (cons "list" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:attachments/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "ro attachments list expects <entity-id>" :command args}
+
+      :else
+      {:ok? true
+       :effects [[:attachments/list {:entity-id (get (get result :arguments) :entity-id "")}]]})))
+
+(defn attachments-open-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "attachments")
+                             (cons "open" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:attachments/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "ro attachments open expects <attachment-id>" :command args}
+
+      :else
+      {:ok? true
+       :effects [[:attachments/open {:attachment-id (get (get result :arguments) :attachment-id "")
+                                     :print-path? (get (get result :flags) :print-path false)}]]})))
+
+(defn attachments-export-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "attachments")
+                             (cons "export" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:attachments/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "ro attachments export expects <attachment-id> <dest-path>" :command args}
+
+      :else
+      {:ok? true
+       :effects [[:attachments/export {:attachment-id (get (get result :arguments) :attachment-id "")
+                                       :dest-path (get (get result :arguments) :dest-path "")}]]})))
+
+(defn attachments-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "attachments") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:attachments/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "ro attachments commands are not implemented yet" :command args}
+
+      (string=? (get (get result :spec) :name) "add")
+      (attachments-add-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "list")
+      (attachments-list-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "open")
+      (attachments-open-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "export")
+      (attachments-export-plan (rest args))
+
+      :else
+      {:ok? false :error "ro attachments commands are not implemented yet" :command args})))

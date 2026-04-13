@@ -209,9 +209,6 @@
 
 (def identity-help-lines
   (or (cli-command-help-lines "identity")
-      (let [spec (cli-top-level-command-spec "identity")]
-        (and spec
-             (cli-render-command-help spec)))
       (list
        "ro identity"
        ""

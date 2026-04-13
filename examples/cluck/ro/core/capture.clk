@@ -1,0 +1,43 @@
+;; Pure capture-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.capture
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
+
+(def capture-help-lines
+  (list
+   "ro capture"
+   ""
+   "usage:"
+   "  ro capture [--hotkey] [--no-output] [--exit-0-on-cancel] [--url <url>] [--selection <text>]"))
+
+(def capture-help-text
+  (str/join "\n" capture-help-lines))
+
+(def capture-help-output
+  (string-append capture-help-text "\n"))
+
+(defn capture-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "capture") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:capture/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "unsupported capture flag"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:capture/run {:hotkey? (get (get result :flags) :hotkey false)
+                                :no-output? (get (get result :flags) :no-output false)
+                                :exit0-on-cancel? (get (get result :flags) :exit-0-on-cancel false)
+                                :url (get (get result :flags) :url "")
+                                :selection (get (get result :flags) :selection "")}]]})))

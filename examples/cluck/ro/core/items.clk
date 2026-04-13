@@ -145,13 +145,13 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "items")
                              (cons "show" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-argument)
+        (equal? (get result :reason) :missing-argument)
         {:ok? false
          :error "ro items show expects <item-id>"
          :command args}
@@ -163,20 +163,96 @@
 
       :else
       {:ok? true
-       :effects [[:items/show {:item-id (get (:arguments result) :item-id "")}]]})))
+       :effects [[:items/show {:item-id (get (get result :arguments) :item-id "")}]]})))
+
+(defn items-create-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "create" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-required-flag)
+        {:ok? false
+         :error "ro items create expects --title <title>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro items create expects a value after the flag"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported items create flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected items create argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/create {:title (get (get result :flags) :title "")
+                                 :parent-id (get (get result :flags) :parent "")
+                                 :outline-id (get (get result :flags) :outline "")
+                                 :project-id (get (get result :flags) :project "")}]]})))
+
+(defn items-copy-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "copy" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro items copy expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro items copy expects a value after the flag"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported items copy flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected items copy argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/copy {:item-id (get (get result :arguments) :item-id "")
+                               :project-id (get (get result :flags) :project "")
+                               :outline-id (get (get result :flags) :outline "")
+                               :parent-id (get (get result :flags) :parent "")}]]})))
 
 (defn items-list-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "items")
                              (cons "list" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-flag-value)
+        (equal? (get result :reason) :missing-flag-value)
         (cond
           (and (not (empty? args))
                (string=? (first args) "--project"))
@@ -195,7 +271,7 @@
            :error "missing items status"
            :command args})
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         {:ok? false
          :error "unsupported items list flag"
          :command args}
@@ -207,20 +283,20 @@
 
       :else
       {:ok? true
-       :effects [[:items/list {:project-id (get (:flags result) :project "")
-                               :outline-id (get (:flags result) :outline "")
-                               :status (get (:flags result) :status "")}]]})))
+       :effects [[:items/list {:project-id (get (get result :flags) :project "")
+                               :outline-id (get (get result :flags) :outline "")
+                               :status (get (get result :flags) :status "")}]]})))
 
 (defn items-ready-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "items")
                              (cons "ready" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       {:ok? false
        :error "unexpected items ready argument"
        :command args}
@@ -229,33 +305,359 @@
       {:ok? true
        :effects [[:items/ready {}]]})))
 
+(defn items-set-status-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "set-status" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro items set-status expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-required-flag)
+        {:ok? false
+         :error "ro items set-status expects --status <status>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro items set-status expects a value after the flag"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported items set-status flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected items set-status argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/set-status {:item-id (get (get result :arguments) :item-id "")
+                                     :status (get (get result :flags) :status "")
+                                     :note (get (get result :flags) :note "")}]]})))
+
+(defn items-set-assign-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "set-assign" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro items set-assign expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro items set-assign expects a value after --actor"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported items set-assign flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected items set-assign argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/set-assign {:item-id (get (get result :arguments) :item-id "")
+                                     :actor-id (get (get result :flags) :actor "")
+                                     :clear? (get (get result :flags) :clear false)}]]})))
+
+(defn items-unary-flag-plan
+  [subcommand args required-flag error-prefix effect-key value-builder]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons subcommand args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false :error (string-append error-prefix " expects <item-id>") :command args}
+
+        (equal? (get result :reason) :missing-required-flag)
+        {:ok? false :error (string-append error-prefix " expects " required-flag) :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false :error (string-append error-prefix " expects a value after the flag") :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false :error (string-append "unsupported " subcommand " flag") :command args}
+
+        :else
+        {:ok? false :error (string-append "unexpected " subcommand " argument") :command args})
+
+      :else
+      {:ok? true
+       :effects [[effect-key (value-builder result)]]})))
+
+(defn items-bool-toggle-plan
+  [subcommand args effect-key]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons subcommand args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false :error (string-append "ro items " subcommand " expects <item-id>") :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false :error (string-append "unsupported items " subcommand " flag") :command args}
+
+        :else
+        {:ok? false :error (string-append "unexpected items " subcommand " argument") :command args})
+
+      :else
+      (let [flags (get result :flags)
+            on? (get flags :on false)
+            off? (get flags :off false)]
+        (if (equal? on? off?)
+            {:ok? false
+             :error (string-append "ro items " subcommand " expects exactly one of --on or --off")
+             :command args}
+            {:ok? true
+             :effects [[effect-key {:item-id (get (get result :arguments) :item-id "")
+                                    :value on?}]]})))))
+
+(defn items-set-title-plan
+  [args]
+  (items-unary-flag-plan
+   "set-title" args "--title <title>" "ro items set-title" :items/set-title
+   (fn [result]
+     {:item-id (get (get result :arguments) :item-id "")
+      :title (get (get result :flags) :title "")})))
+
+(defn items-set-description-plan
+  [args]
+  (items-unary-flag-plan
+   "set-description" args "--description <description>" "ro items set-description" :items/set-description
+   (fn [result]
+     {:item-id (get (get result :arguments) :item-id "")
+      :description (get (get result :flags) :description "")})))
+
+(defn items-set-priority-plan
+  [args]
+  (items-bool-toggle-plan "set-priority" args :items/set-priority))
+
+(defn items-set-on-hold-plan
+  [args]
+  (items-bool-toggle-plan "set-on-hold" args :items/set-on-hold))
+
+(defn items-set-children-checkbox-plan
+  [args]
+  (items-bool-toggle-plan "set-children-checkbox" args :items/set-children-checkbox))
+
+(defn items-set-item-kind-plan
+  [args]
+  (items-unary-flag-plan
+   "set-item-kind" args "--kind <kind>" "ro items set-item-kind" :items/set-item-kind
+   (fn [result]
+     {:item-id (get (get result :arguments) :item-id "")
+      :kind (get (get result :flags) :kind "")})))
+
+(defn items-set-due-plan
+  [args]
+  (items-unary-flag-plan
+   "set-due" args "--date <yyyy-mm-dd>" "ro items set-due" :items/set-due
+   (fn [result]
+     {:item-id (get (get result :arguments) :item-id "")
+      :date (get (get result :flags) :date "")})))
+
+(defn items-set-schedule-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "set-schedule" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false :error "ro items set-schedule expects <item-id>" :command args}
+
+        (equal? (get result :reason) :missing-required-flag)
+        {:ok? false :error "ro items set-schedule expects --date <yyyy-mm-dd>" :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false :error "ro items set-schedule expects a value after the flag" :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false :error "unsupported items set-schedule flag" :command args}
+
+        :else
+        {:ok? false :error "unexpected items set-schedule argument" :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/set-schedule {:item-id (get (get result :arguments) :item-id "")
+                                       :date (get (get result :flags) :date "")
+                                       :time (get (get result :flags) :time "")}]]})))
+
+(defn items-claim-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "claim" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro items claim expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported items claim flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected items claim argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/claim {:item-id (get (get result :arguments) :item-id "")
+                                :take-assigned? (get (get result :flags) :take-assigned false)}]]})))
+
+(defn items-tags-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "tags" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "ro items tags commands are not implemented yet" :command args}
+
+      (string=? (get (get result :spec) :name) "add")
+      {:ok? true
+       :effects [[:items/tags-add {:item-id (get (get result :arguments) :item-id "")
+                                   :tag (get (get result :flags) :tag "")}]]}
+
+      (string=? (get (get result :spec) :name) "remove")
+      {:ok? true
+       :effects [[:items/tags-remove {:item-id (get (get result :arguments) :item-id "")
+                                      :tag (get (get result :flags) :tag "")}]]}
+
+      (string=? (get (get result :spec) :name) "set")
+      {:ok? true
+       :effects [[:items/tags-set {:item-id (get (get result :arguments) :item-id "")
+                                   :tags (get (get result :flags) :tags "")}]]}
+
+      :else
+      {:ok? false :error "unsupported items tags subcommand" :command args})))
+
+(defn items-move-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "move" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:items/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false :error "ro items move expects <item-id>" :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false :error "ro items move expects a value after the flag" :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false :error "unsupported items move flag" :command args}
+
+        :else
+        {:ok? false :error "unexpected items move argument" :command args})
+
+      :else
+      (let [flags (get result :flags)
+            before-id (get flags :before "")
+            after-id (get flags :after "")]
+        (if (or (and (string=? before-id "") (string=? after-id ""))
+                (and (not (string=? before-id "")) (not (string=? after-id ""))))
+            {:ok? false
+             :error "ro items move expects exactly one of --before or --after"
+             :command args}
+            {:ok? true
+             :effects [[:items/move {:item-id (get (get result :arguments) :item-id "")
+                                     :before-id before-id
+                                     :after-id after-id}]]})))))
+
+(defn items-set-parent-plan
+  [args]
+  (items-unary-flag-plan
+   "set-parent" args "--parent <item-id>" "ro items set-parent" :items/set-parent
+   (fn [result]
+     {:item-id (get (get result :arguments) :item-id "")
+      :parent-id (get (get result :flags) :parent "")})))
+
+(defn items-move-outline-plan
+  [args]
+  (items-unary-flag-plan
+   "move-outline" args "--to <outline-id>" "ro items move-outline" :items/move-outline
+   (fn [result]
+     {:item-id (get (get result :arguments) :item-id "")
+      :outline-id (get (get result :flags) :to "")})))
+
 (defn items-events-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "items")
                              (cons "events" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-argument)
+        (equal? (get result :reason) :missing-argument)
         {:ok? false
          :error "ro items events expects <item-id>"
          :command args}
 
-        (equal? (:reason result) :missing-flag-value)
+        (equal? (get result :reason) :missing-flag-value)
         {:ok? false
          :error "ro items events expects a value after --limit"
          :command args}
 
-        (equal? (:reason result) :invalid-flag-value)
+        (equal? (get result :reason) :invalid-flag-value)
         {:ok? false
          :error "ro items events expects a non-negative --limit"
          :command args}
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         {:ok? false
          :error "unsupported items events flag"
          :command args}
@@ -266,44 +668,126 @@
          :command args})
 
       :else
-      (let [limit (get (:flags result) :limit 0)]
+      (let [limit (get (get result :flags) :limit 0)]
         (if (< limit 0)
             {:ok? false
              :error "ro items events expects a non-negative --limit"
              :command args}
             {:ok? true
-             :effects [[:items/events {:item-id (get (:arguments result) :item-id "")
+             :effects [[:items/events {:item-id (get (get result :arguments) :item-id "")
                                        :limit limit}]]})))))
 
-(defn items-main-plan
+(defn items-archive-plan
   [args]
-  (let [result (cli-dispatch (cli-top-level-command-spec "items") args)]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "archive" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (equal? (:status result) :error)
-      {:ok? false
-       :error "ro items commands are not implemented yet"
-       :command args}
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro items archive expects <item-id>"
+         :command args}
 
-      (string=? (:name (:spec result)) "show")
-      (items-show-plan (rest args))
-
-      (string=? (:name (:spec result)) "list")
-      (items-list-plan (rest args))
-
-      (string=? (:name (:spec result)) "ready")
-      (items-ready-plan (rest args))
-
-      (string=? (:name (:spec result)) "events")
-      (items-events-plan (rest args))
+        :else
+        {:ok? false
+         :error "unexpected items archive argument"
+         :command args})
 
       :else
-      {:ok? false
-       :error "ro items commands are not implemented yet"
-       :command args})))
+      {:ok? true
+       :effects [[:items/archive {:item-id (get (get result :arguments) :item-id "")}]]})))
+
+(defn items-main-plan
+  [args]
+  (if (and (not (empty? args))
+           (string=? (first args) "tags"))
+      (items-tags-plan (rest args))
+      (let [result (cli-dispatch (cli-top-level-command-spec "items") args)]
+        (cond
+          (equal? (get result :status) :help)
+          {:ok? true
+           :effects [[:items/help {}]]}
+
+          (equal? (get result :status) :error)
+          {:ok? false
+           :error "ro items commands are not implemented yet"
+           :command args}
+
+          (string=? (get (get result :spec) :name) "create")
+          (items-create-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "copy")
+          (items-copy-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "show")
+          (items-show-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "list")
+          (items-list-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-status")
+          (items-set-status-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-assign")
+          (items-set-assign-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-title")
+          (items-set-title-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-description")
+          (items-set-description-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-priority")
+          (items-set-priority-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-on-hold")
+          (items-set-on-hold-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-children-checkbox")
+          (items-set-children-checkbox-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-item-kind")
+          (items-set-item-kind-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-due")
+          (items-set-due-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-schedule")
+          (items-set-schedule-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "claim")
+          (items-claim-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "tags")
+          (items-tags-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "move")
+          (items-move-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "set-parent")
+          (items-set-parent-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "move-outline")
+          (items-move-outline-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "ready")
+          (items-ready-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "events")
+          (items-events-plan (rest args))
+
+          (string=? (get (get result :spec) :name) "archive")
+          (items-archive-plan (rest args))
+
+          :else
+          {:ok? false
+           :error "ro items commands are not implemented yet"
+           :command args}))))
 
 (defn item-main-plan
   [args]

@@ -1,0 +1,161 @@
+;; Pure dependency-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.deps
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
+
+(def deps-help-lines
+  (list
+   "ro deps"
+   ""
+   "usage:"
+   "  ro deps add <item-id> --blocks <item-id>"
+   "  ro deps add <item-id> --related <item-id>"
+   "  ro deps list [<item-id>]"
+   "  ro deps tree <item-id>"
+   "  ro deps cycles"))
+
+(def deps-help-text
+  (str/join "\n" deps-help-lines))
+
+(def deps-help-output
+  (string-append deps-help-text "\n"))
+
+(defn deps-add-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "deps")
+                             (cons "add" args))
+        blocks-id (get (get result :flags) :blocks "")
+        related-id (get (get result :flags) :related "")]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:deps/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro deps add expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro deps add expects a value after a flag"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported deps add flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected deps add argument"
+         :command args})
+
+      (and (string=? (str/trim blocks-id) "")
+           (string=? (str/trim related-id) ""))
+      {:ok? false
+       :error "ro deps add expects --blocks or --related"
+       :command args}
+
+      (and (not (string=? (str/trim blocks-id) ""))
+           (not (string=? (str/trim related-id) "")))
+      {:ok? false
+       :error "ro deps add expects exactly one of --blocks or --related"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:deps/add {:item-id (get (get result :arguments) :item-id "")
+                             :blocks-id blocks-id
+                             :related-id related-id}]]})))
+
+(defn deps-list-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "deps")
+                             (cons "list" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:deps/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "unexpected deps list argument"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:deps/list {:item-id (get (get result :arguments) :item-id "")}]]})))
+
+(defn deps-tree-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "deps")
+                             (cons "tree" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:deps/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro deps tree expects <item-id>"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:deps/tree {:item-id (get (get result :arguments) :item-id "")}]]})))
+
+(defn deps-cycles-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "deps")
+                             (cons "cycles" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:deps/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "unexpected deps cycles argument"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:deps/cycles {}]]})))
+
+(defn deps-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "deps") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:deps/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro deps commands are not implemented yet"
+       :command args}
+
+      (string=? (get (get result :spec) :name) "add")
+      (deps-add-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "list")
+      (deps-list-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "tree")
+      (deps-tree-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "cycles")
+      (deps-cycles-plan (rest args))
+
+      :else
+      {:ok? false
+       :error "ro deps commands are not implemented yet"
+       :command args})))

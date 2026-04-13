@@ -169,25 +169,25 @@
   (let [spec (cli-top-level-command-spec "docs")
         result (cli-dispatch spec args)]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       (vector 'help '())
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         (vector 'unsupported-flag '())
 
         :else
         (vector 'unexpected '()))
 
-      (empty? (:positionals result))
+      (empty? (get result :positionals))
       (vector 'output '())
 
       :else
-      (let [raw? (if (and (contains? (:flags result) :raw)
-                          (equal? (get (:flags result) :raw) true))
+      (let [raw? (if (and (contains? (get result :flags) :raw)
+                          (equal? (get (get result :flags) :raw) true))
                    true
                    #f)]
         (vector 'topic
-                (first (:positionals result))
+                (first (get result :positionals))
                 raw?)))))

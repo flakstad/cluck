@@ -129,23 +129,23 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "projects")
                              (cons "create" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:projects/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-required-flag)
+        (equal? (get result :reason) :missing-required-flag)
         {:ok? false
          :error "ro projects create expects --name"
          :command args}
 
-        (equal? (:reason result) :missing-flag-value)
+        (equal? (get result :reason) :missing-flag-value)
         {:ok? false
          :error "missing project name"
          :command args}
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         {:ok? false
          :error "unsupported projects flag"
          :command args}
@@ -157,26 +157,26 @@
 
       :else
       {:ok? true
-       :effects [[:projects/create {:name (get (:flags result) :name "")
-                                    :use? (get (:flags result) :use false)}]]})))
+       :effects [[:projects/create {:name (get (get result :flags) :name "")
+                                    :use? (get (get result :flags) :use false)}]]})))
 
 (defn projects-archive-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "projects")
                              (cons "archive" args))]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       {:ok? true
        :effects [[:projects/help {}]]}
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-argument)
+        (equal? (get result :reason) :missing-argument)
         {:ok? false
          :error "ro projects archive expects <project-id>"
          :command args}
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         {:ok? false
          :error "unsupported projects flag"
          :command args}
@@ -188,8 +188,8 @@
 
       :else
       {:ok? true
-       :effects [[:projects/archive {:project-id (get (:arguments result) :project-id "")
-                                     :archived (not (get (:flags result) :unarchive false))}]]})))
+       :effects [[:projects/archive {:project-id (get (get result :arguments) :project-id "")
+                                     :archived (not (get (get result :flags) :unarchive false))}]]})))
 
 (defn projects-use-plan
   [args]

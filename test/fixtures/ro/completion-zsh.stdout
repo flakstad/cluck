@@ -2,7 +2,7 @@
 
 _ro() {
   local -a top docs_topics
-  top=(agent attachments capture comments completion deps docs doctor help identity init items reindex status sync tasks worklog workspace)
+  top=(agenda agent attachments capture clock comments completion deps discuss docs doctor events help identity init items outlines projects publish reindex status sync tasks worklog workspace)
   docs_topics=(cli getting-started output-contract storage identity-ownership agent-runtimes sync doctor-reindex)
 
   if (( CURRENT == 2 )); then

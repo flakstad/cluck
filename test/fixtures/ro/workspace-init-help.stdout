@@ -3,7 +3,15 @@ ro workspace
 
 usage:
   ro workspace current
-  ro workspace list
+  ro workspace list [--include-archived]
   ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo
+  ro workspace forget <name>
   ro workspace init <name> [--dir <path>] [--use]           blank workspace
   ro workspace use <name>
+  ro workspace archive <name>
+  ro workspace unarchive <name>
+  ro workspace rename <from> <to>
+  ro workspace delete <name> [--yes] [--force-legacy]
+  ro workspace export --to <dir> [--events] [--force]
+  ro workspace import [<name>] --from <dir> [--name <name>] [--force] [--use] [--events]
+  ro workspace migrate

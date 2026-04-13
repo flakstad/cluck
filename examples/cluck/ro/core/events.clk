@@ -434,29 +434,29 @@
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "events") args)]
     (cond
-      (and (equal? (:status result) :help)
-           (string=? (:name (:spec result)) "events"))
+      (and (equal? (get result :status) :help)
+           (string=? (get (get result :spec) :name) "events"))
       (vector 'help '())
 
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       (vector 'unsupported-flag '())
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :missing-flag-value)
+        (equal? (get result :reason) :missing-flag-value)
         (vector 'error "ro events list expects a value after --limit" args)
 
-        (equal? (:reason result) :invalid-flag-value)
-        (vector 'error "ro events list expects a non-negative --limit" (:value result))
+        (equal? (get result :reason) :invalid-flag-value)
+        (vector 'error "ro events list expects a non-negative --limit" (get result :value))
 
-        (equal? (:reason result) :unknown-command)
+        (equal? (get result :reason) :unknown-command)
         (vector 'error "unsupported events subcommand" args)
 
         :else
         (vector 'unsupported-flag '()))
 
       :else
-      (let [limit (get (:flags result) :limit events-default-limit)]
+      (let [limit (get (get result :flags) :limit events-default-limit)]
         (if (< limit 0)
             (vector 'error "ro events list expects a non-negative --limit" limit)
             (vector 'list limit))))))

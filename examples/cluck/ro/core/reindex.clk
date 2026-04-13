@@ -85,10 +85,10 @@
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "reindex") args)]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       (vector 'help '())
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (vector 'error "unexpected reindex argument" args)
 
       :else

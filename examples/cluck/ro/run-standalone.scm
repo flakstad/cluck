@@ -63,6 +63,30 @@
 (include "examples/cluck/ro/core/worklog.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.worklog #t)
 
+(include "examples/cluck/ro/core/comments.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.comments #t)
+
+(include "examples/cluck/ro/core/discuss.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.discuss #t)
+
+(include "examples/cluck/ro/core/deps.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.deps #t)
+
+(include "examples/cluck/ro/core/publish.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.publish #t)
+
+(include "examples/cluck/ro/core/capture.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.capture #t)
+
+(include "examples/cluck/ro/core/attachments.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.attachments #t)
+
+(include "examples/cluck/ro/core/clock.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.clock #t)
+
+(include "examples/cluck/ro/core/agenda.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.agenda #t)
+
 (include "examples/cluck/ro/core/outlines.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.outlines #t)
 
@@ -71,6 +95,9 @@
 
 (include "examples/cluck/ro/core/events.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.events #t)
+
+(include "examples/cluck/ro/core/agent.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.agent #t)
 
 (include "examples/cluck/ro/core/sync.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.sync #t)

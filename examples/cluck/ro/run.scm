@@ -12,13 +12,13 @@
 
 (let ((root (script-root)))
   (load (string-append root "../bootstrap.scm"))
-  (let [project-root (cluck-bootstrap-root)
-        cluck-root (cluck-bootstrap-load-runtime! project-root)]
+  (let* ((project-root (cluck-bootstrap-root))
+         (cluck-root (cluck-bootstrap-load-runtime! project-root)))
     (handle-exceptions exn #t
       (create-directory (string-append project-root "build")))
     (cluck-with-module-search-root
      cluck-root
-     (fn []
+     (lambda ()
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli/cmdspec.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli/ro_spec.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli.clk")
@@ -30,9 +30,18 @@
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/workspace.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/projects.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/worklog.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/comments.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/discuss.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/deps.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/publish.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/capture.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/attachments.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/clock.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/agenda.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/outlines.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/items.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/events.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/agent.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/sync.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/doctor.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/reindex.clk")

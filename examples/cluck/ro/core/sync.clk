@@ -74,21 +74,30 @@
 
 (defn sync-main-plan
   [args]
-  (let [result (cli-dispatch (cli-top-level-command-spec "sync") args)]
+  (let [subcommand (if (empty? args) "" (first args))
+        passthrough-help?
+        (and (or (string=? subcommand "status")
+                 (string=? subcommand "remotes")
+                 (string=? subcommand "reindex"))
+             (some help-flag? (rest args)))
+        result (cli-dispatch (cli-top-level-command-spec "sync") args)]
     (cond
-      (equal? (:status result) :help)
+      passthrough-help?
+      (vector (string->symbol subcommand) '())
+
+      (equal? (get result :status) :help)
       (vector 'help '())
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (vector 'error "unsupported sync subcommand" args)
 
-      (string=? (:name (:spec result)) "status")
+      (string=? (get (get result :spec) :name) "status")
       (vector 'status '())
 
-      (string=? (:name (:spec result)) "remotes")
+      (string=? (get (get result :spec) :name) "remotes")
       (vector 'remotes '())
 
-      (string=? (:name (:spec result)) "reindex")
+      (string=? (get (get result :spec) :name) "reindex")
       (vector 'reindex '())
 
       :else

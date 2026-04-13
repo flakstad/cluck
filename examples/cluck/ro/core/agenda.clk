@@ -1,0 +1,34 @@
+;; Pure agenda-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.agenda
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+(def cli-dispatch cli/dispatch)
+
+(def agenda-help-lines
+  (list
+   "ro agenda"
+   ""
+   "usage:"
+   "  ro agenda"))
+
+(def agenda-help-text
+  (str/join "\n" agenda-help-lines))
+
+(def agenda-help-output
+  (string-append agenda-help-text "\n"))
+
+(defn agenda-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "agenda") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:agenda/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "usage: ro agenda" :command args}
+
+      :else
+      {:ok? true :effects [[:agenda/show {}]]})))

@@ -40,12 +40,27 @@
                  "whoami" {:kind 'whoami
                            :usage-lines ["ro identity whoami"]}
                  "create" {:kind 'create
+                           :flags ["--name NAME" {:required true}
+                                   "--kind KIND" {:default "human"}
+                                   "--user USER" {}
+                                   "--use" {:value true}]
                            :usage-lines ["ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]"]}
                  "use ACTOR-ID" {:kind 'use
                                  :usage-lines ["ro identity use <actor-id>"]}
                  "agent" {:kind 'agent
+                          :commands
+                          ["ensure" {:kind 'ensure
+                                     :flags ["--session SESSION" {}
+                                             "--name NAME" {}
+                                             "--user USER" {}
+                                             "--use" {:value true}]
+                                     :usage-lines ["ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]"]}]
                           :usage-lines ["ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]"]}]
-                :usage-lines ["ro identity ..."]}
+                :usage-lines ["ro identity list"
+                              "ro identity whoami"
+                              "ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]"
+                              "ro identity use <actor-id>"
+                              "ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]"]}
     "doctor" {:kind 'doctor
               :implemented? true
               :completion? true
@@ -83,13 +98,77 @@
                        :flags ["--limit LIMIT" {:parse parse-long}]
                        :usage-lines ["ro events list [--limit N]"]}]
               :usage-lines ["ro events list [--limit N]"]}
+    "publish" {:kind 'publish
+               :implemented? true
+               :completion? true
+               :flags ["--to DIR" {:required true}
+                       "--include-archived" {:value true}
+                       "--include-worklog" {:value true}
+                       "--overwrite" {:value true}]
+               :commands
+               ["item ITEM-ID" {:kind 'item
+                                :usage-lines ["ro publish --to <dir> item <item-id> [--include-archived] [--include-worklog] [--overwrite]"]}
+                "outline OUTLINE-ID" {:kind 'outline
+                                      :usage-lines ["ro publish --to <dir> outline <outline-id> [--include-archived] [--include-worklog] [--overwrite]"]}]
+               :usage-lines ["ro publish --to <dir> item <item-id> [--include-archived] [--include-worklog] [--overwrite]"
+                             "ro publish --to <dir> outline <outline-id> [--include-archived] [--include-worklog] [--overwrite]"]}
     "agent" {:kind 'agent
-             :implemented? false
+             :implemented? true
              :completion? true
-             :usage-lines ["ro agent start <item-id>"]}
+             :commands
+             ["prepare ITEM-ID" {:kind 'prepare
+                                 :flags ["--session SESSION" {}
+                                         "--name NAME" {}
+                                         "--user USER" {}
+                                         "--take-assigned" {:value true}]
+                                 :usage-lines ["ro agent prepare <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned]"]}
+              "start ITEM-ID" {:kind 'start
+                               :flags ["--session SESSION" {}
+                                       "--name NAME" {}
+                                       "--user USER" {}
+                                       "--take-assigned" {:value true}
+                                       "--launch" {:value true}
+                                       "--spawn-agent-runtime" {:value true}
+                                       "--profile PROFILE" {}
+                                       "--backend BACKEND" {}
+                                       "--tool TOOL" {}
+                                       "--cwd CWD" {}
+                                       "--tmux-session SESSION" {}
+                                       "--worktree PATH" {}
+                                       "--prompt PROMPT" {}
+                                       "--attach" {:value true}]
+                               :usage-lines ["ro agent start <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--launch] [--spawn-agent-runtime] [--profile <id>] [--backend <id>] [--tool <id>] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt \"...\"] [--attach]"]}
+              "launch ITEM-ID" {:kind 'launch
+                                :flags ["--session SESSION" {}
+                                        "--name NAME" {}
+                                        "--user USER" {}
+                                        "--take-assigned" {:value true}
+                                        "--spawn-agent-runtime" {:value true}
+                                        "--profile PROFILE" {}
+                                        "--backend BACKEND" {}
+                                        "--tool TOOL" {}
+                                        "--cwd CWD" {}
+                                        "--tmux-session SESSION" {}
+                                        "--worktree PATH" {}
+                                        "--prompt PROMPT" {}
+                                        "--attach" {:value true}]
+                                :usage-lines ["ro agent launch <item-id> --spawn-agent-runtime [--profile <id>] [--backend <id>] [--tool <id>] [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt \"...\"] [--attach]"]}
+              "open ITEM-ID" {:kind 'open
+                              :min-args 0
+                              :max-args 1
+                              :flags ["--session SESSION" {}
+                                      "--print-command" {:value true}]
+                              :usage-lines ["ro agent open <item-id>"
+                                            "ro agent open --session <key> [--print-command]"]}]
+             :usage-lines ["ro agent prepare <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned]"
+                           "ro agent start <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--launch] [--spawn-agent-runtime] [--profile <id>] [--backend <id>] [--tool <id>] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt \"...\"] [--attach]"
+                           "ro agent launch <item-id> --spawn-agent-runtime [--profile <id>] [--backend <id>] [--tool <id>] [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt \"...\"] [--attach]"
+                           "ro agent open <item-id>"
+                           "ro agent open --session <key> [--print-command]"]}
     "status" {:kind 'status
               :implemented? true
               :completion? true
+              :help-style 'usage-only
               :summary "workspace status"
               :min-args 0
               :max-args 0
@@ -133,23 +212,58 @@
                  ["current" {:kind 'current
                              :usage-lines ["ro workspace current"]}
                   "list" {:kind 'list
-                          :usage-lines ["ro workspace list"]}
+                          :flags ["--include-archived" {:value true}]
+                          :usage-lines ["ro workspace list [--include-archived]"]}
                   "add NAME" {:kind 'add
                               :flags ["--dir DIR" {:required true}
                                       "--kind KIND" {:default "git"}
                                       "--use" {:value true}]
                               :usage-lines ["ro workspace add <name> --dir <path> [--kind git] [--use]"]}
+                  "forget NAME" {:kind 'forget
+                                 :usage-lines ["ro workspace forget <name>"]}
                   "init NAME" {:kind 'init
                                :flags ["--dir DIR" {}
                                        "--use" {:value true}]
                                :usage-lines ["ro workspace init <name> [--dir <path>] [--use]"]}
                   "use NAME" {:kind 'use
-                              :usage-lines ["ro workspace use <name>"]}]
+                              :usage-lines ["ro workspace use <name>"]}
+                  "archive NAME" {:kind 'archive
+                                  :usage-lines ["ro workspace archive <name>"]}
+                  "unarchive NAME" {:kind 'unarchive
+                                    :usage-lines ["ro workspace unarchive <name>"]}
+                  "rename FROM TO" {:kind 'rename
+                                    :usage-lines ["ro workspace rename <from> <to>"]}
+                  "delete NAME" {:kind 'delete
+                                 :flags ["--yes" {:value true}
+                                         "--force-legacy" {:value true}]
+                                 :usage-lines ["ro workspace delete <name> [--yes] [--force-legacy]"]}
+                  "export" {:kind 'export
+                            :flags ["--to DIR" {:required true}
+                                    "--events" {:value true}
+                                    "--force" {:value true}]
+                            :usage-lines ["ro workspace export --to <dir> [--events] [--force]"]}
+                  "import NAME" {:kind 'import
+                                 :flags ["--from DIR" {:required true}
+                                         "--name NAME" {}
+                                         "--force" {:value true}
+                                         "--use" {:value true}
+                                         "--events" {:value true}]
+                                 :usage-lines ["ro workspace import [<name>] --from <dir> [--name <name>] [--force] [--use] [--events]"]}
+                  "migrate" {:kind 'migrate
+                             :usage-lines ["ro workspace migrate"]}]
                  :usage-lines ["ro workspace current"
-                               "ro workspace list"
+                               "ro workspace list [--include-archived]"
                                "ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo"
+                               "ro workspace forget <name>"
                                "ro workspace init <name> [--dir <path>] [--use]           blank workspace"
-                               "ro workspace use <name>"]}
+                               "ro workspace use <name>"
+                               "ro workspace archive <name>"
+                               "ro workspace unarchive <name>"
+                               "ro workspace rename <from> <to>"
+                               "ro workspace delete <name> [--yes] [--force-legacy]"
+                               "ro workspace export --to <dir> [--events] [--force]"
+                               "ro workspace import [<name>] --from <dir> [--name <name>] [--force] [--use] [--events]"
+                               "ro workspace migrate"]}
     "projects" {:kind 'projects
                 :implemented? true
                 :completion? true
@@ -217,25 +331,116 @@
              :implemented? true
              :completion? true
              :commands
-             ["show ITEM-ID" {:kind 'show
+             ["create" {:kind 'create
+                        :flags ["--title TITLE" {:required true}
+                                "--parent ITEM-ID" {}
+                                "--outline OUTLINE-ID" {}
+                                "--project PROJECT-ID" {}]
+                        :usage-lines ["ro items create --title <title> [--parent <item-id> | --outline <outline-id> | --project <project-id>]"]}
+              "copy ITEM-ID" {:kind 'copy
+                              :flags ["--project PROJECT-ID" {}
+                                      "--outline OUTLINE-ID" {}
+                                      "--parent PARENT" {}]
+                              :usage-lines ["ro items copy <item-id> [--project <project-id>] [--outline <outline-id>] [--parent <item-id>|none]"]}
+              "show ITEM-ID" {:kind 'show
                               :usage-lines ["ro items show <item-id>"]}
               "list" {:kind 'list
                       :flags ["--project PROJECT-ID" {}
                               "--outline OUTLINE-ID" {}
                               "--status STATUS" {}]
                       :usage-lines ["ro items list [--project <project-id>] [--outline <outline-id>] [--status <status>]"]}
+              "set-status ITEM-ID" {:kind 'set-status
+                                    :flags ["--status STATUS" {:required true}
+                                            "--note NOTE" {}]
+                                    :usage-lines ["ro items set-status <item-id> --status <status> [--note \"...\"]"]}
+              "set-assign ITEM-ID" {:kind 'set-assign
+                                    :flags ["--actor ACTOR-ID" {}
+                                            "--clear" {:value true}]
+                                    :usage-lines ["ro items set-assign <item-id> [--actor <actor-id> | --clear]"]}
+              "set-title ITEM-ID" {:kind 'set-title
+                                   :flags ["--title TITLE" {:required true}]
+                                   :usage-lines ["ro items set-title <item-id> --title <title>"]}
+              "set-description ITEM-ID" {:kind 'set-description
+                                         :flags ["--description DESCRIPTION" {:required true}]
+                                         :usage-lines ["ro items set-description <item-id> --description <description>"]}
+              "set-priority ITEM-ID" {:kind 'set-priority
+                                      :flags ["--on" {:value true}
+                                              "--off" {:value true}]
+                                      :usage-lines ["ro items set-priority <item-id> --on|--off"]}
+              "set-on-hold ITEM-ID" {:kind 'set-on-hold
+                                     :flags ["--on" {:value true}
+                                             "--off" {:value true}]
+                                     :usage-lines ["ro items set-on-hold <item-id> --on|--off"]}
+              "set-children-checkbox ITEM-ID" {:kind 'set-children-checkbox
+                                               :flags ["--on" {:value true}
+                                                       "--off" {:value true}]
+                                               :usage-lines ["ro items set-children-checkbox <item-id> --on|--off"]}
+              "set-item-kind ITEM-ID" {:kind 'set-item-kind
+                                       :flags ["--kind KIND" {:required true}]
+                                       :usage-lines ["ro items set-item-kind <item-id> --kind <kind>"]}
+              "set-due ITEM-ID" {:kind 'set-due
+                                 :flags ["--date DATE" {:required true}]
+                                 :usage-lines ["ro items set-due <item-id> --date <yyyy-mm-dd>"]}
+              "set-schedule ITEM-ID" {:kind 'set-schedule
+                                      :flags ["--date DATE" {:required true}
+                                              "--time TIME" {}]
+                                      :usage-lines ["ro items set-schedule <item-id> --date <yyyy-mm-dd> [--time <hh:mm>]"]}
+              "claim ITEM-ID" {:kind 'claim
+                               :flags ["--take-assigned" {:value true}]
+                               :usage-lines ["ro items claim <item-id> [--take-assigned]"]}
+              "tags" {:kind 'tags
+                      :commands
+                      ["add ITEM-ID" {:kind 'add
+                                      :flags ["--tag TAG" {:required true}]
+                                      :usage-lines ["ro items tags add <item-id> --tag <tag>"]}
+                       "remove ITEM-ID" {:kind 'remove
+                                         :flags ["--tag TAG" {:required true}]
+                                         :usage-lines ["ro items tags remove <item-id> --tag <tag>"]}
+                       "set ITEM-ID" {:kind 'set
+                                      :flags ["--tags TAGS" {:required true}]
+                                      :usage-lines ["ro items tags set <item-id> --tags \"tag-a tag-b\""]}]
+                      :usage-lines ["ro items tags add <item-id> --tag <tag>"
+                                    "ro items tags remove <item-id> --tag <tag>"
+                                    "ro items tags set <item-id> --tags \"tag-a tag-b\""]}
+              "move ITEM-ID" {:kind 'move
+                              :flags ["--before ITEM-ID" {}
+                                      "--after ITEM-ID" {}]
+                              :usage-lines ["ro items move <item-id> --before <item-id>"
+                                            "ro items move <item-id> --after <item-id>"]}
+              "set-parent ITEM-ID" {:kind 'set-parent
+                                    :flags ["--parent ITEM-ID" {:required true}]
+                                    :usage-lines ["ro items set-parent <item-id> --parent <item-id>"]}
+              "move-outline ITEM-ID" {:kind 'move-outline
+                                      :flags ["--to OUTLINE-ID" {:required true}]
+                                      :usage-lines ["ro items move-outline <item-id> --to <outline-id>"]}
               "ready" {:kind 'ready
                        :usage-lines ["ro items ready"]}
               "events ITEM-ID" {:kind 'events
                                 :flags ["--limit LIMIT" {:parse parse-long}]
-                                :usage-lines ["ro items events <item-id> [--limit N]"]}]
+                                :usage-lines ["ro items events <item-id> [--limit N]"]}
+              "archive ITEM-ID" {:kind 'archive
+                                 :usage-lines ["ro items archive <item-id>"]}]
              :usage-lines ["ro items create --title <title> [--parent <item-id> | --outline <outline-id> | --project <project-id>]"
                            "ro items copy <item-id> [--project <project-id>] [--outline <outline-id>] [--parent <item-id>|none]"
                            "ro items show <item-id>"
                            "ro items list [--project <project-id>] [--outline <outline-id>] [--status <status>]"
                            "ro items set-status <item-id> --status <status> [--note \"...\"]"
                            "ro items set-assign <item-id> [--actor <actor-id> | --clear]"
+                           "ro items set-title <item-id> --title <title>"
+                           "ro items set-description <item-id> --description <description>"
+                           "ro items set-priority <item-id> --on|--off"
+                           "ro items set-on-hold <item-id> --on|--off"
+                           "ro items set-children-checkbox <item-id> --on|--off"
+                           "ro items set-item-kind <item-id> --kind <kind>"
+                           "ro items set-due <item-id> --date <yyyy-mm-dd>"
+                           "ro items set-schedule <item-id> --date <yyyy-mm-dd> [--time <hh:mm>]"
                            "ro items claim <item-id> [--take-assigned]"
+                           "ro items tags add <item-id> --tag <tag>"
+                           "ro items tags remove <item-id> --tag <tag>"
+                           "ro items tags set <item-id> --tags \"tag-a tag-b\""
+                           "ro items move <item-id> --before <item-id>|--after <item-id>"
+                           "ro items set-parent <item-id> --parent <item-id>"
+                           "ro items move-outline <item-id> --to <outline-id>"
                            "ro items events <item-id> [--limit N]"
                            "ro items archive <item-id>"
                            "ro items ready"]}
@@ -245,17 +450,53 @@
              :summary "alias for item commands"
              :usage-lines ["ro tasks"]}
     "capture" {:kind 'capture
-               :implemented? false
+               :implemented? true
+               :flags ["--hotkey" {:value true}
+                       "--no-output" {:value true}
+                       "--exit-0-on-cancel" {:value true}
+                       "--url URL" {}
+                       "--selection TEXT" {}]
                :completion? true
-               :usage-lines ["ro capture [--hotkey] [--no-output] [--exit-0-on-cancel]"]}
+               :usage-lines ["ro capture [--hotkey] [--no-output] [--exit-0-on-cancel] [--url <url>] [--selection <text>]"]}
     "comments" {:kind 'comments
-                :implemented? false
+                :implemented? true
                 :completion? true
+                :commands
+                ["list ITEM-ID" {:kind 'list
+                                 :flags ["--limit LIMIT" {:parse parse-long}
+                                         "--offset OFFSET" {:parse parse-long}]
+                                 :usage-lines ["ro comments list <item-id> [--limit N] [--offset N]"]}
+                 "add ITEM-ID" {:kind 'add
+                                :flags ["--body BODY" {:required true}
+                                        "--reply-to COMMENT-ID" {}
+                                        "--discuss" {:value true}]
+                                :usage-lines ["ro comments add <item-id> --body \"...\" [--reply-to <comment-id>] [--discuss]"]}]
                 :usage-lines ["ro comments list <item-id> [--limit N] [--offset N]"
                               "ro comments add <item-id> --body \"...\" [--reply-to <comment-id>] [--discuss]"]}
     "discuss" {:kind 'discuss
-               :implemented? false
-               :completion? false
+               :implemented? true
+               :completion? true
+               :commands
+               ["list ITEM-ID" {:kind 'list
+                                :flags ["--state STATE" {:default "open"}
+                                        "--limit LIMIT" {:parse parse-long}
+                                        "--offset OFFSET" {:parse parse-long}]
+                                :usage-lines ["ro discuss list <item-id> [--state open|resolved|all] [--limit N] [--offset N]"]}
+                "show DISCUSSION-ID" {:kind 'show
+                                      :usage-lines ["ro discuss show <discussion-id>"]}
+                "start ITEM-ID" {:kind 'start
+                                 :flags ["--body BODY" {}
+                                         "--comment COMMENT-ID" {}]
+                                 :usage-lines ["ro discuss start <item-id> (--body \"...\" | --comment <comment-id>)"]}
+                "promote ITEM-ID" {:kind 'promote
+                                   :flags ["--comment COMMENT-ID" {}]
+                                   :usage-lines ["ro discuss promote <item-id> --comment <comment-id>"]}
+                "resolve DISCUSSION-ID" {:kind 'resolve
+                                         :flags ["--body BODY" {}]
+                                         :usage-lines ["ro discuss resolve <discussion-id> [--body \"...\"]"]}
+                "reopen DISCUSSION-ID" {:kind 'reopen
+                                        :flags ["--body BODY" {}]
+                                        :usage-lines ["ro discuss reopen <discussion-id> [--body \"...\"]"]}]
                :usage-lines ["ro discuss list <item-id> [--state open|resolved|all] [--limit N] [--offset N]"
                              "ro discuss show <discussion-id>"
                              "ro discuss start <item-id> (--body \"...\" | --comment <comment-id>)"
@@ -263,15 +504,45 @@
                              "ro discuss resolve <discussion-id> [--body \"...\"]"
                              "ro discuss reopen <discussion-id> [--body \"...\"]"]}
     "deps" {:kind 'deps
-            :implemented? false
+            :implemented? true
             :completion? true
+            :commands
+            ["add ITEM-ID" {:kind 'add
+                            :flags ["--blocks ITEM-ID" {}
+                                    "--related ITEM-ID" {}]
+                            :usage-lines ["ro deps add <item-id> --blocks <item-id>"
+                                          "ro deps add <item-id> --related <item-id>"]}
+             "list ITEM-ID" {:kind 'list
+                             :min-args 0
+                             :max-args 1
+                             :usage-lines ["ro deps list [<item-id>]"]}
+             "tree ITEM-ID" {:kind 'tree
+                             :usage-lines ["ro deps tree <item-id>"]}
+             "cycles" {:kind 'cycles
+                       :usage-lines ["ro deps cycles"]}]
             :usage-lines ["ro deps add <item-id> --blocks <item-id> | --related <item-id>"
                           "ro deps list [<item-id>]"
                           "ro deps tree <item-id>"
                           "ro deps cycles"]}
     "attachments" {:kind 'attachments
-                   :implemented? false
+                   :implemented? true
                    :completion? true
+                   :commands
+                   ["add ENTITY-ID PATH" {:kind 'add
+                                          :flags ["--kind KIND" {}
+                                                  "--title TITLE" {}
+                                                  "--alt ALT" {}
+                                                  "--max-mb N" {:parse parse-long}
+                                                  "--link" {:value true}
+                                                  "--copy" {:value true}]
+                                          :usage-lines ["ro attachments add <entity-id> <path> [--kind item|comment] [--title \"...\"] [--alt \"...\"] [--max-mb N] [--link|--copy]"]}
+                    "list ENTITY-ID" {:kind 'list
+                                      :usage-lines ["ro attachments list <entity-id>"]}
+                    "open ATTACHMENT-ID" {:kind 'open
+                                          :flags ["--print-path" {:value true}]
+                                          :usage-lines ["ro attachments open <attachment-id> [--print-path]"]}
+                    "export ATTACHMENT-ID DEST-PATH" {:kind 'export
+                                                      :usage-lines ["ro attachments export <attachment-id> <dest-path>"]}]
                    :usage-lines ["ro attachments add <entity-id> <path> [--kind item|comment] [--title \"...\"] [--alt \"...\"] [--max-mb N] [--link|--copy]"
                                  "ro attachments list <entity-id>"
                                  "ro attachments open <attachment-id> [--print-path]"
@@ -290,12 +561,22 @@
                :usage-lines ["ro worklog list <item-id> [--limit N] [--offset N]"
                              "ro worklog add <item-id> --body \"...\""]}
     "clock" {:kind 'clock
-             :implemented? false
-             :completion? false
+             :implemented? true
+             :completion? true
+             :commands
+             ["status" {:kind 'status
+                        :usage-lines ["ro clock status"]}
+              "in ITEM-ID" {:kind 'in
+                            :usage-lines ["ro clock in <item-id>"]}
+              "out" {:kind 'out
+                     :flags ["--body BODY" {}]
+                     :usage-lines ["ro clock out [--body \"...\"]"]}]
              :usage-lines ["ro clock status"
                            "ro clock in <item-id>"
                            "ro clock out [--body \"...\"]"]}
     "agenda" {:kind 'agenda
-              :implemented? false
-              :completion? false
+              :implemented? true
+              :completion? true
+              :min-args 0
+              :max-args 0
               :usage-lines ["ro agenda"]}]})

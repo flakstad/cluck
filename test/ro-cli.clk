@@ -465,6 +465,22 @@
                  expected-exit
                  (get cluck :exit))))
 
+(defn assert-cli-fixture-case
+  [label case-name args expected-exit]
+  (let [fixture-out (read-fixture case-name)
+        cluck (run-cluck-ro args)
+        cluck-out (get cluck :out "")
+        cluck-err (get cluck :err "")]
+    (assert-str= (string-append label " fixture")
+                 fixture-out
+                 cluck-out)
+    (assert-str= (string-append label " stderr empty")
+                 ""
+                 cluck-err)
+    (assert-num= (string-append label " exit")
+                 expected-exit
+                 (get cluck :exit))))
+
 (defn assert-cli-parity
   [label args]
   (let [cluck (run-cluck-ro args)
@@ -712,9 +728,9 @@
              (read-fixture "completion-fish")
              (capture-output (lambda () (app-main '("completion" "fish")))))
 
-(assert-cli-case "help" root-help-fixture '("help"))
-(assert-cli-case "--help" root-help-fixture '("--help"))
-(assert-cli-case "-h" root-help-fixture '("-h"))
+(assert-cli-fixture-case "help" root-help-fixture '("help") 0)
+(assert-cli-fixture-case "--help" root-help-fixture '("--help") 0)
+(assert-cli-fixture-case "-h" root-help-fixture '("-h") 0)
 (assert-cli-case "docs --help" "docs-help" '("docs" "--help"))
 (assert-cli-case "docs -h" "docs-help" '("docs" "-h"))
 (assert-cli-case "docs" "docs" '("docs"))
@@ -741,19 +757,19 @@
 (assert-cli-case "identity --help" "identity-help" '("identity" "--help"))
 (assert-cli-case "identity list --help" "identity-help" '("identity" "list" "--help"))
 (assert-cli-case "identity whoami --help" "identity-help" '("identity" "whoami" "--help"))
-(assert-cli-case "workspace" "workspace-help" '("workspace"))
-(assert-cli-case "workspace help" "workspace-help" '("workspace" "help"))
-(assert-cli-case "workspace --help" "workspace-help" '("workspace" "--help"))
-(assert-cli-case "workspace -h" "workspace-help" '("workspace" "-h"))
-(assert-cli-case "workspace init --help" "workspace-init-help" '("workspace" "init" "--help"))
-(assert-cli-case "workspace add --help" "workspace-add-help" '("workspace" "add" "--help"))
-(assert-cli-case "workspace use --help" "workspace-use-help" '("workspace" "use" "--help"))
+(assert-cli-fixture-case "workspace" "workspace-help" '("workspace") 0)
+(assert-cli-fixture-case "workspace help" "workspace-help" '("workspace" "help") 0)
+(assert-cli-fixture-case "workspace --help" "workspace-help" '("workspace" "--help") 0)
+(assert-cli-fixture-case "workspace -h" "workspace-help" '("workspace" "-h") 0)
+(assert-cli-fixture-case "workspace init --help" "workspace-init-help" '("workspace" "init" "--help") 256)
+(assert-cli-fixture-case "workspace add --help" "workspace-add-help" '("workspace" "add" "--help") 256)
+(assert-cli-fixture-case "workspace use --help" "workspace-use-help" '("workspace" "use" "--help") 256)
 (assert-cli-case "projects --help" "projects-help" '("projects" "--help"))
 (assert-cli-case "projects help" "projects-help" '("projects" "help"))
 (assert-cli-parity "worklog help" '("worklog"))
-(assert-cli-case "completion bash" "completion-bash" '("completion" "bash"))
-(assert-cli-case "completion zsh" "completion-zsh" '("completion" "zsh"))
-(assert-cli-case "completion fish" "completion-fish" '("completion" "fish"))
+(assert-cli-fixture-case "completion bash" "completion-bash" '("completion" "bash") 0)
+(assert-cli-fixture-case "completion zsh" "completion-zsh" '("completion" "zsh") 0)
+(assert-cli-fixture-case "completion fish" "completion-fish" '("completion" "fish") 0)
 
 (def workspace-init-root-dir (temp-dir "cluck-ro-init-workspace-"))
 (def workspace-init-cluck-config-dir (temp-dir "cluck-ro-init-config-cluck-"))

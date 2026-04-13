@@ -7,3 +7,5 @@ build/
 /.DS_Store
 /examples/.DS_Store
 /test/.DS_Store
+# Ro (derived/local-only)
+.ro/

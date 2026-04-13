@@ -1,0 +1,164 @@
+;; Pure agent-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.agent
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+(def cli-dispatch cli/dispatch)
+
+(def agent-help-lines
+  (list
+   "ro agent"
+   ""
+   "usage:"
+   "  ro agent prepare <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned]"
+   "  ro agent start <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--launch] [--spawn-agent-runtime] [--profile <id>] [--backend <id>] [--tool <id>] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt \"...\"] [--attach]"
+   "  ro agent launch <item-id> --spawn-agent-runtime [--profile <id>] [--backend <id>] [--tool <id>] [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt \"...\"] [--attach]"
+   "  ro agent open <item-id>"
+   "  ro agent open --session <key> [--print-command]"))
+
+(def agent-help-text
+  (str/join "\n" agent-help-lines))
+
+(def agent-help-output
+  (string-append agent-help-text "\n"))
+
+(defn agent-launch-flags-present?
+  [flags]
+  (or (not (string=? (str/trim (or (get flags :profile) "")) ""))
+      (not (string=? (str/trim (or (get flags :backend) "")) ""))
+      (not (string=? (str/trim (or (get flags :tool) "")) ""))
+      (not (string=? (str/trim (or (get flags :cwd) "")) ""))
+      (not (string=? (str/trim (or (get flags :tmux-session) "")) ""))
+      (not (string=? (str/trim (or (get flags :worktree) "")) ""))
+      (not (string=? (str/trim (or (get flags :prompt) "")) ""))
+      (get flags :attach false)))
+
+(defn agent-prepare-effect
+  [result]
+  [:agent/prepare {:item-id (get (get result :arguments) :item-id "")
+                   :session (get (get result :flags) :session "")
+                   :name (get (get result :flags) :name "")
+                   :user (get (get result :flags) :user "")
+                   :take-assigned? (get (get result :flags) :take-assigned false)}])
+
+(defn agent-prepare-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "agent")
+                             (cons "prepare" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:agent/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro agent prepare expects <item-id>"
+       :command args}
+
+      :else
+      {:ok? true :effects [(agent-prepare-effect result)]})))
+
+(defn agent-start-plan
+  [args launch-alias?]
+  (let [subcommand (if launch-alias? "launch" "start")
+        result (cli-dispatch (cli-top-level-command-spec "agent")
+                             (cons subcommand args))
+        flags (get result :flags)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:agent/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error (string-append "ro agent " subcommand " expects <item-id>")
+       :command args}
+
+      (and launch-alias?
+           (not (get flags :spawn-agent-runtime false)))
+      {:ok? false
+       :error "ro agent launch requires --spawn-agent-runtime"
+       :command args}
+
+      (and (not launch-alias?)
+           (not (get flags :launch false))
+           (agent-launch-flags-present? flags))
+      {:ok? false
+       :error "runtime launch flags require --launch"
+       :command args}
+
+      (and (or launch-alias? (get flags :launch false))
+           (not (get flags :spawn-agent-runtime false)))
+      {:ok? false
+       :error "refusing to spawn agent runtime without --spawn-agent-runtime"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:agent/start {:item-id (get (get result :arguments) :item-id "")
+                                :session (get flags :session "")
+                                :name (get flags :name "")
+                                :user (get flags :user "")
+                                :take-assigned? (get flags :take-assigned false)
+                                :launch? (or launch-alias? (get flags :launch false))
+                                :spawn-agent-runtime? (get flags :spawn-agent-runtime false)
+                                :profile (get flags :profile "")
+                                :backend (get flags :backend "")
+                                :tool (get flags :tool "")
+                                :cwd (get flags :cwd "")
+                                :tmux-session (get flags :tmux-session "")
+                                :worktree (get flags :worktree "")
+                                :prompt (get flags :prompt "")
+                                :attach? (get flags :attach false)}]]})))
+
+(defn agent-open-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "agent")
+                             (cons "open" args))
+        item-id (get (get result :arguments) :item-id "")
+        session (get (get result :flags) :session "")]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:agent/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro agent open expects <item-id> or --session <key>"
+       :command args}
+
+      (and (string=? (str/trim (or item-id "")) "")
+           (string=? (str/trim (or session "")) ""))
+      {:ok? false
+       :error "ro agent open expects <item-id> or --session <key>"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:agent/open {:item-id item-id
+                               :session session
+                               :print-command? (get (get result :flags) :print-command false)}]]})))
+
+(defn agent-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "agent") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true :effects [[:agent/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false :error "unsupported agent subcommand" :command args}
+
+      (string=? (get (get result :spec) :name) "prepare")
+      (agent-prepare-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "start")
+      (agent-start-plan (rest args) false)
+
+      (string=? (get (get result :spec) :name) "launch")
+      (agent-start-plan (rest args) true)
+
+      (string=? (get (get result :spec) :name) "open")
+      (agent-open-plan (rest args))
+
+      :else
+      {:ok? false :error "unsupported agent subcommand" :command args})))

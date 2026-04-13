@@ -326,48 +326,48 @@
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "doctor") args)]
     (cond
-      (equal? (:status result) :help)
+      (equal? (get result :status) :help)
       (vector 'help '())
 
-      (equal? (:status result) :error)
+      (equal? (get result :status) :error)
       (cond
-        (equal? (:reason result) :unknown-command)
+        (equal? (get result :reason) :unknown-command)
         (vector 'error "unsupported doctor subcommand" args)
 
-        (equal? (:reason result) :unknown-flag)
+        (equal? (get result :reason) :unknown-flag)
         (vector 'error "unsupported doctor flag" args)
 
         :else
         (vector 'error "unexpected doctor argument" args))
 
-      (string=? (:name (:spec result)) "doctor")
-      (if (get (:flags result) :summary false)
+      (string=? (get (get result :spec) :name) "doctor")
+      (if (get (get result :flags) :summary false)
           (vector 'summary
-                  (get (:flags result) :fail false)
+                  (get (get result :flags) :fail false)
                   false
                   false)
           (vector 'report
-                  (get (:flags result) :fail false)
+                  (get (get result :flags) :fail false)
                   false
                   false))
 
-      (string=? (:name (:spec result)) "report")
+      (string=? (get (get result :spec) :name) "report")
       (vector 'report
-              (get (:flags result) :fail false)
+              (get (get result :flags) :fail false)
               false
               false)
 
-      (string=? (:name (:spec result)) "summary")
+      (string=? (get (get result :spec) :name) "summary")
       (vector 'summary
-              (get (:flags result) :fail false)
+              (get (get result :flags) :fail false)
               false
               false)
 
-      (string=? (:name (:spec result)) "dedupe")
+      (string=? (get (get result :spec) :name) "dedupe")
       (vector 'dedupe
-              (get (:flags result) :fail false)
-              (get (:flags result) :write false)
-              (get (:flags result) :force false))
+              (get (get result :flags) :fail false)
+              (get (get result :flags) :write false)
+              (get (get result :flags) :force false))
 
       :else
       (vector 'error "unsupported doctor subcommand" args))))

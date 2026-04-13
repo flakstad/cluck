@@ -4,14 +4,28 @@ usage:
   ro                        # start the TUI
   ro help                   # show this help
   ro <item-id>              # shortcut for: ro items show <item-id>
-  ro docs [topic]
+  ro docs
+  ro docs <topic>
+  ro docs <topic> --raw
   ro completion <bash|zsh|fish>
   ro init
-  ro identity ...
+  ro identity list
+  ro identity whoami
+  ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]
+  ro identity use <actor-id>
+  ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]
   ro doctor [--fail]
+  ro doctor summary [--fail]
+  ro doctor dedupe [--write --force] [--fail]
   ro reindex
   ro events list [--limit N]
-  ro agent start <item-id>
+  ro publish --to <dir> item <item-id> [--include-archived] [--include-worklog] [--overwrite]
+  ro publish --to <dir> outline <outline-id> [--include-archived] [--include-worklog] [--overwrite]
+  ro agent prepare <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned]
+  ro agent start <item-id> [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--launch] [--spawn-agent-runtime] [--profile <id>] [--backend <id>] [--tool <id>] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt "..."] [--attach]
+  ro agent launch <item-id> --spawn-agent-runtime [--profile <id>] [--backend <id>] [--tool <id>] [--session <key>] [--name <display>] [--user <human-actor-id>] [--take-assigned] [--cwd <path>] [--tmux-session <name>] [--worktree <path>] [--prompt "..."] [--attach]
+  ro agent open <item-id>
+  ro agent open --session <key> [--print-command]
   ro status                 # workspace status
   ro sync status
   ro sync remotes
@@ -21,7 +35,18 @@ usage:
   ro sync push [--message <msg>] [--pull=false]
   ro sync resolve
   ro workspace current
-  ro workspace list
+  ro workspace list [--include-archived]
+  ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo
+  ro workspace forget <name>
+  ro workspace init <name> [--dir <path>] [--use]           blank workspace
+  ro workspace use <name>
+  ro workspace archive <name>
+  ro workspace unarchive <name>
+  ro workspace rename <from> <to>
+  ro workspace delete <name> [--yes] [--force-legacy]
+  ro workspace export --to <dir> [--events] [--force]
+  ro workspace import [<name>] --from <dir> [--name <name>] [--force] [--use] [--events]
+  ro workspace migrate
   ro projects create --name <name> [--use]
   ro projects list
   ro projects archive <project-id> [--unarchive]
@@ -38,12 +63,26 @@ usage:
   ro items list [--project <project-id>] [--outline <outline-id>] [--status <status>]
   ro items set-status <item-id> --status <status> [--note "..."]
   ro items set-assign <item-id> [--actor <actor-id> | --clear]
+  ro items set-title <item-id> --title <title>
+  ro items set-description <item-id> --description <description>
+  ro items set-priority <item-id> --on|--off
+  ro items set-on-hold <item-id> --on|--off
+  ro items set-children-checkbox <item-id> --on|--off
+  ro items set-item-kind <item-id> --kind <kind>
+  ro items set-due <item-id> --date <yyyy-mm-dd>
+  ro items set-schedule <item-id> --date <yyyy-mm-dd> [--time <hh:mm>]
   ro items claim <item-id> [--take-assigned]
+  ro items tags add <item-id> --tag <tag>
+  ro items tags remove <item-id> --tag <tag>
+  ro items tags set <item-id> --tags "tag-a tag-b"
+  ro items move <item-id> --before <item-id>|--after <item-id>
+  ro items set-parent <item-id> --parent <item-id>
+  ro items move-outline <item-id> --to <outline-id>
   ro items events <item-id> [--limit N]
   ro items archive <item-id>
   ro items ready
   ro tasks                  # alias for item commands
-  ro capture [--hotkey] [--no-output] [--exit-0-on-cancel]
+  ro capture [--hotkey] [--no-output] [--exit-0-on-cancel] [--url <url>] [--selection <text>]
   ro comments list <item-id> [--limit N] [--offset N]
   ro comments add <item-id> --body "..." [--reply-to <comment-id>] [--discuss]
   ro discuss list <item-id> [--state open|resolved|all] [--limit N] [--offset N]

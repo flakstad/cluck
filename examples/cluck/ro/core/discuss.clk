@@ -1,0 +1,250 @@
+;; Pure discussion-surface helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.discuss
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
+
+(def discuss-help-lines
+  (list
+   "ro discuss"
+   ""
+   "usage:"
+   "  ro discuss list <item-id> [--state open|resolved|all] [--limit N] [--offset N]"
+   "  ro discuss show <discussion-id>"
+   "  ro discuss start <item-id> (--body \"...\" | --comment <comment-id>)"
+   "  ro discuss promote <item-id> --comment <comment-id>"
+   "  ro discuss resolve <discussion-id> [--body \"...\"]"
+   "  ro discuss reopen <discussion-id> [--body \"...\"]"))
+
+(def discuss-help-text
+  (str/join "\n" discuss-help-lines))
+
+(def discuss-help-output
+  (string-append discuss-help-text "\n"))
+
+(defn discuss-list-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss")
+                             (cons "list" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro discuss list expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro discuss list expects a value after a flag"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported discuss list flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected discuss list argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:discuss/list {:item-id (get (get result :arguments) :item-id "")
+                                 :state (get (get result :flags) :state "open")
+                                 :limit (get (get result :flags) :limit 200)
+                                 :offset (get (get result :flags) :offset 0)}]]})))
+
+(defn discuss-show-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss")
+                             (cons "show" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro discuss show expects <discussion-id>"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:discuss/show {:discussion-id (get (get result :arguments) :discussion-id "")}]]})))
+
+(defn discuss-start-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss")
+                             (cons "start" args))
+        body (get (get result :flags) :body "")
+        comment-id (get (get result :flags) :comment "")]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro discuss start expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro discuss start expects a value after a flag"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported discuss start flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected discuss start argument"
+         :command args})
+
+      (and (string=? (str/trim body) "")
+           (string=? (str/trim comment-id) ""))
+      {:ok? false
+       :error "ro discuss start expects --body or --comment"
+       :command args}
+
+      (and (not (string=? (str/trim body) ""))
+           (not (string=? (str/trim comment-id) "")))
+      {:ok? false
+       :error "ro discuss start expects either --body or --comment"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:discuss/start {:item-id (get (get result :arguments) :item-id "")
+                                  :body body
+                                  :comment-id comment-id}]]})))
+
+(defn discuss-promote-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss")
+                             (cons "promote" args))
+        comment-id (get (get result :flags) :comment "")]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      (cond
+        (equal? (get result :reason) :missing-argument)
+        {:ok? false
+         :error "ro discuss promote expects <item-id>"
+         :command args}
+
+        (equal? (get result :reason) :missing-flag-value)
+        {:ok? false
+         :error "ro discuss promote expects a value after --comment"
+         :command args}
+
+        (equal? (get result :reason) :unknown-flag)
+        {:ok? false
+         :error "unsupported discuss promote flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected discuss promote argument"
+         :command args})
+
+      (string=? (str/trim comment-id) "")
+      {:ok? false
+       :error "ro discuss promote expects --comment"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:discuss/promote {:item-id (get (get result :arguments) :item-id "")
+                                    :comment-id comment-id}]]})))
+
+(defn discuss-resolve-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss")
+                             (cons "resolve" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro discuss resolve expects <discussion-id>"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:discuss/resolve {:discussion-id (get (get result :arguments) :discussion-id "")
+                                    :body (get (get result :flags) :body "")}]]})))
+
+(defn discuss-reopen-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss")
+                             (cons "reopen" args))]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro discuss reopen expects <discussion-id>"
+       :command args}
+
+      :else
+      {:ok? true
+       :effects [[:discuss/reopen {:discussion-id (get (get result :arguments) :discussion-id "")
+                                   :body (get (get result :flags) :body "")}]]})))
+
+(defn discuss-main-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "discuss") args)]
+    (cond
+      (equal? (get result :status) :help)
+      {:ok? true
+       :effects [[:discuss/help {}]]}
+
+      (equal? (get result :status) :error)
+      {:ok? false
+       :error "ro discuss commands are not implemented yet"
+       :command args}
+
+      (string=? (get (get result :spec) :name) "list")
+      (discuss-list-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "show")
+      (discuss-show-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "start")
+      (discuss-start-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "promote")
+      (discuss-promote-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "resolve")
+      (discuss-resolve-plan (rest args))
+
+      (string=? (get (get result :spec) :name) "reopen")
+      (discuss-reopen-plan (rest args))
+
+      :else
+      {:ok? false
+       :error "ro discuss commands are not implemented yet"
+       :command args})))

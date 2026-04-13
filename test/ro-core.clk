@@ -20,6 +20,8 @@
             [cluck.examples.ro.core.workspace :as ro-workspace]
             [cluck.examples.ro.core.projects :as ro-projects]
             [cluck.examples.ro.core.worklog :as ro-worklog]
+            [cluck.examples.ro.core.publish :as ro-publish]
+            [cluck.examples.ro.core.agent :as ro-agent]
             [cluck.test.support :refer [assert-str=
                                         assert-num=
                                         assert-true
@@ -118,6 +120,10 @@
 (def ro-worklog-worklog-list-plan ro-worklog/worklog-list-plan)
 (def ro-worklog-worklog-add-plan ro-worklog/worklog-add-plan)
 (def ro-worklog-worklog-main-plan ro-worklog/worklog-main-plan)
+(def ro-publish-publish-help-output ro-publish/publish-help-output)
+(def ro-publish-publish-main-plan ro-publish/publish-main-plan)
+(def ro-agent-agent-help-output ro-agent/agent-help-output)
+(def ro-agent-agent-main-plan ro-agent/agent-main-plan)
 
 (defn parse-output
   [output]
@@ -352,7 +358,7 @@
              "help"
              (first (first (ro-cli-cmdspec-prepare-cmdpairs (:commands ro-cli-ro-root-command-spec)))))
 (assert-json= "core cli completion candidates top level"
-              '("agent" "attachments" "capture")
+              '("agenda" "agent" "attachments")
               (take 3 (ro-cli-shell-completion-candidates '())))
 (assert-json= "core cli completion candidates docs"
               '("cli" "getting-started" "output-contract")
@@ -466,7 +472,7 @@
                 "  ro workspace add <name> --dir <path> [--kind git] [--use]")
               (ro-cli-render-command-help (:spec dispatched-workspace-help)))
 (assert-json= "core cli generic completion workspace root"
-              '("add" "current" "init" "list" "use")
+              '("add" "archive" "current" "delete" "export" "forget" "import" "init" "list" "migrate" "rename" "unarchive" "use")
               (ro-cli-completion-candidates prepared-workspace-spec '()))
 (assert-json= "core cli generic completion docs topics"
               '("cli" "getting-started" "output-contract")
@@ -498,10 +504,10 @@
              "  ro help                   # show this help"
              (first (ro-cli-root-help-command-lines)))
 (assert-str= "core cli top command first"
-             "agent"
+             "agenda"
              (first (ro-cli-top-command-names)))
 (assert-str= "core cli completion command line starts agent"
-             "agent"
+             "agenda"
              (first (str/split (ro-cli-completion-command-line) " ")))
 (assert-true "core cli docs topics line contains sync"
              (not (equal? #f (member "sync" (str/split (ro-cli-docs-topics-line) " ")))))
@@ -521,7 +527,7 @@
              "  ro help                   # show this help"
              (first ro-commands-command-root-help-lines))
 (assert-str= "core command registry top command first"
-             "agent"
+             "agenda"
              (first ro-commands-command-top-commands))
 (assert-str= "core command registry kind tasks"
              "tasks"
@@ -1225,6 +1231,72 @@
                   :body
                   ""))
 
+(define sample-publish-help-plan
+  (ro-publish-publish-main-plan '()))
+(define sample-publish-item-plan
+  (ro-publish-publish-main-plan '("--to" "/tmp/out" "item" "item-vvo" "--include-worklog")))
+(define sample-publish-outline-plan
+  (ro-publish-publish-main-plan '("--to" "/tmp/out" "outline" "out-1" "--include-archived")))
+(define sample-agent-help-plan
+  (ro-agent-agent-main-plan '()))
+(define sample-agent-prepare-plan
+  (ro-agent-agent-main-plan '("prepare" "item-vvo" "--session" "codex" "--name" "Codex")))
+(define sample-agent-launch-error-plan
+  (ro-agent-agent-main-plan '("launch" "item-vvo")))
+(define sample-agent-open-plan
+  (ro-agent-agent-main-plan '("open" "--session" "codex" "--print-command")))
+
+(assert-str= "core publish help output starts with ro publish"
+             "ro publish"
+             (first (str/split-lines ro-publish-publish-help-output)))
+(assert-true "core publish help plan ok"
+             (get sample-publish-help-plan :ok? false))
+(assert-str= "core publish item effect tag"
+             ":publish/item"
+             (pr-str (vector-ref (vector-ref (get sample-publish-item-plan :effects '()) 0) 0)))
+(assert-str= "core publish item effect id"
+             "item-vvo"
+             (get (vector-ref (vector-ref (get sample-publish-item-plan :effects '()) 0) 1)
+                  :item-id
+                  ""))
+(assert-true "core publish item effect include worklog"
+             (get (vector-ref (vector-ref (get sample-publish-item-plan :effects '()) 0) 1)
+                  :include-worklog?
+                  false))
+(assert-str= "core publish outline effect tag"
+             ":publish/outline"
+             (pr-str (vector-ref (vector-ref (get sample-publish-outline-plan :effects '()) 0) 0)))
+(assert-true "core publish outline effect include archived"
+             (get (vector-ref (vector-ref (get sample-publish-outline-plan :effects '()) 0) 1)
+                  :include-archived?
+                  false))
+
+(assert-str= "core agent help output starts with ro agent"
+             "ro agent"
+             (first (str/split-lines ro-agent-agent-help-output)))
+(assert-true "core agent help plan ok"
+             (get sample-agent-help-plan :ok? false))
+(assert-str= "core agent prepare effect tag"
+             ":agent/prepare"
+             (pr-str (vector-ref (vector-ref (get sample-agent-prepare-plan :effects '()) 0) 0)))
+(assert-str= "core agent prepare effect session"
+             "codex"
+             (get (vector-ref (vector-ref (get sample-agent-prepare-plan :effects '()) 0) 1)
+                  :session
+                  ""))
+(assert-true "core agent launch guard is error"
+             (not (get sample-agent-launch-error-plan :ok? true)))
+(assert-str= "core agent launch guard message"
+             "ro agent launch requires --spawn-agent-runtime"
+             (get sample-agent-launch-error-plan :error ""))
+(assert-str= "core agent open effect tag"
+             ":agent/open"
+             (pr-str (vector-ref (vector-ref (get sample-agent-open-plan :effects '()) 0) 0)))
+(assert-true "core agent open effect print command"
+             (get (vector-ref (vector-ref (get sample-agent-open-plan :effects '()) 0) 1)
+                  :print-command?
+                  false))
+
 (assert-str= "core write actor id maps agent to user id"
              "human-1"
              (ro-workspace-current-write-actor-id sample-agent "actor-1"))
@@ -1585,10 +1657,16 @@
   (ro-sync-sync-main-plan '()))
 (define sync-status-plan
   (ro-sync-sync-main-plan '("status")))
+(define sync-status-help-plan
+  (ro-sync-sync-main-plan '("status" "--help")))
 (define sync-remotes-plan
   (ro-sync-sync-main-plan '("remotes")))
+(define sync-remotes-help-plan
+  (ro-sync-sync-main-plan '("remotes" "--help")))
 (define sync-pull-plan
   (ro-sync-sync-main-plan '("pull")))
+(define sync-reindex-help-plan
+  (ro-sync-sync-main-plan '("reindex" "--help")))
 
 (assert-str= "core sync main plan tag"
              "help"
@@ -1596,9 +1674,18 @@
 (assert-str= "core sync status plan tag"
              "status"
              (symbol->string (vector-ref sync-status-plan 0)))
+(assert-str= "core sync status help plan tag"
+             "status"
+             (symbol->string (vector-ref sync-status-help-plan 0)))
 (assert-str= "core sync remotes plan tag"
              "remotes"
              (symbol->string (vector-ref sync-remotes-plan 0)))
+(assert-str= "core sync remotes help plan tag"
+             "remotes"
+             (symbol->string (vector-ref sync-remotes-help-plan 0)))
+(assert-str= "core sync reindex help plan tag"
+             "reindex"
+             (symbol->string (vector-ref sync-reindex-help-plan 0)))
 (assert-str= "core sync unsupported plan tag"
              "error"
              (symbol->string (vector-ref sync-pull-plan 0)))
