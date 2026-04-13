@@ -1,7 +1,12 @@
 ;; Pure git-status helpers for the Ro CLI spike.
 
 (ns cluck.examples.ro.core.sync
-  (:require [cluck.string :as str]))
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (defn git-status-line-unmerged?
   [xy]
@@ -69,19 +74,22 @@
 
 (defn sync-main-plan
   [args]
-  (cond
-    (or (empty? args)
-        (help-flag? (first args)))
-    (vector 'help '())
+  (let [result (cli-dispatch (cli-top-level-command-spec "sync") args)]
+    (cond
+      (equal? (:status result) :help)
+      (vector 'help '())
 
-    (string=? (first args) "status")
-    (vector 'status (rest args))
+      (equal? (:status result) :error)
+      (vector 'error "unsupported sync subcommand" args)
 
-    (string=? (first args) "remotes")
-    (vector 'remotes (rest args))
+      (string=? (:name (:spec result)) "status")
+      (vector 'status '())
 
-    (string=? (first args) "reindex")
-    (vector 'reindex (rest args))
+      (string=? (:name (:spec result)) "remotes")
+      (vector 'remotes '())
 
-    :else
-    (vector 'error "unsupported sync subcommand" args)))
+      (string=? (:name (:spec result)) "reindex")
+      (vector 'reindex '())
+
+      :else
+      (vector 'error "unsupported sync subcommand" args))))

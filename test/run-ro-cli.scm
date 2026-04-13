@@ -14,6 +14,10 @@
   (handle-exceptions exn #t
     (create-directory (string-append root "../build")))
   (load (string-append root "../src/cluck-init.scm"))
+  (load-file (string-append root "../examples/cluck/ro/core/cli/cmdspec.clk"))
+  (load-file (string-append root "../examples/cluck/ro/core/cli/ro_spec.clk"))
+  (load-file (string-append root "../examples/cluck/ro/core/cli.clk"))
+  (load-file (string-append root "../examples/cluck/ro/core/cli/completions.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/commands.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/json.clk"))
   (load-file (string-append root "../examples/cluck/ro/core/docs.clk"))

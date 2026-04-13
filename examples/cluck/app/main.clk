@@ -4,10 +4,9 @@
   (:require [cluck.math :as math]))
 
 (defn report [xs]
-  (let [first-value (first xs)
-        math-square (ns-resolve 'math 'square)]
+  (let [first-value (first xs)]
     {:count (count xs)
      :sum (reduce + 0 xs)
      :sum-of-squares (math/sum-of-squares xs)
      :first-square (math/square first-value)
-     :alias-square (math-square first-value)}))
+     :alias-square (math/square first-value)}))

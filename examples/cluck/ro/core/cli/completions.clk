@@ -1,0 +1,59 @@
+;; Completion helpers for the local CLI library.
+
+(ns cluck.examples.ro.core.cli.completions
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(defn shell-completion-candidates
+  [args]
+  (cli/completion-candidates cli/prepared-root-command-spec args))
+
+(defn bash-completion-lines
+  [command-line docs-line]
+  (list
+   "_ro_complete() {"
+   "  local cur cmd"
+   "  cur=\"${COMP_WORDS[COMP_CWORD]}\""
+   "  cmd=\"${COMP_WORDS[1]}\""
+   ""
+   "  if [[ ${COMP_CWORD} -eq 1 ]]; then"
+   (string-append "    COMPREPLY=( $(compgen -W \"" command-line "\" -- \"$cur\") )")
+   "    return 0"
+   "  fi"
+   ""
+   "  case \"$cmd\" in"
+   (string-append "    docs) COMPREPLY=( $(compgen -W \"" docs-line "\" -- \"$cur\") ) ;;")
+   "    *) COMPREPLY=() ;;"
+   "  esac"
+   "}"
+   ""
+   "complete -F _ro_complete ro"))
+
+(defn zsh-completion-lines
+  [command-line docs-line]
+  (list
+   "#compdef ro"
+   ""
+   "_ro() {"
+   "  local -a top docs_topics"
+   (string-append "  top=(" command-line ")")
+   (string-append "  docs_topics=(" docs-line ")")
+   ""
+   "  if (( CURRENT == 2 )); then"
+   "    _describe 'command' top"
+   "    return"
+   "  fi"
+   ""
+   "  case ${words[2]} in"
+   "    docs) _describe 'docs topic' docs_topics ;;"
+   "  esac"
+   "}"
+   ""
+   "compdef _ro ro"))
+
+(defn fish-completion-lines
+  [command-line docs-line]
+  (list
+   "complete -c ro -f"
+   (string-append "complete -c ro -n '__fish_use_subcommand' -a '" command-line "'")
+   (string-append "complete -c ro -n '__fish_seen_subcommand_from docs' -a '" docs-line "'")))

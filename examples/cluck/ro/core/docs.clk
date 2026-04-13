@@ -3,7 +3,12 @@
 (ns cluck.examples.ro.core.docs
   (:require [cluck.io :as io]
             [cluck.string :as str]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (defn compact-json-step
   [text i len in-string? escaped? acc]
@@ -159,46 +164,30 @@
                         (vector (cons 'topic topic)
                                 (cons 'markdown markdown))))))))
 
-(defn help-flag?
-  [arg]
-  (or (string=? arg "help")
-      (string=? arg "--help")
-      (string=? arg "-h")))
-
-(defn any-help-arg?
-  [args]
-  (if (empty? args)
-      false
-      (let loop ((xs (seq args)))
-        (cond
-          (empty? xs) false
-          (help-flag? (car xs)) true
-          :else (loop (cdr xs))))))
-
 (defn docs-main-plan
   [args]
-  (cond
-    (empty? args)
-    (vector 'output '())
+  (let [spec (cli-top-level-command-spec "docs")
+        result (cli-dispatch spec args)]
+    (cond
+      (equal? (:status result) :help)
+      (vector 'help '())
 
-    (help-flag? (first args))
-    (vector 'help '())
-
-    (any-help-arg? (rest args))
-    (vector 'help '())
-
-    :else
-    (let loop ((xs (rest args))
-               (raw? false))
+      (equal? (:status result) :error)
       (cond
-        (empty? xs)
-        (vector 'topic (first args) raw?)
-
-        (string=? (first xs) "--raw")
-        (loop (rest xs) true)
-
-        (str/starts-with? (first xs) "-")
+        (equal? (:reason result) :unknown-flag)
         (vector 'unsupported-flag '())
 
         :else
-        (vector 'unexpected '())))))
+        (vector 'unexpected '()))
+
+      (empty? (:positionals result))
+      (vector 'output '())
+
+      :else
+      (let [raw? (if (and (contains? (:flags result) :raw)
+                          (equal? (get (:flags result) :raw) true))
+                   true
+                   #f)]
+        (vector 'topic
+                (first (:positionals result))
+                raw?)))))

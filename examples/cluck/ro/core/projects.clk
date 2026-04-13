@@ -3,7 +3,12 @@
 (ns cluck.examples.ro.core.projects
   (:require [cluck.io :as io]
             [cluck.string :as str]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (defn json-key->text
   [key]
@@ -121,87 +126,70 @@
 
 (defn projects-create-plan
   [args]
-  (let loop ((xs args)
-             (name "")
-             (use? false))
+  (let [result (cli-dispatch (cli-top-level-command-spec "projects")
+                             (cons "create" args))]
     (cond
-      (empty? xs)
-      (if (string=? name "")
-          {:ok? false
-           :error "ro projects create expects --name"
-           :command args}
-          {:ok? true
-           :effects [[:projects/create {:name name
-                                        :use? use?}]]})
-
-      (help-flag? (first xs))
+      (equal? (:status result) :help)
       {:ok? true
        :effects [[:projects/help {}]]}
 
-      (string=? (first xs) "--use")
-      (loop (rest xs) name true)
-
-      (string=? (first xs) "--name")
+      (equal? (:status result) :error)
       (cond
-        (empty? (rest xs))
+        (equal? (:reason result) :missing-required-flag)
+        {:ok? false
+         :error "ro projects create expects --name"
+         :command args}
+
+        (equal? (:reason result) :missing-flag-value)
         {:ok? false
          :error "missing project name"
          :command args}
 
+        (equal? (:reason result) :unknown-flag)
+        {:ok? false
+         :error "unsupported projects flag"
+         :command args}
+
         :else
-        (loop (rest (rest xs))
-              (first (rest xs))
-              use?))
-
-      (str/starts-with? (first xs) "--name=")
-      (loop (rest xs)
-            (substring (first xs) 7 (string-length (first xs)))
-            use?)
-
-      (str/starts-with? (first xs) "-")
-      {:ok? false
-       :error "unsupported projects flag"
-       :command args}
+        {:ok? false
+         :error "unexpected projects create argument"
+         :command args})
 
       :else
-      {:ok? false
-       :error "unexpected projects create argument"
-       :command args})))
+      {:ok? true
+       :effects [[:projects/create {:name (get (:flags result) :name "")
+                                    :use? (get (:flags result) :use false)}]]})))
 
 (defn projects-archive-plan
   [args]
-  (let loop ((xs args)
-             (project-id "")
-             (unarchive? false))
+  (let [result (cli-dispatch (cli-top-level-command-spec "projects")
+                             (cons "archive" args))]
     (cond
-      (empty? xs)
-      (if (string=? project-id "")
-          {:ok? false
-           :error "ro projects archive expects <project-id>"
-           :command args}
-          {:ok? true
-           :effects [[:projects/archive {:project-id project-id
-                                         :archived (not unarchive?)}]]})
-
-      (help-flag? (first xs))
+      (equal? (:status result) :help)
       {:ok? true
        :effects [[:projects/help {}]]}
 
-      (string=? (first xs) "--unarchive")
-      (loop (rest xs) project-id true)
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :missing-argument)
+        {:ok? false
+         :error "ro projects archive expects <project-id>"
+         :command args}
 
-      (str/starts-with? (first xs) "-")
-      {:ok? false
-       :error "unsupported projects flag"
-       :command args}
+        (equal? (:reason result) :unknown-flag)
+        {:ok? false
+         :error "unsupported projects flag"
+         :command args}
 
-      (string=? project-id "")
-      (loop (rest xs) (first xs) unarchive?)
+        :else
+        {:ok? false
+         :error "unexpected projects archive argument"
+         :command args})
 
       :else
-      {:ok? false
-       :error "unexpected projects archive argument"
-       :command args})))
+      {:ok? true
+       :effects [[:projects/archive {:project-id (get (:arguments result) :project-id "")
+                                     :archived (not (get (:flags result) :unarchive false))}]]})))
 
 (defn projects-use-plan
   [args]

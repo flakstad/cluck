@@ -2,7 +2,12 @@
 
 (ns cluck.examples.ro.core.doctor
   (:require [cluck.string :as str]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (defn json-key->text
   [key]
@@ -319,59 +324,53 @@
 
 (defn doctor-main-plan
   [args]
-  (let loop ((xs args)
-             (subcommand "")
-             (fail? false)
-             (write? false)
-             (force? false))
-    (if (empty? xs)
-        (cond
-          (or (string=? subcommand "")
-              (string=? subcommand "report"))
-          (vector 'report fail? write? force?)
+  (let [result (cli-dispatch (cli-top-level-command-spec "doctor") args)]
+    (cond
+      (equal? (:status result) :help)
+      (vector 'help '())
 
-          (string=? subcommand "summary")
-          (vector 'summary fail? write? force?)
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :unknown-command)
+        (vector 'error "unsupported doctor subcommand" args)
 
-          (string=? subcommand "dedupe")
-          (vector 'dedupe fail? write? force?)
+        (equal? (:reason result) :unknown-flag)
+        (vector 'error "unsupported doctor flag" args)
 
-          :else
-          (vector 'error "unsupported doctor subcommand" args))
-        (let ((arg (first xs)))
-          (cond
-            (help-flag? arg)
-            (vector 'help '())
+        :else
+        (vector 'error "unexpected doctor argument" args))
 
-            (string=? arg "--fail")
-            (loop (rest xs) subcommand true write? force?)
+      (string=? (:name (:spec result)) "doctor")
+      (if (get (:flags result) :summary false)
+          (vector 'summary
+                  (get (:flags result) :fail false)
+                  false
+                  false)
+          (vector 'report
+                  (get (:flags result) :fail false)
+                  false
+                  false))
 
-            (string=? arg "--write")
-            (loop (rest xs) subcommand fail? true force?)
+      (string=? (:name (:spec result)) "report")
+      (vector 'report
+              (get (:flags result) :fail false)
+              false
+              false)
 
-            (string=? arg "--force")
-            (loop (rest xs) subcommand fail? write? true)
+      (string=? (:name (:spec result)) "summary")
+      (vector 'summary
+              (get (:flags result) :fail false)
+              false
+              false)
 
-            (string=? arg "--summary")
-            (loop (rest xs) "summary" fail? write? force?)
+      (string=? (:name (:spec result)) "dedupe")
+      (vector 'dedupe
+              (get (:flags result) :fail false)
+              (get (:flags result) :write false)
+              (get (:flags result) :force false))
 
-            (string=? arg "summary")
-            (loop (rest xs) "summary" fail? write? force?)
-
-            (string=? arg "dedupe")
-            (loop (rest xs) "dedupe" fail? write? force?)
-
-            (string=? arg "report")
-            (loop (rest xs) "report" fail? write? force?)
-
-            (str/starts-with? arg "-")
-            (vector 'error "unsupported doctor flag" args)
-
-            (string=? subcommand "")
-            (loop (rest xs) arg fail? write? force?)
-
-            :else
-            (vector 'error "unexpected doctor argument" args))))))
+      :else
+      (vector 'error "unsupported doctor subcommand" args))))
 
 (defn doctor-dedupe-event-upsert
   [event-list event-id line]

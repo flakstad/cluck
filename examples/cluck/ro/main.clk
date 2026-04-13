@@ -3,10 +3,8 @@
 ;; `run.scm` and `run-standalone.scm` load `src/app.clk` before this namespace
 ;; is invoked.
 
-(ns cluck.examples.ro)
+(ns cluck.examples.ro
+  (:require [cluck.examples.ro.app :as app]))
 
 (defn main [args]
-  (let [app-main (ns-resolve 'cluck.examples.ro.app 'main)]
-    (if app-main
-        (app-main args)
-        (error "cluck.examples.ro.app is not loaded"))))
+  (app/main args))

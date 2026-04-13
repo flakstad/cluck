@@ -30,6 +30,18 @@
 (define json/json-read json:json-read)
 (define json/json-write json:json-write)
 
+(include "examples/cluck/ro/core/cli/cmdspec.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.cli.cmdspec #t)
+
+(include "examples/cluck/ro/core/cli/ro_spec.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.cli.ro-spec #t)
+
+    (include "examples/cluck/ro/core/cli.clk")
+    (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.cli #t)
+
+    (include "examples/cluck/ro/core/cli/completions.clk")
+    (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.cli.completions #t)
+
 (include "examples/cluck/ro/core/commands.clk")
 (hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.core.commands #t)
 

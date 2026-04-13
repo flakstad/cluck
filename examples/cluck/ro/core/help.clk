@@ -3,7 +3,10 @@
 (ns cluck.examples.ro.core.help
   (:require [cluck.io :as io]
             [cluck.string :as str]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.commands :as commands]
+            [cluck.examples.ro.core.cli :as cli]
+            [cluck.examples.ro.core.cli.completions :as cli-completions]))
 
 (defn compact-json-step
   [text i len in-string? escaped? acc]
@@ -43,11 +46,27 @@
        (json/json-write value port))))
    "\n"))
 
-(def commands-command-root-help-lines
-  (ns-resolve 'cluck.examples.ro.core.commands 'command-root-help-lines))
+(def commands-command-root-help-lines commands/command-root-help-lines)
 
-(def commands-top-commands
-  (ns-resolve 'cluck.examples.ro.core.commands 'command-top-commands))
+(def commands-top-commands commands/command-top-commands)
+
+(def cli-docs-topics cli/docs-topics)
+
+(def cli-command-help-lines cli/command-help-lines)
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-render-command-help cli/render-command-help)
+
+(def cli-completion-command-line cli/completion-command-line)
+
+(def cli-docs-topics-line cli/docs-topics-line)
+
+(def cli-bash-completion-lines cli-completions/bash-completion-lines)
+
+(def cli-zsh-completion-lines cli-completions/zsh-completion-lines)
+
+(def cli-fish-completion-lines cli-completions/fish-completion-lines)
 
 (def root-help-lines
   (append
@@ -72,13 +91,14 @@
   (string-append root-help-text "\n"))
 
 (def docs-help-lines
-  (list
-   "ro docs"
-   ""
-   "usage:"
-   "  ro docs"
-   "  ro docs <topic>"
-   "  ro docs <topic> --raw"))
+  (or (cli-command-help-lines "docs")
+      (list
+       "ro docs"
+       ""
+       "usage:"
+       "  ro docs"
+       "  ro docs <topic>"
+       "  ro docs <topic> --raw")))
 
 (def docs-help-text
   (str/join "\n" docs-help-lines))
@@ -87,14 +107,7 @@
   (string-append docs-help-text "\n"))
 
 (def docs-topics
-  (list "cli"
-        "getting-started"
-        "output-contract"
-        "storage"
-        "identity-ownership"
-        "agent-runtimes"
-        "sync"
-        "doctor-reindex"))
+  cli-docs-topics)
 
 (def docs-output
   (json-write-output
@@ -102,15 +115,16 @@
                  (vector (cons 'topics docs-topics))))))
 
 (def projects-help-lines
-  (list
-   "ro projects"
-   ""
-   "usage:"
-   "  ro projects create --name <name> [--use]"
-   "  ro projects list"
-   "  ro projects archive <project-id> [--unarchive]"
-   "  ro projects use <project-id>"
-   "  ro projects current"))
+  (or (cli-command-help-lines "projects")
+      (list
+       "ro projects"
+       ""
+       "usage:"
+       "  ro projects create --name <name> [--use]"
+       "  ro projects list"
+       "  ro projects archive <project-id> [--unarchive]"
+       "  ro projects use <project-id>"
+       "  ro projects current")))
 
 (def projects-help-text
   (str/join "\n" projects-help-lines))
@@ -122,10 +136,10 @@
   commands-top-commands)
 
 (def completion-top-command-line
-  (str/join " " completion-top-commands))
+  (cli-completion-command-line))
 
 (def completion-doc-topics-line
-  (str/join " " docs-topics))
+  (cli-docs-topics-line))
 
 (def completion-help-lines
   (list
@@ -141,67 +155,33 @@
   (string-append completion-help-text "\n"))
 
 (def completion-bash-lines
-  (list
-   "_ro_complete() {"
-   "  local cur cmd"
-   "  cur=\"${COMP_WORDS[COMP_CWORD]}\""
-   "  cmd=\"${COMP_WORDS[1]}\""
-   ""
-   "  if [[ ${COMP_CWORD} -eq 1 ]]; then"
-   (string-append "    COMPREPLY=( $(compgen -W \"" completion-top-command-line "\" -- \"$cur\") )")
-   "    return 0"
-   "  fi"
-   ""
-   "  case \"$cmd\" in"
-   (string-append "    docs) COMPREPLY=( $(compgen -W \"" completion-doc-topics-line "\" -- \"$cur\") ) ;;")
-   "    *) COMPREPLY=() ;;"
-   "  esac"
-   "}"
-   ""
-   "complete -F _ro_complete ro"))
+  (cli-bash-completion-lines completion-top-command-line
+                             completion-doc-topics-line))
 
 (def completion-bash-output
   (string-append (str/join "\n" completion-bash-lines) "\n"))
 
 (def completion-zsh-lines
-  (list
-   "#compdef ro"
-   ""
-   "_ro() {"
-   "  local -a top docs_topics"
-   (string-append "  top=(" completion-top-command-line ")")
-   (string-append "  docs_topics=(" completion-doc-topics-line ")")
-   ""
-   "  if (( CURRENT == 2 )); then"
-   "    _describe 'command' top"
-   "    return"
-   "  fi"
-   ""
-   "  case ${words[2]} in"
-   "    docs) _describe 'docs topic' docs_topics ;;"
-   "  esac"
-   "}"
-   ""
-   "compdef _ro ro"))
+  (cli-zsh-completion-lines completion-top-command-line
+                            completion-doc-topics-line))
 
 (def completion-zsh-output
   (string-append (str/join "\n" completion-zsh-lines) "\n"))
 
 (def completion-fish-lines
-  (list
-   "complete -c ro -f"
-   (string-append "complete -c ro -n '__fish_use_subcommand' -a '" completion-top-command-line "'")
-   (string-append "complete -c ro -n '__fish_seen_subcommand_from docs' -a '" completion-doc-topics-line "'")))
+  (cli-fish-completion-lines completion-top-command-line
+                             completion-doc-topics-line))
 
 (def completion-fish-output
   (string-append (str/join "\n" completion-fish-lines) "\n"))
 
 (def events-help-lines
-  (list
-   "ro events"
-   ""
-   "usage:"
-   "  ro events list [--limit N]"))
+  (or (cli-command-help-lines "events")
+      (list
+       "ro events"
+       ""
+       "usage:"
+       "  ro events list [--limit N]")))
 
 (def events-help-text
   (str/join "\n" events-help-lines))
@@ -210,15 +190,16 @@
   (string-append events-help-text "\n"))
 
 (def workspace-help-lines
-  (list
-   "ro workspace"
-   ""
-   "usage:"
-   "  ro workspace current"
-   "  ro workspace list"
-   "  ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo"
-   "  ro workspace init <name> [--dir <path>] [--use]           blank workspace"
-   "  ro workspace use <name>"))
+  (or (cli-command-help-lines "workspace")
+      (list
+       "ro workspace"
+       ""
+       "usage:"
+       "  ro workspace current"
+       "  ro workspace list"
+       "  ro workspace add <name> --dir <path> [--kind git] [--use]   existing git repo"
+       "  ro workspace init <name> [--dir <path>] [--use]           blank workspace"
+       "  ro workspace use <name>")))
 
 (def workspace-help-text
   (str/join "\n" workspace-help-lines))
@@ -227,15 +208,19 @@
   (string-append workspace-help-text "\n"))
 
 (def identity-help-lines
-  (list
-   "ro identity"
-   ""
-   "usage:"
-   "  ro identity list"
-   "  ro identity whoami"
-   "  ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]"
-   "  ro identity use <actor-id>"
-   "  ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]"))
+  (or (cli-command-help-lines "identity")
+      (let [spec (cli-top-level-command-spec "identity")]
+        (and spec
+             (cli-render-command-help spec)))
+      (list
+       "ro identity"
+       ""
+       "usage:"
+       "  ro identity list"
+       "  ro identity whoami"
+       "  ro identity create --name <name> [--kind human|agent] [--user <human-actor-id>] [--use]"
+       "  ro identity use <actor-id>"
+       "  ro identity agent ensure [--session <key>] [--name <name>] [--user <human-actor-id>] [--use]")))
 
 (def identity-help-text
   (str/join "\n" identity-help-lines))
@@ -244,7 +229,8 @@
   (string-append identity-help-text "\n"))
 
 (def status-help-lines
-  (list "usage: ro status"))
+  (or (cli-command-help-lines "status")
+      (list "usage: ro status")))
 
 (def status-help-text
   (str/join "\n" status-help-lines))
@@ -253,13 +239,14 @@
   (string-append status-help-text "\n"))
 
 (def doctor-help-lines
-  (list
-   "ro doctor"
-   ""
-   "usage:"
-   "  ro doctor [--fail]"
-   "  ro doctor summary [--fail]"
-   "  ro doctor dedupe [--write --force] [--fail]"))
+  (or (cli-command-help-lines "doctor")
+      (list
+       "ro doctor"
+       ""
+       "usage:"
+       "  ro doctor [--fail]"
+       "  ro doctor summary [--fail]"
+       "  ro doctor dedupe [--write --force] [--fail]")))
 
 (def doctor-help-text
   (str/join "\n" doctor-help-lines))
@@ -268,11 +255,12 @@
   (string-append doctor-help-text "\n"))
 
 (def reindex-help-lines
-  (list
-   "ro reindex"
-   ""
-   "usage:"
-   "  ro reindex"))
+  (or (cli-command-help-lines "reindex")
+      (list
+       "ro reindex"
+       ""
+       "usage:"
+       "  ro reindex")))
 
 (def reindex-help-text
   (str/join "\n" reindex-help-lines))
@@ -281,17 +269,18 @@
   (string-append reindex-help-text "\n"))
 
 (def sync-help-lines
-  (list
-   "ro sync"
-   ""
-   "usage:"
-   "  ro sync status"
-   "  ro sync remotes"
-   "  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]"
-   "  ro sync pull"
-   "  ro sync reindex"
-   "  ro sync push [--message <msg>] [--pull=false]"
-   "  ro sync resolve"))
+  (or (cli-command-help-lines "sync")
+      (list
+       "ro sync"
+       ""
+       "usage:"
+       "  ro sync status"
+       "  ro sync remotes"
+       "  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]"
+       "  ro sync pull"
+       "  ro sync reindex"
+       "  ro sync push [--message <msg>] [--pull=false]"
+       "  ro sync resolve")))
 
 (def sync-help-text
   (str/join "\n" sync-help-lines))

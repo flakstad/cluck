@@ -3,19 +3,22 @@
 (ns cluck.examples.ro.core.items
   (:require [cluck.io :as io]
             [cluck.string :as str]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.commands :as commands]
+            [cluck.examples.ro.core.json :as ro-json]
+            [cluck.examples.ro.core.cli :as cli]))
 
-(def command-entry-for-name
-  (ns-resolve 'cluck.examples.ro.core.commands 'command-entry-for-name))
+(def command-entry-for-name commands/command-entry-for-name)
 
-(def command-registry-entry-help-lines
-  (ns-resolve 'cluck.examples.ro.core.commands 'command-registry-entry-help-lines))
+(def command-registry-entry-help-lines commands/command-registry-entry-help-lines)
 
-(def json-write-output
-  (ns-resolve 'cluck.examples.ro.core.json 'json-write-output))
+(def json-write-output ro-json/json-write-output)
 
-(def json-field-value
-  (ns-resolve 'cluck.examples.ro.core.json 'json-field-value))
+(def json-field-value ro-json/json-field-value)
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (defn help-flag?
   [arg]
@@ -139,208 +142,168 @@
 
 (defn items-show-plan
   [args]
-  (cond
-    (empty? args)
-    {:ok? false
-     :error "ro items show expects <item-id>"
-     :command args}
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "show" args))]
+    (cond
+      (equal? (:status result) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
 
-    (not (empty? (rest args)))
-    {:ok? false
-     :error "unexpected items show argument"
-     :command args}
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :missing-argument)
+        {:ok? false
+         :error "ro items show expects <item-id>"
+         :command args}
 
-    :else
-    {:ok? true
-     :effects [[:items/show {:item-id (first args)}]]}))
+        :else
+        {:ok? false
+         :error "unexpected items show argument"
+         :command args})
+
+      :else
+      {:ok? true
+       :effects [[:items/show {:item-id (get (:arguments result) :item-id "")}]]})))
 
 (defn items-list-plan
   [args]
-  (let loop ((xs args)
-             (project-id "")
-             (outline-id "")
-             (status ""))
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "list" args))]
     (cond
-      (empty? xs)
-      {:ok? true
-       :effects [[:items/list {:project-id project-id
-                               :outline-id outline-id
-                               :status status}]]}
-
-      (any-help-arg? xs)
+      (equal? (:status result) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (string=? (first xs) "--project")
-      (if (empty? (rest xs))
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :missing-flag-value)
+        (cond
+          (and (not (empty? args))
+               (string=? (first args) "--project"))
           {:ok? false
            :error "missing items project id"
            :command args}
-          (loop (cddr xs)
-                (first (rest xs))
-                outline-id
-                status))
 
-      (str/starts-with? (first xs) "--project=")
-      (loop (rest xs)
-            (substring (first xs) 10 (string-length (first xs)))
-            outline-id
-            status)
-
-      (string=? (first xs) "--outline")
-      (if (empty? (rest xs))
+          (and (not (empty? args))
+               (string=? (first args) "--outline"))
           {:ok? false
            :error "missing items outline id"
            :command args}
-          (loop (cddr xs)
-                project-id
-                (first (rest xs))
-                status))
 
-      (str/starts-with? (first xs) "--outline=")
-      (loop (rest xs)
-            project-id
-            (substring (first xs) 10 (string-length (first xs)))
-            status)
-
-      (string=? (first xs) "--status")
-      (if (empty? (rest xs))
+          :else
           {:ok? false
            :error "missing items status"
-           :command args}
-          (loop (cddr xs)
-                project-id
-                outline-id
-                (first (rest xs))))
+           :command args})
 
-      (str/starts-with? (first xs) "--status=")
-      (loop (rest xs)
-            project-id
-            outline-id
-            (substring (first xs) 9 (string-length (first xs))))
+        (equal? (:reason result) :unknown-flag)
+        {:ok? false
+         :error "unsupported items list flag"
+         :command args}
 
-      (str/starts-with? (first xs) "-")
-      {:ok? false
-       :error "unsupported items list flag"
-       :command args}
+        :else
+        {:ok? false
+         :error "unexpected items list argument"
+         :command args})
 
       :else
-      {:ok? false
-       :error "unexpected items list argument"
-       :command args})))
+      {:ok? true
+       :effects [[:items/list {:project-id (get (:flags result) :project "")
+                               :outline-id (get (:flags result) :outline "")
+                               :status (get (:flags result) :status "")}]]})))
 
 (defn items-ready-plan
   [args]
-  (cond
-    (any-help-arg? args)
-    {:ok? true
-     :effects [[:items/help {}]]}
-
-    (empty? args)
-    {:ok? true
-     :effects [[:items/ready {}]]}
-
-    :else
-    {:ok? false
-     :error "unexpected items ready argument"
-     :command args}))
-
-(defn items-events-plan
-  [args]
-  (let [item-id (if (empty? args)
-                  ""
-                  (first args))
-        more (if (empty? args)
-               '()
-               (rest args))]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "ready" args))]
     (cond
-      (string=? item-id "")
-      {:ok? false
-       :error "ro items events expects <item-id>"
-       :command args}
-
-      (any-help-arg? more)
+      (equal? (:status result) :help)
       {:ok? true
        :effects [[:items/help {}]]}
 
-      (empty? more)
-      {:ok? true
-       :effects [[:items/events {:item-id item-id
-                                 :limit 0}]]}
-
-      (string=? (first more) "--limit")
-      (if (empty? (rest more))
-          {:ok? false
-           :error "ro items events expects a value after --limit"
-           :command args}
-          (let [next-limit (parse-long (first (rest more)))]
-            (if (< next-limit 0)
-                {:ok? false
-                 :error "ro items events expects a non-negative --limit"
-                 :command args}
-                (if (empty? (cddr more))
-                    {:ok? true
-                     :effects [[:items/events {:item-id item-id
-                                               :limit next-limit}]]}
-                    {:ok? false
-                     :error "unexpected items events argument"
-                     :command args}))))
-
-      (str/starts-with? (first more) "--limit=")
-      (let [next-limit (parse-long (substring (first more) 8 (string-length (first more))))]
-        (if (< next-limit 0)
-            {:ok? false
-             :error "ro items events expects a non-negative --limit"
-             :command args}
-            (if (empty? (rest more))
-                {:ok? true
-                 :effects [[:items/events {:item-id item-id
-                                           :limit next-limit}]]}
-                {:ok? false
-                 :error "unexpected items events argument"
-                 :command args})))
-
-      (str/starts-with? (first more) "-")
+      (equal? (:status result) :error)
       {:ok? false
-       :error "unsupported items events flag"
+       :error "unexpected items ready argument"
        :command args}
 
       :else
-      {:ok? false
-       :error "unexpected items events argument"
-       :command args})))
+      {:ok? true
+       :effects [[:items/ready {}]]})))
+
+(defn items-events-plan
+  [args]
+  (let [result (cli-dispatch (cli-top-level-command-spec "items")
+                             (cons "events" args))]
+    (cond
+      (equal? (:status result) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
+
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :missing-argument)
+        {:ok? false
+         :error "ro items events expects <item-id>"
+         :command args}
+
+        (equal? (:reason result) :missing-flag-value)
+        {:ok? false
+         :error "ro items events expects a value after --limit"
+         :command args}
+
+        (equal? (:reason result) :invalid-flag-value)
+        {:ok? false
+         :error "ro items events expects a non-negative --limit"
+         :command args}
+
+        (equal? (:reason result) :unknown-flag)
+        {:ok? false
+         :error "unsupported items events flag"
+         :command args}
+
+        :else
+        {:ok? false
+         :error "unexpected items events argument"
+         :command args})
+
+      :else
+      (let [limit (get (:flags result) :limit 0)]
+        (if (< limit 0)
+            {:ok? false
+             :error "ro items events expects a non-negative --limit"
+             :command args}
+            {:ok? true
+             :effects [[:items/events {:item-id (get (:arguments result) :item-id "")
+                                       :limit limit}]]})))))
 
 (defn items-main-plan
   [args]
-  (cond
-    (empty? args)
-    {:ok? true
-     :effects [[:items/help {}]]}
+  (let [result (cli-dispatch (cli-top-level-command-spec "items") args)]
+    (cond
+      (equal? (:status result) :help)
+      {:ok? true
+       :effects [[:items/help {}]]}
 
-    (help-flag? (first args))
-    {:ok? true
-     :effects [[:items/help {}]]}
+      (equal? (:status result) :error)
+      {:ok? false
+       :error "ro items commands are not implemented yet"
+       :command args}
 
-    (string=? (first args) "help")
-    {:ok? true
-     :effects [[:items/help {}]]}
+      (string=? (:name (:spec result)) "show")
+      (items-show-plan (rest args))
 
-    (string=? (first args) "show")
-    (items-show-plan (rest args))
+      (string=? (:name (:spec result)) "list")
+      (items-list-plan (rest args))
 
-    (string=? (first args) "list")
-    (items-list-plan (rest args))
+      (string=? (:name (:spec result)) "ready")
+      (items-ready-plan (rest args))
 
-    (string=? (first args) "ready")
-    (items-ready-plan (rest args))
+      (string=? (:name (:spec result)) "events")
+      (items-events-plan (rest args))
 
-    (string=? (first args) "events")
-    (items-events-plan (rest args))
-
-    :else
-    {:ok? false
-     :error "ro items commands are not implemented yet"
-     :command args}))
+      :else
+      {:ok? false
+       :error "ro items commands are not implemented yet"
+       :command args})))
 
 (defn item-main-plan
   [args]

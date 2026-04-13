@@ -1,199 +1,52 @@
-;; Pure top-level command registry for the Ro CLI spike.
-;;
-;; This namespace is the single source of truth for the top-level command
-;; surface that feeds root help, completion, and the router.
+;; Compatibility layer over the shared declarative CLI surface.
 
-(ns cluck.examples.ro.core.commands)
+(ns cluck.examples.ro.core.commands
+  (:require [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-command-specs cli/command-specs)
+
+(def cli-command-spec-for-name cli/command-spec-for-name)
+
+(def cli-command-spec-name cli/command-spec-name)
+
+(def cli-command-spec-kind cli/command-spec-kind)
+
+(def cli-command-spec-implemented? cli/command-spec-implemented?)
+
+(def cli-command-spec-completion? cli/command-spec-completion?)
+
+(def cli-command-spec-help-lines cli/command-spec-help-lines)
+
+(def cli-root-help-command-lines cli/root-help-command-lines)
+
+(def cli-top-command-names cli/top-command-names)
 
 (def command-registry
-  (list
-   (vector "help"
-           'help
-           true
-           true
-           (list "  ro help                   # show this help"))
-   (vector "docs"
-           'docs
-           true
-           true
-           (list "  ro docs [topic]"))
-   (vector "completion"
-           'completion
-           true
-           true
-           (list "  ro completion <bash|zsh|fish>"))
-   (vector "init"
-           'init
-           true
-           true
-           (list "  ro init"))
-   (vector "identity"
-           'identity
-           true
-           true
-           (list "  ro identity ..."))
-   (vector "doctor"
-           'doctor
-           true
-           true
-           (list "  ro doctor [--fail]"))
-   (vector "reindex"
-           'reindex
-           true
-           true
-           (list "  ro reindex"))
-   (vector "events"
-           'events
-           true
-           false
-           (list "  ro events list [--limit N]"))
-   (vector "agent"
-           'agent
-           false
-           true
-           (list "  ro agent start <item-id>"))
-   (vector "status"
-           'status
-           true
-           true
-           (list "  ro status                 # workspace status"))
-   (vector "sync"
-           'sync
-           true
-           true
-           (list "  ro sync status"
-                 "  ro sync remotes"
-                 "  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]"
-                 "  ro sync pull"
-                 "  ro sync reindex"
-                 "  ro sync push [--message <msg>] [--pull=false]"
-                 "  ro sync resolve"))
-   (vector "workspace"
-           'workspace
-           true
-           true
-           (list "  ro workspace current"
-                 "  ro workspace list"))
-   (vector "projects"
-           'projects
-           true
-           false
-           (list "  ro projects create --name <name> [--use]"
-                 "  ro projects list"
-                 "  ro projects archive <project-id> [--unarchive]"
-                 "  ro projects use <project-id>"
-                 "  ro projects current"))
-   (vector "outlines"
-           'outlines
-           true
-           false
-           (list "  ro outlines create --project <project-id> --name <name>"
-                 "  ro outlines list [--project <project-id>]"
-                 "  ro outlines show <outline-id>"
-                 "  ro outlines archive <outline-id> [--unarchive]"
-                 "  ro outlines status ..."))
-   (vector "items"
-           'items
-           true
-           true
-           (list "  ro items create --title <title> [--parent <item-id> | --outline <outline-id> | --project <project-id>]"
-                 "  ro items copy <item-id> [--project <project-id>] [--outline <outline-id>] [--parent <item-id>|none]"
-                 "  ro items show <item-id>"
-                 "  ro items list [--project <project-id>] [--outline <outline-id>] [--status <status>]"
-                 "  ro items set-status <item-id> --status <status> [--note \"...\"]"
-                 "  ro items set-assign <item-id> [--actor <actor-id> | --clear]"
-                 "  ro items claim <item-id> [--take-assigned]"
-                 "  ro items events <item-id> [--limit N]"
-                 "  ro items archive <item-id>"
-                 "  ro items ready"))
-   (vector "tasks"
-           'tasks
-           true
-           true
-           (list "  ro tasks                  # alias for item commands"))
-   (vector "capture"
-           'capture
-           false
-           true
-           (list "  ro capture [--hotkey] [--no-output] [--exit-0-on-cancel]"))
-   (vector "comments"
-           'comments
-           false
-           true
-           (list "  ro comments list <item-id> [--limit N] [--offset N]"
-                 "  ro comments add <item-id> --body \"...\" [--reply-to <comment-id>] [--discuss]"))
-   (vector "discuss"
-           'discuss
-           false
-           false
-           (list "  ro discuss list <item-id> [--state open|resolved|all] [--limit N] [--offset N]"
-                 "  ro discuss show <discussion-id>"
-                 "  ro discuss start <item-id> (--body \"...\" | --comment <comment-id>)"
-                 "  ro discuss promote <item-id> --comment <comment-id>"
-                 "  ro discuss resolve <discussion-id> [--body \"...\"]"
-                 "  ro discuss reopen <discussion-id> [--body \"...\"]"))
-   (vector "deps"
-           'deps
-           false
-           true
-           (list "  ro deps add <item-id> --blocks <item-id> | --related <item-id>"
-                 "  ro deps list [<item-id>]"
-                 "  ro deps tree <item-id>"
-                 "  ro deps cycles"))
-   (vector "attachments"
-           'attachments
-           false
-           true
-           (list "  ro attachments add <entity-id> <path> [--kind item|comment] [--title \"...\"] [--alt \"...\"] [--max-mb N] [--link|--copy]"
-                 "  ro attachments list <entity-id>"
-                 "  ro attachments open <attachment-id> [--print-path]"
-                 "  ro attachments export <attachment-id> <dest-path>"))
-   (vector "worklog"
-           'worklog
-           true
-           true
-           (list "  ro worklog list <item-id> [--limit N] [--offset N]"
-                 "  ro worklog add <item-id> --body \"...\""))
-   (vector "clock"
-           'clock
-           false
-           false
-           (list "  ro clock status"
-                 "  ro clock in <item-id>"
-                 "  ro clock out [--body \"...\"]"))
-   (vector "agenda"
-           'agenda
-           false
-           false
-           (list "  ro agenda"))))
+  cli-command-specs)
 
 (defn command-registry-entry-name
   [entry]
-  (vector-ref entry 0))
+  (cli-command-spec-name entry))
 
 (defn command-registry-entry-kind
   [entry]
-  (vector-ref entry 1))
+  (cli-command-spec-kind entry))
 
 (defn command-registry-entry-implemented?
   [entry]
-  (vector-ref entry 2))
+  (cli-command-spec-implemented? entry))
 
 (defn command-registry-entry-completion?
   [entry]
-  (vector-ref entry 3))
+  (cli-command-spec-completion? entry))
 
 (defn command-registry-entry-help-lines
   [entry]
-  (vector-ref entry 4))
+  (cli-command-spec-help-lines entry))
 
 (defn command-entry-for-name
   [name]
-  (let loop ((xs command-registry))
-    (cond
-      (empty? xs) false
-      (string=? (command-registry-entry-name (first xs)) name) (first xs)
-      :else (loop (rest xs)))))
+  (cli-command-spec-for-name name))
 
 (defn command-kind-for-name
   [name]
@@ -218,17 +71,7 @@
       :else (loop (rest xs)))))
 
 (def command-root-help-lines
-  (let ((lines (map command-registry-entry-help-lines command-registry)))
-    (if (empty? lines)
-        '()
-        (apply append lines))))
+  (cli-root-help-command-lines))
 
 (def command-top-commands
-  (let ((names (let loop ((xs command-registry) (acc '()))
-                 (if (empty? xs)
-                     (reverse acc)
-                     (let ((entry (first xs)))
-                       (if (command-registry-entry-completion? entry)
-                           (loop (rest xs) (cons (command-registry-entry-name entry) acc))
-                           (loop (rest xs) acc)))))))
-    (cluck-sort-list names string<?)))
+  (cli-top-command-names))

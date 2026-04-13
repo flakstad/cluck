@@ -3,7 +3,12 @@
 (ns cluck.examples.ro.core.workspace
   (:require [cluck.io :as io]
             [cluck.string :as str]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (defn json-key->text
   [key]
@@ -224,15 +229,16 @@
 
 (defn status-main-plan
   [args]
-  (cond
-    (empty? args)
-    (vector 'status '())
+  (let [result (cli-dispatch (cli-top-level-command-spec "status") args)]
+    (cond
+      (equal? (:status result) :help)
+      (vector 'help '())
 
-    (any-help-arg? args)
-    (vector 'help '())
+      (equal? (:status result) :error)
+      (vector 'error "ro status expects no arguments" args)
 
-    :else
-    (vector 'error "ro status expects no arguments" args)))
+      :else
+      (vector 'status '()))))
 
 (def workspace-add-usage-output
   "usage: ro workspace add <name> --dir <path> [--kind git] [--use]\n")
@@ -245,225 +251,188 @@
 
 (defn workspace-add-plan
   [args]
-  (let loop ((xs args)
-             (name "")
-             (dir "")
-             (kind "git")
-             (use? false))
+  (let [result (cli-dispatch (cli-top-level-command-spec "workspace")
+                             (cons "add" args))]
     (cond
-      (empty? xs)
-      (cond
-        (string=? name "")
-        (vector 'error "ro workspace add expects <name>" args)
-
-        (string=? dir "")
-        (vector 'error "missing --dir" args)
-
-        :else
-        (vector 'add name dir kind use?))
-
-      (help-flag? (first xs))
+      (equal? (:status result) :help)
       (vector 'subhelp-root workspace-add-usage-output)
 
-      (string=? (first xs) "--use")
-      (loop (rest xs) name dir kind true)
-
-      (string=? (first xs) "--dir")
+      (equal? (:status result) :error)
       (cond
-        (empty? (rest xs))
-        (vector 'error "missing workspace dir" args)
+        (equal? (:reason result) :missing-required-flag)
+        (vector 'error "missing --dir" args)
+
+        (equal? (:reason result) :missing-flag-value)
+        (if (and (not (empty? args))
+                 (string=? (first args) "--kind"))
+            (vector 'error "missing workspace kind" args)
+            (vector 'error "missing workspace dir" args))
+
+        (equal? (:reason result) :missing-argument)
+        (vector 'error "ro workspace add expects <name>" args)
+
+        (equal? (:reason result) :unknown-flag)
+        (vector 'error "unsupported workspace add flag" args)
 
         :else
-        (loop (rest (rest xs))
-              name
-              (first (rest xs))
-              kind
-              use?))
-
-      (str/starts-with? (first xs) "--dir=")
-      (loop (rest xs)
-            name
-            (substring (first xs) 6 (string-length (first xs)))
-            kind
-            use?)
-
-      (string=? (first xs) "--kind")
-      (cond
-        (empty? (rest xs))
-        (vector 'error "missing workspace kind" args)
-
-        :else
-        (loop (rest (rest xs))
-              name
-              dir
-              (first (rest xs))
-              use?))
-
-      (str/starts-with? (first xs) "--kind=")
-      (loop (rest xs)
-            name
-            dir
-            (substring (first xs) 7 (string-length (first xs)))
-            use?)
-
-      (str/starts-with? (first xs) "-")
-      (vector 'error "unsupported workspace add flag" args)
-
-      (string=? name "")
-      (loop (rest xs)
-            (first xs)
-            dir
-            kind
-            use?)
+        (vector 'error "unexpected workspace add argument" args))
 
       :else
-      (vector 'error "unexpected workspace add argument" args))))
+      (vector 'add
+              (get (:arguments result) :name "")
+              (get (:flags result) :dir "")
+              (get (:flags result) :kind "git")
+              (get (:flags result) :use false)))))
 
 (defn workspace-init-plan
   [args]
-  (let loop ((xs args)
-             (name "")
-             (dir "")
-             (use? false))
+  (let [result (cli-dispatch (cli-top-level-command-spec "workspace")
+                             (cons "init" args))]
     (cond
-      (empty? xs)
-      (if (string=? name "")
-          (vector 'error "ro workspace init expects <name>" args)
-          (vector 'init name dir use?))
-
-      (help-flag? (first xs))
+      (equal? (:status result) :help)
       (vector 'subhelp-root workspace-init-usage-output)
 
-      (string=? (first xs) "--use")
-      (loop (rest xs) name dir true)
-
-      (string=? (first xs) "--dir")
+      (equal? (:status result) :error)
       (cond
-        (empty? (rest xs))
+        (equal? (:reason result) :missing-flag-value)
         (vector 'error "missing workspace dir" args)
 
+        (equal? (:reason result) :missing-argument)
+        (vector 'error "ro workspace init expects <name>" args)
+
+        (equal? (:reason result) :unknown-flag)
+        (vector 'error "unsupported workspace init flag" args)
+
         :else
-        (loop (rest (rest xs))
-              name
-              (first (rest xs))
-              use?))
-
-      (str/starts-with? (first xs) "--dir=")
-      (loop (rest xs)
-            name
-            (substring (first xs) 6 (string-length (first xs)))
-            use?)
-
-      (str/starts-with? (first xs) "-")
-      (vector 'error "unsupported workspace init flag" args)
-
-      (string=? name "")
-      (loop (rest xs)
-            (first xs)
-            dir
-            use?)
+        (vector 'error "unexpected workspace init argument" args))
 
       :else
-      (vector 'error "unexpected workspace init argument" args))))
+      (vector 'init
+              (get (:arguments result) :name "")
+              (get (:flags result) :dir "")
+              (get (:flags result) :use false)))))
 
 (defn workspace-use-plan
   [args]
-  (let [workspace-name (if (empty? args)
-                         ""
-                         (first args))
-        more (if (empty? args)
-               '()
-               (rest args))]
+  (let [result (cli-dispatch (cli-top-level-command-spec "workspace")
+                             (cons "use" args))]
     (cond
-      (help-flag? workspace-name)
+      (equal? (:status result) :help)
       (vector 'subhelp workspace-use-usage-output)
 
-      (string=? workspace-name "")
-      (vector 'error "ro workspace use expects <name>" args)
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :missing-argument)
+        (vector 'error "ro workspace use expects <name>" args)
 
-      (not (empty? more))
-      (if (any-help-arg? more)
-          (vector 'help '())
-          (vector 'error "unexpected workspace use argument" args))
+        :else
+        (vector 'error "unexpected workspace use argument" args))
 
       :else
-      (vector 'use workspace-name))))
+      (vector 'use (get (:arguments result) :name "")))))
 
 (defn init-main-plan
   [args]
-  (cond
-    (empty? args)
-    (vector 'init '())
+  (let [result (cli-dispatch (cli-top-level-command-spec "init") args)]
+    (cond
+      (equal? (:status result) :help)
+      (vector 'help '())
 
-    (any-help-arg? args)
-    (vector 'help '())
+      (equal? (:status result) :error)
+      (vector 'error "ro init expects no arguments" args)
 
-    :else
-    (vector 'error "ro init expects no arguments" args)))
+      :else
+      (vector 'init '()))))
 
 (defn workspace-main-plan
   [args]
-  (cond
-    (or (empty? args)
-        (help-flag? (first args)))
-    (vector 'help '())
+  (let [result (cli-dispatch (cli-top-level-command-spec "workspace") args)]
+    (cond
+      (equal? (:status result) :help)
+      (let [name (:name (:spec result))]
+        (cond
+          (or (string=? name "workspace")
+              (string=? name "current")
+              (string=? name "list"))
+          (vector 'help '())
 
-    (and (string=? (first args) "current")
-         (empty? (rest args)))
-    (vector 'current '())
+          (string=? name "add")
+          (vector 'subhelp-root workspace-add-usage-output)
 
-    (and (string=? (first args) "current")
-         (any-help-arg? (rest args)))
-    (vector 'help '())
+          (string=? name "init")
+          (vector 'subhelp-root workspace-init-usage-output)
 
-    (and (string=? (first args) "list")
-         (empty? (rest args)))
-    (vector 'list '())
+          (string=? name "use")
+          (vector 'subhelp workspace-use-usage-output)
 
-    (and (string=? (first args) "list")
-         (any-help-arg? (rest args)))
-    (vector 'help '())
+          :else
+          (vector 'help '())))
 
-    (string=? (first args) "add")
-    (workspace-add-plan (rest args))
+      (equal? (:status result) :error)
+      (let [name (:name (:spec result))]
+        (cond
+          (string=? name "add")
+          (workspace-add-plan (rest args))
 
-    (string=? (first args) "init")
-    (workspace-init-plan (rest args))
+          (string=? name "init")
+          (workspace-init-plan (rest args))
 
-    (string=? (first args) "use")
-    (workspace-use-plan (rest args))
+          (string=? name "use")
+          (workspace-use-plan (rest args))
 
-    :else
-    (vector 'error "ro workspace commands are not implemented yet" args)))
+          :else
+          (vector 'error "ro workspace commands are not implemented yet" args)))
+
+      (string=? (:name (:spec result)) "current")
+      (vector 'current '())
+
+      (string=? (:name (:spec result)) "list")
+      (vector 'list '())
+
+      (string=? (:name (:spec result)) "add")
+      (vector 'add
+              (get (:arguments result) :name "")
+              (get (:flags result) :dir "")
+              (get (:flags result) :kind "git")
+              (get (:flags result) :use false))
+
+      (string=? (:name (:spec result)) "init")
+      (vector 'init
+              (get (:arguments result) :name "")
+              (get (:flags result) :dir "")
+              (get (:flags result) :use false))
+
+      (string=? (:name (:spec result)) "use")
+      (vector 'use (get (:arguments result) :name ""))
+
+      :else
+      (vector 'error "ro workspace commands are not implemented yet" args))))
 
 (defn identity-main-plan
   [args]
-  (cond
-    (or (empty? args)
-        (help-flag? (first args)))
-    (vector 'help '())
-
-    (string=? (first args) "whoami")
+  (let [result (cli-dispatch (cli-top-level-command-spec "identity") args)]
     (cond
-      (empty? (rest args))
+      (equal? (:status result) :help)
+      (vector 'help '())
+
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :unexpected-argument)
+        (let [name (:name (:spec result))]
+          (if (string=? name "whoami")
+              (vector 'error "unexpected identity whoami argument" args)
+              (if (string=? name "list")
+                  (vector 'error "unexpected identity list argument" args)
+                  (vector 'error "unsupported identity subcommand" args))))
+
+        :else
+        (vector 'error "unsupported identity subcommand" args))
+
+      (string=? (:name (:spec result)) "whoami")
       (vector 'whoami '())
 
-      (any-help-arg? (rest args))
-      (vector 'help '())
-
-      :else
-      (vector 'error "unexpected identity whoami argument" args))
-
-    (string=? (first args) "list")
-    (cond
-      (empty? (rest args))
+      (string=? (:name (:spec result)) "list")
       (vector 'list '())
 
-      (any-help-arg? (rest args))
-      (vector 'help '())
-
       :else
-      (vector 'error "unexpected identity list argument" args))
-
-    :else
-    (vector 'error "unsupported identity subcommand" args)))
+      (vector 'error "unsupported identity subcommand" args))))

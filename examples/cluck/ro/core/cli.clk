@@ -1,0 +1,635 @@
+;; Declarative CLI engine and compatibility helpers for the Ro CLI spike.
+
+(ns cluck.examples.ro.core.cli
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.cli.cmdspec :as cmdspec]))
+
+(def cmdspec-parse-arg-names cmdspec/parse-arg-names)
+
+(def cmdspec-prepare-cmdpairs cmdspec/prepare-cmdpairs)
+
+;; Static :require of `cluck.examples.ro.core.cli.ro-spec` does not currently
+;; work under the manual Cluck loader used by this spike, so keep this dynamic
+;; edge here until module loading is improved.
+(def ro-root-command-spec
+  (ns-resolve 'cluck.examples.ro.core.cli.ro-spec 'root-command-spec))
+
+(def docs-topics
+  (list "cli"
+        "getting-started"
+        "output-contract"
+        "storage"
+        "identity-ownership"
+        "agent-runtimes"
+        "sync"
+        "doctor-reindex"))
+
+(defn help-flag?
+  [arg]
+  (or (string=? arg "help")
+      (string=? arg "--help")
+      (string=? arg "-h")))
+
+(defn coerce-to-pairs
+  [value]
+  (if (vector? value)
+      (partition 2 value)
+      value))
+
+(defn strip-leading-dashes
+  [text]
+  (let loop ((idx 0))
+    (if (and (< idx (string-length text))
+             (char=? (string-ref text idx) #\-))
+        (loop (+ idx 1))
+        (substring text idx (string-length text)))))
+
+(defn short-flag?
+  [flag]
+  (and (= (string-length flag) 2)
+       (char=? (string-ref flag 0) #\-)
+       (not (char=? (string-ref flag 1) #\-))))
+
+(defn long-flag?
+  [flag]
+  (and (> (string-length flag) 2)
+       (char=? (string-ref flag 0) #\-)
+       (char=? (string-ref flag 1) #\-)))
+
+(defn parse-flagstr
+  [flagstr flagopts]
+  (let [parsed (cmdspec-parse-arg-names flagstr)
+        flags (first parsed)
+        argdoc (first (rest parsed))
+        argnames (first (rest (rest parsed)))
+        long-flag (let loop ((xs flags))
+                    (cond
+                      (empty? xs) false
+                      (long-flag? (first xs)) (first xs)
+                      :else (loop (rest xs))))
+        key-flag (or long-flag (first flags))]
+    (merge {:flagstr flagstr
+            :argdoc argdoc
+            :flags flags
+            :args argnames
+            :key (keyword (strip-leading-dashes key-flag))
+            :argcnt (count argnames)}
+           flagopts)))
+
+(defn prepare-flagpairs
+  [flagstrs]
+  (when (seq flagstrs)
+    (map (fn [[flagstr flagopts]]
+           (let [opts (if (string? flagopts)
+                        {:doc flagopts}
+                        flagopts)]
+             [flagstr (parse-flagstr flagstr opts)]))
+         (coerce-to-pairs flagstrs))))
+
+(defn build-flagmap-entries
+  [flagpair]
+  (let [flagopts (first (rest flagpair))]
+    (map (fn [flag]
+           (cons flag flagopts))
+         (:flags flagopts))))
+
+(defn parse-flagstrs
+  [flagpairs]
+  (append
+   (list (cons "-h" {:key :help :value true})
+         (cons "--help" {:key :help :value true}))
+   (if (empty? flagpairs)
+       '()
+       (apply append (map build-flagmap-entries flagpairs)))))
+
+(defn literal-command-name
+  [cmdstr]
+  (let [parsed (cmdspec-parse-arg-names cmdstr)
+        flags (first parsed)]
+    (if (empty? flags)
+        cmdstr
+        (first flags))))
+
+(defn render-help-lines
+  [title usage-lines]
+  (append
+   (list title
+         ""
+         "usage:")
+   (map (fn [usage-line]
+          (string-append "  " usage-line))
+        usage-lines)))
+
+(defn ensure-usage-lines
+  [spec fallback]
+  (or (:usage-lines spec)
+      (and fallback (list fallback))
+      '()))
+
+(defn build-default-flags
+  [flagpairs]
+  (let loop ((xs flagpairs)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [flagopts (first (rest (first xs)))]
+          (if (contains? flagopts :default)
+              (loop (rest xs)
+                    (assoc acc
+                           (:key flagopts)
+                           (:default flagopts)))
+              (loop (rest xs) acc))))))
+
+(defn missing-required-flag
+  [flagpairs flags]
+  (let loop ((xs flagpairs))
+    (if (empty? xs)
+        false
+        (let [flagopts (first (rest (first xs)))]
+          (if (and (:required flagopts)
+                   (not (contains? flags (:key flagopts))))
+              flagopts
+              (loop (rest xs)))))))
+
+(defn parse-flag-value
+  [flagopts raw-value]
+  (if (contains? flagopts :parse)
+      (handle-exceptions exn
+        (vector false raw-value)
+        (vector true ((:parse flagopts) raw-value)))
+      (vector true raw-value)))
+
+(defn assoc-flag-value
+  [flags flagopts value]
+  (if (:repeatable flagopts)
+      (let [existing (get flags (:key flagopts) '())]
+        (assoc flags
+               (:key flagopts)
+               (append existing (list value))))
+      (assoc flags
+             (:key flagopts)
+             value)))
+
+(declare prepare-command-spec)
+
+(defn prepare-command-pair
+  [pair]
+  (let [cmdstr (first pair)
+        spec (first (rest pair))
+        parsed (cmdspec-parse-arg-names cmdstr)
+        argdoc (first (rest parsed))
+        argnames (first (rest (rest parsed)))
+        literal (literal-command-name cmdstr)
+        enriched (assoc spec
+                        :name literal
+                        :cmdstr cmdstr
+                        :argdoc argdoc
+                        :argnames (or (:argnames spec) argnames))]
+    [literal (prepare-command-spec enriched)]))
+
+(defn prepare-command-spec
+  [spec]
+  (let [flagpairs (or (prepare-flagpairs (:flags spec)) '())
+        commands (let [value (:commands spec)]
+                   (if value
+                       (map prepare-command-pair (coerce-to-pairs value))
+                       '()))
+        command-map (map (fn [pair]
+                           (cons (first pair)
+                                 (first (rest pair))))
+                         commands)
+        argnames (or (:argnames spec) '())
+        max-args (or (:max-args spec) (count argnames))
+        min-args (or (:min-args spec) max-args)]
+    (assoc spec
+           :usage-lines (ensure-usage-lines spec (:name spec))
+           :argnames argnames
+           :min-args min-args
+           :max-args max-args
+           :flagpairs flagpairs
+           :flagmap (parse-flagstrs flagpairs)
+           :default-flags (build-default-flags flagpairs)
+           :commands commands
+           :command-map command-map)))
+
+(def prepared-root-command-spec
+  (prepare-command-spec ro-root-command-spec))
+
+(defn prepared-root-command-pairs
+  []
+  (:commands prepared-root-command-spec))
+
+(defn find-command-in-map
+  [command-map name]
+  (let loop ((xs command-map))
+    (cond
+      (empty? xs) false
+      (string=? (car (first xs)) name) (cdr (first xs))
+      :else (loop (rest xs)))))
+
+(def command-specs
+  (map (fn [pair]
+         (let [spec (first (rest pair))]
+           {:name (:name spec)
+            :kind (:kind spec)
+            :implemented? (:implemented? spec)
+            :completion? (:completion? spec)
+            :summary (:summary spec)
+            :usage (:usage-lines spec)}))
+       (prepared-root-command-pairs)))
+
+(defn command-spec-name
+  [spec]
+  (:name spec))
+
+(defn command-spec-kind
+  [spec]
+  (:kind spec))
+
+(defn command-spec-implemented?
+  [spec]
+  (:implemented? spec))
+
+(defn command-spec-completion?
+  [spec]
+  (:completion? spec))
+
+(defn command-spec-summary
+  [spec]
+  (:summary spec))
+
+(defn command-spec-usage
+  [spec]
+  (:usage spec))
+
+(defn command-spec-for-name
+  [name]
+  (let loop ((xs command-specs))
+    (cond
+      (empty? xs) false
+      (string=? (command-spec-name (first xs)) name) (first xs)
+      :else (loop (rest xs)))))
+
+(defn command-spec-help-lines
+  [spec]
+  (let [summary (or (command-spec-summary spec) "")]
+    (map (fn [usage-line]
+           (let [line (string-append "  " usage-line)]
+             (if (string=? summary "")
+                 line
+                 (let [padding (max 1 (- 28 (string-length line)))]
+                   (string-append line
+                                  (make-string padding #\space)
+                                  "# "
+                                  summary)))))
+         (command-spec-usage spec))))
+
+(defn root-help-command-lines
+  []
+  (let [lines (map command-spec-help-lines command-specs)]
+    (if (empty? lines)
+        '()
+        (apply append lines))))
+
+(defn top-command-names
+  []
+  (let loop ((xs command-specs)
+             (acc '()))
+    (if (empty? xs)
+        (cluck-sort-list (reverse acc) string<?)
+        (let ((spec (first xs)))
+          (if (command-spec-completion? spec)
+              (loop (rest xs) (cons (command-spec-name spec) acc))
+              (loop (rest xs) acc))))))
+
+(defn command-help-lines
+  [name]
+  (let ((spec (command-spec-for-name name)))
+    (and spec
+         (render-help-lines
+          (string-append "ro " name)
+          (command-spec-usage spec)))))
+
+(defn completion-command-line
+  []
+  (str/join " " (top-command-names)))
+
+(defn docs-topics-line
+  []
+  (str/join " " docs-topics))
+
+(defn command-map
+  []
+  (let loop ((xs command-specs)
+             (acc '()))
+    (if (empty? xs)
+        acc
+        (loop (rest xs)
+              (cons (cons (:name (first xs)) (first xs)) acc)))))
+
+(defn find-command-spec
+  [name]
+  (let [entry
+        (let loop ((xs (command-map)))
+          (cond
+            (empty? xs) false
+            (string=? (car (first xs)) name) (first xs)
+            :else (loop (rest xs))))]
+    (and entry (cdr entry))))
+
+(defn dispatch-top-level
+  [args]
+  (cond
+    (empty? args)
+    (vector 'help '())
+
+    (help-flag? (first args))
+    (vector 'help '())
+
+    (find-command-spec (first args))
+    (vector (:kind (find-command-spec (first args))) (rest args))
+
+    (and (not (string=? (first args) ""))
+         (not (str/starts-with? (first args) "-"))
+         (empty? (rest args)))
+    (vector 'item args)
+
+    :else
+    (vector 'error args)))
+
+(defn positionals->argmap
+  [argnames positionals]
+  (let loop ((names argnames)
+             (vals positionals)
+             (acc {}))
+    (if (or (empty? names)
+            (empty? vals))
+        acc
+        (loop (rest names)
+              (rest vals)
+              (assoc acc
+                     (first names)
+                     (first vals))))))
+
+(defn any-help-arg?
+  [args]
+  (let loop ((xs args))
+    (cond
+      (empty? xs) false
+      (help-flag? (first xs)) true
+      :else (loop (rest xs)))))
+
+(defn resolve-flag-spec
+  [spec arg]
+  (find-command-in-map (:flagmap spec) arg))
+
+(defn flag-value-from-token
+  [token]
+  (let loop ((idx 0))
+    (cond
+      (= idx (string-length token)) false
+      (char=? (string-ref token idx) #\=)
+      (substring token (+ idx 1) (string-length token))
+      :else (loop (+ idx 1)))))
+
+(defn long-flag-base-token
+  [token]
+  (let loop ((idx 0))
+    (cond
+      (= idx (string-length token)) token
+      (char=? (string-ref token idx) #\=)
+      (substring token 0 idx)
+      :else (loop (+ idx 1)))))
+
+(defn parse-leaf-args
+  [spec args]
+  (if (any-help-arg? args)
+      {:status :help
+       :spec spec
+       :args args}
+      (let [initial-flags (merge {} (:default-flags spec))]
+        (let loop ((xs args)
+                   (flags initial-flags)
+                   (positionals '()))
+          (cond
+            (empty? xs)
+            (let [values (reverse positionals)
+                  argc (count values)
+                  min-args (:min-args spec)
+                  max-args (:max-args spec)
+                  missing-flag (missing-required-flag (:flagpairs spec) flags)]
+              (cond
+                missing-flag
+                {:status :error
+                 :spec spec
+                 :reason :missing-required-flag
+                 :args args
+                 :flag (:key missing-flag)
+                 :message "missing required flag"}
+
+                (< argc min-args)
+                {:status :error
+                 :spec spec
+                 :reason :missing-argument
+                 :args args
+                 :message "missing required argument"}
+
+                (> argc max-args)
+                {:status :error
+                 :spec spec
+                 :reason :unexpected-argument
+                 :args args
+                 :message "unexpected argument"}
+
+                :else
+                {:status :ok
+                 :spec spec
+                 :flags flags
+                 :positionals values
+                 :arguments (positionals->argmap (:argnames spec) values)}))
+
+            (and (long-flag? (first xs))
+                 (flag-value-from-token (first xs)))
+            (let [flag-token (first xs)
+                  base-token (long-flag-base-token flag-token)
+                  inline-value (flag-value-from-token flag-token)
+                  flagopts (resolve-flag-spec spec base-token)]
+              (cond
+                (not flagopts)
+                {:status :error
+                 :spec spec
+                 :reason :unknown-flag
+                 :args args
+                 :message "unknown flag"}
+
+                (= (:argcnt flagopts) 0)
+                (loop (rest xs)
+                      (assoc-flag-value flags
+                                        flagopts
+                                        (if (contains? flagopts :value)
+                                            (:value flagopts)
+                                            true))
+                      positionals)
+
+                :else
+                (let [parsed-value (parse-flag-value flagopts inline-value)]
+                  (if (vector-ref parsed-value 0)
+                      (loop (rest xs)
+                            (assoc-flag-value flags
+                                              flagopts
+                                              (vector-ref parsed-value 1))
+                            positionals)
+                      {:status :error
+                       :spec spec
+                       :reason :invalid-flag-value
+                       :args args
+                       :flag (:key flagopts)
+                       :value inline-value
+                       :message "invalid flag value"}))))
+
+            (str/starts-with? (first xs) "-")
+            (let [flagopts (resolve-flag-spec spec (first xs))]
+              (cond
+                (not flagopts)
+                {:status :error
+                 :spec spec
+                 :reason :unknown-flag
+                 :args args
+                 :message "unknown flag"}
+
+                (= (:argcnt flagopts) 0)
+                (loop (rest xs)
+                      (assoc-flag-value flags
+                                        flagopts
+                                        (if (contains? flagopts :value)
+                                            (:value flagopts)
+                                            true))
+                      positionals)
+
+                (empty? (rest xs))
+                {:status :error
+                 :spec spec
+                 :reason :missing-flag-value
+                 :args args
+                 :message "missing flag value"}
+
+                :else
+                (let [parsed-value (parse-flag-value flagopts (first (rest xs)))]
+                  (if (vector-ref parsed-value 0)
+                      (loop (rest (rest xs))
+                            (assoc-flag-value flags
+                                              flagopts
+                                              (vector-ref parsed-value 1))
+                            positionals)
+                      {:status :error
+                       :spec spec
+                       :reason :invalid-flag-value
+                       :args args
+                       :flag (:key flagopts)
+                       :value (first (rest xs))
+                       :message "invalid flag value"}))))
+
+            :else
+            (loop (rest xs)
+                  flags
+                  (cons (first xs) positionals)))))))
+
+(declare dispatch)
+
+(defn dispatch-child
+  [spec args]
+  (let [child (find-command-in-map (:command-map spec) (first args))]
+    (if child
+        (dispatch child (rest args))
+        {:status :error
+         :spec spec
+         :reason :unknown-command
+         :args args
+         :message "unknown subcommand"})))
+
+(defn dispatch
+  [spec args]
+  (cond
+    (and (not (empty? args))
+         (help-flag? (first args)))
+    {:status :help
+     :spec spec
+     :args args}
+
+    (and (not (empty? (:commands spec)))
+         (not (empty? args))
+         (find-command-in-map (:command-map spec) (first args)))
+    (dispatch-child spec args)
+
+    (or (:invokable? spec)
+        (empty? (:commands spec)))
+    (parse-leaf-args spec args)
+
+    (empty? args)
+    {:status :help
+     :spec spec
+     :args args}
+
+    :else
+    {:status :error
+     :spec spec
+     :reason :unknown-command
+     :args args
+     :message "unknown subcommand"}))
+
+(defn top-level-command-spec
+  [name]
+  (find-command-in-map (:command-map prepared-root-command-spec) name))
+
+(defn render-command-help
+  [spec]
+  (render-help-lines
+   (string-append "ro " (:name spec))
+   (:usage-lines spec)))
+
+(defn completion-values
+  [spec]
+  (cond
+    (:completion-values spec)
+    (:completion-values spec)
+
+    (string=? (:name spec) "docs")
+    docs-topics
+
+    :else
+    '()))
+
+(defn visible-command-names
+  [spec]
+  (let [children (map (fn [pair]
+                        (first (rest pair)))
+                      (:commands spec))
+        with-completion
+        (filter (fn [child]
+                  (contains? child :completion?))
+                children)]
+    (cluck-sort-list
+     (map (fn [child]
+            (:name child))
+          (if (empty? with-completion)
+              children
+              (filter (fn [child]
+                        (:completion? child))
+                      children)))
+     string<?)))
+
+(defn completion-candidates
+  [spec args]
+  (cond
+    (and (not (empty? (:commands spec)))
+         (or (empty? args)
+             (= (count args) 1)))
+    (visible-command-names spec)
+
+    (and (not (empty? (:commands spec)))
+         (find-command-in-map (:command-map spec) (first args)))
+    (completion-candidates (find-command-in-map (:command-map spec) (first args))
+                           (rest args))
+
+    :else
+    (completion-values spec)))

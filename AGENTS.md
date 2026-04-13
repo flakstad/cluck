@@ -19,6 +19,11 @@ Code style:
 - Prefer Clojure-style source in `.clk` files: `ns`, `defn`, `let`, `cond`,
   data literals, threading macros, and small pure helpers.
 - Prefer namespaced modules and data-first APIs.
+- In `.clk` code, prefer ordinary `ns` `:require` dependencies over
+  `ns-resolve`. Treat `ns-resolve` as an escape hatch for Scheme/bootstrap
+  boundaries, plugin-style dynamic lookup, or other cases where static
+  namespace dependencies genuinely do not work. If you keep `ns-resolve` in a
+  `.clk` file, leave a short comment explaining why.
 - Keep app code easy to read as Clojure, not as Scheme with different syntax.
 - Only drop to Scheme in `.scm` files or when CHICKEN interop/bootstrap makes
   it necessary.

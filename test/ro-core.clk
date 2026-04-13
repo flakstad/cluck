@@ -3,83 +3,121 @@
 (ns cluck.test.ro-core
   (:require [json :as json]
             [cluck.string :as str]
+            [cluck.examples.ro.core.help :as ro-help]
+            [cluck.examples.ro.core.cli.cmdspec :as ro-cli-cmdspec]
+            [cluck.examples.ro.core.cli.completions :as ro-cli-completions]
+            [cluck.examples.ro.core.cli :as ro-cli]
+            [cluck.examples.ro.core.commands :as ro-commands]
+            [cluck.examples.ro.core.docs :as ro-docs]
+            [cluck.examples.ro.core.outlines :as ro-outlines]
+            [cluck.examples.ro.core.items :as ro-items]
+            [cluck.examples.ro.core.route :as ro-route]
+            [cluck.examples.ro.core.events :as ro-events]
+            [cluck.examples.ro.core.reindex :as ro-reindex]
+            [cluck.examples.ro.core.sync :as ro-sync]
+            [cluck.examples.ro.core.doctor :as ro-doctor]
+            [cluck.examples.ro.core.json :as ro-json]
+            [cluck.examples.ro.core.workspace :as ro-workspace]
+            [cluck.examples.ro.core.projects :as ro-projects]
+            [cluck.examples.ro.core.worklog :as ro-worklog]
             [cluck.test.support :refer [assert-str=
                                         assert-num=
                                         assert-true
                                         pass
                                         fail]]))
 
-(def ro-help-help-request? (ns-resolve 'cluck.examples.ro.core.help 'help-request?))
-(def ro-help-completion-output (ns-resolve 'cluck.examples.ro.core.help 'completion-output))
-(def ro-help-completion-bash-output (ns-resolve 'cluck.examples.ro.core.help 'completion-bash-output))
-(def ro-help-completion-zsh-output (ns-resolve 'cluck.examples.ro.core.help 'completion-zsh-output))
-(def ro-help-completion-fish-output (ns-resolve 'cluck.examples.ro.core.help 'completion-fish-output))
-(def ro-help-docs-output (ns-resolve 'cluck.examples.ro.core.help 'docs-output))
-(def ro-commands-command-root-help-lines (ns-resolve 'cluck.examples.ro.core.commands 'command-root-help-lines))
-(def ro-commands-command-top-commands (ns-resolve 'cluck.examples.ro.core.commands 'command-top-commands))
-(def ro-commands-command-kind-for-name (ns-resolve 'cluck.examples.ro.core.commands 'command-kind-for-name))
-(def ro-commands-command-known? (ns-resolve 'cluck.examples.ro.core.commands 'command-known?))
-(def ro-commands-command-implemented? (ns-resolve 'cluck.examples.ro.core.commands 'command-implemented?))
-(def ro-docs-docs-topic-markdown (ns-resolve 'cluck.examples.ro.core.docs 'docs-topic-markdown))
-(def ro-docs-docs-topic-output (ns-resolve 'cluck.examples.ro.core.docs 'docs-topic-output))
-(def ro-docs-docs-main-plan (ns-resolve 'cluck.examples.ro.core.docs 'docs-main-plan))
-(def ro-outlines-outlines-help-output (ns-resolve 'cluck.examples.ro.core.outlines 'outlines-help-output))
-(def ro-outlines-outlines-main-plan (ns-resolve 'cluck.examples.ro.core.outlines 'outlines-main-plan))
-(def ro-outlines-outlines-status-main-plan (ns-resolve 'cluck.examples.ro.core.outlines 'outlines-status-main-plan))
-(def ro-items-items-help-output (ns-resolve 'cluck.examples.ro.core.items 'items-help-output))
-(def ro-items-item-show-summary (ns-resolve 'cluck.examples.ro.core.items 'item-show-summary))
-(def ro-items-items-main-plan (ns-resolve 'cluck.examples.ro.core.items 'items-main-plan))
-(def ro-items-item-main-plan (ns-resolve 'cluck.examples.ro.core.items 'item-main-plan))
-(def ro-items-items-show-plan (ns-resolve 'cluck.examples.ro.core.items 'items-show-plan))
-(def ro-items-items-list-plan (ns-resolve 'cluck.examples.ro.core.items 'items-list-plan))
-(def ro-items-items-ready-plan (ns-resolve 'cluck.examples.ro.core.items 'items-ready-plan))
-(def ro-items-items-events-plan (ns-resolve 'cluck.examples.ro.core.items 'items-events-plan))
-(def ro-route-main-route (ns-resolve 'cluck.examples.ro.core.route 'main-route))
-(def ro-events-event-line->record (ns-resolve 'cluck.examples.ro.core.events 'event-line->record))
-(def ro-events-event-materialize-record (ns-resolve 'cluck.examples.ro.core.events 'event-materialize-record))
-(def ro-events-event-record<? (ns-resolve 'cluck.examples.ro.core.events 'event-record<?))
-(def ro-events-events-sort-records (ns-resolve 'cluck.examples.ro.core.events 'events-sort-records))
-(def ro-events-events-main-plan (ns-resolve 'cluck.examples.ro.core.events 'events-main-plan))
-(def ro-reindex-reindex-main-plan (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-main-plan))
-(def ro-sync-git-status-line-unmerged? (ns-resolve 'cluck.examples.ro.core.sync 'git-status-line-unmerged?))
-(def ro-sync-git-status-flags (ns-resolve 'cluck.examples.ro.core.sync 'git-status-flags))
-(def ro-sync-git-ahead-behind (ns-resolve 'cluck.examples.ro.core.sync 'git-ahead-behind))
-(def ro-sync-git-sync-empty-status (ns-resolve 'cluck.examples.ro.core.sync 'git-sync-empty-status))
-(def ro-sync-sync-main-plan (ns-resolve 'cluck.examples.ro.core.sync 'sync-main-plan))
-(def ro-doctor-doctor-event-entity-kind (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-event-entity-kind))
-(def ro-doctor-doctor-parse-event-record (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-parse-event-record))
-(def ro-doctor-doctor-issue-from-record (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-issue-from-record))
-(def ro-doctor-doctor-has-errors? (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-has-errors?))
-(def ro-doctor-doctor-summary-from-issues (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-summary-from-issues))
-(def ro-doctor-doctor-dedupe-plan-from-issues (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-dedupe-plan-from-issues))
-(def ro-doctor-doctor-main-plan (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-main-plan))
-(def ro-reindex-reindex-recognized-types (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-recognized-types))
-(def ro-reindex-reindex-type-recognized? (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-type-recognized?))
-(def ro-json-compact-json-text (ns-resolve 'cluck.examples.ro.core.json 'compact-json-text))
-(def ro-json-json-field-value (ns-resolve 'cluck.examples.ro.core.json 'json-field-value))
-(def ro-workspace-current-info (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-info))
-(def ro-workspace-current-name (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-name))
-(def ro-workspace-current-path (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-path))
-(def ro-workspace-current-output (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-output))
-(def ro-workspace-status-output (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-status-output))
-(def ro-workspace-current-write-actor-id (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-current-write-actor-id))
-(def ro-workspace-identity-list-output (ns-resolve 'cluck.examples.ro.core.workspace 'identity-list-output))
-(def ro-workspace-identity-whoami-output (ns-resolve 'cluck.examples.ro.core.workspace 'identity-whoami-output))
-(def ro-workspace-init-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'init-main-plan))
-(def ro-workspace-status-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'status-main-plan))
-(def ro-workspace-workspace-add-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-add-plan))
-(def ro-workspace-workspace-init-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-init-plan))
-(def ro-workspace-workspace-use-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-use-plan))
-(def ro-workspace-workspace-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'workspace-main-plan))
-(def ro-workspace-identity-main-plan (ns-resolve 'cluck.examples.ro.core.workspace 'identity-main-plan))
-(def ro-projects-project-summary (ns-resolve 'cluck.examples.ro.core.projects 'project-summary))
-(def ro-projects-projects-list-output (ns-resolve 'cluck.examples.ro.core.projects 'projects-list-output))
-(def ro-projects-projects-current-output (ns-resolve 'cluck.examples.ro.core.projects 'projects-current-output))
-(def ro-projects-projects-main-plan (ns-resolve 'cluck.examples.ro.core.projects 'projects-main-plan))
-(def ro-worklog-worklog-help-output (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-help-output))
-(def ro-worklog-worklog-list-plan (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-list-plan))
-(def ro-worklog-worklog-add-plan (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-add-plan))
-(def ro-worklog-worklog-main-plan (ns-resolve 'cluck.examples.ro.core.worklog 'worklog-main-plan))
+(def ro-help-help-request? ro-help/help-request?)
+(def ro-help-completion-output ro-help/completion-output)
+(def ro-help-completion-bash-output ro-help/completion-bash-output)
+(def ro-help-completion-zsh-output ro-help/completion-zsh-output)
+(def ro-help-completion-fish-output ro-help/completion-fish-output)
+(def ro-help-docs-output ro-help/docs-output)
+(def ro-cli-cmdspec-parse-arg-names ro-cli-cmdspec/parse-arg-names)
+(def ro-cli-cmdspec-prepare-cmdpairs ro-cli-cmdspec/prepare-cmdpairs)
+(def ro-cli-ro-root-command-spec ro-cli/ro-root-command-spec)
+(def ro-cli-shell-completion-candidates ro-cli-completions/shell-completion-candidates)
+(def ro-cli-dispatch-top-level ro-cli/dispatch-top-level)
+(def ro-cli-prepared-root-command-spec ro-cli/prepared-root-command-spec)
+(def ro-cli-prepare-command-spec ro-cli/prepare-command-spec)
+(def ro-cli-dispatch ro-cli/dispatch)
+(def ro-cli-top-level-command-spec ro-cli/top-level-command-spec)
+(def ro-cli-command-spec-for-name ro-cli/command-spec-for-name)
+(def ro-cli-command-spec-help-lines ro-cli/command-spec-help-lines)
+(def ro-cli-command-help-lines ro-cli/command-help-lines)
+(def ro-cli-render-command-help ro-cli/render-command-help)
+(def ro-cli-completion-candidates ro-cli/completion-candidates)
+(def ro-cli-parse-flagstr ro-cli/parse-flagstr)
+(def ro-cli-prepare-flagpairs ro-cli/prepare-flagpairs)
+(def ro-cli-parse-flagstrs ro-cli/parse-flagstrs)
+(def ro-cli-root-help-command-lines ro-cli/root-help-command-lines)
+(def ro-cli-top-command-names ro-cli/top-command-names)
+(def ro-cli-completion-command-line ro-cli/completion-command-line)
+(def ro-cli-docs-topics-line ro-cli/docs-topics-line)
+(def ro-commands-command-root-help-lines ro-commands/command-root-help-lines)
+(def ro-commands-command-top-commands ro-commands/command-top-commands)
+(def ro-commands-command-kind-for-name ro-commands/command-kind-for-name)
+(def ro-commands-command-known? ro-commands/command-known?)
+(def ro-commands-command-implemented? ro-commands/command-implemented?)
+(def ro-docs-docs-topic-markdown ro-docs/docs-topic-markdown)
+(def ro-docs-docs-topic-output ro-docs/docs-topic-output)
+(def ro-docs-docs-main-plan ro-docs/docs-main-plan)
+(def ro-outlines-outlines-help-output ro-outlines/outlines-help-output)
+(def ro-outlines-outlines-main-plan ro-outlines/outlines-main-plan)
+(def ro-outlines-outlines-status-main-plan ro-outlines/outlines-status-main-plan)
+(def ro-items-items-help-output ro-items/items-help-output)
+(def ro-items-item-show-summary ro-items/item-show-summary)
+(def ro-items-items-main-plan ro-items/items-main-plan)
+(def ro-items-item-main-plan ro-items/item-main-plan)
+(def ro-items-items-show-plan ro-items/items-show-plan)
+(def ro-items-items-list-plan ro-items/items-list-plan)
+(def ro-items-items-ready-plan ro-items/items-ready-plan)
+(def ro-items-items-events-plan ro-items/items-events-plan)
+(def ro-route-main-route ro-route/main-route)
+(def ro-events-event-line->record ro-events/event-line->record)
+(def ro-events-event-materialize-record ro-events/event-materialize-record)
+(def ro-events-event-record<? ro-events/event-record<?)
+(def ro-events-events-sort-records ro-events/events-sort-records)
+(def ro-events-events-main-plan ro-events/events-main-plan)
+(def ro-reindex-reindex-main-plan ro-reindex/reindex-main-plan)
+(def ro-sync-git-status-line-unmerged? ro-sync/git-status-line-unmerged?)
+(def ro-sync-git-status-flags ro-sync/git-status-flags)
+(def ro-sync-git-ahead-behind ro-sync/git-ahead-behind)
+(def ro-sync-git-sync-empty-status ro-sync/git-sync-empty-status)
+(def ro-sync-sync-main-plan ro-sync/sync-main-plan)
+(def ro-doctor-doctor-event-entity-kind ro-doctor/doctor-event-entity-kind)
+(def ro-doctor-doctor-parse-event-record ro-doctor/doctor-parse-event-record)
+(def ro-doctor-doctor-issue-from-record ro-doctor/doctor-issue-from-record)
+(def ro-doctor-doctor-has-errors? ro-doctor/doctor-has-errors?)
+(def ro-doctor-doctor-summary-from-issues ro-doctor/doctor-summary-from-issues)
+(def ro-doctor-doctor-dedupe-plan-from-issues ro-doctor/doctor-dedupe-plan-from-issues)
+(def ro-doctor-doctor-main-plan ro-doctor/doctor-main-plan)
+(def ro-reindex-reindex-recognized-types ro-reindex/reindex-recognized-types)
+(def ro-reindex-reindex-type-recognized? ro-reindex/reindex-type-recognized?)
+(def ro-json-compact-json-text ro-json/compact-json-text)
+(def ro-json-json-field-value ro-json/json-field-value)
+(def ro-workspace-current-info ro-workspace/workspace-current-info)
+(def ro-workspace-current-name ro-workspace/workspace-current-name)
+(def ro-workspace-current-path ro-workspace/workspace-current-path)
+(def ro-workspace-current-output ro-workspace/workspace-current-output)
+(def ro-workspace-status-output ro-workspace/workspace-status-output)
+(def ro-workspace-current-write-actor-id ro-workspace/workspace-current-write-actor-id)
+(def ro-workspace-identity-list-output ro-workspace/identity-list-output)
+(def ro-workspace-identity-whoami-output ro-workspace/identity-whoami-output)
+(def ro-workspace-init-main-plan ro-workspace/init-main-plan)
+(def ro-workspace-status-main-plan ro-workspace/status-main-plan)
+(def ro-workspace-workspace-add-plan ro-workspace/workspace-add-plan)
+(def ro-workspace-workspace-init-plan ro-workspace/workspace-init-plan)
+(def ro-workspace-workspace-use-plan ro-workspace/workspace-use-plan)
+(def ro-workspace-workspace-main-plan ro-workspace/workspace-main-plan)
+(def ro-workspace-identity-main-plan ro-workspace/identity-main-plan)
+(def ro-projects-project-summary ro-projects/project-summary)
+(def ro-projects-projects-list-output ro-projects/projects-list-output)
+(def ro-projects-projects-current-output ro-projects/projects-current-output)
+(def ro-projects-projects-main-plan ro-projects/projects-main-plan)
+(def ro-worklog-worklog-help-output ro-worklog/worklog-help-output)
+(def ro-worklog-worklog-list-plan ro-worklog/worklog-list-plan)
+(def ro-worklog-worklog-add-plan ro-worklog/worklog-add-plan)
+(def ro-worklog-worklog-main-plan ro-worklog/worklog-main-plan)
 
 (defn parse-output
   [output]
@@ -137,6 +175,14 @@
     (map normalize-json-value (seq value))
 
     :else value))
+
+(defn alist-get
+  [entries key]
+  (let loop ((xs entries))
+    (cond
+      (empty? xs) false
+      (string=? (car (first xs)) key) (first xs)
+      :else (loop (rest xs)))))
 
 (defn assert-json=
   [label expected actual]
@@ -219,6 +265,246 @@
 (assert-true "core help request -h" (ro-help-help-request? '("-h")))
 (assert-true "core help request rejects item commands"
              (not (ro-help-help-request? '("items"))))
+(define parsed-angle-args
+  (ro-cli-cmdspec-parse-arg-names "create <item-id> <name>"))
+(assert-json= "core cli cmdspec parse angle flags"
+              '("create")
+              (first parsed-angle-args))
+(assert-str= "core cli cmdspec parse angle argdoc"
+             " <item-id> <name>"
+             (first (rest parsed-angle-args)))
+(assert-str= "core cli cmdspec parse angle first argname"
+             "item-id"
+             (name (first (first (rest (rest parsed-angle-args))))))
+(assert-str= "core cli cmdspec parse angle second argname"
+             "name"
+             (name (first (rest (first (rest (rest parsed-angle-args)))))))
+(define parsed-upper-args
+  (ro-cli-cmdspec-parse-arg-names "--input, -i FILE"))
+(assert-json= "core cli cmdspec parse upper flags"
+              '("--input" "-i")
+              (first parsed-upper-args))
+(assert-str= "core cli cmdspec parse upper argdoc"
+             " FILE"
+             (first (rest parsed-upper-args)))
+(assert-str= "core cli cmdspec parse upper argname"
+             "file"
+             (name (first (first (rest (rest parsed-upper-args))))))
+(define prepared-cmdpairs
+  (ro-cli-cmdspec-prepare-cmdpairs
+   ["docs" {:kind 'docs}
+    "show ITEM-ID" {:kind 'show}]))
+(assert-str= "core cli cmdspec prepare first name"
+             "docs"
+             (first (first prepared-cmdpairs)))
+(assert-str= "core cli cmdspec prepare first kind"
+             "docs"
+             (symbol->string (:kind (first (rest (first prepared-cmdpairs))))))
+(assert-str= "core cli cmdspec prepare second name"
+             "show"
+             (first (first (rest prepared-cmdpairs))))
+(assert-str= "core cli cmdspec prepare second argdoc"
+             " ITEM-ID"
+             (:argdoc (first (rest (first (rest prepared-cmdpairs))))))
+(assert-str= "core cli cmdspec prepare second argname"
+             "item-id"
+             (name (first (:argnames (first (rest (first (rest prepared-cmdpairs))))))))
+(define parsed-verbose-flag
+  (ro-cli-parse-flagstr "-v, --verbose" {:doc "Verbose"}))
+(assert-str= "core cli flag parse key"
+             "verbose"
+             (name (:key parsed-verbose-flag)))
+(assert-num= "core cli flag parse argcnt"
+             0
+             (:argcnt parsed-verbose-flag))
+(assert-json= "core cli flag parse flags"
+              '("-v" "--verbose")
+              (:flags parsed-verbose-flag))
+(define parsed-input-flag
+  (ro-cli-parse-flagstr "--input FILE" {:doc "Input"}))
+(assert-str= "core cli flag parse argdoc"
+             " FILE"
+             (:argdoc parsed-input-flag))
+(assert-str= "core cli flag parse argname"
+             "file"
+             (name (first (:args parsed-input-flag))))
+(assert-num= "core cli prepare flagpairs count"
+             2
+             (count (ro-cli-prepare-flagpairs
+                     ["-v, --verbose" {:doc "Verbose"}
+                      "--input FILE" {:doc "Input"}])))
+(define parsed-flagmap
+  (ro-cli-parse-flagstrs
+   (ro-cli-prepare-flagpairs
+    ["-v, --verbose" {:doc "Verbose"}
+     "--input FILE" {:doc "Input"}])))
+(assert-true "core cli flagmap has help short"
+             (not (equal? #f (alist-get parsed-flagmap "-h"))))
+(assert-true "core cli flagmap has help long"
+             (not (equal? #f (alist-get parsed-flagmap "--help"))))
+(assert-str= "core cli flagmap verbose key"
+             "verbose"
+             (name (:key (cdr (alist-get parsed-flagmap "--verbose")))))
+(assert-str= "core cli flagmap input key"
+             "input"
+             (name (:key (cdr (alist-get parsed-flagmap "--input")))))
+(assert-str= "core cli ro spec first prepared command"
+             "help"
+             (first (first (ro-cli-cmdspec-prepare-cmdpairs (:commands ro-cli-ro-root-command-spec)))))
+(assert-json= "core cli completion candidates top level"
+              '("agent" "attachments" "capture")
+              (take 3 (ro-cli-shell-completion-candidates '())))
+(assert-json= "core cli completion candidates docs"
+              '("cli" "getting-started" "output-contract")
+              (take 3 (ro-cli-shell-completion-candidates '("docs" ""))))
+(assert-str= "core cli dispatch help kind"
+             "help"
+             (symbol->string (first (ro-cli-dispatch-top-level '("--help")))))
+(assert-str= "core cli dispatch docs kind"
+             "docs"
+             (symbol->string (first (ro-cli-dispatch-top-level '("docs" "cli")))))
+(assert-str= "core cli dispatch item kind"
+             "item"
+             (symbol->string (first (ro-cli-dispatch-top-level '("item-123")))))
+(assert-str= "core cli dispatch error kind"
+             "error"
+             (symbol->string (first (ro-cli-dispatch-top-level '("--unknown")))))
+(define prepared-cli-sample
+  (ro-cli-prepare-command-spec
+   {:name "sample"
+    :commands ["show ITEM-ID" {:kind 'show}
+               "list" {:kind 'list}]
+    :usage-lines ["sample show <item-id>"
+                  "sample list"]}))
+(define prepared-workspace-spec
+  (ro-cli-top-level-command-spec "workspace"))
+(define dispatched-workspace-add
+  (ro-cli-dispatch prepared-workspace-spec
+                   '("add" "alpha" "--dir" "/tmp/alpha" "--use")))
+(define dispatched-workspace-add-missing-dir
+  (ro-cli-dispatch prepared-workspace-spec
+                   '("add" "alpha")))
+(define dispatched-workspace-help
+  (ro-cli-dispatch prepared-workspace-spec
+                   '("add" "--help")))
+(define dispatched-docs-topic
+  (ro-cli-dispatch (ro-cli-top-level-command-spec "docs")
+                   '("getting-started" "--raw")))
+(define dispatched-docs-error
+  (ro-cli-dispatch (ro-cli-top-level-command-spec "docs")
+                   '("getting-started" "--bogus")))
+(define dispatched-events-limit
+  (ro-cli-dispatch (ro-cli-top-level-command-spec "events")
+                   '("list" "--limit" "5")))
+(define dispatched-events-limit-invalid
+  (ro-cli-dispatch (ro-cli-top-level-command-spec "events")
+                   '("list" "--limit" "bogus")))
+(define dispatched-doctor-summary-default
+  (ro-cli-dispatch (ro-cli-top-level-command-spec "doctor")
+                   '("--summary" "--fail")))
+(assert-str= "core cli prepared sample first command"
+             "show"
+             (first (first (:commands prepared-cli-sample))))
+(assert-str= "core cli prepared workspace child name"
+             "add"
+             (:name (:spec dispatched-workspace-add)))
+(assert-str= "core cli prepared workspace add arg"
+             "alpha"
+             (get (:arguments dispatched-workspace-add) :name ""))
+(assert-str= "core cli prepared workspace add dir"
+             "/tmp/alpha"
+             (get (:flags dispatched-workspace-add) :dir ""))
+(assert-true "core cli prepared workspace add use"
+             (get (:flags dispatched-workspace-add) :use false))
+(assert-str= "core cli prepared workspace missing dir status"
+             "error"
+             (name (:status dispatched-workspace-add-missing-dir)))
+(assert-str= "core cli prepared workspace missing dir reason"
+             "missing-required-flag"
+             (name (:reason dispatched-workspace-add-missing-dir)))
+(assert-str= "core cli prepared workspace help status"
+             "help"
+             (name (:status dispatched-workspace-help)))
+(assert-str= "core cli prepared docs status"
+             "ok"
+             (name (:status dispatched-docs-topic)))
+(assert-str= "core cli prepared docs topic"
+             "getting-started"
+             (first (:positionals dispatched-docs-topic)))
+(assert-true "core cli prepared docs raw"
+             (get (:flags dispatched-docs-topic) :raw false))
+(assert-str= "core cli prepared docs error status"
+             "error"
+             (name (:status dispatched-docs-error)))
+(assert-str= "core cli prepared docs error reason"
+             "unknown-flag"
+             (name (:reason dispatched-docs-error)))
+(assert-str= "core cli prepared events parsed limit status"
+             "ok"
+             (name (:status dispatched-events-limit)))
+(assert-num= "core cli prepared events parsed limit"
+             5
+             (get (:flags dispatched-events-limit) :limit 0))
+(assert-str= "core cli prepared events invalid limit status"
+             "error"
+             (name (:status dispatched-events-limit-invalid)))
+(assert-str= "core cli prepared events invalid limit reason"
+             "invalid-flag-value"
+             (name (:reason dispatched-events-limit-invalid)))
+(assert-str= "core cli prepared doctor default summary status"
+             "ok"
+             (name (:status dispatched-doctor-summary-default)))
+(assert-str= "core cli prepared doctor default summary spec"
+             "doctor"
+             (:name (:spec dispatched-doctor-summary-default)))
+(assert-true "core cli prepared doctor default summary flag"
+             (get (:flags dispatched-doctor-summary-default) :summary false))
+(assert-json= "core cli generic render workspace add help"
+              '("ro add"
+                ""
+                "usage:"
+                "  ro workspace add <name> --dir <path> [--kind git] [--use]")
+              (ro-cli-render-command-help (:spec dispatched-workspace-help)))
+(assert-json= "core cli generic completion workspace root"
+              '("add" "current" "init" "list" "use")
+              (ro-cli-completion-candidates prepared-workspace-spec '()))
+(assert-json= "core cli generic completion docs topics"
+              '("cli" "getting-started" "output-contract")
+              (take 3 (ro-cli-completion-candidates ro-cli-prepared-root-command-spec
+                                                    '("docs" ""))))
+(define docs-command-spec
+  (ro-cli-command-spec-for-name "docs"))
+(assert-str= "core cli spec docs kind"
+             "docs"
+             (symbol->string (get docs-command-spec :kind)))
+(assert-json= "core cli spec help lines docs"
+              '("  ro docs"
+                "  ro docs <topic>"
+                "  ro docs <topic> --raw")
+              (ro-cli-command-spec-help-lines docs-command-spec))
+(assert-json= "core cli command help lines sync"
+              '("ro sync"
+                ""
+                "usage:"
+                "  ro sync status"
+                "  ro sync remotes"
+                "  ro sync setup [--remote-url <url>] [--remote-name <name>] [--commit] [--push] [--message <msg>]"
+                "  ro sync pull"
+                "  ro sync reindex"
+                "  ro sync push [--message <msg>] [--pull=false]"
+                "  ro sync resolve")
+              (ro-cli-command-help-lines "sync"))
+(assert-str= "core cli root help first"
+             "  ro help                   # show this help"
+             (first (ro-cli-root-help-command-lines)))
+(assert-str= "core cli top command first"
+             "agent"
+             (first (ro-cli-top-command-names)))
+(assert-str= "core cli completion command line starts agent"
+             "agent"
+             (first (str/split (ro-cli-completion-command-line) " ")))
+(assert-true "core cli docs topics line contains sync"
+             (not (equal? #f (member "sync" (str/split (ro-cli-docs-topics-line) " ")))))
 (assert-true "core command registry knows help"
              (ro-commands-command-known? "help"))
 (assert-true "core command registry knows tasks"
@@ -705,6 +991,8 @@
   (ro-workspace-workspace-main-plan '("help")))
 (define sample-workspace-add-plan
   (ro-workspace-workspace-main-plan '("add" "alpha" "--dir" "/tmp/alpha" "--use")))
+(define sample-workspace-add-missing-dir-plan
+  (ro-workspace-workspace-main-plan '("add" "alpha")))
 (define sample-workspace-add-help-plan
   (ro-workspace-workspace-add-plan '("--help")))
 (define sample-workspace-init-plan
@@ -748,6 +1036,12 @@
              (vector-ref sample-workspace-add-plan 3))
 (assert-true "core workspace add plan use"
              (vector-ref sample-workspace-add-plan 4))
+(assert-str= "core workspace add missing dir tag"
+             "error"
+             (symbol->string (vector-ref sample-workspace-add-missing-dir-plan 0)))
+(assert-str= "core workspace add missing dir message"
+             "missing --dir"
+             (vector-ref sample-workspace-add-missing-dir-plan 1))
 (assert-str= "core workspace add help plan tag"
              "subhelp-root"
              (symbol->string (vector-ref sample-workspace-add-help-plan 0)))
@@ -1243,6 +1537,10 @@
   (ro-events-events-main-plan '("list")))
 (define events-list-help-plan
   (ro-events-events-main-plan '("list" "--help")))
+(define events-list-limit-plan
+  (ro-events-events-main-plan '("list" "--limit" "5")))
+(define events-list-missing-limit-plan
+  (ro-events-events-main-plan '("list" "--limit")))
 
 (assert-str= "core events main plan tag"
              "help"
@@ -1253,14 +1551,25 @@
 (assert-num= "core events list default limit"
              200
              (vector-ref events-list-plan 1))
+(assert-num= "core events list parsed limit"
+             5
+             (vector-ref events-list-limit-plan 1))
 (assert-str= "core events list help plan tag"
              "unsupported-flag"
              (symbol->string (vector-ref events-list-help-plan 0)))
+(assert-str= "core events list missing limit tag"
+             "error"
+             (symbol->string (vector-ref events-list-missing-limit-plan 0)))
+(assert-str= "core events list missing limit message"
+             "ro events list expects a value after --limit"
+             (vector-ref events-list-missing-limit-plan 1))
 
 (define reindex-main-plan-output
   (ro-reindex-reindex-main-plan '()))
 (define reindex-help-plan
   (ro-reindex-reindex-main-plan '("--help")))
+(define reindex-error-plan
+  (ro-reindex-reindex-main-plan '("bogus")))
 
 (assert-str= "core reindex main plan tag"
              "reindex"
@@ -1268,6 +1577,9 @@
 (assert-str= "core reindex help plan tag"
              "help"
              (symbol->string (vector-ref reindex-help-plan 0)))
+(assert-str= "core reindex error plan tag"
+             "error"
+             (symbol->string (vector-ref reindex-error-plan 0)))
 
 (define sync-main-plan-output
   (ro-sync-sync-main-plan '()))
@@ -1275,6 +1587,8 @@
   (ro-sync-sync-main-plan '("status")))
 (define sync-remotes-plan
   (ro-sync-sync-main-plan '("remotes")))
+(define sync-pull-plan
+  (ro-sync-sync-main-plan '("pull")))
 
 (assert-str= "core sync main plan tag"
              "help"
@@ -1285,6 +1599,9 @@
 (assert-str= "core sync remotes plan tag"
              "remotes"
              (symbol->string (vector-ref sync-remotes-plan 0)))
+(assert-str= "core sync unsupported plan tag"
+             "error"
+             (symbol->string (vector-ref sync-pull-plan 0)))
 
 (define doctor-report-plan
   (ro-doctor-doctor-main-plan '()))
@@ -1292,6 +1609,8 @@
   (ro-doctor-doctor-main-plan '("--help")))
 (define doctor-summary-plan
   (ro-doctor-doctor-main-plan '("summary" "--fail")))
+(define doctor-summary-flag-plan
+  (ro-doctor-doctor-main-plan '("--summary" "--fail")))
 (define doctor-dedupe-plan-main
   (ro-doctor-doctor-main-plan '("dedupe" "--write" "--force")))
 
@@ -1306,6 +1625,11 @@
              (symbol->string (vector-ref doctor-summary-plan 0)))
 (assert-true "core doctor summary plan fail flag"
              (vector-ref doctor-summary-plan 1))
+(assert-str= "core doctor summary flag plan tag"
+             "summary"
+             (symbol->string (vector-ref doctor-summary-flag-plan 0)))
+(assert-true "core doctor summary flag plan fail"
+             (vector-ref doctor-summary-flag-plan 1))
 (assert-str= "core doctor dedupe plan tag"
              "dedupe"
              (symbol->string (vector-ref doctor-dedupe-plan-main 0)))

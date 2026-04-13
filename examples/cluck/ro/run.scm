@@ -19,6 +19,10 @@
     (cluck-with-module-search-root
      cluck-root
      (fn []
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli/cmdspec.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli/ro_spec.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/cli/completions.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/commands.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/json.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/docs.clk")

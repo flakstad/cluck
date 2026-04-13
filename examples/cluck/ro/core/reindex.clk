@@ -1,6 +1,11 @@
 ;; Pure reindex helpers for the Ro CLI spike.
 
-(ns cluck.examples.ro.core.reindex)
+(ns cluck.examples.ro.core.reindex
+  (:require [cluck.examples.ro.core.cli :as cli]))
+
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
 
 (def reindex-recognized-types
   (list
@@ -78,12 +83,13 @@
 
 (defn reindex-main-plan
   [args]
-  (cond
-    (empty? args)
-    (vector 'reindex '())
+  (let [result (cli-dispatch (cli-top-level-command-spec "reindex") args)]
+    (cond
+      (equal? (:status result) :help)
+      (vector 'help '())
 
-    (any-help-arg? args)
-    (vector 'help '())
+      (equal? (:status result) :error)
+      (vector 'error "unexpected reindex argument" args)
 
-    :else
-    (vector 'error "unexpected reindex argument" args)))
+      :else
+      (vector 'reindex '()))))

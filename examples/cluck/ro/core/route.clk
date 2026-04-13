@@ -1,13 +1,16 @@
 ;; Pure top-level routing for the Ro CLI spike.
 
 (ns cluck.examples.ro.core.route
-  (:require [cluck.string :as str]))
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.core.help :as help]
+            [cluck.examples.ro.core.commands :as commands]
+            [cluck.examples.ro.core.cli :as cli]))
 
-(def help-request?
-  (ns-resolve 'cluck.examples.ro.core.help 'help-request?))
+(def help-request? help/help-request?)
 
-(def command-kind-for-name
-  (ns-resolve 'cluck.examples.ro.core.commands 'command-kind-for-name))
+(def command-kind-for-name commands/command-kind-for-name)
+
+(def cli-dispatch-top-level cli/dispatch-top-level)
 
 (defn global-flag-with-value?
   [arg]
@@ -54,19 +57,4 @@
 (defn main-route
   [args]
   (let ((args (strip-global-flags args)))
-    (cond
-      (help-request? args)
-      (vector 'help '())
-
-      (empty? args)
-      (vector 'help '())
-
-      :else
-      (let ((kind (command-kind-for-name (first args))))
-        (if kind
-            (vector kind (rest args))
-            (if (and (not (string=? (first args) ""))
-                     (not (str/starts-with? (first args) "-"))
-                     (empty? (rest args)))
-                (vector 'item args)
-                (vector 'error args)))))))
+    (cli-dispatch-top-level args)))

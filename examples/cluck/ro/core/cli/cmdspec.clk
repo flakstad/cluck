@@ -1,0 +1,103 @@
+;; Command-spec helpers modeled on lambdaisland.cli.cmdspec.
+
+(ns cluck.examples.ro.core.cli.cmdspec
+  (:require [cluck.string :as str]))
+
+(defn split-cmdspec-tokens
+  [text]
+  (let loop ((chars (string->list (or text "")))
+             (token '())
+             (acc '()))
+    (if (empty? chars)
+        (let [piece (list->string (reverse token))]
+          (reverse
+           (if (string=? piece "")
+               acc
+               (cons piece acc))))
+        (let [ch (first chars)]
+          (if (or (char=? ch #\,)
+                  (char-whitespace? ch))
+              (let [piece (list->string (reverse token))]
+                (loop (rest chars)
+                      '()
+                      (if (string=? piece "")
+                          acc
+                          (cons piece acc))))
+              (loop (rest chars)
+                    (cons ch token)
+                    acc))))))
+
+(defn uppercase-arg-token?
+  [token]
+  (let ((chars (string->list token)))
+    (and (not (empty? chars))
+         (every? (fn [ch]
+                   (or (char-upper-case? ch)
+                       (char=? ch #\_)
+                       (char=? ch #\-)))
+                 chars))))
+
+(defn angle-arg-token?
+  [token]
+  (and (> (string-length token) 2)
+       (char=? (string-ref token 0) #\<)
+       (char=? (string-ref token (- (string-length token) 1)) #\>)))
+
+(defn token->argname
+  [token]
+  (cond
+    (angle-arg-token? token)
+    (keyword
+     (str/lower-case
+      (substring token 1 (- (string-length token) 1))))
+
+    (uppercase-arg-token? token)
+    (keyword (str/lower-case token))
+
+    :else false))
+
+(defn parse-arg-names
+  [text]
+  (let [tokens (split-cmdspec-tokens text)]
+    (let loop ((xs tokens)
+               (flags '())
+               (argdoc '())
+               (argnames '()))
+      (if (empty? xs)
+          [(reverse flags)
+           (if (empty? argdoc)
+               ""
+               (string-append " " (str/join " " (reverse argdoc))))
+           (reverse argnames)]
+          (let [token (first xs)
+                argname (token->argname token)]
+            (if argname
+                (loop (rest xs)
+                      flags
+                      (cons token argdoc)
+                      (cons argname argnames))
+                (loop (rest xs)
+                      (cons token flags)
+                      argdoc
+                      argnames)))))))
+
+(defn to-cmdspec
+  [value]
+  value)
+
+(defn prepare-cmdpairs
+  [commands]
+  (let [pairs (if (vector? commands)
+                (partition 2 commands)
+                commands)]
+    (map (fn [[k v]]
+           (let [spec (to-cmdspec v)
+                 parsed (parse-arg-names k)
+                 flags (first parsed)
+                 argdoc (first (rest parsed))
+                 argnames (first (rest (rest parsed)))]
+             [(if (empty? flags) k (first flags))
+              (assoc spec
+                     :argdoc argdoc
+                     :argnames argnames)]))
+         pairs)))

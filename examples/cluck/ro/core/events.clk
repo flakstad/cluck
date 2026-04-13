@@ -2,10 +2,15 @@
 
 (ns cluck.examples.ro.core.events
   (:require [cluck.io :as io]
-            [json :as json]))
+            [json :as json]
+            [cluck.examples.ro.core.cli :as cli]
+            [cluck.examples.ro.core.json :as ro-json]))
 
-(def json-output
-  (ns-resolve 'cluck.examples.ro.core.json 'json-output))
+(def cli-top-level-command-spec cli/top-level-command-spec)
+
+(def cli-dispatch cli/dispatch)
+
+(def json-output ro-json/json-output)
 
 (defn json-key->text
   [key]
@@ -427,43 +432,31 @@
 
 (defn events-main-plan
   [args]
-  (cond
-    (or (empty? args)
-        (help-flag? (first args)))
-    (vector 'help '())
-
-    (string=? (first args) "list")
+  (let [result (cli-dispatch (cli-top-level-command-spec "events") args)]
     (cond
-      (empty? (rest args))
-      (vector 'list events-default-limit)
+      (and (equal? (:status result) :help)
+           (string=? (:name (:spec result)) "events"))
+      (vector 'help '())
 
-      (any-help-arg? (rest args))
+      (equal? (:status result) :help)
       (vector 'unsupported-flag '())
 
+      (equal? (:status result) :error)
+      (cond
+        (equal? (:reason result) :missing-flag-value)
+        (vector 'error "ro events list expects a value after --limit" args)
+
+        (equal? (:reason result) :invalid-flag-value)
+        (vector 'error "ro events list expects a non-negative --limit" (:value result))
+
+        (equal? (:reason result) :unknown-command)
+        (vector 'error "unsupported events subcommand" args)
+
+        :else
+        (vector 'unsupported-flag '()))
+
       :else
-      (let loop ((xs (rest args))
-                 (limit events-default-limit))
-        (cond
-          (empty? xs)
-          (vector 'list limit)
-
-          (string=? (first xs) "--limit")
-          (if (empty? (rest xs))
-              (vector 'error "ro events list expects a value after --limit" args)
-              (let [next-limit (parse-long (first (rest xs)))]
-                (if (< next-limit 0)
-                    (vector 'error "ro events list expects a non-negative --limit" next-limit)
-                    (loop (cddr xs) next-limit))))
-
-          (str/starts-with? (first xs) "--limit=")
-          (let [value (substring (first xs) 8 (string-length (first xs)))
-                next-limit (parse-long value)]
-            (if (< next-limit 0)
-                (vector 'error "ro events list expects a non-negative --limit" next-limit)
-                (loop (cdr xs) next-limit)))
-
-          :else
-          (vector 'unsupported-flag '()))))
-
-    :else
-    (vector 'error "unsupported events subcommand" args)))
+      (let [limit (get (:flags result) :limit events-default-limit)]
+        (if (< limit 0)
+            (vector 'error "ro events list expects a non-negative --limit" limit)
+            (vector 'list limit))))))
