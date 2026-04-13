@@ -252,6 +252,17 @@
               (first points)
               (rest points)))))
 
+(defn draw-render-stroke-joints!
+  "Render interior stroke points so sharp turns keep round join coverage."
+  [renderer state points size opacity render-stroke-point!]
+  (let [total (count points)]
+    (let loop ((index 1))
+      (if (>= index (- total 1))
+        nil
+        (begin
+          (render-stroke-point! renderer state (nth points index) size opacity)
+          (loop (+ index 1)))))))
+
 (defn draw-render-active-box!
   "Render the current active rectangle preview."
   [renderer state active-box render-box!]

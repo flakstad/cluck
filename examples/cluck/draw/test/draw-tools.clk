@@ -1395,3 +1395,36 @@
   (set! sdl/set-texture-color-mod! original-color)
   (set! sdl/set-texture-alpha-mod! original-alpha)
   (set! sdl/render-texture-at! original-render))
+
+(let [original-point draw-render-stroke-point!
+      original-segment draw-render-stroke-segment!
+      segment-calls []
+      point-calls []
+      stroke {:points [[10.0 10.0 1.0]
+                       [20.0 30.0 0.7]
+                       [35.0 15.0 1.0]]
+              :color [255 255 255]
+              :size 4
+              :opacity 1.0}]
+  (set! draw-render-stroke-point!
+        (lambda (renderer state point size opacity)
+          (set! point-calls (conj point-calls [point size opacity]))
+          true))
+  (set! draw-render-stroke-segment!
+        (lambda (renderer state a b size opacity)
+          (set! segment-calls (conj segment-calls [a b size opacity]))
+          true))
+  (draw-render-stroke! 'renderer
+                       (default-state)
+                       stroke)
+  (draw-tools-assert-num= "stroke render keeps segment count"
+                          2
+                          (count segment-calls))
+  (draw-tools-assert-num= "stroke render adds one interior joint stamp"
+                          1
+                          (count point-calls))
+  (draw-tools-assert-str= "stroke render joints use interior point"
+                          "[20.0 30.0 0.7]"
+                          (pr-str (nth (first point-calls) 0)))
+  (set! draw-render-stroke-point! original-point)
+  (set! draw-render-stroke-segment! original-segment))

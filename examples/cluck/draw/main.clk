@@ -2358,6 +2358,7 @@
   (draw-render-soft-segment! renderer state a b size opacity))
 
 (def draw-render-stroke-segments! draw-render/draw-render-stroke-segments!)
+(def draw-render-stroke-joints! draw-render/draw-render-stroke-joints!)
 
 (defn draw-render-stroke!
   "Render a stroke map."
@@ -2372,12 +2373,19 @@
         (lambda ()
           (if (<= (count points) 1)
             (draw-render-stroke-point! renderer state (first points) size opacity)
-            (draw-render-stroke-segments! renderer
+            (begin
+              (draw-render-stroke-segments! renderer
+                                            state
+                                            points
+                                            size
+                                            opacity
+                                            draw-render-stroke-segment!)
+              (draw-render-stroke-joints! renderer
                                           state
                                           points
                                           size
                                           opacity
-                                          draw-render-stroke-segment!)))))))
+                                          draw-render-stroke-point!))))))))
 
 (defn draw-render-box-edge!
   "Render one edge of a box from A to B."
