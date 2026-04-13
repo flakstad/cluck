@@ -1,0 +1,29 @@
+;; Freehand ink renderer selection and dispatch.
+
+(ns cluck.examples.draw.ink
+  (:require [cluck.examples.draw.state :as draw.state]))
+
+(defn draw-ink-renderer-kind
+  "Return the selected freehand ink renderer for STATE."
+  [state]
+  (let [kind (or (get state :ink-renderer) :stamped-sdl)]
+    (if (draw.state/draw-kind=? kind :native-gpu)
+      :native-gpu
+      :stamped-sdl)))
+
+(defn draw-native-ink-renderer?
+  "Return true when STATE selects the native/GPU ink renderer."
+  [state]
+  (draw.state/draw-kind=? (draw-ink-renderer-kind state) :native-gpu))
+
+(defn draw-render-ink-stroke!
+  "Render STROKE using STATE's selected ink renderer.
+
+  For now, `:native-gpu` falls back to STAMPED-THUNK until the native backend
+  is implemented behind this boundary."
+  [renderer state stroke stamped-thunk native-thunk]
+  (if (draw-native-ink-renderer? state)
+    (if native-thunk
+      (native-thunk renderer state stroke)
+      (stamped-thunk renderer state stroke))
+    (stamped-thunk renderer state stroke)))

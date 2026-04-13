@@ -114,6 +114,9 @@
                         (str/includes? (describe-state (default-state)) "pen dynamic"))
 (draw-tools-assert-true "describe-state includes undo count"
                         (str/includes? (describe-state (default-state)) "undo 0"))
+(draw-tools-assert-str= "ink renderer defaults to stamped sdl"
+                        ":stamped-sdl"
+                        (pr-str (get (default-state) :ink-renderer)))
 (draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
 (draw-tools-assert-str= "window title is static"
                         "Cluck Draw"

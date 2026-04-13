@@ -28,6 +28,7 @@
    :opacity 1.0
    :pen-pressure 1.0
    :pen-pressure-mode :dynamic
+   :ink-renderer :stamped-sdl
    :window-focused? true
    :view-x 0.0
    :view-y 0.0
@@ -660,6 +661,9 @@
         state (if (contains? state :stroke-filter-point)
                 state
                 (assoc state :stroke-filter-point false))
+        state (if (contains? state :ink-renderer)
+                state
+                (assoc state :ink-renderer :stamped-sdl))
         state (if (contains? state :status-note)
                 state
                 (assoc state :status-note "" :status-note-frame 0))

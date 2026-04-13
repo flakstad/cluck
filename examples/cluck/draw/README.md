@@ -81,6 +81,7 @@ Architecture notes:
 - keep SDL event decoding in `cluck.examples.draw.sdl3`; downstream code should prefer structured event maps over parsing SDL debug strings
 - keep custom C limited to the places where SDL requires callbacks, direct struct access, or pixel/texture work
 - treat pointers and native resources as boundary concerns; higher-level draw modules should work with ordinary maps and values whenever possible
+- freehand ink rendering now has an explicit backend boundary in `cluck.examples.draw.ink`; the current `:stamped-sdl` path remains the default, but this is where a future `:native-gpu` backend should plug in without reshaping the rest of the app
 
 Stroke rendering quality notes and future steps:
 - current freehand rendering is built from sampled input points plus a soft strip per segment, which keeps the implementation simple but can show faceting on sharp turns and seams at angled joins

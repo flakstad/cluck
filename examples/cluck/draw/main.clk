@@ -25,6 +25,7 @@
             [cluck.examples.draw.commands :as draw-commands]
             [cluck.examples.draw.replay :as draw-replay]
             [cluck.examples.draw.stroke :as draw-stroke]
+            [cluck.examples.draw.ink :as draw-ink]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
             [cluck.io :as io]
@@ -297,6 +298,8 @@
 (def draw-push-history! draw-history/draw-push-history!)
 (def draw-restore-history! draw-history/draw-restore-history!)
 (def draw-stroke-color draw-history/draw-stroke-color)
+(def draw-ink-renderer-kind draw-ink/draw-ink-renderer-kind)
+(def draw-native-ink-renderer? draw-ink/draw-native-ink-renderer?)
 
 (def draw-recent-events-limit draw-input/draw-recent-events-limit)
 (def draw-input-batch-limit draw-input/draw-input-batch-limit)
@@ -2360,8 +2363,8 @@
 (def draw-render-stroke-segments! draw-render/draw-render-stroke-segments!)
 (def draw-render-stroke-joints! draw-render/draw-render-stroke-joints!)
 
-(defn draw-render-stroke!
-  "Render a stroke map."
+(defn draw-render-stamped-stroke!
+  "Render a stroke map with the current stamped SDL ink path."
   [renderer state stroke]
   (let [points (get stroke :points)
         color (get stroke :color)
@@ -2386,6 +2389,23 @@
                                           size
                                           opacity
                                           draw-render-stroke-point!))))))))
+
+(defn draw-render-native-ink-stroke!
+  "Render a stroke map with the future native/GPU ink path.
+
+  This currently falls back to the stamped path until the native backend is
+  implemented behind the ink-renderer boundary."
+  [renderer state stroke]
+  (draw-render-stamped-stroke! renderer state stroke))
+
+(defn draw-render-stroke!
+  "Render a stroke map using the selected freehand ink renderer."
+  [renderer state stroke]
+  (draw-ink/draw-render-ink-stroke! renderer
+                                    state
+                                    stroke
+                                    draw-render-stamped-stroke!
+                                    draw-render-native-ink-stroke!))
 
 (defn draw-render-box-edge!
   "Render one edge of a box from A to B."
