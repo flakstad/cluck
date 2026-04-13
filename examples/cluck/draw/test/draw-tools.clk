@@ -112,11 +112,25 @@
                         (str/includes? (describe-state (default-state)) "opacity 1.00"))
 (draw-tools-assert-true "describe-state includes pen mode"
                         (str/includes? (describe-state (default-state)) "pen dynamic"))
+(draw-tools-assert-true "describe-state includes ink renderer"
+                        (str/includes? (describe-state (default-state)) "ink native-gpu"))
 (draw-tools-assert-true "describe-state includes undo count"
                         (str/includes? (describe-state (default-state)) "undo 0"))
-(draw-tools-assert-str= "ink renderer defaults to stamped sdl"
-                        ":stamped-sdl"
+(draw-tools-assert-str= "ink renderer defaults to native gpu"
+                        ":native-gpu"
                         (pr-str (get (default-state) :ink-renderer)))
+(draw-tools-assert-str= "default ink context kind uses opengl"
+                        ":opengl"
+                        (pr-str (draw-ink-context-kind (default-state))))
+(draw-tools-assert-str= "stamped sdl ink context kind uses renderer"
+                        ":renderer"
+                        (pr-str (draw-ink-context-kind
+                                  (assoc (default-state) :ink-renderer :stamped-sdl))))
+(let [result (draw-ensure-native-backend-base {:context-kind :renderer})]
+  (draw-tools-assert-false "renderer context does not initialize native backend"
+                           (get result :ready?))
+  (draw-tools-assert-false "renderer context stores no native backend kind"
+                           (draw-native-backend-kind (get result :context))))
 (draw-tools-assert-num= "brush radius" 2 (draw-brush-radius 2))
 (draw-tools-assert-str= "window title is static"
                         "Cluck Draw"
@@ -151,6 +165,16 @@
     (draw-tools-assert-true "pen pressure toggle switches back to dynamic"
                             (draw-kind=? (get restored :pen-pressure-mode) :dynamic))))
 
+(let [toggled (draw-handle-tool-key! (default-state) "g")]
+  (draw-tools-assert-true "ink renderer toggle switches to stamped sdl"
+                          (draw-kind=? (get toggled :ink-renderer) :stamped-sdl))
+  (draw-tools-assert-str= "ink renderer toggle sets status note"
+                          "ink renderer: stamped-sdl"
+                          (get toggled :status-note))
+  (let [restored (draw-handle-tool-key! toggled "g")]
+    (draw-tools-assert-true "ink renderer toggle switches back to native gpu"
+                            (draw-kind=? (get restored :ink-renderer) :native-gpu))))
+
 (let [cleared (draw-clear-strokes! (draw-tools-base-state))]
     (draw-tools-assert-true "clear strokes"
                             (and (empty? (get cleared :strokes))
@@ -178,6 +202,12 @@
       (draw-tools-assert-true "undo restores eraser off"
                               (not (get restored :eraser?))))
 
+  (let [zoomed (assoc (default-state) :zoom 2.0)
+        shape-size (draw-current-brush-size zoomed [10.0 20.0 1.0] 2)]
+    (draw-tools-assert-num= "shape tools use zoom-aware world size"
+                            1.0
+                            shape-size))
+
   (let [clear-by-key (draw-handle-tool-key! (draw-tools-base-state) "c")]
     (draw-tools-assert-true "clear key dispatch"
                             (and (empty? (get clear-by-key :strokes))
@@ -187,23 +217,6 @@
       (draw-tools-assert-num= "undo key dispatch"
                               1
                               (count (get undo-by-key :strokes)))))
-
-  (let [ctrl-state (assoc (default-state) :ctrl-down? true)
-        smaller (draw-tools-copy-state
-                  (draw-handle-tool-key! ctrl-state "1"))
-        medium (draw-tools-copy-state
-                 (draw-handle-tool-key! ctrl-state "2"))
-        larger (draw-tools-copy-state
-                 (draw-handle-tool-key! ctrl-state "3"))]
-    (draw-tools-assert-num= "brush size ctrl+1 preset"
-                            2
-                            (get smaller :brush-size))
-    (draw-tools-assert-num= "brush size ctrl+2 preset"
-                            6
-                            (get medium :brush-size))
-    (draw-tools-assert-num= "brush size ctrl+3 preset"
-                            12
-                            (get larger :brush-size)))
 
   (let [ink-state (draw-tools-copy-state
                     (draw-handle-tool-key! (default-state) "1"))
@@ -419,6 +432,9 @@
         brush-button (draw-tools-find-button-kind buttons :brush-color)
         background-button (draw-tools-find-button-kind buttons :background-color)
         picker-button (draw-tools-find-button-tool buttons :picker)
+        reset-zoom-button (draw-tools-find-button-kind buttons :reset-view)
+        brush-size-dec (draw-tools-find-button-kind buttons :brush-size-dec)
+        brush-size-inc (draw-tools-find-button-kind buttons :brush-size-inc)
         opacity-button (draw-tools-find-button-kind buttons :opacity)
         opacity-target-button (draw-tools-find-button-opacity buttons 0.5)
         brush-hit (draw-find-tool-panel-button
@@ -458,6 +474,12 @@
                           background-button)
   (draw-tools-assert-true "tool panel includes picker tool"
                           picker-button)
+  (draw-tools-assert-true "tool panel includes reset zoom button"
+                          reset-zoom-button)
+  (draw-tools-assert-true "tool panel includes brush size decrement"
+                          brush-size-dec)
+  (draw-tools-assert-true "tool panel includes brush size increment"
+                          brush-size-inc)
   (draw-tools-assert-true "tool panel includes opacity swatches"
                           opacity-button)
     (draw-tools-assert-true "tool panel includes target opacity swatch"
@@ -619,6 +641,44 @@
     (draw-tools-assert-num= "undo removes circle element"
                             0
                             (count (get undone :elements))))
+
+  (let [circle-tool (assoc (draw-set-tool-core! (default-state) :circle)
+                           :shift-down? true)
+        started (draw-start-circle circle-tool
+                                   [10.0 20.0 1.0]
+                                   [10.0 20.0])
+        extended (draw-extend-circle started
+                                     [40.0 70.0 1.0]
+                                     [40.0 70.0])
+        finished (draw-finish-circle extended
+                                     [40.0 70.0 1.0]
+                                     [40.0 70.0])
+        element (first (get finished :elements))]
+    (draw-tools-assert-num= "shift circle finish width locks square"
+                            50.0
+                            (get element :width))
+    (draw-tools-assert-num= "shift circle finish height locks square"
+                            50.0
+                            (get element :height)))
+
+  (let [box-tool (assoc (draw-set-tool-core! (default-state) :box)
+                        :shift-down? true)
+        started (draw-start-box box-tool
+                                [10.0 20.0 1.0]
+                                [10.0 20.0])
+        extended (draw-extend-box started
+                                  [40.0 70.0 1.0]
+                                  [40.0 70.0])
+        finished (draw-finish-box extended
+                                  [40.0 70.0 1.0]
+                                  [40.0 70.0])
+        element (first (get finished :elements))]
+    (draw-tools-assert-num= "shift box finish width locks square"
+                            50.0
+                            (get element :width))
+    (draw-tools-assert-num= "shift box finish height locks square"
+                            50.0
+                            (get element :height)))
 
   (let [line-tool (draw-set-tool-core! (default-state) :line)
         started (draw-start-line line-tool
@@ -922,6 +982,35 @@
     (draw-tools-assert-num= "undo restores circle height"
                             40.0
                             (get restored :height)))
+
+  (let [base (draw-sync-elements
+               (assoc (draw-set-tool-core! (default-state) :select)
+                      :shift-down? true)
+               [{:kind :circle
+                 :x 10.0
+                 :y 20.0
+                 :width 30.0
+                 :height 40.0
+                 :color [255 255 255]
+                 :size 2}])
+        resizing (assoc (assoc base :selection [1])
+                        :pointer-down? true
+                        :pointer-source :mouse
+                        :active-selection-resize {:id 1
+                                                  :handle :se
+                                                  :original-elements (edn/read-string
+                                                                       (pr-str (get base :elements)))
+                                                  :moved? false})
+        moved (draw-extend-selection-resize resizing
+                                            [50.0 70.0 1.0]
+                                            [50.0 70.0])
+        circle (first (get moved :elements))]
+    (draw-tools-assert-num= "shift selection resize locks circle width"
+                            50.0
+                            (get circle :width))
+    (draw-tools-assert-num= "shift selection resize locks circle height"
+                            50.0
+                            (get circle :height)))
 
   (let [base (draw-sync-elements
                (draw-set-tool-core! (default-state) :select)
@@ -1299,6 +1388,8 @@
   (let [original-segment sdl/render-soft-segment!
         original-brush-ready draw-brush-texture-ready?
         original-brush draw-brush-texture
+        original-strip-ready draw-strip-texture-ready?
+        original-strip draw-strip-texture
         calls []
         state (assoc (default-state)
                      :zoom 2.0)]
@@ -1308,6 +1399,12 @@
     (set! draw-brush-texture
           (fn []
             'brush))
+    (set! draw-strip-texture-ready?
+          (fn []
+            true))
+    (set! draw-strip-texture
+          (fn []
+            'strip))
     (set! sdl/render-soft-segment!
           (fn [renderer strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]
             (set! calls (conj calls [strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]))
@@ -1321,8 +1418,8 @@
     (draw-tools-assert-num= "stroke segment renderer call count"
                             2
                             (count calls))
-    (draw-tools-assert-str= "stroke segment renderer no longer needs strip texture"
-                            "false"
+    (draw-tools-assert-str= "stroke segment renderer uses strip texture body"
+                            "strip"
                             (str (nth (first calls) 0)))
     (draw-tools-assert-num= "stroke segment renderer keeps fractional screen x"
                             20.5
@@ -1332,7 +1429,9 @@
                             (nth (last calls) 9))
     (set! sdl/render-soft-segment! original-segment)
     (set! draw-brush-texture-ready? original-brush-ready)
-    (set! draw-brush-texture original-brush)))
+    (set! draw-brush-texture original-brush)
+    (set! draw-strip-texture-ready? original-strip-ready)
+    (set! draw-strip-texture original-strip)))
 
   (let [state (default-state)
         low (draw-min-point-spacing state
@@ -1345,6 +1444,22 @@
                                      6)]
     (draw-tools-assert-true "low pressure spacing stays tighter than full pressure"
                             (< low full)))
+
+  (let [state (default-state)
+        stroke {:points [[10.0 10.0 0.20]]
+                :size 6}
+        near-pressure-change (draw-append-stroke-point state
+                                                       stroke
+                                                       [10.1 10.0 0.40])
+        near-steady-pressure (draw-append-stroke-point state
+                                                       stroke
+                                                       [10.1 10.0 0.22])]
+    (draw-tools-assert-num= "pressure change keeps close sample"
+                            2
+                            (count near-pressure-change))
+    (draw-tools-assert-num= "steady close sample is still filtered"
+                            1
+                            (count near-steady-pressure)))
 
 (let [original-ready draw-brush-texture-ready?
       original-brush draw-brush-texture
@@ -1423,11 +1538,8 @@
   (draw-tools-assert-num= "stroke render keeps segment count"
                           2
                           (count segment-calls))
-  (draw-tools-assert-num= "stroke render adds one interior joint stamp"
-                          1
+  (draw-tools-assert-num= "stroke render no longer adds joint stamps"
+                          0
                           (count point-calls))
-  (draw-tools-assert-str= "stroke render joints use interior point"
-                          "[20.0 30.0 0.7]"
-                          (pr-str (nth (first point-calls) 0)))
   (set! draw-render-stroke-point! original-point)
   (set! draw-render-stroke-segment! original-segment))

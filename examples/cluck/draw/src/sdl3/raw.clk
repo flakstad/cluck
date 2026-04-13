@@ -10,6 +10,33 @@
 (def init-video-flags
   (foreign-value "SDL_INIT_VIDEO" unsigned-int))
 
+(def sdl-gl-attr-doublebuffer
+  (foreign-value "SDL_GL_DOUBLEBUFFER" int))
+
+(def sdl-gl-attr-depth-size
+  (foreign-value "SDL_GL_DEPTH_SIZE" int))
+
+(def sdl-gl-attr-stencil-size
+  (foreign-value "SDL_GL_STENCIL_SIZE" int))
+
+(def sdl-gl-attr-context-major-version
+  (foreign-value "SDL_GL_CONTEXT_MAJOR_VERSION" int))
+
+(def sdl-gl-attr-context-minor-version
+  (foreign-value "SDL_GL_CONTEXT_MINOR_VERSION" int))
+
+(def sdl-gl-attr-context-flags
+  (foreign-value "SDL_GL_CONTEXT_FLAGS" int))
+
+(def sdl-gl-attr-context-profile-mask
+  (foreign-value "SDL_GL_CONTEXT_PROFILE_MASK" int))
+
+(def sdl-gl-context-profile-core
+  (foreign-value "SDL_GL_CONTEXT_PROFILE_CORE" unsigned-int))
+
+(def sdl-gl-context-debug-flag
+  (foreign-value "SDL_GL_CONTEXT_DEBUG_FLAG" unsigned-int))
+
 (def sdl-event-type-quit
   (foreign-value "SDL_EVENT_QUIT" unsigned-int))
 
@@ -27,6 +54,15 @@
 
 (def sdl-event-type-window-exposed
   (foreign-value "SDL_EVENT_WINDOW_EXPOSED" unsigned-int))
+
+(def sdl-window-resizable
+  (foreign-value "SDL_WINDOW_RESIZABLE" unsigned-long))
+
+(def sdl-window-high-pixel-density
+  (foreign-value "SDL_WINDOW_HIGH_PIXEL_DENSITY" unsigned-long))
+
+(def sdl-window-opengl
+  (foreign-value "SDL_WINDOW_OPENGL" unsigned-long))
 
 (def sdl-event-type-window-mouse-enter
   (foreign-value "SDL_EVENT_WINDOW_MOUSE_ENTER" unsigned-int))
@@ -117,10 +153,51 @@
     "SDL_Window *window = SDL_CreateWindow(title, width, height, flags);"
     "C_return(window);"))
 
+(define sdl-create-opengl-window
+  (foreign-lambda* c-pointer ((c-string title) (int width) (int height))
+    "Uint64 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;"
+    "SDL_Window *window = SDL_CreateWindow(title, width, height, flags);"
+    "C_return(window);"))
+
+(define sdl-get-window-width
+  (foreign-lambda* int ((c-pointer window))
+    "int width = 0;"
+    "int height = 0;"
+    "if (window) { SDL_GetWindowSizeInPixels((SDL_Window *)window, &width, &height); }"
+    "C_return(width);"))
+
+(define sdl-get-window-height
+  (foreign-lambda* int ((c-pointer window))
+    "int width = 0;"
+    "int height = 0;"
+    "if (window) { SDL_GetWindowSizeInPixels((SDL_Window *)window, &width, &height); }"
+    "C_return(height);"))
+
 (define sdl-create-renderer
   (foreign-lambda* c-pointer ((c-pointer window))
     "SDL_Renderer *renderer = SDL_CreateRenderer((SDL_Window *)window, NULL);"
     "C_return(renderer);"))
+
+(define sdl-gl-set-attribute!
+  (foreign-lambda bool "SDL_GL_SetAttribute" int int))
+
+(define sdl-gl-create-context
+  (foreign-lambda* c-pointer ((c-pointer window))
+    "SDL_GLContext context = SDL_GL_CreateContext((SDL_Window *)window);"
+    "C_return(context);"))
+
+(define sdl-gl-destroy-context!
+  (foreign-lambda* void ((c-pointer context))
+    "SDL_GL_DestroyContext((SDL_GLContext)context);"))
+
+(define sdl-gl-make-current!
+  (foreign-lambda bool "SDL_GL_MakeCurrent" c-pointer c-pointer))
+
+(define sdl-gl-swap-window!
+  (foreign-lambda void "SDL_GL_SwapWindow" c-pointer))
+
+(define sdl-gl-get-proc-address
+  (foreign-lambda c-pointer "SDL_GL_GetProcAddress" c-string))
 
 (define sdl-set-draw-color!
   (foreign-lambda bool "SDL_SetRenderDrawColor"

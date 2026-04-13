@@ -5,7 +5,8 @@
             [cluck.examples.draw.state :as draw.state]
             [cluck.examples.draw.history :as draw.history]
             [cluck.examples.draw.view :as draw.view]
-            [cluck.examples.draw.panel :as draw.panel]))
+            [cluck.examples.draw.panel :as draw.panel]
+            [cluck.math :as math]))
 
 (defn draw-debug-event-lines-limit
   "Return the maximum number of recent events shown in the debug HUD."
@@ -29,7 +30,7 @@
 (defn describe-state
   "Return a short human-readable summary of STATE."
   [state]
-  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f pen %s"
+  (format "%s %dx%d frame %d mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f pen %s ink %s"
           (get state :title)
           (get state :width)
           (get state :height)
@@ -51,12 +52,13 @@
           (if (get state :debug-panel?) "on" "off")
           (if (get state :window-focused?) "on" "off")
           (or (get state :pen-pressure) 1.0)
-          (name (draw.state/draw-pen-pressure-mode state))))
+          (name (draw.state/draw-pen-pressure-mode state))
+          (name (draw.state/draw-ink-renderer-mode state))))
 
 (defn draw-input-summary
   "Return a short textual summary of the current input state."
   [state]
-  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f pen %s"
+  (format "mouse %.1f,%.1f view %.1f,%.1f zoom %.2f key %s text %s event %s elements %d selection %d strokes %d undo %d tool %s size %d opacity %.2f dbg %s focus %s pressure %.2f pen %s ink %s"
           (or (get state :mouse-x) 0.0)
           (or (get state :mouse-y) 0.0)
           (draw.view/draw-view-x state)
@@ -75,13 +77,15 @@
           (if (get state :debug-panel?) "on" "off")
           (if (get state :window-focused?) "on" "off")
           (or (get state :pen-pressure) 1.0)
-          (name (draw.state/draw-pen-pressure-mode state))))
+          (name (draw.state/draw-pen-pressure-mode state))
+          (name (draw.state/draw-ink-renderer-mode state))))
 
 (defn draw-debug-control-lines
   "Return the fixed debug-panel help lines."
   []
   ["controls:"
    "  wheel: zoom at pointer"
+   "  ctrl+wheel: brush size"
    "  ctrl +/-: zoom at pointer"
    "  space+drag: pan"
    "  cursors: crosshair draw/rotate, move select, resize handles"
@@ -89,11 +93,12 @@
    "  rectangle handles: resize corners, rotate top handle"
    "  shift+click: add to selection"
    "  1: ink   2: select   3: rectangle   4: circle   5: line   6: eraser   7: picker"
-   "  ctrl+1/2/3: brush sizes"
+   "  [ and ]: brush size"
    "  recent colors row above brush swatches"
    "  brush/background swatches in the tool panel"
    "  opacity presets in the tool panel"
    "  p: toggle pen pressure fixed/dynamic"
+   "  g: toggle ink renderer stamped/native"
    "  mouse: pressure 1.00   pen: fixed or dynamic pressure"
    "  u: undo   c: clear   e: eraser"
    "  d: debug panel   tab: tool panel   0: reset view"
@@ -102,6 +107,64 @@
    "  repl: (draw-log-tail 20), draw-clear-log!, dump-current-state!"
    "  repl: draw-simulate-input!, draw-replay-live!"
    "  repl: draw-replay-benchmark!, draw-replay-live-benchmark!"])
+
+(defn draw-render-hud!
+  "Render the always-on zoom and brush HUD."
+  [renderer state]
+  (let [text (format "zoom %s   brush %d"
+                     (draw.view/draw-format-zoom-label state)
+                     (or (get state :brush-size) 2))
+        background (or (get state :background) [24 24 28])
+        text-color (draw-overlay-text-color state)
+        x 12
+        y 12
+        width 196
+        height 22]
+    (sdl/set-draw-color! renderer
+                         (nth background 0)
+                         (nth background 1)
+                         (nth background 2)
+                         240)
+    (sdl/render-fill-rect! renderer x (- y 4) width height)
+    (sdl/set-draw-color! renderer
+                         (nth text-color 0)
+                         (nth text-color 1)
+                         (nth text-color 2)
+                         255)
+    (sdl/render-debug-text! renderer (+ x 8) y text)
+    nil))
+
+(defn draw-screen-int
+  "Round VALUE to an SDL-safe screen-space integer."
+  [value]
+  (draw.view/draw-exact-int (math/round value)))
+
+(defn draw-overlay-text-color
+  "Return a readable text color over the current canvas background."
+  [state]
+  (let [background (or (get state :background) [24 24 28])
+        luminance (+ (* 0.2126 (nth background 0))
+                     (* 0.7152 (nth background 1))
+                     (* 0.0722 (nth background 2)))]
+    (if (> luminance 150.0)
+      [24 24 28]
+      [240 240 240])))
+
+(defn draw-overlay-button-fill-color
+  "Return a background-aware button fill color."
+  [state active?]
+  (let [background (or (get state :background) [24 24 28])
+        luminance (+ (* 0.2126 (nth background 0))
+                     (* 0.7152 (nth background 1))
+                     (* 0.0722 (nth background 2)))
+        delta (if (> luminance 150.0)
+                (if active? -18 8)
+                (if active? 28 -10))
+        adjust (fn [value]
+                 (draw.view/draw-clamp (+ value delta) 0 255))]
+    [(draw-screen-int (adjust (nth background 0)))
+     (draw-screen-int (adjust (nth background 1)))
+     (draw-screen-int (adjust (nth background 2)))]))
 
 (defn draw-debug-event-lines
   "Return compact recent event lines for the debug overlay."
@@ -126,17 +189,23 @@
 
 (defn draw-render-tool-panel-button!
   "Render BUTTON from the in-window tool panel."
-  [renderer button]
+  [renderer state button]
   (let [kind (get button :kind)
         active? (get button :active?)
-        x (get button :x)
-        y (get button :y)
-        width (get button :width)
-        height (get button :height)]
+        text-color (draw-overlay-text-color state)
+        button-fill (draw-overlay-button-fill-color state active?)
+        x (draw-screen-int (get button :x))
+        y (draw-screen-int (get button :y))
+        width (draw-screen-int (get button :width))
+        height (draw-screen-int (get button :height))]
     (cond
       (draw.state/draw-kind=? kind :section)
       (begin
-        (sdl/set-draw-color! renderer 235 235 235 255)
+        (sdl/set-draw-color! renderer
+                             (nth text-color 0)
+                             (nth text-color 1)
+                             (nth text-color 2)
+                             255)
         (sdl/render-debug-text! renderer (+ x 2) (+ y 1) (get button :label))
         nil)
 
@@ -151,9 +220,9 @@
                              255)
         (sdl/render-fill-rect! renderer x y width height)
         (sdl/set-draw-color! renderer
-                             (if active? 255 56)
-                             (if active? 255 68)
-                             (if active? 255 84)
+                             (nth text-color 0)
+                             (nth text-color 1)
+                             (nth text-color 2)
                              255)
         (sdl/render-line! renderer x y (+ x width) y)
         (sdl/render-line! renderer (+ x width) y (+ x width) (+ y height))
@@ -163,11 +232,17 @@
 
       :else
       (begin
-        (if active?
-          (sdl/set-draw-color! renderer 70 110 170 255)
-          (sdl/set-draw-color! renderer 46 50 60 235))
+        (sdl/set-draw-color! renderer
+                             (nth button-fill 0)
+                             (nth button-fill 1)
+                             (nth button-fill 2)
+                             235)
         (sdl/render-fill-rect! renderer x y width height)
-        (sdl/set-draw-color! renderer 235 235 235 255)
+        (sdl/set-draw-color! renderer
+                             (nth text-color 0)
+                             (nth text-color 1)
+                             (nth text-color 2)
+                             255)
         (sdl/render-debug-text! renderer (+ x 8) (+ y 6) (get button :label))
         nil))))
 
@@ -175,6 +250,12 @@
   "Render the toggleable in-window tool panel."
   [renderer state]
   (let [panel (draw.panel/draw-tool-panel-rect state)
+        background (or (get state :background) [24 24 28])
+        text-color (draw-overlay-text-color state)
+        panel-x (draw-screen-int (get panel :x))
+        panel-y (draw-screen-int (get panel :y))
+        panel-width (draw-screen-int (get panel :width))
+        panel-height (draw-screen-int (get panel :height))
         buttons (draw.panel/draw-tool-panel-buttons state)
         info-lines (draw.panel/draw-tool-panel-info-lines state)
         selection-lines (draw.panel/draw-tool-panel-selection-lines state)
@@ -187,46 +268,71 @@
                               0
                               buttons)
         selection-y (+ button-bottom 10)
-        info-y (+ button-bottom 42)]
-    (sdl/set-draw-color! renderer 18 20 26 228)
+        info-y (+ button-bottom 42)
+        panel-top panel-y
+        panel-bottom (+ panel-y panel-height)]
+    (sdl/set-draw-color! renderer
+                         (nth background 0)
+                         (nth background 1)
+                         (nth background 2)
+                         245)
     (sdl/render-fill-rect! renderer
-                           (get panel :x)
-                           (get panel :y)
-                           (get panel :width)
-                           (get panel :height))
-    (sdl/set-draw-color! renderer 235 235 235 255)
+                           panel-x
+                           panel-y
+                           panel-width
+                           panel-height)
+    (sdl/set-draw-color! renderer
+                         (nth text-color 0)
+                         (nth text-color 1)
+                         (nth text-color 2)
+                         255)
     (sdl/render-debug-text! renderer
-                            (+ (get panel :x) 10)
-                            (+ (get panel :y) 10)
+                            (+ panel-x 10)
+                            (+ panel-y 10)
                             "tool panel")
     (sdl/render-debug-text! renderer
-                            (+ (get panel :x) 10)
-                            (+ (get panel :y) 26)
+                            (+ panel-x 10)
+                            (+ panel-y 26)
                             (draw.panel/draw-selection-summary state))
     (reduce (fn [acc button]
-              (begin
-                (draw-render-tool-panel-button! renderer button)
-                acc))
+              (let [top (get button :y)
+                    bottom (+ top (get button :height))]
+                (begin
+                  (if (and (<= top panel-bottom)
+                           (>= bottom panel-top))
+                    (draw-render-tool-panel-button! renderer state button)
+                    nil)
+                  acc)))
             nil
             buttons)
-    (sdl/set-draw-color! renderer 210 210 210 255)
+    (sdl/set-draw-color! renderer
+                         (nth text-color 0)
+                         (nth text-color 1)
+                         (nth text-color 2)
+                         255)
     (reduce (fn [next-y line]
               (begin
-                (sdl/render-debug-text! renderer
-                                        (+ (get panel :x) 10)
-                                        next-y
-                                        line)
+                  (if (and (>= next-y (+ panel-top 40))
+                           (<= next-y (- panel-bottom 12)))
+                  (sdl/render-debug-text! renderer
+                                          (+ panel-x 10)
+                                          (draw-screen-int next-y)
+                                          line)
+                  nil)
                 (+ next-y 16)))
-            (+ (get panel :y) selection-y)
+            (+ panel-y selection-y)
             selection-lines)
     (reduce (fn [next-y line]
               (begin
-                (sdl/render-debug-text! renderer
-                                        (+ (get panel :x) 10)
-                                        next-y
-                                        line)
+                (if (and (>= next-y (+ panel-top 40))
+                         (<= next-y (- panel-bottom 12)))
+                  (sdl/render-debug-text! renderer
+                                          (+ panel-x 10)
+                                          (draw-screen-int next-y)
+                                          line)
+                  nil)
                 (+ next-y 16)))
-            (+ (get panel :y) info-y)
+            (+ panel-y info-y)
             info-lines)
     nil))
 
@@ -327,9 +433,19 @@
         marker-point [mouse-x mouse-y pressure]
         marker-size (draw.view/draw-current-brush-size state
                                                        marker-point
-                                                       (or (get state :brush-size) 1))]
-    (sdl/set-draw-color! renderer 220 180 90 255)
-    (render-stroke-point! renderer state marker-point marker-size pressure)
+                                                       (or (get state :brush-size) 1))
+        marker-opacity (draw.state/draw-current-opacity state)
+        show-marker? (or (get state :eraser?)
+                         (draw.state/draw-kind=? (or (get state :tool) :ink) :ink)
+                         (draw.state/draw-kind=? (or (get state :tool) :ink) :box)
+                         (draw.state/draw-kind=? (or (get state :tool) :ink) :circle)
+                         (draw.state/draw-kind=? (or (get state :tool) :ink) :line)
+                         (draw.state/draw-kind=? (or (get state :tool) :ink) :arrow)
+                         (draw.state/draw-kind=? (or (get state :tool) :ink) :frame))]
+    (draw-render-hud! renderer state)
+    (if show-marker?
+      (render-stroke-point! renderer state marker-point marker-size marker-opacity)
+      nil)
     (if (get state :tool-panel?)
       (draw-render-tool-panel! renderer state)
       nil)

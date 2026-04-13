@@ -26,6 +26,7 @@
             [cluck.examples.draw.replay :as draw-replay]
             [cluck.examples.draw.stroke :as draw-stroke]
             [cluck.examples.draw.ink :as draw-ink]
+            [cluck.examples.draw.ink-native :as draw-ink-native]
             [cluck.examples.draw.input :as draw-input]
             [cluck.fs :as fs]
             [cluck.io :as io]
@@ -143,10 +144,12 @@
 (def draw-tool-panel-padding draw-panel/draw-tool-panel-padding)
 (def draw-tool-panel-button-height draw-panel/draw-tool-panel-button-height)
 (def draw-tool-panel-button-gap draw-panel/draw-tool-panel-button-gap)
+(def draw-tool-panel-scroll draw-panel/draw-tool-panel-scroll)
 (def draw-tool-panel-rect draw-panel/draw-tool-panel-rect)
 (def draw-save-format-label draw-panel/draw-save-format-label)
 (def draw-tool-panel-info-lines draw-panel/draw-tool-panel-info-lines)
 (def draw-tool-panel-buttons draw-panel/draw-tool-panel-buttons)
+(def draw-scroll-tool-panel draw-panel/draw-scroll-tool-panel)
 (def draw-selection-summary draw-panel/draw-selection-summary)
 (def draw-tool-panel-selection-lines draw-panel/draw-tool-panel-selection-lines)
 (def draw-screen-point-in-rect? draw-panel/draw-screen-point-in-rect?)
@@ -300,6 +303,16 @@
 (def draw-stroke-color draw-history/draw-stroke-color)
 (def draw-ink-renderer-kind draw-ink/draw-ink-renderer-kind)
 (def draw-native-ink-renderer? draw-ink/draw-native-ink-renderer?)
+(def draw-ink-context-kind draw-ink/draw-ink-context-kind)
+(def draw-native-backend draw-ink-native/draw-native-backend)
+(def draw-native-backend-kind draw-ink-native/draw-native-backend-kind)
+(def draw-native-backend-ready? draw-ink-native/draw-native-backend-ready?)
+(def draw-native-backend-error draw-ink-native/draw-native-backend-error)
+(def draw-ensure-native-backend-base draw-ink-native/draw-ensure-native-backend)
+(def draw-native-clear-frame-base! draw-ink-native/draw-native-clear-frame!)
+(def draw-native-stroke-base! draw-ink-native/draw-native-stroke!)
+(def draw-native-smoke-frame-base! draw-ink-native/draw-native-smoke-frame!)
+(def draw-native-present-frame-base! draw-ink-native/draw-native-present-frame!)
 
 (def draw-recent-events-limit draw-input/draw-recent-events-limit)
 (def draw-input-batch-limit draw-input/draw-input-batch-limit)
@@ -640,6 +653,8 @@
                                 kind
                                 payload))
 
+(def draw-exn-details draw-runtime/draw-exn-details)
+
 (defn draw-write-crash-report!
   "Write a full crash report for EXN."
   [exn]
@@ -811,8 +826,20 @@
   "Render the current state if the draw context is live."
   []
   (if (and *draw-running?* *draw-context* *draw-state*)
-    (let [state (draw-sync-canvas! *draw-state*)]
+    (let [window (get *draw-context* :window)
+          live-width (if window (sdl/window-width window) 0)
+          live-height (if window (sdl/window-height window) 0)
+          sized-state (if (and (> live-width 0)
+                               (> live-height 0)
+                               (or (not (= live-width (get *draw-state* :width)))
+                                   (not (= live-height (get *draw-state* :height)))))
+                        (assoc *draw-state*
+                               :width live-width
+                               :height live-height)
+                        *draw-state*)
+          state (draw-sync-canvas! sized-state)]
       (set! *draw-state* state)
+      (set! *draw-current-stroke-color* (draw-stroke-color state))
       (draw-ensure-preview! state)
       (draw-sync-cursor! state)
       (sync-window-title!)
@@ -1048,6 +1075,19 @@
   (and *draw-brush-ready?*
        (sdl/pointer-ready? (draw-brush-texture))))
 
+(defn draw-strip-texture
+  "Return the cached strip texture if one is available."
+  []
+  (if *draw-context*
+    (get *draw-context* :strip-texture)
+    false))
+
+(defn draw-strip-texture-ready?
+  "Return true when the cached strip texture is available."
+  []
+  (and *draw-strip-ready?*
+       (sdl/pointer-ready? (draw-strip-texture))))
+
 (defn draw-brush-texture-diameter
   "Return the canonical brush stamp diameter."
   []
@@ -1076,6 +1116,24 @@
     (set! *draw-brush-ready?* false)
     nil))
 
+(defn draw-ensure-strip-texture!
+  "Create or refresh the strip texture used for stroke bodies."
+  [state]
+  (let [result (draw-resources/draw-ensure-strip-texture! *draw-context*
+                                                          (draw-strip-texture-ready?))]
+    (set! *draw-context* (get result :context))
+    (set! *draw-strip-ready?* (if (get result :ready?) true false))
+    *draw-context*))
+
+(defn draw-release-strip-texture!
+  "Destroy the cached strip texture and clear it from the draw context."
+  []
+  (let [result (draw-resources/draw-release-strip-texture! *draw-context*
+                                                           (draw-strip-texture-ready?))]
+    (set! *draw-context* (get result :context))
+    (set! *draw-strip-ready?* false)
+    nil))
+
 (defn draw-release-cursors!
   "Destroy cached system cursors and clear them from the draw context."
   []
@@ -1087,8 +1145,8 @@
   [state]
   (let [result (draw-resources/draw-ensure-canvas! *draw-context*
                                                    (draw-canvas-ready?)
-                                                   (get state :width)
-                                                   (get state :height))]
+                                                   (get state :canvas-width)
+                                                   (get state :canvas-height))]
     (set! *draw-context* (get result :context))
     (set! *draw-canvas-ready?* (if (get result :ready?) true false))
     *draw-context*))
@@ -1098,8 +1156,8 @@
   [state]
   (let [result (draw-resources/draw-ensure-preview! *draw-context*
                                                     (draw-preview-ready?)
-                                                    (get state :width)
-                                                    (get state :height))]
+                                                    (get state :canvas-width)
+                                                    (get state :canvas-height))]
     (set! *draw-context* (get result :context))
     (set! *draw-preview-ready?* (if (get result :ready?) true false))
     *draw-context*))
@@ -1117,6 +1175,52 @@
   (draw-resources/draw-resource-with-preview! *draw-context*
                                               (draw-preview-ready?)
                                               thunk))
+
+(defn draw-ensure-native-backend!
+  "Initialize the native ink backend for the current draw context when needed."
+  []
+  (let [result (draw-ensure-native-backend-base *draw-context*)]
+    (set! *draw-context* (get result :context))
+    *draw-context*))
+
+(defn draw-native-backend-status
+  "Return a compact status map for the current native ink backend."
+  []
+  {:context-kind (if *draw-context* (get *draw-context* :context-kind) false)
+   :backend-kind (draw-native-backend-kind *draw-context*)
+   :ready? (draw-native-backend-ready? *draw-context*)
+   :error (draw-native-backend-error *draw-context*)})
+
+(defn draw-native-smoke-frame!
+  "Clear and present one native GL frame for backend bring-up debugging."
+  []
+  (draw-with-lock
+    (lambda ()
+      (draw-ensure-native-backend!)
+      (if (and *draw-state*
+               (draw-native-clear-frame-base! *draw-context* (get *draw-state* :background)))
+        (draw-native-smoke-frame-base! *draw-context*)
+        false))))
+
+(defn draw-native-strokes-frame!
+  "Render the current canvas ink strokes through the native analytic segment path."
+  []
+  (draw-with-lock
+    (lambda ()
+      (draw-ensure-native-backend!)
+      (if (and *draw-state*
+               (draw-native-clear-frame-base! *draw-context* (get *draw-state* :background)))
+        (let [strokes (get *draw-state* :strokes)
+              active (get *draw-state* :active-stroke)]
+          (reduce (lambda (rendered stroke)
+                    (or (draw-native-stroke-base! *draw-context* *draw-state* stroke)
+                        rendered))
+                  false
+                  (if active
+                    (conj strokes active)
+                    strokes))
+          (draw-native-present-frame-base! *draw-context*))
+        false))))
 
 (defn draw-release-canvas!
   "Destroy the cached canvas texture and clear it from the draw context."
@@ -1199,6 +1303,18 @@
     (assoc next-state
            :status-note (format "pen pressure: %s"
                                 (name (draw-state/draw-pen-pressure-mode next-state)))
+           :status-note-frame (get next-state :frame))))
+
+(defn draw-toggle-ink-renderer-core!
+  "Toggle ink renderer between stamped SDL and native GPU modes."
+  [state]
+  (let [next-state (draw-actions/draw-toggle-ink-renderer-core! state
+                                                                draw-push-history!
+                                                                draw-state-snapshot
+                                                                draw-log-entry!)]
+    (assoc next-state
+           :status-note (format "ink renderer: %s"
+                                (name (draw-state/draw-ink-renderer-mode next-state)))
            :status-note-frame (get next-state :frame))))
 
 (defn draw-set-brush-size!
@@ -1331,12 +1447,93 @@
                                        draw-set-tool-core!
                                        draw-toggle-eraser-core!
                                        draw-set-brush-size-core!
-                                       draw-toggle-pen-pressure-mode-core!))
+                                       draw-toggle-pen-pressure-mode-core!
+                                       draw-toggle-ink-renderer-core!))
+
+(defn draw-document-bounds
+  "Return aggregate world-space bounds for the current document, or false."
+  [state]
+  (reduce (lambda (current element)
+            (let [bounds (draw-element-bounds state element)]
+              (if current
+                (draw-bounds-union current bounds)
+                bounds)))
+          false
+          (get state :elements)))
+
+(defn draw-fit-content-core!
+  "Fit the current document bounds inside the window, or reset to origin when empty."
+  [state]
+  (let [bounds (draw-document-bounds state)
+        viewport (draw-canvas-viewport state)]
+    (if bounds
+      (let [screen-width (get viewport :width)
+            screen-height (get viewport :height)
+            viewport-scale (max 0.000001 (get viewport :scale))
+            margin 48.0
+            usable-width (max 1.0 (- screen-width (* margin 2.0)))
+            usable-height (max 1.0 (- screen-height (* margin 2.0)))
+            bounds-width (max 1.0 (get bounds :width))
+            bounds-height (max 1.0 (get bounds :height))
+            zoom (draw-clamp (/ (min (/ usable-width bounds-width)
+                                     (/ usable-height bounds-height))
+                                viewport-scale)
+                             draw-min-zoom
+                             draw-max-zoom)
+            center-x (+ (get bounds :x) (/ bounds-width 2.0))
+            center-y (+ (get bounds :y) (/ bounds-height 2.0))
+            view-x (draw-clamp-view-coordinate (- center-x (/ screen-width (* 2.0 zoom))))
+            view-y (draw-clamp-view-coordinate (- center-y (/ screen-height (* 2.0 zoom))))
+            next-state (assoc state
+                              :view-x view-x
+                              :view-y view-y
+                              :view-anchor-x 0.0
+                              :view-anchor-y 0.0
+                              :zoom zoom
+                              :canvas-dirty? true)
+            screen-point (draw-pointer-screen-anchor next-state)
+            world-point (draw-screen-point->world-point next-state
+                                                        [(nth screen-point 0)
+                                                         (nth screen-point 1)
+                                                         (or (get state :pen-pressure) 1.0)])]
+        (draw-sync-pointer-state next-state world-point screen-point))
+      (let [screen-point (draw-pointer-screen-anchor state)
+            next-state (assoc state
+                              :view-x 0.0
+                              :view-y 0.0
+                              :view-anchor-x 0.0
+                              :view-anchor-y 0.0
+                              :zoom 1.0
+                              :canvas-dirty? true)
+            world-point (draw-screen-point->world-point next-state
+                                                        [(nth screen-point 0)
+                                                         (nth screen-point 1)
+                                                         (or (get state :pen-pressure) 1.0)])]
+        (draw-sync-pointer-state next-state world-point screen-point)))))
+
+(defn draw-reset-view-core!
+  "Reset the viewport back to the default origin and 1x zoom."
+  [state]
+  (let [screen-point (draw-pointer-screen-anchor state)
+        next-state (assoc state
+                          :view-x 0.0
+                          :view-y 0.0
+                          :view-anchor-x 0.0
+                          :view-anchor-y 0.0
+                          :zoom 1.0
+                          :canvas-dirty? true)
+        world-point (draw-screen-point->world-point next-state
+                                                    [(nth screen-point 0)
+                                                     (nth screen-point 1)
+                                                     (or (get state :pen-pressure) 1.0)])]
+    (draw-sync-pointer-state next-state world-point screen-point)))
 
 (defn draw-handle-view-key!
   "Apply zoom and pan shortcuts for KEY to STATE."
   [state key]
-  (draw-handle-view-key-base! state key))
+  (if (draw-reset-view-key? key)
+    (draw-reset-view-core! state)
+    (draw-handle-view-key-base! state key)))
 
 (defn draw-handle-wheel!
   "Apply mouse-wheel zoom to STATE."
@@ -1353,10 +1550,12 @@
   (draw-write-heartbeat! :crash *draw-state*)
   (draw-stop-watchdog!)
   (draw-log-entry! :crash
-                   {:error (format "%s" exn)
+                   {:error (draw-exn-details exn)
                     :state (draw-state-snapshot *draw-state*)})
   (draw-write-crash-report! exn)
-  (println (format "Cluck Draw crashed: %s" exn))
+  (println (format "Cluck Draw crashed: %s"
+                   (or (get (draw-exn-details exn) :message)
+                       (format "%s" exn))))
   exn)
 
 (defn draw-recoverable-error!
@@ -1373,10 +1572,19 @@
                    :status-note (format "recovered from runtime error: %s" exn))))
     nil)
   (draw-log-entry! :recoverable-error
-                   {:error (format "%s" exn)
+                   {:error (draw-exn-details exn)
                     :state (draw-state-snapshot *draw-state*)})
   (draw-write-crash-report! exn)
-  (println (format "Cluck Draw recovered from error: %s" exn))
+  (let [details (draw-exn-details exn)
+        message (or (get details :message) "")
+        location (or (get details :location) "")]
+    (println
+      (if (and (not (empty? message))
+               (not (empty? location)))
+        (format "Cluck Draw recovered from error: %s (%s)" message location)
+        (if (not (empty? message))
+          (format "Cluck Draw recovered from error: %s" message)
+          (format "Cluck Draw recovered from error: %s" exn)))))
   exn)
 
 (defn draw-cancel-active-stroke-core!
@@ -1526,6 +1734,33 @@
 
       (draw-kind=? kind :opacity)
       (draw-set-opacity-core! base-state (get button :opacity))
+
+      (draw-kind=? kind :brush-size-dec)
+      (draw-set-brush-size-core! base-state
+                                 (draw-clamp (- (or (get base-state :brush-size) 2) 1)
+                                             1
+                                             64))
+
+      (draw-kind=? kind :brush-size-inc)
+      (draw-set-brush-size-core! base-state
+                                 (draw-clamp (+ (or (get base-state :brush-size) 2) 1)
+                                             1
+                                             64))
+
+      (draw-kind=? kind :zoom-dec)
+      (draw-zoom-at-core! base-state
+                          -1.0
+                          (/ (or (get base-state :width) 0) 2.0)
+                          (/ (or (get base-state :height) 0) 2.0))
+
+      (draw-kind=? kind :zoom-inc)
+      (draw-zoom-at-core! base-state
+                          1.0
+                          (/ (or (get base-state :width) 0) 2.0)
+                          (/ (or (get base-state :height) 0) 2.0))
+
+      (draw-kind=? kind :reset-view)
+      (draw-reset-view-core! base-state)
 
       (draw-kind=? kind :save-as)
       (draw-request-save-document-as! base-state)
@@ -1833,15 +2068,26 @@
       next-state)))
 
 (defn draw-handle-wheel-event!
-  "Apply mouse-wheel zoom from EVENT to STATE."
+  "Apply mouse-wheel zoom or brush-size change from EVENT to STATE."
   [state event]
   (let [delta (or (get event :wheel-y) 0.0)]
     (if (= delta 0.0)
       state
-      (draw-zoom-at-core! state
-                          delta
-                          (or (get event :wheel-mouse-x) 0.0)
-                          (or (get event :wheel-mouse-y) 0.0)))))
+      (if (get state :ctrl-down?)
+        (assoc state
+               :brush-size (draw-clamp
+                             (+ (or (get state :brush-size) 2)
+                                (if (> delta 0.0) 1 -1))
+                             1
+                             64))
+        (let [screen-point [(or (get event :wheel-mouse-x) 0.0)
+                            (or (get event :wheel-mouse-y) 0.0)]]
+          (if (draw-tool-panel-hit? state screen-point)
+            (draw-scroll-tool-panel state (* -32.0 delta))
+            (draw-zoom-at-core! state
+                                delta
+                                (nth screen-point 0)
+                                (nth screen-point 1))))))))
 
 (defn draw-apply-input-event!
   "Apply a synthetic or live EVENT map to STATE."
@@ -2322,6 +2568,7 @@
   "Render a smooth segment from A to B using the compiled SDL helper."
   [renderer state a b size opacity]
   (let [brush (draw-brush-texture)
+        strip (draw-strip-texture)
         color (draw-stroke-color-value)
         screen-a (draw-world-point->screen-fpoint state a)
         screen-b (draw-world-point->screen-fpoint state b)
@@ -2331,7 +2578,7 @@
         alpha-b (draw-point-alpha b opacity)]
     (if (draw-brush-texture-ready?)
       (sdl/render-soft-segment! renderer
-                                false
+                                (if (draw-strip-texture-ready?) strip false)
                                 brush
                                 (nth screen-a 0)
                                 (nth screen-a 1)
@@ -2423,12 +2670,13 @@
   "Render a soft segment directly in screen coordinates."
   [renderer color size opacity x1 y1 x2 y2]
   (let [brush (draw-brush-texture)
+        strip (draw-strip-texture)
         alpha (draw-opacity-alpha opacity)]
     (draw-with-stroke-color color
       (lambda ()
         (if (draw-brush-texture-ready?)
           (sdl/render-soft-segment! renderer
-                                    false
+                                    (if (draw-strip-texture-ready?) strip false)
                                     brush
                                     x1
                                     y1
@@ -2661,8 +2909,10 @@
 
 (defn draw-render-tool-panel-button!
   "Render BUTTON from the in-window tool panel."
-  [renderer button]
-  (draw-render-tool-panel-button-base! renderer button))
+  [renderer state-or-button maybe-button]
+  (if maybe-button
+    (draw-render-tool-panel-button-base! renderer state-or-button maybe-button)
+    (draw-render-tool-panel-button-base! renderer false state-or-button)))
 
 (defn draw-render-tool-panel!
   "Render the toggleable in-window tool panel."
@@ -2682,11 +2932,14 @@
 (defn draw-render-status!
   "Render the text overlay and mouse marker for STATE."
   [ctx state]
-  (draw-status/draw-render-status! ctx
-                                   state
-                                   draw-render-stroke-point!
-                                   draw-desired-cursor-kind
-                                   *draw-last-error*))
+  (draw-with-stroke-color
+    (draw-stroke-color state)
+    (lambda ()
+      (draw-status/draw-render-status! ctx
+                                       state
+                                       draw-render-stroke-point!
+                                       draw-desired-cursor-kind
+                                       *draw-last-error*))))
 
 (defn draw-loop-step!
   "Drain input and render once when the window is active."
@@ -2709,19 +2962,34 @@
 (defn default-render-frame
   "Clear and present one frame using STATE."
   [ctx state]
-  (let [renderer (get ctx :renderer)
-        background (get state :background)]
-    (sdl/set-draw-color!
-      renderer
-      (nth background 0)
-      (nth background 1)
-      (nth background 2)
-      255)
-    (sdl/render-clear! renderer)
-    (draw-render-canvas! ctx state)
-    (draw-render-status! ctx state)
-    (sdl/render-present! renderer)
-    nil))
+  (if (and (draw-native-ink-renderer? state)
+           (draw-native-backend-ready? ctx))
+    (let [background (get state :background)
+          strokes (get state :strokes)
+          active (get state :active-stroke)]
+      (draw-native-clear-frame-base! ctx background)
+      (reduce (lambda (rendered stroke)
+                (or (draw-native-stroke-base! ctx state stroke)
+                    rendered))
+              false
+              (if active
+                (conj strokes active)
+                strokes))
+      (draw-native-present-frame-base! ctx)
+      nil)
+    (let [renderer (get ctx :renderer)
+          background (get state :background)]
+      (sdl/set-draw-color!
+        renderer
+        (nth background 0)
+        (nth background 1)
+        (nth background 2)
+        255)
+      (sdl/render-clear! renderer)
+      (draw-render-canvas! ctx state)
+      (draw-render-status! ctx state)
+      (sdl/render-present! renderer)
+      nil)))
 
 (defn render-frame
   "Clear and present one frame."
@@ -2777,12 +3045,15 @@
               nil)
             (let [state (if *draw-state*
                           (assoc *draw-state*
+                                 :ink-renderer :native-gpu
                                  :window-focused? true
                                  :pen-pressure 1.0)
-                          (default-state))
-                  ctx (sdl/open-context (draw-window-title)
-                                        (get state :width)
-                                        (get state :height))]
+                          (assoc (default-state)
+                                 :ink-renderer :native-gpu))
+                  ctx (sdl/open-context-with-options (draw-window-title)
+                                                     (get state :width)
+                                                     (get state :height)
+                                                     {:kind (draw-ink-context-kind state)})]
               (if (nil? ctx)
                 (begin
                   (if *draw-child-mode?*
@@ -2797,6 +3068,13 @@
                     nil)
                   (set! *draw-state* state)
                   (set! *draw-context* (assoc ctx :cursor-cache {} :cursor-kind false))
+                  (draw-ensure-native-backend!)
+                  (if (draw-native-ink-renderer? state)
+                    (draw-log-entry! :native-ink-backend
+                                     {:kind (draw-native-backend-kind *draw-context*)
+                                      :ready? (draw-native-backend-ready? *draw-context*)
+                                      :error (draw-native-backend-error *draw-context*)})
+                    nil)
                   (set! *draw-running?* true)
                   (set! *draw-last-heartbeat-at* 0)
                   (draw-clear-watchdog-files!)
@@ -2809,6 +3087,7 @@
                   (draw-ensure-canvas! state)
                   (draw-ensure-preview! state)
                   (draw-ensure-brush-texture! state)
+                  (draw-ensure-strip-texture! state)
                   (if (draw-canvas-ready?)
                     (draw-rebuild-canvas! state)
                     nil)
@@ -2833,6 +3112,7 @@
       (draw-release-canvas!)
       (draw-release-preview!)
       (draw-release-brush-texture!)
+      (draw-release-strip-texture!)
       (draw-release-cursors!)
       (if *draw-context*
         (begin

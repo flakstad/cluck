@@ -19,8 +19,8 @@
   "Map raw pen pressure into a more useful visual range for drawing."
   [pressure]
   (let [raw (draw-clamp (or pressure 1.0) 0.0 1.0)
-        scaled (draw-clamp (/ raw 0.68) 0.0 1.0)]
-    (math/sqrt scaled)))
+        scaled (draw-clamp (/ raw 0.85) 0.0 1.0)]
+    scaled))
 
 (defn draw-point-size
   "Scale BASE-SIZE by POINT pressure."
@@ -36,7 +36,7 @@
   [point base-size]
   (let [pressure (draw-normalize-pressure (draw-point-pressure point))]
     (* base-size
-       (+ 0.25 (* 0.75 pressure)))))
+       (+ 0.12 (* 0.88 pressure)))))
 
 (defn draw-clamp
   "Clamp VALUE between LOW and HIGH."
@@ -79,6 +79,12 @@
       zoom
       (draw-min-zoom))))
 
+(defn draw-screen-zoom
+  "Return the effective screen-space zoom including the canvas viewport scale."
+  [state]
+  (* (draw-view-zoom state)
+     (get (draw-canvas-viewport state) :scale)))
+
 (defn draw-view-x
   "Return the current viewport X offset from STATE."
   [state]
@@ -99,6 +105,39 @@
   [state]
   (or (get state :view-anchor-y) 0.0))
 
+(defn draw-canvas-width
+  "Return the logical canvas width from STATE."
+  [state]
+  (or (get state :canvas-width)
+      (get state :width)
+      1280))
+
+(defn draw-canvas-height
+  "Return the logical canvas height from STATE."
+  [state]
+  (or (get state :canvas-height)
+      (get state :height)
+      720))
+
+(defn draw-canvas-viewport
+  "Return the centered screen-space viewport used to present the logical canvas."
+  [state]
+  (let [window-width (max 1.0 (or (get state :width) (draw-canvas-width state) 1.0))
+        window-height (max 1.0 (or (get state :height) (draw-canvas-height state) 1.0))
+        canvas-width (max 1.0 (draw-canvas-width state))
+        canvas-height (max 1.0 (draw-canvas-height state))
+        scale (min (/ window-width canvas-width)
+                   (/ window-height canvas-height))
+        viewport-width (* canvas-width scale)
+        viewport-height (* canvas-height scale)
+        viewport-x (/ (- window-width viewport-width) 2.0)
+        viewport-y (/ (- window-height viewport-height) 2.0)]
+    {:x viewport-x
+     :y viewport-y
+     :width viewport-width
+     :height viewport-height
+     :scale scale}))
+
 (defn draw-clamp-view-coordinate
   "Clamp VALUE into the supported world navigation range."
   [value]
@@ -117,55 +156,67 @@
 (defn draw-pointer-screen-anchor
   "Return the current screen-space pointer anchor for keyboard zoom."
   [state]
-  [(or (get state :mouse-screen-x)
-       (/ (or (get state :width) 0) 2.0))
-   (or (get state :mouse-screen-y)
-       (/ (or (get state :height) 0) 2.0))])
+  (let [viewport (draw-canvas-viewport state)]
+    [(or (get state :mouse-screen-x)
+         (+ (get viewport :x) (/ (get viewport :width) 2.0)))
+     (or (get state :mouse-screen-y)
+         (+ (get viewport :y) (/ (get viewport :height) 2.0)))]))
 
 (defn draw-screen-point->world-point
   "Convert a screen POINT into world coordinates using STATE's viewport."
   [state point]
-  (let [zoom (draw-view-zoom state)
+  (let [zoom (draw-screen-zoom state)
         vx (draw-view-x state)
         vy (draw-view-y state)
         ax (draw-view-anchor-x state)
-        ay (draw-view-anchor-y state)]
-    [(+ vx (/ (- (nth point 0) ax) zoom))
-     (+ vy (/ (- (nth point 1) ay) zoom))
+        ay (draw-view-anchor-y state)
+        viewport (draw-canvas-viewport state)
+        screen-x (- (nth point 0) (get viewport :x))
+        screen-y (- (nth point 1) (get viewport :y))]
+    [(+ vx (/ (- screen-x ax) zoom))
+     (+ vy (/ (- screen-y ay) zoom))
      (draw-point-pressure point)]))
 
 (defn draw-world-point->screen-point
   "Convert a world POINT into screen coordinates using STATE's viewport."
   [state point]
-  (let [zoom (draw-view-zoom state)
+  (let [zoom (draw-screen-zoom state)
         vx (draw-view-x state)
         vy (draw-view-y state)
         ax (draw-view-anchor-x state)
-        ay (draw-view-anchor-y state)]
-     [(draw-exact-int (math/round (+ (* (- (nth point 0) vx) zoom)
+        ay (draw-view-anchor-y state)
+        viewport (draw-canvas-viewport state)
+        viewport-x (get viewport :x)
+        viewport-y (get viewport :y)]
+     [(draw-exact-int (math/round (+ viewport-x
+                                     (* (- (nth point 0) vx) zoom)
                                      ax)))
-     (draw-exact-int (math/round (+ (* (- (nth point 1) vy) zoom)
+      (draw-exact-int (math/round (+ viewport-y
+                                     (* (- (nth point 1) vy) zoom)
                                      ay)))
      (draw-point-pressure point)]))
 
 (defn draw-world-point->screen-fpoint
   "Convert a world POINT into screen coordinates without rounding."
   [state point]
-  (let [zoom (draw-view-zoom state)
+  (let [zoom (draw-screen-zoom state)
         vx (draw-view-x state)
         vy (draw-view-y state)
         ax (draw-view-anchor-x state)
-        ay (draw-view-anchor-y state)]
-    [(+ (* (- (nth point 0) vx) zoom)
+        ay (draw-view-anchor-y state)
+        viewport (draw-canvas-viewport state)]
+    [(+ (get viewport :x)
+        (* (- (nth point 0) vx) zoom)
         ax)
-     (+ (* (- (nth point 1) vy) zoom)
+     (+ (get viewport :y)
+        (* (- (nth point 1) vy) zoom)
         ay)
      (draw-point-pressure point)]))
 
 (defn draw-point-screen-size
   "Scale BASE-SIZE into screen space using the current zoom."
   [state point base-size]
-  (let [zoom (draw-view-zoom state)
+  (let [zoom (draw-screen-zoom state)
         scaled (draw-exact-int (math/ceiling (* (draw-point-size-float point base-size)
                                                 zoom)))]
     (if (> scaled 0)
@@ -175,7 +226,7 @@
 (defn draw-current-brush-size
   "Convert the current brush BASE-SIZE into a world-space stroke size."
   [state point base-size]
-  (let [zoom (draw-view-zoom state)
+  (let [zoom (draw-screen-zoom state)
         scaled (/ (draw-point-size-float point base-size)
                   zoom)]
     (if (> scaled 0.0)
@@ -214,6 +265,21 @@
   "Return the multiplicative zoom factor for a wheel delta."
   [delta]
   (math/pow (draw-zoom-factor) delta))
+
+(defn draw-zoom-display-value
+  "Return a signed zoom level where 0 is 1x, positive zooms in, negative zooms out."
+  [state]
+  (let [zoom (draw-view-zoom state)]
+    (/ (log zoom) (log 2.0))))
+
+(defn draw-format-zoom-label
+  "Return a compact human-readable zoom label for STATE."
+  [state]
+  (let [level (draw-zoom-display-value state)]
+    (cond
+      (> level 0.005) (format "+%.2f" level)
+      (< level -0.005) (format "%.2f" level)
+      :else "0.00")))
 
 (defn draw-zoom-at-core!
   "Zoom around SCREEN-X and SCREEN-Y using DELTA."
@@ -271,7 +337,7 @@
           screen-y (nth screen-point 1)
           last-x (or (get state :pan-last-x) screen-x)
           last-y (or (get state :pan-last-y) screen-y)
-          zoom (draw-view-zoom state)
+          zoom (draw-screen-zoom state)
           dx (- screen-x last-x)
           dy (- screen-y last-y)
           next-state (assoc state

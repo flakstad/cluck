@@ -4,12 +4,52 @@
   (:require [cluck.examples.draw.history :as draw.history]
             [cluck.examples.draw.state :as draw.state]
             [cluck.examples.draw.view :as draw.view]
-            [cluck.examples.draw.geometry :as draw.geometry]))
+            [cluck.examples.draw.geometry :as draw.geometry]
+            [cluck.math :as math]))
 
 (defn draw-active-opacity
   "Return the opacity setting used for new or updated active elements."
   [state]
   (draw.state/draw-current-opacity state))
+
+(defn draw-active-shape-size
+  "Return the world-space outline size for a newly created shape."
+  [state point]
+  (draw.view/draw-current-brush-size state
+                                     point
+                                     (get state :brush-size)))
+
+(defn draw-min-drag-screen-distance
+  "Return the minimum screen-space drag worth committing for shape tools."
+  []
+  2.0)
+
+(defn draw-screen-drag-distance
+  "Return the screen-space drag distance from START to SCREEN-POINT."
+  [state start screen-point]
+  (let [start-screen (draw.view/draw-world-point->screen-fpoint state start)
+        dx (- (nth screen-point 0) (nth start-screen 0))
+        dy (- (nth screen-point 1) (nth start-screen 1))]
+    (math/sqrt (+ (* dx dx) (* dy dy)))))
+
+(defn draw-constrain-shape-point
+  "Return POINT constrained against START when shift-locking aspect ratio."
+  [start point]
+  (let [dx (- (nth point 0) (nth start 0))
+        dy (- (nth point 1) (nth start 1))
+        distance (max (abs dx) (abs dy))
+        sx (if (< dx 0.0) -1.0 1.0)
+        sy (if (< dy 0.0) -1.0 1.0)]
+    [(+ (nth start 0) (* sx distance))
+     (+ (nth start 1) (* sy distance))
+     (draw.view/draw-point-pressure point)]))
+
+(defn draw-shape-point
+  "Return POINT, constrained when STATE currently requests aspect locking."
+  [state start point]
+  (if (get state :shift-down?)
+    (draw-constrain-shape-point start point)
+    point))
 
 (defn draw-start-box
   "Start a rectangle drag from WORLD-POINT and SCREEN-POINT."
@@ -18,7 +58,7 @@
         active-box (assoc (draw.geometry/draw-box-record point
                                                          point
                                                          (draw.history/draw-stroke-color state)
-                                                         (get state :brush-size))
+                                                         (draw-active-shape-size state point))
                           :opacity (draw-active-opacity state))]
   (draw.view/draw-sync-pointer-state
     (assoc state
@@ -44,7 +84,7 @@
         active-arrow (assoc (draw.geometry/draw-arrow-record point
                                                              point
                                                              (draw.history/draw-stroke-color state)
-                                                             (get state :brush-size))
+                                                             (draw-active-shape-size state point))
                             :opacity (draw-active-opacity state))]
   (draw.view/draw-sync-pointer-state
     (assoc state
@@ -70,7 +110,7 @@
         active-frame (assoc (draw.geometry/draw-frame-record point
                                                              point
                                                              (draw.history/draw-stroke-color state)
-                                                             (get state :brush-size))
+                                                             (draw-active-shape-size state point))
                             :opacity (draw-active-opacity state))]
   (draw.view/draw-sync-pointer-state
     (assoc state
@@ -96,7 +136,7 @@
         active-circle (assoc (draw.geometry/draw-circle-record point
                                                                point
                                                                (draw.history/draw-stroke-color state)
-                                                               (get state :brush-size))
+                                                               (draw-active-shape-size state point))
                              :opacity (draw-active-opacity state))]
     (draw.view/draw-sync-pointer-state
       (assoc state
@@ -122,7 +162,7 @@
         active-line (assoc (draw.geometry/draw-line-record point
                                                            point
                                                            (draw.history/draw-stroke-color state)
-                                                           (get state :brush-size))
+                                                           (draw-active-shape-size state point))
                            :opacity (draw-active-opacity state))]
     (draw.view/draw-sync-pointer-state
       (assoc state
@@ -173,15 +213,16 @@
   [state point screen-point]
   (let [active-box (get state :active-box)]
     (if active-box
-      (draw.view/draw-sync-pointer-state
-        (assoc state
-               :active-box (assoc (draw.geometry/draw-box-record (get active-box :start)
+      (let [point (draw-shape-point state (get active-box :start) point)]
+        (draw.view/draw-sync-pointer-state
+          (assoc state
+                 :active-box (assoc (draw.geometry/draw-box-record (get active-box :start)
                                                                  point
                                                                  (get active-box :color)
                                                                  (get active-box :size))
-                                  :opacity (draw-active-opacity state)))
-        point
-        screen-point)
+                                    :opacity (draw-active-opacity state)))
+          point
+          screen-point))
       (draw-start-box state point screen-point))))
 
 (defn draw-extend-arrow
@@ -205,15 +246,16 @@
   [state point screen-point]
   (let [active-circle (get state :active-circle)]
     (if active-circle
-      (draw.view/draw-sync-pointer-state
-        (assoc state
-               :active-circle (assoc (draw.geometry/draw-circle-record (get active-circle :start)
+      (let [point (draw-shape-point state (get active-circle :start) point)]
+        (draw.view/draw-sync-pointer-state
+          (assoc state
+                 :active-circle (assoc (draw.geometry/draw-circle-record (get active-circle :start)
                                                                         point
                                                                         (get active-circle :color)
                                                                         (get active-circle :size))
-                                     :opacity (get active-circle :opacity)))
-        point
-        screen-point)
+                                       :opacity (get active-circle :opacity)))
+          point
+          screen-point))
       (draw-start-circle state point screen-point))))
 
 (defn draw-extend-line
@@ -269,7 +311,8 @@
   [state point screen-point]
   (let [active-box (get state :active-box)]
     (if active-box
-      (let [box (draw.geometry/draw-box-element
+      (let [point (draw-shape-point state (get active-box :start) point)
+            box (draw.geometry/draw-box-element
                   (assoc (draw.geometry/draw-box-record (get active-box :start)
                                                        point
                                                        (get active-box :color)
@@ -283,7 +326,10 @@
                                 :canvas-dirty? true)
                          point
                          screen-point)]
-        (if (draw.geometry/draw-box-visible? box)
+        (if (>= (draw-screen-drag-distance state
+                                           (get active-box :start)
+                                           screen-point)
+                (draw-min-drag-screen-distance))
           (draw.state/draw-append-element next-state box)
           next-state))
       (draw.view/draw-sync-pointer-state
@@ -299,7 +345,8 @@
   [state point screen-point]
   (let [active-circle (get state :active-circle)]
     (if active-circle
-      (let [circle (draw.geometry/draw-circle-element
+      (let [point (draw-shape-point state (get active-circle :start) point)
+            circle (draw.geometry/draw-circle-element
                      (assoc (draw.geometry/draw-circle-record (get active-circle :start)
                                                               point
                                                               (get active-circle :color)
@@ -313,7 +360,10 @@
                                 :canvas-dirty? true)
                          point
                          screen-point)]
-        (if (draw.geometry/draw-circle-visible? circle)
+        (if (>= (draw-screen-drag-distance state
+                                           (get active-circle :start)
+                                           screen-point)
+                (draw-min-drag-screen-distance))
           (draw.state/draw-append-element next-state circle)
           next-state))
       (draw.view/draw-sync-pointer-state

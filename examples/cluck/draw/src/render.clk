@@ -90,7 +90,9 @@
   [renderer state box render-screen-soft-segment!]
   (let [points (draw-box-screen-points state box)
         color (get box :color)
-        size (max 1 (draw.view/draw-exact-int (or (get box :size) 1)))
+        size (draw.view/draw-point-screen-size state
+                                               [(get box :x) (get box :y) 1.0]
+                                               (or (get box :size) 1))
         opacity (draw.state/draw-element-opacity box)
         nw (get points :nw)
         ne (get points :ne)
@@ -255,13 +257,7 @@
 (defn draw-render-stroke-joints!
   "Render interior stroke points so sharp turns keep round join coverage."
   [renderer state points size opacity render-stroke-point!]
-  (let [total (count points)]
-    (let loop ((index 1))
-      (if (>= index (- total 1))
-        nil
-        (begin
-          (render-stroke-point! renderer state (nth points index) size opacity)
-          (loop (+ index 1)))))))
+  nil)
 
 (defn draw-render-active-box!
   "Render the current active rectangle preview."

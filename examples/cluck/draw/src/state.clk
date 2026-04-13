@@ -20,6 +20,8 @@
   {:title (draw-window-title)
    :width 1280
    :height 720
+   :canvas-width 1280
+   :canvas-height 720
    :file-path (draw-document-file-path)
    :background [24 24 28]
    :brush-color [245 245 245]
@@ -28,7 +30,7 @@
    :opacity 1.0
    :pen-pressure 1.0
    :pen-pressure-mode :dynamic
-   :ink-renderer :stamped-sdl
+   :ink-renderer :native-gpu
    :window-focused? true
    :view-x 0.0
    :view-y 0.0
@@ -49,9 +51,11 @@
    :stroke-filter-point false
    :space-down? false
    :ctrl-down? false
+   :shift-down? false
    :canvas-dirty? false
    :debug-panel? false
    :tool-panel? false
+   :tool-panel-scroll 0.0
    :status-note ""
    :status-note-frame 0
    :history []
@@ -182,6 +186,27 @@
   "Return true when pen input should use live dynamic pressure."
   [state]
   (draw-kind=? (draw-pen-pressure-mode state) :dynamic))
+
+(defn draw-ink-renderer-mode
+  "Return the normalized ink renderer mode for STATE."
+  [state]
+  (let [mode (or (get state :ink-renderer) :native-gpu)]
+    (if (draw-kind=? mode :native-gpu)
+      :native-gpu
+      :stamped-sdl)))
+
+(defn draw-native-ink-renderer-mode?
+  "Return true when STATE selects the native GPU ink renderer."
+  [state]
+  (draw-kind=? (draw-ink-renderer-mode state) :native-gpu))
+
+(defn draw-toggle-ink-renderer
+  "Toggle STATE between stamped SDL ink rendering and native GPU ink rendering."
+  [state]
+  (assoc state
+         :ink-renderer (if (draw-native-ink-renderer-mode? state)
+                         :stamped-sdl
+                         :native-gpu)))
 
 (defn draw-toggle-pen-pressure-mode
   "Toggle STATE between fixed and dynamic pen pressure modes."
@@ -658,18 +683,30 @@
         state (if (contains? state :tool-panel?)
                 state
                 (assoc state :tool-panel? false))
+        state (if (contains? state :tool-panel-scroll)
+                state
+                (assoc state :tool-panel-scroll 0.0))
+        state (if (contains? state :shift-down?)
+                state
+                (assoc state :shift-down? false))
         state (if (contains? state :stroke-filter-point)
                 state
                 (assoc state :stroke-filter-point false))
         state (if (contains? state :ink-renderer)
                 state
-                (assoc state :ink-renderer :stamped-sdl))
+                (assoc state :ink-renderer :native-gpu))
         state (if (contains? state :status-note)
                 state
                 (assoc state :status-note "" :status-note-frame 0))
         state (if (contains? state :opacity)
                 state
                 (assoc state :opacity 1.0))
+        state (if (contains? state :canvas-width)
+                state
+                (assoc state :canvas-width 1280))
+        state (if (contains? state :canvas-height)
+                state
+                (assoc state :canvas-height 720))
         state (assoc state
                      :recent-brush-colors
                      (draw-normalize-recent-brush-colors

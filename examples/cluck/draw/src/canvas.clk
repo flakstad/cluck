@@ -1,7 +1,8 @@
 ;; Cached-canvas and preview rendering helpers.
 
 (ns cluck.examples.draw.canvas
-  (:require [cluck.examples.draw.sdl3 :as sdl]))
+  (:require [cluck.examples.draw.sdl3 :as sdl]
+            [cluck.examples.draw.view :as draw.view]))
 
 (defn draw-mark-canvas-dirty!
   "Mark the cached canvas as needing a rebuild."
@@ -42,6 +43,7 @@
   (let [renderer (get ctx :renderer)
         canvas (if ctx (get ctx :canvas) nil)
         preview (if ctx (get ctx :preview) nil)
+        viewport (draw.view/draw-canvas-viewport state)
         active (get state :active-stroke)
         active-box (get state :active-box)
         active-circle (get state :active-circle)
@@ -51,9 +53,19 @@
         active-text (get state :active-text)]
     (if (canvas-ready?)
       (begin
-        (sdl/render-texture! renderer canvas)
+        (sdl/render-texture-at! renderer
+                                canvas
+                                (get viewport :x)
+                                (get viewport :y)
+                                (get viewport :width)
+                                (get viewport :height))
         (if (and active (preview-ready?))
-          (sdl/render-texture! renderer preview)
+          (sdl/render-texture-at! renderer
+                                  preview
+                                  (get viewport :x)
+                                  (get viewport :y)
+                                  (get viewport :width)
+                                  (get viewport :height))
           (if active
             (render-stroke! renderer state active)
             nil))

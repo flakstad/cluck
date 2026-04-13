@@ -58,6 +58,34 @@
                          (pr-str (draw-event-point state
                                                   "SDL_EVENT_MOUSE_MOTION x=14.0 y=24.0"))))
 
+(let [state (assoc (default-state)
+                   :width 1600
+                   :height 1200
+                   :canvas-width 1280
+                   :canvas-height 720)
+      viewport (draw-canvas-viewport state)]
+  (draw-view-assert-num= "letterboxed viewport x"
+                         0.0
+                         (get viewport :x))
+  (draw-view-assert-num= "letterboxed viewport y"
+                         150.0
+                         (get viewport :y))
+  (draw-view-assert-num= "letterboxed viewport width"
+                         1600.0
+                         (get viewport :width))
+  (draw-view-assert-num= "letterboxed viewport height"
+                         900.0
+                         (get viewport :height))
+  (draw-view-assert-num= "letterboxed viewport scale"
+                         1.25
+                         (get viewport :scale))
+  (draw-view-assert-str= "world origin maps to viewport origin"
+                         "[0 150 1.0]"
+                         (pr-str (draw-world-point->screen-point state [0.0 0.0 1.0])))
+  (draw-view-assert-str= "viewport center roundtrips to canvas center"
+                         "[640.0 360.0 1.0]"
+                         (pr-str (draw-screen-point->world-point state [800.0 600.0 1.0]))))
+
 (let [zoomed-out (assoc (default-state)
                         :zoom 0.5)
       zoomed-in (assoc (default-state)

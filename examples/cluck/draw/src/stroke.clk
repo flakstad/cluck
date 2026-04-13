@@ -28,16 +28,23 @@
   (let [previous-stamp (draw.view/draw-point-screen-size state previous size)
         current-stamp (draw.view/draw-point-screen-size state point size)
         stamp (min previous-stamp current-stamp)
-        spacing (* stamp 0.4)]
+        spacing (* stamp 0.3)]
     (cond
-      (> spacing 2.0)
-      2.0
+      (> spacing 1.5)
+      1.5
 
-      (> spacing 0.75)
+      (> spacing 0.35)
       spacing
 
       :else
-      0.75)))
+      0.35)))
+
+(defn draw-significant-pressure-change?
+  "Return true when POINT changes pressure enough from PREVIOUS to keep a sample."
+  [previous point]
+  (>= (abs (- (draw.view/draw-point-pressure point)
+              (draw.view/draw-point-pressure previous)))
+      0.04))
 
 (defn draw-append-stroke-point
   "Append POINT on STROKE when it is far enough from the prior sample."
@@ -49,6 +56,7 @@
       (let [previous (last points)
             distance (draw-point-screen-distance state previous point)
             spacing (draw-min-point-spacing state previous point size)]
-        (if (>= distance spacing)
+        (if (or (>= distance spacing)
+                (draw-significant-pressure-change? previous point))
           (conj points point)
           points)))))

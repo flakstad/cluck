@@ -82,6 +82,8 @@ Architecture notes:
 - keep custom C limited to the places where SDL requires callbacks, direct struct access, or pixel/texture work
 - treat pointers and native resources as boundary concerns; higher-level draw modules should work with ordinary maps and values whenever possible
 - freehand ink rendering now has an explicit backend boundary in `cluck.examples.draw.ink`; the current `:stamped-sdl` path remains the default, but this is where a future `:native-gpu` backend should plug in without reshaping the rest of the app
+- window startup now also has an explicit native context seam: `:stamped-sdl` requests the existing SDL renderer path, while `:native-gpu` requests an OpenGL-capable SDL window/context so the future freehand backend can bring up GPU state without reshaping the rest of startup
+- the first native backend bootstrap is now present behind that seam: the app records native backend readiness at startup, and the REPL helpers `draw-native-backend-status` / `draw-native-smoke-frame!` give a minimal OpenGL bring-up probe without changing the main SDL frame path yet
 
 Stroke rendering quality notes and future steps:
 - current freehand rendering is built from sampled input points plus a soft strip per segment, which keeps the implementation simple but can show faceting on sharp turns and seams at angled joins

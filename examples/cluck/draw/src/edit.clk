@@ -206,6 +206,16 @@
         (cond
           (and original-element (draw.state/draw-kind=? element-kind :box))
           (let [fixed (draw.geometry/draw-rectangle-opposite-corner original-element (get resize :handle))
+                point (if (get state :shift-down?)
+                        (let [dx (- (nth point 0) (nth fixed 0))
+                              dy (- (nth point 1) (nth fixed 1))
+                              distance (max (abs dx) (abs dy))
+                              sx (if (< dx 0.0) -1.0 1.0)
+                              sy (if (< dy 0.0) -1.0 1.0)]
+                          [(+ (nth fixed 0) (* sx distance))
+                           (+ (nth fixed 1) (* sy distance))
+                           (draw.view/draw-point-pressure point)])
+                        point)
                 moved? (or (get resize :moved?)
                            (not (= (nth point 0) (nth fixed 0)))
                            (not (= (nth point 1) (nth fixed 1))))
@@ -233,6 +243,16 @@
 
           (and original-element (draw.state/draw-kind=? element-kind :circle))
           (let [fixed (draw.geometry/draw-rectangle-opposite-corner original-element (get resize :handle))
+                point (if (get state :shift-down?)
+                        (let [dx (- (nth point 0) (nth fixed 0))
+                              dy (- (nth point 1) (nth fixed 1))
+                              distance (max (abs dx) (abs dy))
+                              sx (if (< dx 0.0) -1.0 1.0)
+                              sy (if (< dy 0.0) -1.0 1.0)]
+                          [(+ (nth fixed 0) (* sx distance))
+                           (+ (nth fixed 1) (* sy distance))
+                           (draw.view/draw-point-pressure point)])
+                        point)
                 moved? (or (get resize :moved?)
                            (not (= (nth point 0) (nth fixed 0)))
                            (not (= (nth point 1) (nth fixed 1))))

@@ -46,9 +46,90 @@
   [title width height flags]
   (sdl-create-window title width height flags))
 
+(defn create-opengl-window
+  [title width height]
+  (sdl-create-opengl-window title width height))
+
+(defn window-width
+  [window]
+  (sdl-get-window-width window))
+
+(defn window-height
+  [window]
+  (sdl-get-window-height window))
+
 (defn create-renderer
   [window]
   (sdl-create-renderer window))
+
+(defn gl-set-attribute!
+  [attr value]
+  (sdl-gl-set-attribute! attr value))
+
+(defn gl-create-context
+  [window]
+  (sdl-gl-create-context window))
+
+(defn gl-destroy-context!
+  [context]
+  (sdl-gl-destroy-context! context))
+
+(defn gl-make-current!
+  [window context]
+  (sdl-gl-make-current! window context))
+
+(defn gl-swap-window!
+  [window]
+  (sdl-gl-swap-window! window))
+
+(defn gl-get-proc-address
+  [name]
+  (sdl-gl-get-proc-address name))
+
+(defn gl-bootstrap!
+  [ignored]
+  (sdl-gl-bootstrap!))
+
+(defn gl-ready?
+  [ignored]
+  (sdl-gl-ready?))
+
+(defn gl-last-error
+  [ignored]
+  (sdl-gl-last-error))
+
+(defn gl-clear-window!
+  [window red green blue alpha]
+  (sdl-gl-clear-window! window red green blue alpha))
+
+(defn gl-draw-smoke-triangle!
+  [window red green blue alpha]
+  (sdl-gl-draw-smoke-triangle! window red green blue alpha))
+
+(defn gl-draw-segment!
+  [window ax ay pressure-a bx by pressure-b base-radius hardness view-x view-y anchor-x anchor-y zoom red green blue alpha]
+  (sdl-gl-draw-segment! window
+                        ax
+                        ay
+                        pressure-a
+                        bx
+                        by
+                        pressure-b
+                        base-radius
+                        hardness
+                        view-x
+                        view-y
+                        anchor-x
+                        anchor-y
+                        zoom
+                        red
+                        green
+                        blue
+                        alpha))
+
+(defn gl-draw-stroke!
+  [window spec base-radius hardness view-x view-y anchor-x anchor-y zoom red green blue alpha]
+  (sdl-gl-draw-stroke! window spec base-radius hardness view-x view-y anchor-x anchor-y zoom red green blue alpha))
 
 (defn set-draw-color!
   [renderer r g b a]
@@ -329,25 +410,84 @@
   [value]
   (sdl-pointer-ready? value))
 
+(defn configure-opengl-core-context!
+  "Request a minimal core-profile GL context suitable for future native ink work."
+  [ignored]
+  (and (gl-set-attribute! sdl-gl-attr-depth-size 24)
+       (gl-set-attribute! sdl-gl-attr-stencil-size 8)
+       (gl-set-attribute! sdl-gl-attr-context-major-version 3)
+       (gl-set-attribute! sdl-gl-attr-context-minor-version 3)
+       (gl-set-attribute! sdl-gl-attr-doublebuffer 1)
+       (gl-set-attribute! sdl-gl-attr-context-profile-mask sdl-gl-context-profile-core)))
+
+(defn open-opengl-context
+  "Open a GL-capable draw window and also keep an SDL renderer for the current app path."
+  [title width height]
+  (if (not (configure-opengl-core-context! nil))
+    nil
+    (let [window (create-opengl-window title width height)]
+      (if window
+        (let [gl-context (gl-create-context window)]
+          (if gl-context
+            (if (gl-make-current! window gl-context)
+              (let [renderer (create-renderer window)]
+                (if renderer
+                  {:window window
+                   :renderer renderer
+                   :gl-context gl-context
+                   :context-kind :opengl}
+                  (begin
+                    (gl-destroy-context! gl-context)
+                    (destroy-window window)
+                    nil)))
+              (begin
+                (gl-destroy-context! gl-context)
+                (destroy-window window)
+                nil))
+            (begin
+              (destroy-window window)
+              nil)))
+        nil))))
+
+(defn open-context-with-options
+  "Open a draw window using OPTIONS.
+
+  Supported `:kind` values:
+  - `:renderer`: existing SDL renderer window
+  - `:opengl`: GL-capable window plus current SDL renderer fallback"
+  [title width height options]
+  (let [kind (if options (get options :kind) false)]
+    (if (equal? kind :opengl)
+      (open-opengl-context title width height)
+      (let [window (create-window title
+                                  width
+                                  height
+                                  (+ sdl-window-resizable
+                                     sdl-window-high-pixel-density))]
+        (if window
+          (let [renderer (create-renderer window)]
+            (if renderer
+              {:window window
+               :renderer renderer
+               :context-kind :renderer}
+              (begin
+                (destroy-window window)
+                nil)))
+          nil)))))
+
 (defn open-context
   [title width height]
-  (let [window (create-window title width height 0)]
-    (if window
-      (let [renderer (create-renderer window)]
-        (if renderer
-          {:window window
-           :renderer renderer}
-          (begin
-            (destroy-window window)
-            nil)))
-      nil)))
+  (open-context-with-options title width height nil))
 
 (defn close-context!
   [ctx]
   (let [renderer (get ctx :renderer)
+        gl-context (get ctx :gl-context)
         window (get ctx :window)]
     (if renderer
       (destroy-renderer renderer))
+    (if gl-context
+      (gl-destroy-context! gl-context))
     (if window
       (destroy-window window))
     nil))

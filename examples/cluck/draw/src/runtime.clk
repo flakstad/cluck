@@ -8,10 +8,19 @@
             [cluck.string :as str]))
 
 (import (prefix (chicken file) cfile:)
+        (chicken condition)
         (prefix (chicken process-context posix) posix:)
         (chicken time))
 
 (def *draw-atomic-write-seq* 0)
+
+(defn draw-exn-details
+  "Return a diagnostic map for EXN when condition metadata is available."
+  [exn]
+  {:text (format "%s" exn)
+   :message (or (get-condition-property exn 'exn 'message) "")
+   :location (or (get-condition-property exn 'exn 'location) "")
+   :arguments (or (get-condition-property exn 'exn 'arguments) [])})
 
 (defn draw-log-file-path
   "Return the path used for the draw session log."
@@ -220,11 +229,11 @@
   "Write a full crash report for EXN."
   [path exn state last-error state-snapshot]
   (let [report {:at (current-process-milliseconds)
-                :error (format "%s" exn)
+                :error (draw-exn-details exn)
                 :state (state-snapshot state)
                 :recent-events (if state (get state :recent-events) [])
                 :last-error (if last-error
-                              (format "%s" last-error)
+                              (draw-exn-details last-error)
                               "")}]
     (draw-write-file-atomic! path (pr-str report))
     path))

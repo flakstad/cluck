@@ -1,0 +1,224 @@
+;; Native freehand ink backend helpers.
+
+(ns cluck.examples.draw.ink-native
+  (:require [cluck.examples.draw.sdl3 :as sdl]
+            [cluck.examples.draw.view :as draw.view]
+            [cluck.examples.draw.state :as draw.state]
+            [cluck.string :as str]))
+
+(defn draw-native-hardness
+  "Return the analytic edge hardness for the native ink path."
+  []
+  0.72)
+
+(defn draw-native-backend
+  "Return the current native ink backend map from CONTEXT."
+  [context]
+  (if context
+    (get context :native-ink-backend)
+    false))
+
+(defn draw-native-backend-kind
+  "Return the native ink backend kind for CONTEXT."
+  [context]
+  (let [backend (draw-native-backend context)]
+    (if backend
+      (get backend :kind)
+      false)))
+
+(defn draw-native-backend-ready?
+  "Return true when CONTEXT has an initialized native ink backend."
+  [context]
+  (let [backend (draw-native-backend context)]
+    (and backend (get backend :ready?))))
+
+(defn draw-native-backend-error
+  "Return the recorded backend initialization error for CONTEXT."
+  [context]
+  (let [backend (draw-native-backend context)]
+    (if backend
+      (get backend :error)
+      false)))
+
+(defn draw-ensure-native-backend
+  "Ensure CONTEXT has a native ink backend when it is an OpenGL context."
+  [context]
+  (let [kind (if context (get context :context-kind) false)
+        backend (draw-native-backend context)]
+    (cond
+      (not context)
+      {:context context :ready? false}
+
+      backend
+      {:context context :ready? (get backend :ready?)}
+
+      (not (equal? kind :opengl))
+      {:context (assoc context
+                       :native-ink-backend
+                       {:kind false
+                        :ready? false
+                        :error false})
+       :ready? false}
+
+      (not (sdl/gl-bootstrap! false))
+      {:context (assoc context
+                       :native-ink-backend
+                       {:kind :opengl
+                        :ready? false
+                        :error (or (sdl/gl-last-error false)
+                                   (sdl/last-error false))})
+       :ready? false}
+
+      (not (sdl/gl-ready? false))
+      {:context (assoc context
+                       :native-ink-backend
+                       {:kind :opengl
+                        :ready? false
+                        :error (or (sdl/gl-last-error false)
+                                   "gl proc load incomplete")})
+       :ready? false}
+
+      :else
+      {:context (assoc context
+                       :native-ink-backend
+                       {:kind :opengl
+                        :ready? true
+                        :error false})
+       :ready? true})))
+
+(defn draw-native-clear-frame!
+  "Clear the OpenGL backbuffer for CONTEXT using BACKGROUND."
+  [context background]
+  (let [window (if context (get context :window) false)]
+    (if (and (draw-native-backend-ready? context)
+             window
+             background
+             (>= (count background) 3))
+      (sdl/gl-clear-window! window
+                            (/ (nth background 0) 255.0)
+                            (/ (nth background 1) 255.0)
+                            (/ (nth background 2) 255.0)
+                            1.0)
+      false)))
+
+(defn draw-native-segment!
+  "Render one screen-space analytic segment for the native ink backend."
+  [context state a b size opacity color]
+  (let [window (if context (get context :window) false)
+        pressure-a (draw.view/draw-normalize-pressure (draw.view/draw-point-pressure a))
+        pressure-b (draw.view/draw-normalize-pressure (draw.view/draw-point-pressure b))
+        base-radius (/ size 2.0)
+        rgb (or color [255 255 255])
+        alpha (draw.state/draw-normalize-opacity opacity)
+        hardness (draw-native-hardness)
+        view-x (draw.view/draw-view-x state)
+        view-y (draw.view/draw-view-y state)
+        anchor-x (draw.view/draw-view-anchor-x state)
+        anchor-y (draw.view/draw-view-anchor-y state)
+        zoom (draw.view/draw-view-zoom state)]
+    (if (and (draw-native-backend-ready? context)
+             window)
+      (sdl/gl-draw-segment! window
+                            (nth a 0)
+                            (nth a 1)
+                            pressure-a
+                            (nth b 0)
+                            (nth b 1)
+                            pressure-b
+                            base-radius
+                            hardness
+                            view-x
+                            view-y
+                            anchor-x
+                            anchor-y
+                            zoom
+                            (/ (nth rgb 0) 255.0)
+                            (/ (nth rgb 1) 255.0)
+                            (/ (nth rgb 2) 255.0)
+                            alpha)
+      false)))
+
+(defn draw-native-point!
+  "Render one analytic point disc for the native ink backend."
+  [context state point size opacity color]
+  (draw-native-segment! context
+                        state
+                        point
+                        point
+                        size
+                        opacity
+                        color))
+
+(defn draw-native-stroke-spec
+  "Encode POINTS as a world-space native stroke spec."
+  [points size]
+  (let [rows (reduce (lambda (acc point)
+                       (let [pressure (draw.view/draw-normalize-pressure
+                                        (draw.view/draw-point-pressure point))]
+                         (cons (str/join " "
+                                         [(nth point 0)
+                                          (nth point 1)
+                                          pressure])
+                               acc)))
+                     '()
+                     points)]
+    (str/join "\n" (reverse rows))))
+
+(defn draw-native-stroke!
+  "Render STROKE as one cooked native batch into the current OpenGL backbuffer."
+  [context state stroke]
+  (let [points (get stroke :points)
+        color (get stroke :color)
+        size (get stroke :size)
+        opacity (get stroke :opacity)
+        window (if context (get context :window) false)
+        base-radius (/ size 2.0)
+        hardness (draw-native-hardness)
+        rgb (or color [255 255 255])
+        alpha (draw.state/draw-normalize-opacity opacity)
+        view-x (draw.view/draw-view-x state)
+        view-y (draw.view/draw-view-y state)
+        anchor-x (draw.view/draw-view-anchor-x state)
+        anchor-y (draw.view/draw-view-anchor-y state)
+        zoom (draw.view/draw-view-zoom state)]
+    (cond
+      (empty? points) false
+      (= (count points) 1) (draw-native-point! context state (first points) size opacity color)
+      :else
+      (if (and (draw-native-backend-ready? context)
+               window)
+        (sdl/gl-draw-stroke! window
+                             (draw-native-stroke-spec points size)
+                             base-radius
+                             hardness
+                             view-x
+                             view-y
+                             anchor-x
+                             anchor-y
+                             zoom
+                             (/ (nth rgb 0) 255.0)
+                             (/ (nth rgb 1) 255.0)
+                             (/ (nth rgb 2) 255.0)
+                             alpha)
+        false))))
+
+(defn draw-native-smoke-frame!
+  "Draw the OpenGL smoke triangle and swap the frame for CONTEXT."
+  [context]
+  (let [window (if context (get context :window) false)]
+    (if (and (draw-native-backend-ready? context) window)
+      (begin
+        (sdl/gl-draw-smoke-triangle! window 0.08 0.10 0.12 1.0)
+        (sdl/gl-swap-window! window)
+        true)
+      false)))
+
+(defn draw-native-present-frame!
+  "Swap the current OpenGL frame for CONTEXT."
+  [context]
+  (let [window (if context (get context :window) false)]
+    (if (and (draw-native-backend-ready? context) window)
+      (begin
+        (sdl/gl-swap-window! window)
+        true)
+      false)))

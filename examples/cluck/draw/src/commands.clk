@@ -3,17 +3,19 @@
 (ns cluck.examples.draw.commands
   (:require [cluck.examples.draw.sdl3 :as sdl]
             [cluck.examples.draw.input :as draw-input]
+            [cluck.examples.draw.panel :as draw.panel]
             [cluck.examples.draw.view :as draw.view]
             [cluck.string :as str]))
 
 (defn draw-handle-tool-key!
   "Apply draw tool shortcuts for KEY to STATE using the supplied handlers."
-  [state key clear-strokes-core! undo-stroke-core! set-tool-core! toggle-eraser-core! set-brush-size-core! toggle-pen-pressure-mode-core!]
+  [state key clear-strokes-core! undo-stroke-core! set-tool-core! toggle-eraser-core! set-brush-size-core! toggle-pen-pressure-mode-core! toggle-ink-renderer-core!]
   (let [key (str/lower-case (or key ""))]
     (cond
       (string=? key "c") (clear-strokes-core! state)
       (string=? key "u") (undo-stroke-core! state)
       (string=? key "p") (toggle-pen-pressure-mode-core! state)
+      (string=? key "g") (toggle-ink-renderer-core! state)
       (string=? key "i") (set-tool-core! state :ink)
       (string=? key "v") (set-tool-core! state :select)
       (string=? key "r") (set-tool-core! state :box)
@@ -23,12 +25,6 @@
       (string=? key "5") (set-tool-core! state :line)
       (string=? key "6") (toggle-eraser-core! state)
       (string=? key "7") (set-tool-core! state :picker)
-      (and (get state :ctrl-down?) (string=? key "1"))
-      (set-brush-size-core! state 2)
-      (and (get state :ctrl-down?) (string=? key "2"))
-      (set-brush-size-core! state 6)
-      (and (get state :ctrl-down?) (string=? key "3"))
-      (set-brush-size-core! state 12)
       (string=? key "1") (set-tool-core! state :ink)
       (string=? key "2") (set-tool-core! state :select)
       (string=? key "3") (set-tool-core! state :box)
@@ -112,12 +108,23 @@
       state)))
 
 (defn draw-handle-wheel!
-  "Apply mouse-wheel zoom to STATE."
+  "Apply mouse-wheel zoom or brush-size change to STATE."
   [state]
   (let [delta (sdl/event-wheel-y)]
     (if (= delta 0.0)
       state
-      (draw.view/draw-zoom-at-core! state
-                                    delta
-                                    (sdl/event-wheel-mouse-x)
-                                    (sdl/event-wheel-mouse-y)))))
+      (if (get state :ctrl-down?)
+        (assoc state
+               :brush-size (draw.view/draw-clamp
+                             (+ (or (get state :brush-size) 2)
+                                (if (> delta 0.0) 1 -1))
+                             1
+                             64))
+        (let [screen-point [(sdl/event-wheel-mouse-x)
+                            (sdl/event-wheel-mouse-y)]]
+          (if (draw.panel/draw-tool-panel-hit? state screen-point)
+            (draw.panel/draw-scroll-tool-panel state (* -32.0 delta))
+            (draw.view/draw-zoom-at-core! state
+                                          delta
+                                          (nth screen-point 0)
+                                          (nth screen-point 1))))))))

@@ -11,7 +11,7 @@
 (defn draw-brush-hardness
   "Return the default brush hardness used by the stamp texture."
   []
-  0.65)
+  0.9)
 
 (defn draw-strip-texture-width
   "Return the canonical width for the soft strip texture."

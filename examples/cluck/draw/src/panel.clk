@@ -2,6 +2,7 @@
 
 (ns cluck.examples.draw.panel
   (:require [cluck.examples.draw.state :as draw.state]
+            [cluck.examples.draw.view :as draw.view]
             [cluck.math :as math]
             [cluck.fs :as fs]
             [cluck.string :as str]))
@@ -28,8 +29,17 @@
 
 (defn draw-tool-panel-height
   "Return the tool panel height in screen pixels."
-  []
-  640)
+  [state]
+  (let [window-height (or (get state :height) 720)
+        max-height (- window-height 24)]
+    (if (> max-height 220)
+      max-height
+      220)))
+
+(defn draw-tool-panel-scroll
+  "Return the current tool-panel scroll offset."
+  [state]
+  (max 0.0 (or (get state :tool-panel-scroll) 0.0)))
 
 (defn draw-tool-panel-section-height
   "Return the height of a tool-panel section label row."
@@ -51,29 +61,59 @@
   []
   4)
 
+(defn draw-tool-panel-swatch-rows
+  "Return the number of rows needed to render COLORS."
+  [colors]
+  (let [columns (draw-tool-panel-swatch-columns)
+        total (count colors)
+        rows (math/ceiling (/ total columns))]
+    (if (> rows 0)
+      rows
+      1)))
+
 (defn draw-brush-color-palette
   "Return the preset brush color palette."
   []
   [[245 245 245]
+   [255 255 255]
+   [22 24 28]
+   [84 92 107]
    [255 112 122]
+   [255 82 82]
    [255 179 71]
+   [255 140 0]
    [255 228 124]
+   [255 237 64]
    [121 213 114]
+   [0 200 83]
    [103 169 255]
+   [0 145 255]
    [175 124 255]
-   [72 78 92]])
+   [123 97 255]
+   [255 110 199]
+   [158 111 84]
+   [72 78 92]
+   [0 188 212]])
 
 (defn draw-background-color-palette
   "Return the preset background color palette."
   []
   [[24 24 28]
+   [12 14 18]
    [33 37 45]
    [46 49 59]
    [58 50 45]
    [39 52 44]
    [63 40 43]
    [16 16 18]
-   [240 236 230]])
+   [240 236 230]
+   [252 247 240]
+   [255 250 235]
+   [234 244 255]
+   [233 249 240]
+   [245 238 255]
+   [255 235 242]
+   [225 228 235]])
 
 (defn draw-opacity-palette
   "Return the preset opacity values."
@@ -89,7 +129,7 @@
   (let [width (draw-tool-panel-width)
         x (- (or (get state :width) 1280) width 12)
         y 12
-        height (draw-tool-panel-height)]
+        height (draw-tool-panel-height state)]
     {:x x
      :y y
      :width width
@@ -106,14 +146,57 @@
   [(format "file: %s" (fs/basename (or (get state :file-path)
                                        (draw.state/draw-document-file-path))))
    (format "format: %s" (draw-save-format-label))
+   (format "zoom: %s" (draw.view/draw-format-zoom-label state))
+   (format "brush: %d" (or (get state :brush-size) 2))
    "1 ink   2 select   3 rectangle   4 circle   5 line   6 eraser   7 picker"
-   "ctrl+1/2/3 brush sizes"
+   "ctrl+wheel brush size"
    "recent colors row above brush swatches"
    "brush/background swatches below"
    "opacity presets below"
+   "wheel over panel scrolls"
+   "0 or reset button resets view"
    "TAB toggle  CTRL+N new  CTRL+S save"
    "CTRL+SHIFT+S save as"
    "CTRL+O open"])
+
+(defn draw-tool-panel-value-buttons
+  "Return decrement/value/increment buttons for a numeric control."
+  [state id-prefix label value y0]
+  (let [panel (draw-tool-panel-rect state)
+        padding (draw-tool-panel-padding)
+        x (+ (get panel :x) padding)
+        width (- (get panel :width) (* padding 2))
+        height (draw-tool-panel-button-height)
+        gap (draw-tool-panel-button-gap)
+        adjust-width 32
+        value-width (- width (* 2 adjust-width) (* 2 gap))]
+    [{:id (keyword (format "%s-dec" id-prefix))
+      :label "-"
+      :kind (keyword (format "%s-dec" id-prefix))
+      :clickable? true
+      :active? false
+      :x x
+      :y y0
+      :width adjust-width
+      :height height}
+     {:id (keyword (format "%s-value" id-prefix))
+      :label (format "%s %s" label value)
+      :kind :label
+      :clickable? false
+      :active? false
+      :x (+ x adjust-width gap)
+      :y y0
+      :width value-width
+      :height height}
+     {:id (keyword (format "%s-inc" id-prefix))
+      :label "+"
+      :kind (keyword (format "%s-inc" id-prefix))
+      :clickable? true
+      :active? false
+      :x (+ x adjust-width gap value-width gap)
+      :y y0
+      :width adjust-width
+      :height height}]))
 
 (defn draw-tool-panel-section-label
   "Return a non-clickable tool panel section label."
@@ -195,7 +278,8 @@
         width (- (get panel :width) (* padding 2))
         height (draw-tool-panel-button-height)
         gap (draw-tool-panel-button-gap)
-        y0 (+ (get panel :y) 40)
+        scroll (draw-tool-panel-scroll state)
+        y0 (- (+ (get panel :y) 40) scroll)
         tool-buttons [{:id :tool-ink
                        :label "Ink"
                        :kind :tool
@@ -258,49 +342,95 @@
                        :active? false
                        :x x :y (+ y0 (* 10 (+ height gap))) :width width :height height}]
         section-y (+ y0 (* 11 (+ height gap)))
+        view-label (draw-tool-panel-section-label state
+                                                  :view-controls
+                                                  "View"
+                                                  section-y)
+        zoom-buttons (draw-tool-panel-value-buttons state
+                                                    "zoom"
+                                                    "Zoom"
+                                                    (draw.view/draw-format-zoom-label state)
+                                                    (+ section-y (draw-tool-panel-section-height) 6))
+        reset-zoom-button {:id :reset-zoom
+                           :label "Reset View"
+                           :kind :reset-view
+                           :clickable? true
+                           :active? false
+                           :x x
+                           :y (+ section-y
+                                 (draw-tool-panel-section-height)
+                                 6
+                                 (draw-tool-panel-button-height)
+                                 gap)
+                           :width width
+                           :height height}
+        size-y (+ (get reset-zoom-button :y)
+                  height
+                  gap)
+        size-label (draw-tool-panel-section-label state
+                                                  :brush-size
+                                                  "Brush size"
+                                                  size-y)
+        size-buttons (draw-tool-panel-value-buttons state
+                                                    "brush-size"
+                                                    "Size"
+                                                    (or (get state :brush-size) 2)
+                                                    (+ size-y (draw-tool-panel-section-height) 6))
+        recent-y (+ size-y
+                    (draw-tool-panel-section-height)
+                    6
+                    (draw-tool-panel-button-height)
+                    gap
+                    16)
         recent-label (draw-tool-panel-section-label state
                                                     :recent-brush-colors
                                                     "Recent colors"
-                                                    section-y)
+                                                    recent-y)
         recent-buttons (draw-tool-panel-swatch-buttons state
                                                        :recent-brush-color
                                                        (draw.state/draw-recent-brush-colors state)
-                                                       (+ section-y (draw-tool-panel-section-height) 6)
+                                                       (+ recent-y (draw-tool-panel-section-height) 6)
                                                        (get state :brush-color))
-        brush-y (+ section-y
+        recent-rows (draw-tool-panel-swatch-rows (draw.state/draw-recent-brush-colors state))
+        brush-y (+ recent-y
                    (draw-tool-panel-section-height)
                    6
-                   (draw-tool-panel-swatch-size)
+                   (* recent-rows (+ (draw-tool-panel-swatch-size)
+                                     (draw-tool-panel-swatch-gap)))
                    16)
         brush-label (draw-tool-panel-section-label state
                                                    :brush-colors
                                                    "Brush colors"
                                                    brush-y)
+        brush-palette (draw-brush-color-palette)
         brush-buttons (draw-tool-panel-swatch-buttons state
                                                       :brush-color
-                                                      (draw-brush-color-palette)
+                                                      brush-palette
                                                       (+ brush-y (draw-tool-panel-section-height) 6)
                                                       (get state :brush-color))
+        brush-rows (draw-tool-panel-swatch-rows brush-palette)
         background-y (+ brush-y
                         (draw-tool-panel-section-height)
                         6
-                        (* 2 (+ (draw-tool-panel-swatch-size)
-                                (draw-tool-panel-swatch-gap)))
+                        (* brush-rows (+ (draw-tool-panel-swatch-size)
+                                         (draw-tool-panel-swatch-gap)))
                         16)
         background-label (draw-tool-panel-section-label state
                                                         :background-colors
                                                         "Background colors"
                                                         background-y)
+        background-palette (draw-background-color-palette)
         background-buttons (draw-tool-panel-swatch-buttons state
                                                            :background-color
-                                                           (draw-background-color-palette)
+                                                           background-palette
                                                            (+ background-y (draw-tool-panel-section-height) 6)
                                                            (get state :background))
+        background-rows (draw-tool-panel-swatch-rows background-palette)
         opacity-y (+ background-y
                      (draw-tool-panel-section-height)
                      6
-                     (* 2 (+ (draw-tool-panel-swatch-size)
-                             (draw-tool-panel-swatch-gap)))
+                     (* background-rows (+ (draw-tool-panel-swatch-size)
+                                           (draw-tool-panel-swatch-gap)))
                      16)
         opacity-label (draw-tool-panel-section-label state
                                                     :opacity
@@ -310,6 +440,11 @@
                                                          (+ opacity-y (draw-tool-panel-section-height) 6)
                                                          (draw.state/draw-current-opacity state))]
     (concat tool-buttons
+            [view-label]
+            zoom-buttons
+            [reset-zoom-button]
+            [size-label]
+            size-buttons
             [recent-label]
             recent-buttons
             [brush-label]
@@ -438,3 +573,50 @@
             button
             (loop (rest buttons))))))
     false))
+
+(defn draw-tool-panel-content-height
+  "Return the total scrollable content height for the current tool panel."
+  [state]
+  (let [buttons (draw-tool-panel-buttons (assoc state :tool-panel-scroll 0.0))
+        info-lines (draw-tool-panel-info-lines state)
+        selection-lines (draw-tool-panel-selection-lines state)
+        button-bottom (reduce (lambda (max-y button)
+                                (let [bottom (+ (get button :y)
+                                                (get button :height))]
+                                  (if (> bottom max-y)
+                                    bottom
+                                    max-y)))
+                              0
+                              buttons)
+        selection-bottom (+ button-bottom
+                            10
+                            (* 16 (count selection-lines)))
+        info-bottom (+ button-bottom
+                       42
+                       (* 16 (count info-lines)))
+        panel-top (get (draw-tool-panel-rect state) :y)]
+    (- (max button-bottom selection-bottom info-bottom) panel-top)))
+
+(defn draw-tool-panel-max-scroll
+  "Return the largest valid tool-panel scroll offset."
+  [state]
+  (let [panel (draw-tool-panel-rect state)
+        overflow (- (draw-tool-panel-content-height state)
+                    (get panel :height))]
+    (if (> overflow 0)
+      overflow
+      0.0)))
+
+(defn draw-clamp-tool-panel-scroll
+  "Clamp OFFSET into the scrollable range for STATE."
+  [state offset]
+  (min (draw-tool-panel-max-scroll state)
+       (max 0.0 offset)))
+
+(defn draw-scroll-tool-panel
+  "Return STATE with its tool-panel scroll moved by DELTA pixels."
+  [state delta]
+  (assoc state
+         :tool-panel-scroll
+         (draw-clamp-tool-panel-scroll state
+                                       (+ (draw-tool-panel-scroll state) delta))))

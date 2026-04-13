@@ -160,8 +160,11 @@
 (defn draw-toggle-tool-panel!
   "Toggle the in-window tool panel."
   [state]
-  (assoc state
-         :tool-panel? (not (get state :tool-panel?))))
+  (let [open? (not (get state :tool-panel?))]
+    (assoc state
+           :tool-panel? open?
+           :tool-panel-scroll (if open? 0.0
+                                (or (get state :tool-panel-scroll) 0.0)))))
 
 (defn draw-toggle-tool-panel-key?
   "Return true when KEY should toggle the tool panel."
@@ -183,6 +186,12 @@
   (let [key (str/lower-case (or key ""))]
     (or (str/includes? key "ctrl")
         (str/includes? key "control"))))
+
+(defn draw-shift-key?
+  "Return true when KEY names a shift key."
+  [key]
+  (let [key (str/lower-case (or key ""))]
+    (str/includes? key "shift")))
 
 (defn draw-save-shortcut-key?
   "Return true when KEY should save the current canvas with Ctrl."
@@ -261,11 +270,17 @@
                   state)
           state (if (draw-control-key? key)
                   (assoc state :ctrl-down? (draw.state/draw-kind=? kind :key-down))
+                  state)
+          state (if (draw-shift-key? key)
+                  (assoc state :shift-down? (draw.state/draw-kind=? kind :key-down))
                   state)]
-      (if (and (draw.state/draw-kind=? kind :key-down)
-               (get event :ctrl?))
-        (assoc state :ctrl-down? true)
-        state))))
+      (let [state (if (contains? event :shift?)
+                    (assoc state :shift-down? (if (get event :shift?) true false))
+                    state)]
+        (if (and (draw.state/draw-kind=? kind :key-down)
+                 (get event :ctrl?))
+          (assoc state :ctrl-down? true)
+          state)))))
 
 (defn draw-input-event-screen-point
   "Return the raw [x y] screen coordinate from EVENT."

@@ -9,11 +9,116 @@
 (import (chicken foreign))
 
 (foreign-declare "#include <math.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_dialog.h>
+
+typedef unsigned int cluck_gl_uint;
+typedef int cluck_gl_int;
+typedef int cluck_gl_sizei;
+typedef unsigned int cluck_gl_enum;
+typedef unsigned char cluck_gl_boolean;
+typedef ptrdiff_t cluck_gl_sizeiptr;
+typedef float cluck_gl_float;
+typedef char cluck_gl_char;
+
+typedef void (*cluck_gl_clear_color_fn)(float red, float green, float blue, float alpha);
+typedef void (*cluck_gl_clear_fn)(unsigned int mask);
+typedef void (*cluck_gl_viewport_fn)(int x, int y, int width, int height);
+typedef cluck_gl_uint (*cluck_gl_create_shader_fn)(cluck_gl_enum kind);
+typedef void (*cluck_gl_shader_source_fn)(cluck_gl_uint shader, cluck_gl_sizei count, const cluck_gl_char * const *string, const cluck_gl_int *length);
+typedef void (*cluck_gl_compile_shader_fn)(cluck_gl_uint shader);
+typedef void (*cluck_gl_get_shader_iv_fn)(cluck_gl_uint shader, cluck_gl_enum pname, cluck_gl_int *params);
+typedef void (*cluck_gl_get_shader_info_log_fn)(cluck_gl_uint shader, cluck_gl_sizei buf_size, cluck_gl_sizei *length, cluck_gl_char *info_log);
+typedef void (*cluck_gl_delete_shader_fn)(cluck_gl_uint shader);
+typedef cluck_gl_uint (*cluck_gl_create_program_fn)(void);
+typedef void (*cluck_gl_attach_shader_fn)(cluck_gl_uint program, cluck_gl_uint shader);
+typedef void (*cluck_gl_link_program_fn)(cluck_gl_uint program);
+typedef void (*cluck_gl_get_program_iv_fn)(cluck_gl_uint program, cluck_gl_enum pname, cluck_gl_int *params);
+typedef void (*cluck_gl_get_program_info_log_fn)(cluck_gl_uint program, cluck_gl_sizei buf_size, cluck_gl_sizei *length, cluck_gl_char *info_log);
+typedef void (*cluck_gl_delete_program_fn)(cluck_gl_uint program);
+typedef void (*cluck_gl_use_program_fn)(cluck_gl_uint program);
+typedef void (*cluck_gl_gen_vertex_arrays_fn)(cluck_gl_sizei count, cluck_gl_uint *arrays);
+typedef void (*cluck_gl_bind_vertex_array_fn)(cluck_gl_uint array);
+typedef void (*cluck_gl_draw_arrays_fn)(cluck_gl_enum mode, cluck_gl_int first, cluck_gl_sizei count);
+typedef void (*cluck_gl_gen_buffers_fn)(cluck_gl_sizei count, cluck_gl_uint *buffers);
+typedef void (*cluck_gl_bind_buffer_fn)(cluck_gl_enum target, cluck_gl_uint buffer);
+typedef void (*cluck_gl_buffer_data_fn)(cluck_gl_enum target, cluck_gl_sizeiptr size, const void *data, cluck_gl_enum usage);
+typedef void (*cluck_gl_delete_buffers_fn)(cluck_gl_sizei count, const cluck_gl_uint *buffers);
+typedef void (*cluck_gl_delete_vertex_arrays_fn)(cluck_gl_sizei count, const cluck_gl_uint *arrays);
+typedef void (*cluck_gl_enable_vertex_attrib_array_fn)(cluck_gl_uint index);
+typedef void (*cluck_gl_vertex_attrib_pointer_fn)(cluck_gl_uint index, cluck_gl_int size, cluck_gl_enum type, cluck_gl_boolean normalized, cluck_gl_sizei stride, const void *pointer);
+typedef void (*cluck_gl_draw_elements_fn)(cluck_gl_enum mode, cluck_gl_sizei count, cluck_gl_enum type, const void *indices);
+typedef cluck_gl_int (*cluck_gl_get_uniform_location_fn)(cluck_gl_uint program, const cluck_gl_char *name);
+typedef void (*cluck_gl_uniform4f_fn)(cluck_gl_int location, cluck_gl_float v0, cluck_gl_float v1, cluck_gl_float v2, cluck_gl_float v3);
+typedef void (*cluck_gl_uniform2f_fn)(cluck_gl_int location, cluck_gl_float v0, cluck_gl_float v1);
+typedef void (*cluck_gl_uniform1f_fn)(cluck_gl_int location, cluck_gl_float v0);
+typedef void (*cluck_gl_enable_fn)(cluck_gl_enum cap);
+typedef void (*cluck_gl_blend_func_fn)(cluck_gl_enum sfactor, cluck_gl_enum dfactor);
+
+#ifndef CLUCK_GL_COLOR_BUFFER_BIT
+#define CLUCK_GL_COLOR_BUFFER_BIT 0x00004000u
+#endif
+
+#ifndef CLUCK_GL_VERTEX_SHADER
+#define CLUCK_GL_VERTEX_SHADER 0x8B31u
+#endif
+
+#ifndef CLUCK_GL_FRAGMENT_SHADER
+#define CLUCK_GL_FRAGMENT_SHADER 0x8B30u
+#endif
+
+#ifndef CLUCK_GL_COMPILE_STATUS
+#define CLUCK_GL_COMPILE_STATUS 0x8B81u
+#endif
+
+#ifndef CLUCK_GL_LINK_STATUS
+#define CLUCK_GL_LINK_STATUS 0x8B82u
+#endif
+
+#ifndef CLUCK_GL_INFO_LOG_LENGTH
+#define CLUCK_GL_INFO_LOG_LENGTH 0x8B84u
+#endif
+
+#ifndef CLUCK_GL_TRIANGLES
+#define CLUCK_GL_TRIANGLES 0x0004u
+#endif
+
+#ifndef CLUCK_GL_ARRAY_BUFFER
+#define CLUCK_GL_ARRAY_BUFFER 0x8892u
+#endif
+
+#ifndef CLUCK_GL_ELEMENT_ARRAY_BUFFER
+#define CLUCK_GL_ELEMENT_ARRAY_BUFFER 0x8893u
+#endif
+
+#ifndef CLUCK_GL_DYNAMIC_DRAW
+#define CLUCK_GL_DYNAMIC_DRAW 0x88E8u
+#endif
+
+#ifndef CLUCK_GL_FLOAT
+#define CLUCK_GL_FLOAT 0x1406u
+#endif
+
+#ifndef CLUCK_GL_UNSIGNED_SHORT
+#define CLUCK_GL_UNSIGNED_SHORT 0x1403u
+#endif
+
+#ifndef CLUCK_GL_BLEND
+#define CLUCK_GL_BLEND 0x0BE2u
+#endif
+
+#ifndef CLUCK_GL_SRC_ALPHA
+#define CLUCK_GL_SRC_ALPHA 0x0302u
+#endif
+
+#ifndef CLUCK_GL_ONE_MINUS_SRC_ALPHA
+#define CLUCK_GL_ONE_MINUS_SRC_ALPHA 0x0303u
+#endif
 
 static SDL_Event cluck_last_event;
 static int cluck_have_last_event = 0;
@@ -22,6 +127,400 @@ static SDL_Mutex *cluck_file_dialog_mutex = NULL;
 static int cluck_file_dialog_ready_flag = 0;
 static int cluck_file_dialog_kind_value = 0;
 static char cluck_file_dialog_path_buffer[4096];
+static int cluck_gl_loaded = 0;
+static cluck_gl_clear_color_fn cluck_gl_clear_color = NULL;
+static cluck_gl_clear_fn cluck_gl_clear = NULL;
+static cluck_gl_viewport_fn cluck_gl_viewport = NULL;
+static cluck_gl_create_shader_fn cluck_gl_create_shader = NULL;
+static cluck_gl_shader_source_fn cluck_gl_shader_source = NULL;
+static cluck_gl_compile_shader_fn cluck_gl_compile_shader = NULL;
+static cluck_gl_get_shader_iv_fn cluck_gl_get_shader_iv = NULL;
+static cluck_gl_get_shader_info_log_fn cluck_gl_get_shader_info_log = NULL;
+static cluck_gl_delete_shader_fn cluck_gl_delete_shader = NULL;
+static cluck_gl_create_program_fn cluck_gl_create_program = NULL;
+static cluck_gl_attach_shader_fn cluck_gl_attach_shader = NULL;
+static cluck_gl_link_program_fn cluck_gl_link_program = NULL;
+static cluck_gl_get_program_iv_fn cluck_gl_get_program_iv = NULL;
+static cluck_gl_get_program_info_log_fn cluck_gl_get_program_info_log = NULL;
+static cluck_gl_delete_program_fn cluck_gl_delete_program = NULL;
+static cluck_gl_use_program_fn cluck_gl_use_program = NULL;
+static cluck_gl_gen_vertex_arrays_fn cluck_gl_gen_vertex_arrays = NULL;
+static cluck_gl_bind_vertex_array_fn cluck_gl_bind_vertex_array = NULL;
+static cluck_gl_draw_arrays_fn cluck_gl_draw_arrays = NULL;
+static cluck_gl_gen_buffers_fn cluck_gl_gen_buffers = NULL;
+static cluck_gl_bind_buffer_fn cluck_gl_bind_buffer = NULL;
+static cluck_gl_buffer_data_fn cluck_gl_buffer_data = NULL;
+static cluck_gl_delete_buffers_fn cluck_gl_delete_buffers = NULL;
+static cluck_gl_delete_vertex_arrays_fn cluck_gl_delete_vertex_arrays = NULL;
+static cluck_gl_enable_vertex_attrib_array_fn cluck_gl_enable_vertex_attrib_array = NULL;
+static cluck_gl_vertex_attrib_pointer_fn cluck_gl_vertex_attrib_pointer = NULL;
+static cluck_gl_draw_elements_fn cluck_gl_draw_elements = NULL;
+static cluck_gl_get_uniform_location_fn cluck_gl_get_uniform_location = NULL;
+static cluck_gl_uniform4f_fn cluck_gl_uniform4f = NULL;
+static cluck_gl_uniform2f_fn cluck_gl_uniform2f = NULL;
+static cluck_gl_uniform1f_fn cluck_gl_uniform1f = NULL;
+static cluck_gl_enable_fn cluck_gl_enable = NULL;
+static cluck_gl_blend_func_fn cluck_gl_blend_func = NULL;
+static cluck_gl_uint cluck_gl_smoke_program = 0;
+static cluck_gl_uint cluck_gl_smoke_vao = 0;
+static cluck_gl_int cluck_gl_smoke_color_uniform = -1;
+static cluck_gl_uint cluck_gl_segment_program = 0;
+static cluck_gl_uint cluck_gl_stroke_vao = 0;
+static cluck_gl_uint cluck_gl_stroke_position_vbo = 0;
+static cluck_gl_uint cluck_gl_stroke_point_a_vbo = 0;
+static cluck_gl_uint cluck_gl_stroke_point_b_vbo = 0;
+static cluck_gl_uint cluck_gl_stroke_index_buffer = 0;
+static cluck_gl_int cluck_gl_segment_screen_uniform = -1;
+static cluck_gl_int cluck_gl_segment_view_uniform = -1;
+static cluck_gl_int cluck_gl_segment_anchor_uniform = -1;
+static cluck_gl_int cluck_gl_segment_zoom_uniform = -1;
+static cluck_gl_int cluck_gl_segment_color_uniform = -1;
+static cluck_gl_int cluck_gl_segment_radius_uniform = -1;
+static cluck_gl_int cluck_gl_segment_hardness_uniform = -1;
+static char cluck_gl_error_buffer[1024];
+
+#define CLUCK_GL_STROKE_CACHE_SIZE 256
+
+typedef struct {
+  char *spec;
+  float base_radius;
+  cluck_gl_uint vao;
+  cluck_gl_uint position_vbo;
+  cluck_gl_uint point_a_vbo;
+  cluck_gl_uint point_b_vbo;
+  cluck_gl_uint index_buffer;
+  cluck_gl_sizei index_count;
+  unsigned long age;
+  int ready;
+} cluck_gl_stroke_cache_entry;
+
+static cluck_gl_stroke_cache_entry cluck_gl_stroke_cache[CLUCK_GL_STROKE_CACHE_SIZE];
+static unsigned long cluck_gl_stroke_cache_clock = 1;
+
+static void cluck_gl_set_errorf(const char *message) {
+  snprintf(cluck_gl_error_buffer, sizeof(cluck_gl_error_buffer), \"%s\", message ? message : \"\");
+}
+
+static void cluck_gl_set_shader_log_error(const char *prefix, cluck_gl_uint shader) {
+  cluck_gl_int needed = 0;
+  cluck_gl_char log_buffer[512];
+  log_buffer[0] = '\\0';
+  if (cluck_gl_get_shader_iv && cluck_gl_get_shader_info_log) {
+    cluck_gl_get_shader_iv(shader, CLUCK_GL_INFO_LOG_LENGTH, &needed);
+    cluck_gl_get_shader_info_log(shader, (cluck_gl_sizei)sizeof(log_buffer), NULL, log_buffer);
+  }
+  snprintf(cluck_gl_error_buffer, sizeof(cluck_gl_error_buffer), \"%s: %s\", prefix, log_buffer[0] ? log_buffer : \"unknown shader error\");
+}
+
+static void cluck_gl_set_program_log_error(const char *prefix, cluck_gl_uint program) {
+  cluck_gl_int needed = 0;
+  cluck_gl_char log_buffer[512];
+  log_buffer[0] = '\\0';
+  if (cluck_gl_get_program_iv && cluck_gl_get_program_info_log) {
+    cluck_gl_get_program_iv(program, CLUCK_GL_INFO_LOG_LENGTH, &needed);
+    cluck_gl_get_program_info_log(program, (cluck_gl_sizei)sizeof(log_buffer), NULL, log_buffer);
+  }
+  snprintf(cluck_gl_error_buffer, sizeof(cluck_gl_error_buffer), \"%s: %s\", prefix, log_buffer[0] ? log_buffer : \"unknown program error\");
+}
+
+static void cluck_gl_release_stroke_cache_entry(cluck_gl_stroke_cache_entry *entry) {
+  if (!entry) {
+    return;
+  }
+  if (cluck_gl_delete_buffers) {
+    if (entry->position_vbo) {
+      cluck_gl_delete_buffers(1, &entry->position_vbo);
+    }
+    if (entry->point_a_vbo) {
+      cluck_gl_delete_buffers(1, &entry->point_a_vbo);
+    }
+    if (entry->point_b_vbo) {
+      cluck_gl_delete_buffers(1, &entry->point_b_vbo);
+    }
+    if (entry->index_buffer) {
+      cluck_gl_delete_buffers(1, &entry->index_buffer);
+    }
+  }
+  if (cluck_gl_delete_vertex_arrays && entry->vao) {
+    cluck_gl_delete_vertex_arrays(1, &entry->vao);
+  }
+  if (entry->spec) {
+    free(entry->spec);
+  }
+  entry->spec = NULL;
+  entry->base_radius = 0.0f;
+  entry->vao = 0;
+  entry->position_vbo = 0;
+  entry->point_a_vbo = 0;
+  entry->point_b_vbo = 0;
+  entry->index_buffer = 0;
+  entry->index_count = 0;
+  entry->age = 0;
+  entry->ready = 0;
+}
+
+static cluck_gl_uint cluck_gl_compile_shader_stage(cluck_gl_enum kind, const char *source, const char *label) {
+  cluck_gl_uint shader = 0;
+  cluck_gl_int ok = 0;
+  if (!cluck_gl_create_shader || !cluck_gl_shader_source || !cluck_gl_compile_shader || !cluck_gl_get_shader_iv) {
+    cluck_gl_set_errorf(\"missing shader functions\");
+    return 0;
+  }
+  shader = cluck_gl_create_shader(kind);
+  if (!shader) {
+    cluck_gl_set_errorf(\"glCreateShader failed\");
+    return 0;
+  }
+  cluck_gl_shader_source(shader, 1, &source, NULL);
+  cluck_gl_compile_shader(shader);
+  cluck_gl_get_shader_iv(shader, CLUCK_GL_COMPILE_STATUS, &ok);
+  if (!ok) {
+    cluck_gl_set_shader_log_error(label, shader);
+    if (cluck_gl_delete_shader) {
+      cluck_gl_delete_shader(shader);
+    }
+    return 0;
+  }
+  return shader;
+}
+
+static int cluck_gl_build_smoke_program(void) {
+  static const char *vertex_source =
+    \"#version 330 core\\n\"
+    \"const vec2 POSITIONS[3] = vec2[3](\\n\"
+    \"  vec2(-0.8, -0.8),\\n\"
+    \"  vec2( 0.8, -0.8),\\n\"
+    \"  vec2( 0.0,  0.8)\\n\"
+    \");\\n\"
+    \"void main() {\\n\"
+    \"  gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0);\\n\"
+    \"}\\n\";
+  static const char *fragment_source =
+    \"#version 330 core\\n\"
+    \"uniform vec4 u_color;\\n\"
+    \"out vec4 out_color;\\n\"
+    \"void main() {\\n\"
+    \"  out_color = u_color;\\n\"
+    \"}\\n\";
+  cluck_gl_uint vertex_shader = 0;
+  cluck_gl_uint fragment_shader = 0;
+  cluck_gl_uint program = 0;
+  cluck_gl_int ok = 0;
+
+  if (cluck_gl_smoke_program && cluck_gl_smoke_vao) {
+    return 1;
+  }
+
+  vertex_shader = cluck_gl_compile_shader_stage(CLUCK_GL_VERTEX_SHADER, vertex_source, \"smoke vertex shader\");
+  if (!vertex_shader) {
+    return 0;
+  }
+
+  fragment_shader = cluck_gl_compile_shader_stage(CLUCK_GL_FRAGMENT_SHADER, fragment_source, \"smoke fragment shader\");
+  if (!fragment_shader) {
+    if (cluck_gl_delete_shader) {
+      cluck_gl_delete_shader(vertex_shader);
+    }
+    return 0;
+  }
+
+  if (!cluck_gl_create_program || !cluck_gl_attach_shader || !cluck_gl_link_program || !cluck_gl_get_program_iv) {
+    cluck_gl_set_errorf(\"missing program functions\");
+    if (cluck_gl_delete_shader) {
+      cluck_gl_delete_shader(vertex_shader);
+      cluck_gl_delete_shader(fragment_shader);
+    }
+    return 0;
+  }
+
+  program = cluck_gl_create_program();
+  if (!program) {
+    cluck_gl_set_errorf(\"glCreateProgram failed\");
+    if (cluck_gl_delete_shader) {
+      cluck_gl_delete_shader(vertex_shader);
+      cluck_gl_delete_shader(fragment_shader);
+    }
+    return 0;
+  }
+
+  cluck_gl_attach_shader(program, vertex_shader);
+  cluck_gl_attach_shader(program, fragment_shader);
+  cluck_gl_link_program(program);
+  cluck_gl_get_program_iv(program, CLUCK_GL_LINK_STATUS, &ok);
+  if (cluck_gl_delete_shader) {
+    cluck_gl_delete_shader(vertex_shader);
+    cluck_gl_delete_shader(fragment_shader);
+  }
+  if (!ok) {
+    cluck_gl_set_program_log_error(\"smoke program\", program);
+    if (cluck_gl_delete_program) {
+      cluck_gl_delete_program(program);
+    }
+    return 0;
+  }
+
+  if (!cluck_gl_gen_vertex_arrays || !cluck_gl_bind_vertex_array || !cluck_gl_get_uniform_location) {
+    cluck_gl_set_errorf(\"missing vertex array functions\");
+    if (cluck_gl_delete_program) {
+      cluck_gl_delete_program(program);
+    }
+    return 0;
+  }
+
+  cluck_gl_gen_vertex_arrays(1, &cluck_gl_smoke_vao);
+  if (!cluck_gl_smoke_vao) {
+    cluck_gl_set_errorf(\"glGenVertexArrays failed\");
+    if (cluck_gl_delete_program) {
+      cluck_gl_delete_program(program);
+    }
+    return 0;
+  }
+
+  cluck_gl_smoke_program = program;
+  cluck_gl_smoke_color_uniform = cluck_gl_get_uniform_location(program, \"u_color\");
+  return 1;
+}
+
+static int cluck_gl_build_segment_program(void) {
+  static const char *vertex_source =
+    \"#version 330 core\\n\"
+    \"layout(location = 0) in vec2 a_position;\\n\"
+    \"layout(location = 1) in vec3 a_pointa;\\n\"
+    \"layout(location = 2) in vec3 a_pointb;\\n\"
+    \"uniform vec2 u_screen_size;\\n\"
+    \"uniform vec2 u_view_origin;\\n\"
+    \"uniform vec2 u_view_anchor;\\n\"
+    \"uniform float u_zoom;\\n\"
+    \"out vec3 v_pointa;\\n\"
+    \"out vec3 v_pointb;\\n\"
+    \"void main() {\\n\"
+    \"  v_pointa = a_pointa;\\n\"
+    \"  v_pointb = a_pointb;\\n\"
+    \"  vec2 screen = vec2((a_position.x - u_view_origin.x) * u_zoom + u_view_anchor.x,\\n\"
+    \"                     (a_position.y - u_view_origin.y) * u_zoom + u_view_anchor.y);\\n\"
+    \"  vec2 ndc = vec2((screen.x / u_screen_size.x) * 2.0 - 1.0,\\n\"
+    \"                  1.0 - (screen.y / u_screen_size.y) * 2.0);\\n\"
+    \"  gl_Position = vec4(ndc, 0.0, 1.0);\\n\"
+    \"}\\n\";
+  static const char *fragment_source =
+    \"#version 330 core\\n\"
+    \"in vec3 v_pointa;\\n\"
+    \"in vec3 v_pointb;\\n\"
+    \"uniform vec2 u_screen_size;\\n\"
+    \"uniform vec2 u_view_origin;\\n\"
+    \"uniform vec2 u_view_anchor;\\n\"
+    \"uniform float u_zoom;\\n\"
+    \"uniform float u_radius;\\n\"
+    \"uniform float u_hardness;\\n\"
+    \"uniform vec4 u_color;\\n\"
+    \"out vec4 out_color;\\n\"
+    \"void main() {\\n\"
+    \"  vec2 screen = vec2(gl_FragCoord.x, u_screen_size.y - gl_FragCoord.y);\\n\"
+    \"  vec2 p = vec2(((screen.x - u_view_anchor.x) / u_zoom) + u_view_origin.x,\\n\"
+    \"                ((screen.y - u_view_anchor.y) / u_zoom) + u_view_origin.y);\\n\"
+    \"  vec2 ab = v_pointb.xy - v_pointa.xy;\\n\"
+    \"  float denom = max(dot(ab, ab), 0.0001);\\n\"
+    \"  float t = clamp(dot(p - v_pointa.xy, ab) / denom, 0.0, 1.0);\\n\"
+    \"  vec2 center = mix(v_pointa.xy, v_pointb.xy, t);\\n\"
+    \"  float pressure = mix(v_pointa.z, v_pointb.z, t);\\n\"
+    \"  float radius = max(u_radius * pressure, 0.0001);\\n\"
+    \"  float dist_ratio = distance(p, center) / radius;\\n\"
+    \"  float aa = max(fwidth(dist_ratio) * 1.5, 0.75 / max(u_zoom * radius, 0.0001));\\n\"
+    \"  float edge = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, dist_ratio);\\n\"
+    \"  float core = pow(clamp(1.0 - min(dist_ratio, 1.0), 0.0, 1.0), 1.0 / max(u_hardness, 0.0001));\\n\"
+    \"  float coverage = edge * core;\\n\"
+    \"  if (coverage > 0.0) {\\n\"
+    \"    out_color = vec4(u_color.rgb, u_color.a * coverage);\\n\"
+    \"  } else {\\n\"
+    \"    discard;\\n\"
+    \"  }\\n\"
+    \"}\\n\";
+  cluck_gl_uint vertex_shader = 0;
+  cluck_gl_uint fragment_shader = 0;
+  cluck_gl_uint program = 0;
+  cluck_gl_int ok = 0;
+
+  if (cluck_gl_segment_program && cluck_gl_stroke_vao) {
+    return 1;
+  }
+
+  vertex_shader = cluck_gl_compile_shader_stage(CLUCK_GL_VERTEX_SHADER, vertex_source, \"segment vertex shader\");
+  if (!vertex_shader) {
+    return 0;
+  }
+  fragment_shader = cluck_gl_compile_shader_stage(CLUCK_GL_FRAGMENT_SHADER, fragment_source, \"segment fragment shader\");
+  if (!fragment_shader) {
+    if (cluck_gl_delete_shader) {
+      cluck_gl_delete_shader(vertex_shader);
+    }
+    return 0;
+  }
+  program = cluck_gl_create_program();
+  if (!program) {
+    cluck_gl_set_errorf(\"glCreateProgram failed\");
+    if (cluck_gl_delete_shader) {
+      cluck_gl_delete_shader(vertex_shader);
+      cluck_gl_delete_shader(fragment_shader);
+    }
+    return 0;
+  }
+  cluck_gl_attach_shader(program, vertex_shader);
+  cluck_gl_attach_shader(program, fragment_shader);
+  cluck_gl_link_program(program);
+  cluck_gl_get_program_iv(program, CLUCK_GL_LINK_STATUS, &ok);
+  if (cluck_gl_delete_shader) {
+    cluck_gl_delete_shader(vertex_shader);
+    cluck_gl_delete_shader(fragment_shader);
+  }
+  if (!ok) {
+    cluck_gl_set_program_log_error(\"segment program\", program);
+    if (cluck_gl_delete_program) {
+      cluck_gl_delete_program(program);
+    }
+    return 0;
+  }
+
+  if (!cluck_gl_gen_vertex_arrays || !cluck_gl_bind_vertex_array || !cluck_gl_gen_buffers ||
+      !cluck_gl_bind_buffer || !cluck_gl_enable_vertex_attrib_array || !cluck_gl_vertex_attrib_pointer) {
+    cluck_gl_set_errorf(\"missing stroke geometry functions\");
+    if (cluck_gl_delete_program) {
+      cluck_gl_delete_program(program);
+    }
+    return 0;
+  }
+
+  cluck_gl_gen_vertex_arrays(1, &cluck_gl_stroke_vao);
+  cluck_gl_bind_vertex_array(cluck_gl_stroke_vao);
+  cluck_gl_gen_buffers(1, &cluck_gl_stroke_position_vbo);
+  cluck_gl_gen_buffers(1, &cluck_gl_stroke_point_a_vbo);
+  cluck_gl_gen_buffers(1, &cluck_gl_stroke_point_b_vbo);
+  cluck_gl_gen_buffers(1, &cluck_gl_stroke_index_buffer);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ARRAY_BUFFER, cluck_gl_stroke_position_vbo);
+  cluck_gl_enable_vertex_attrib_array(0);
+  cluck_gl_vertex_attrib_pointer(0, 2, CLUCK_GL_FLOAT, 0, 0, (const void *)0);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ARRAY_BUFFER, cluck_gl_stroke_point_a_vbo);
+  cluck_gl_enable_vertex_attrib_array(1);
+  cluck_gl_vertex_attrib_pointer(1, 3, CLUCK_GL_FLOAT, 0, 0, (const void *)0);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ARRAY_BUFFER, cluck_gl_stroke_point_b_vbo);
+  cluck_gl_enable_vertex_attrib_array(2);
+  cluck_gl_vertex_attrib_pointer(2, 3, CLUCK_GL_FLOAT, 0, 0, (const void *)0);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ELEMENT_ARRAY_BUFFER, cluck_gl_stroke_index_buffer);
+  cluck_gl_bind_vertex_array(0);
+
+  cluck_gl_segment_program = program;
+  cluck_gl_segment_screen_uniform = cluck_gl_get_uniform_location(program, \"u_screen_size\");
+  cluck_gl_segment_view_uniform = cluck_gl_get_uniform_location(program, \"u_view_origin\");
+  cluck_gl_segment_anchor_uniform = cluck_gl_get_uniform_location(program, \"u_view_anchor\");
+  cluck_gl_segment_zoom_uniform = cluck_gl_get_uniform_location(program, \"u_zoom\");
+  cluck_gl_segment_color_uniform = cluck_gl_get_uniform_location(program, \"u_color\");
+  cluck_gl_segment_radius_uniform = cluck_gl_get_uniform_location(program, \"u_radius\");
+  cluck_gl_segment_hardness_uniform = cluck_gl_get_uniform_location(program, \"u_hardness\");
+  return 1;
+}
 
 static SDL_Mutex *cluck_ensure_file_dialog_mutex(void) {
   if (!cluck_file_dialog_mutex) {
@@ -46,6 +545,507 @@ static void cluck_clear_file_dialog_state(void) {
   else {
     cluck_clear_file_dialog_state_locked();
   }
+}
+
+static int cluck_gl_bootstrap(void) {
+  if (cluck_gl_loaded) {
+    return 1;
+  }
+
+  cluck_gl_error_buffer[0] = '\\0';
+  cluck_gl_clear_color = (cluck_gl_clear_color_fn)SDL_GL_GetProcAddress(\"glClearColor\");
+  cluck_gl_clear = (cluck_gl_clear_fn)SDL_GL_GetProcAddress(\"glClear\");
+  cluck_gl_viewport = (cluck_gl_viewport_fn)SDL_GL_GetProcAddress(\"glViewport\");
+  cluck_gl_create_shader = (cluck_gl_create_shader_fn)SDL_GL_GetProcAddress(\"glCreateShader\");
+  cluck_gl_shader_source = (cluck_gl_shader_source_fn)SDL_GL_GetProcAddress(\"glShaderSource\");
+  cluck_gl_compile_shader = (cluck_gl_compile_shader_fn)SDL_GL_GetProcAddress(\"glCompileShader\");
+  cluck_gl_get_shader_iv = (cluck_gl_get_shader_iv_fn)SDL_GL_GetProcAddress(\"glGetShaderiv\");
+  cluck_gl_get_shader_info_log = (cluck_gl_get_shader_info_log_fn)SDL_GL_GetProcAddress(\"glGetShaderInfoLog\");
+  cluck_gl_delete_shader = (cluck_gl_delete_shader_fn)SDL_GL_GetProcAddress(\"glDeleteShader\");
+  cluck_gl_create_program = (cluck_gl_create_program_fn)SDL_GL_GetProcAddress(\"glCreateProgram\");
+  cluck_gl_attach_shader = (cluck_gl_attach_shader_fn)SDL_GL_GetProcAddress(\"glAttachShader\");
+  cluck_gl_link_program = (cluck_gl_link_program_fn)SDL_GL_GetProcAddress(\"glLinkProgram\");
+  cluck_gl_get_program_iv = (cluck_gl_get_program_iv_fn)SDL_GL_GetProcAddress(\"glGetProgramiv\");
+  cluck_gl_get_program_info_log = (cluck_gl_get_program_info_log_fn)SDL_GL_GetProcAddress(\"glGetProgramInfoLog\");
+  cluck_gl_delete_program = (cluck_gl_delete_program_fn)SDL_GL_GetProcAddress(\"glDeleteProgram\");
+  cluck_gl_use_program = (cluck_gl_use_program_fn)SDL_GL_GetProcAddress(\"glUseProgram\");
+  cluck_gl_gen_vertex_arrays = (cluck_gl_gen_vertex_arrays_fn)SDL_GL_GetProcAddress(\"glGenVertexArrays\");
+  cluck_gl_bind_vertex_array = (cluck_gl_bind_vertex_array_fn)SDL_GL_GetProcAddress(\"glBindVertexArray\");
+  cluck_gl_draw_arrays = (cluck_gl_draw_arrays_fn)SDL_GL_GetProcAddress(\"glDrawArrays\");
+  cluck_gl_gen_buffers = (cluck_gl_gen_buffers_fn)SDL_GL_GetProcAddress(\"glGenBuffers\");
+  cluck_gl_bind_buffer = (cluck_gl_bind_buffer_fn)SDL_GL_GetProcAddress(\"glBindBuffer\");
+  cluck_gl_buffer_data = (cluck_gl_buffer_data_fn)SDL_GL_GetProcAddress(\"glBufferData\");
+  cluck_gl_delete_buffers = (cluck_gl_delete_buffers_fn)SDL_GL_GetProcAddress(\"glDeleteBuffers\");
+  cluck_gl_delete_vertex_arrays = (cluck_gl_delete_vertex_arrays_fn)SDL_GL_GetProcAddress(\"glDeleteVertexArrays\");
+  cluck_gl_enable_vertex_attrib_array = (cluck_gl_enable_vertex_attrib_array_fn)SDL_GL_GetProcAddress(\"glEnableVertexAttribArray\");
+  cluck_gl_vertex_attrib_pointer = (cluck_gl_vertex_attrib_pointer_fn)SDL_GL_GetProcAddress(\"glVertexAttribPointer\");
+  cluck_gl_draw_elements = (cluck_gl_draw_elements_fn)SDL_GL_GetProcAddress(\"glDrawElements\");
+  cluck_gl_get_uniform_location = (cluck_gl_get_uniform_location_fn)SDL_GL_GetProcAddress(\"glGetUniformLocation\");
+  cluck_gl_uniform4f = (cluck_gl_uniform4f_fn)SDL_GL_GetProcAddress(\"glUniform4f\");
+  cluck_gl_uniform2f = (cluck_gl_uniform2f_fn)SDL_GL_GetProcAddress(\"glUniform2f\");
+  cluck_gl_uniform1f = (cluck_gl_uniform1f_fn)SDL_GL_GetProcAddress(\"glUniform1f\");
+  cluck_gl_enable = (cluck_gl_enable_fn)SDL_GL_GetProcAddress(\"glEnable\");
+  cluck_gl_blend_func = (cluck_gl_blend_func_fn)SDL_GL_GetProcAddress(\"glBlendFunc\");
+
+  if (!cluck_gl_clear_color || !cluck_gl_clear || !cluck_gl_viewport) {
+    cluck_gl_clear_color = NULL;
+    cluck_gl_clear = NULL;
+    cluck_gl_viewport = NULL;
+    cluck_gl_loaded = 0;
+    cluck_gl_set_errorf(\"missing base GL entry points\");
+    return 0;
+  }
+
+  if (!cluck_gl_build_smoke_program()) {
+    cluck_gl_loaded = 0;
+    return 0;
+  }
+  if (!cluck_gl_build_segment_program()) {
+    cluck_gl_loaded = 0;
+    return 0;
+  }
+
+  cluck_gl_loaded = 1;
+  return 1;
+}
+
+static int cluck_gl_ready(void) {
+  return cluck_gl_loaded &&
+         cluck_gl_clear_color &&
+         cluck_gl_clear &&
+         cluck_gl_viewport &&
+         cluck_gl_smoke_program &&
+         cluck_gl_segment_program &&
+         cluck_gl_smoke_vao &&
+         cluck_gl_stroke_vao;
+}
+
+static int cluck_gl_clear_window(SDL_Window *window, float red, float green, float blue, float alpha) {
+  int width = 0;
+  int height = 0;
+
+  if (!window || !cluck_gl_ready()) {
+    return 0;
+  }
+
+  if (!SDL_GetWindowSizeInPixels(window, &width, &height)) {
+    return 0;
+  }
+
+  cluck_gl_viewport(0, 0, width, height);
+  cluck_gl_clear_color(red, green, blue, alpha);
+  cluck_gl_clear(CLUCK_GL_COLOR_BUFFER_BIT);
+  return 1;
+}
+
+static int cluck_gl_draw_smoke_triangle(SDL_Window *window, float red, float green, float blue, float alpha) {
+  if (!cluck_gl_clear_window(window, red, green, blue, alpha)) {
+    return 0;
+  }
+  if (!cluck_gl_use_program || !cluck_gl_bind_vertex_array || !cluck_gl_draw_arrays) {
+    cluck_gl_set_errorf(\"missing draw functions\");
+    return 0;
+  }
+  cluck_gl_use_program(cluck_gl_smoke_program);
+  cluck_gl_bind_vertex_array(cluck_gl_smoke_vao);
+  if (cluck_gl_uniform4f && cluck_gl_smoke_color_uniform >= 0) {
+    cluck_gl_uniform4f(cluck_gl_smoke_color_uniform,
+                       red * 0.6f + 0.35f,
+                       green * 0.6f + 0.25f,
+                       blue * 0.6f + 0.2f,
+                       alpha);
+  }
+  cluck_gl_draw_arrays(CLUCK_GL_TRIANGLES, 0, 3);
+  return 1;
+}
+
+typedef struct {
+  float x;
+  float y;
+  float pressure;
+} cluck_stroke_point;
+
+static int cluck_parse_stroke_spec(const char *spec,
+                                   cluck_stroke_point **out_points,
+                                   int *out_count) {
+  const char *cursor = spec;
+  int capacity = 16;
+  int count = 0;
+  cluck_stroke_point *points = NULL;
+
+  if (!spec || !out_points || !out_count) {
+    return 0;
+  }
+
+  points = (cluck_stroke_point *)malloc((size_t)capacity * sizeof(cluck_stroke_point));
+  if (!points) {
+    cluck_gl_set_errorf(\"stroke parse alloc failed\");
+    return 0;
+  }
+
+  while (*cursor) {
+    char *next = NULL;
+    float x = strtof(cursor, &next);
+    float y = 0.0f;
+    float pressure = 0.0f;
+
+    if (next == cursor) {
+      while (*cursor == ' ' || *cursor == '\\n' || *cursor == '\\t' || *cursor == '\\r') {
+        cursor++;
+      }
+      if (!*cursor) {
+        break;
+      }
+      free(points);
+      cluck_gl_set_errorf(\"invalid stroke spec x\");
+      return 0;
+    }
+    cursor = next;
+    y = strtof(cursor, &next);
+    if (next == cursor) {
+      free(points);
+      cluck_gl_set_errorf(\"invalid stroke spec y\");
+      return 0;
+    }
+    cursor = next;
+    pressure = strtof(cursor, &next);
+    if (next == cursor) {
+      free(points);
+      cluck_gl_set_errorf(\"invalid stroke spec pressure\");
+      return 0;
+    }
+    cursor = next;
+
+    if (count >= capacity) {
+      int next_capacity = capacity * 2;
+      cluck_stroke_point *grown = (cluck_stroke_point *)realloc(points, (size_t)next_capacity * sizeof(cluck_stroke_point));
+      if (!grown) {
+        free(points);
+        cluck_gl_set_errorf(\"stroke parse realloc failed\");
+        return 0;
+      }
+      points = grown;
+      capacity = next_capacity;
+    }
+
+    points[count].x = x;
+    points[count].y = y;
+    points[count].pressure = pressure;
+    count++;
+
+    while (*cursor == ' ' || *cursor == '\\n' || *cursor == '\\t' || *cursor == '\\r') {
+      cursor++;
+    }
+  }
+
+  *out_points = points;
+  *out_count = count;
+  return 1;
+}
+
+static int cluck_gl_draw_stroke(SDL_Window *window,
+                                const char *spec,
+                                float base_radius,
+                                float hardness,
+                                float view_x,
+                                float view_y,
+                                float anchor_x,
+                                float anchor_y,
+                                float zoom,
+                                float red,
+                                float green,
+                                float blue,
+                                float alpha) {
+  int width = 0;
+  int height = 0;
+  cluck_gl_stroke_cache_entry *entry = NULL;
+  cluck_stroke_point *points = NULL;
+  int point_count = 0;
+  int segment_count = 0;
+  float *positions = NULL;
+  float *apoints = NULL;
+  float *bpoints = NULL;
+  unsigned short *indices = NULL;
+  int vertex_count = 0;
+  int index_count = 0;
+  int vertex_i = 0;
+  int index_i = 0;
+  int i = 0;
+  int entry_index = -1;
+  int free_index = -1;
+  unsigned long oldest_age = 0;
+  int oldest_index = -1;
+
+  if (!window || !cluck_gl_ready()) {
+    return 0;
+  }
+  if (!SDL_GetWindowSizeInPixels(window, &width, &height)) {
+    return 0;
+  }
+  if (!cluck_gl_use_program || !cluck_gl_bind_vertex_array || !cluck_gl_bind_buffer ||
+      !cluck_gl_buffer_data || !cluck_gl_draw_elements || !cluck_gl_uniform2f ||
+      !cluck_gl_uniform4f || !cluck_gl_enable || !cluck_gl_blend_func) {
+    cluck_gl_set_errorf(\"missing stroke batch draw functions\");
+    return 0;
+  }
+  if (!cluck_parse_stroke_spec(spec, &points, &point_count)) {
+    return 0;
+  }
+  if (point_count <= 0) {
+    free(points);
+    return 0;
+  }
+
+  for (i = 0; i < CLUCK_GL_STROKE_CACHE_SIZE; ++i) {
+    cluck_gl_stroke_cache_entry *candidate = &cluck_gl_stroke_cache[i];
+    if (candidate->ready && candidate->spec && strcmp(candidate->spec, spec) == 0 &&
+        fabsf(candidate->base_radius - base_radius) < 0.0001f) {
+      entry = candidate;
+      entry->age = cluck_gl_stroke_cache_clock++;
+      break;
+    }
+    if (!candidate->ready && free_index < 0) {
+      free_index = i;
+    }
+    if (candidate->ready && (oldest_index < 0 || candidate->age < oldest_age)) {
+      oldest_age = candidate->age;
+      oldest_index = i;
+    }
+  }
+
+  if (entry) {
+    free(points);
+    cluck_gl_enable(CLUCK_GL_BLEND);
+    cluck_gl_blend_func(CLUCK_GL_SRC_ALPHA, CLUCK_GL_ONE_MINUS_SRC_ALPHA);
+    cluck_gl_use_program(cluck_gl_segment_program);
+    cluck_gl_bind_vertex_array(entry->vao);
+    if (cluck_gl_segment_screen_uniform >= 0) {
+      cluck_gl_uniform2f(cluck_gl_segment_screen_uniform, (float)width, (float)height);
+    }
+    if (cluck_gl_segment_view_uniform >= 0) {
+      cluck_gl_uniform2f(cluck_gl_segment_view_uniform, view_x, view_y);
+    }
+    if (cluck_gl_segment_anchor_uniform >= 0) {
+      cluck_gl_uniform2f(cluck_gl_segment_anchor_uniform, anchor_x, anchor_y);
+    }
+    if (cluck_gl_segment_zoom_uniform >= 0) {
+      cluck_gl_uniform1f(cluck_gl_segment_zoom_uniform, zoom);
+    }
+    if (cluck_gl_segment_radius_uniform >= 0) {
+      cluck_gl_uniform1f(cluck_gl_segment_radius_uniform, base_radius);
+    }
+    if (cluck_gl_segment_hardness_uniform >= 0) {
+      cluck_gl_uniform1f(cluck_gl_segment_hardness_uniform, hardness);
+    }
+    if (cluck_gl_segment_color_uniform >= 0) {
+      cluck_gl_uniform4f(cluck_gl_segment_color_uniform, red, green, blue, alpha);
+    }
+    cluck_gl_draw_elements(CLUCK_GL_TRIANGLES, entry->index_count, CLUCK_GL_UNSIGNED_SHORT, (const void *)0);
+    cluck_gl_bind_vertex_array(0);
+    return 1;
+  }
+
+  entry_index = free_index >= 0 ? free_index : oldest_index;
+  if (entry_index < 0) {
+    free(points);
+    cluck_gl_set_errorf(\"stroke cache unavailable\");
+    return 0;
+  }
+  entry = &cluck_gl_stroke_cache[entry_index];
+  if (entry->ready) {
+    cluck_gl_release_stroke_cache_entry(entry);
+  }
+
+  segment_count = point_count > 1 ? (point_count - 1) : 0;
+  vertex_count = segment_count * 4;
+  index_count = segment_count * 6;
+  positions = (float *)malloc((size_t)vertex_count * 2 * sizeof(float));
+  apoints = (float *)malloc((size_t)vertex_count * 3 * sizeof(float));
+  bpoints = (float *)malloc((size_t)vertex_count * 3 * sizeof(float));
+  indices = (unsigned short *)malloc((size_t)index_count * sizeof(unsigned short));
+  if (!positions || !apoints || !bpoints || !indices) {
+    free(points);
+    free(positions);
+    free(apoints);
+    free(bpoints);
+    free(indices);
+    cluck_gl_set_errorf(\"stroke batch alloc failed\");
+    return 0;
+  }
+
+  for (i = 0; i < segment_count; ++i) {
+    cluck_stroke_point a = points[i];
+    cluck_stroke_point b = points[i + 1];
+    float dx = b.x - a.x;
+    float dy = b.y - a.y;
+    float len = sqrtf(dx * dx + dy * dy);
+    float tx = len > 0.0001f ? dx / len : 1.0f;
+    float ty = len > 0.0001f ? dy / len : 0.0f;
+    float nx = -ty;
+    float ny = tx;
+    float max_pressure = SDL_max(SDL_max(a.pressure, b.pressure), 0.01f);
+    float pad = SDL_max(base_radius * max_pressure, 1.0f) + (1.5f / SDL_max(zoom, 0.0001f));
+    float start_x = a.x - tx * pad;
+    float start_y = a.y - ty * pad;
+    float end_x = b.x + tx * pad;
+    float end_y = b.y + ty * pad;
+    float corners[8];
+    unsigned short base = (unsigned short)(i * 4);
+    int repeat = 0;
+
+    corners[0] = start_x - nx * pad;
+    corners[1] = start_y - ny * pad;
+    corners[2] = start_x + nx * pad;
+    corners[3] = start_y + ny * pad;
+    corners[4] = end_x + nx * pad;
+    corners[5] = end_y + ny * pad;
+    corners[6] = end_x - nx * pad;
+    corners[7] = end_y - ny * pad;
+
+    indices[index_i++] = base + 0;
+    indices[index_i++] = base + 1;
+    indices[index_i++] = base + 2;
+    indices[index_i++] = base + 2;
+    indices[index_i++] = base + 0;
+    indices[index_i++] = base + 3;
+
+    for (repeat = 0; repeat < 4; ++repeat) {
+      positions[vertex_i * 2 + 0] = corners[repeat * 2 + 0];
+      positions[vertex_i * 2 + 1] = corners[repeat * 2 + 1];
+      apoints[vertex_i * 3 + 0] = a.x;
+      apoints[vertex_i * 3 + 1] = a.y;
+      apoints[vertex_i * 3 + 2] = a.pressure;
+      bpoints[vertex_i * 3 + 0] = b.x;
+      bpoints[vertex_i * 3 + 1] = b.y;
+      bpoints[vertex_i * 3 + 2] = b.pressure;
+      vertex_i++;
+    }
+  }
+
+  if (!cluck_gl_gen_vertex_arrays || !cluck_gl_gen_buffers || !cluck_gl_bind_vertex_array ||
+      !cluck_gl_bind_buffer || !cluck_gl_enable_vertex_attrib_array || !cluck_gl_vertex_attrib_pointer) {
+    free(points);
+    free(positions);
+    free(apoints);
+    free(bpoints);
+    free(indices);
+    cluck_gl_set_errorf(\"missing stroke cache geometry functions\");
+    return 0;
+  }
+
+  cluck_gl_gen_vertex_arrays(1, &entry->vao);
+  cluck_gl_bind_vertex_array(entry->vao);
+  cluck_gl_gen_buffers(1, &entry->position_vbo);
+  cluck_gl_gen_buffers(1, &entry->point_a_vbo);
+  cluck_gl_gen_buffers(1, &entry->point_b_vbo);
+  cluck_gl_gen_buffers(1, &entry->index_buffer);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ARRAY_BUFFER, entry->position_vbo);
+  cluck_gl_buffer_data(CLUCK_GL_ARRAY_BUFFER,
+                       (cluck_gl_sizeiptr)((size_t)vertex_count * 2 * sizeof(float)),
+                       positions,
+                       CLUCK_GL_DYNAMIC_DRAW);
+  cluck_gl_enable_vertex_attrib_array(0);
+  cluck_gl_vertex_attrib_pointer(0, 2, CLUCK_GL_FLOAT, 0, 0, (const void *)0);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ARRAY_BUFFER, entry->point_a_vbo);
+  cluck_gl_buffer_data(CLUCK_GL_ARRAY_BUFFER,
+                       (cluck_gl_sizeiptr)((size_t)vertex_count * 3 * sizeof(float)),
+                       apoints,
+                       CLUCK_GL_DYNAMIC_DRAW);
+  cluck_gl_enable_vertex_attrib_array(1);
+  cluck_gl_vertex_attrib_pointer(1, 3, CLUCK_GL_FLOAT, 0, 0, (const void *)0);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ARRAY_BUFFER, entry->point_b_vbo);
+  cluck_gl_buffer_data(CLUCK_GL_ARRAY_BUFFER,
+                       (cluck_gl_sizeiptr)((size_t)vertex_count * 3 * sizeof(float)),
+                       bpoints,
+                       CLUCK_GL_DYNAMIC_DRAW);
+  cluck_gl_enable_vertex_attrib_array(2);
+  cluck_gl_vertex_attrib_pointer(2, 3, CLUCK_GL_FLOAT, 0, 0, (const void *)0);
+
+  cluck_gl_bind_buffer(CLUCK_GL_ELEMENT_ARRAY_BUFFER, entry->index_buffer);
+  cluck_gl_buffer_data(CLUCK_GL_ELEMENT_ARRAY_BUFFER,
+                       (cluck_gl_sizeiptr)((size_t)index_count * sizeof(unsigned short)),
+                       indices,
+                       CLUCK_GL_DYNAMIC_DRAW);
+
+  entry->spec = strdup(spec);
+  entry->base_radius = base_radius;
+  entry->index_count = index_count;
+  entry->age = cluck_gl_stroke_cache_clock++;
+  entry->ready = entry->spec != NULL;
+  if (!entry->ready) {
+    cluck_gl_release_stroke_cache_entry(entry);
+    free(points);
+    free(positions);
+    free(apoints);
+    free(bpoints);
+    free(indices);
+    cluck_gl_set_errorf(\"stroke cache strdup failed\");
+    return 0;
+  }
+
+  cluck_gl_enable(CLUCK_GL_BLEND);
+  cluck_gl_blend_func(CLUCK_GL_SRC_ALPHA, CLUCK_GL_ONE_MINUS_SRC_ALPHA);
+  cluck_gl_use_program(cluck_gl_segment_program);
+  if (cluck_gl_segment_screen_uniform >= 0) {
+    cluck_gl_uniform2f(cluck_gl_segment_screen_uniform, (float)width, (float)height);
+  }
+  if (cluck_gl_segment_view_uniform >= 0) {
+    cluck_gl_uniform2f(cluck_gl_segment_view_uniform, view_x, view_y);
+  }
+  if (cluck_gl_segment_anchor_uniform >= 0) {
+    cluck_gl_uniform2f(cluck_gl_segment_anchor_uniform, anchor_x, anchor_y);
+  }
+  if (cluck_gl_segment_zoom_uniform >= 0) {
+    cluck_gl_uniform1f(cluck_gl_segment_zoom_uniform, zoom);
+  }
+  if (cluck_gl_segment_radius_uniform >= 0) {
+    cluck_gl_uniform1f(cluck_gl_segment_radius_uniform, base_radius);
+  }
+  if (cluck_gl_segment_hardness_uniform >= 0) {
+    cluck_gl_uniform1f(cluck_gl_segment_hardness_uniform, hardness);
+  }
+  if (cluck_gl_segment_color_uniform >= 0) {
+    cluck_gl_uniform4f(cluck_gl_segment_color_uniform, red, green, blue, alpha);
+  }
+  cluck_gl_draw_elements(CLUCK_GL_TRIANGLES, entry->index_count, CLUCK_GL_UNSIGNED_SHORT, (const void *)0);
+  cluck_gl_bind_vertex_array(0);
+
+  free(points);
+  free(positions);
+  free(apoints);
+  free(bpoints);
+  free(indices);
+  return 1;
+}
+
+static int cluck_gl_draw_segment(SDL_Window *window,
+                                 float ax,
+                                 float ay,
+                                 float pressure_a,
+                                 float bx,
+                                 float by,
+                                 float pressure_b,
+                                 float base_radius,
+                                 float hardness,
+                                 float view_x,
+                                 float view_y,
+                                 float anchor_x,
+                                 float anchor_y,
+                                 float zoom,
+                                 float red,
+                                 float green,
+                                 float blue,
+                                 float alpha) {
+  char spec[256];
+  snprintf(spec, sizeof(spec), \"%f %f %f\\n%f %f %f\\n\", ax, ay, pressure_a, bx, by, pressure_b);
+  return cluck_gl_draw_stroke(window, spec, base_radius, hardness, view_x, view_y, anchor_x, anchor_y, zoom, red, green, blue, alpha);
+}
+
+static const char *cluck_gl_last_error(void) {
+  return cluck_gl_error_buffer;
 }
 
 static void SDLCALL cluck_file_dialog_callback(void *userdata, const char * const *filelist, int filter) {
@@ -531,59 +1531,40 @@ static bool cluck_render_soft_segment(SDL_Renderer *renderer,
   if (!renderer || !brush) {
     return false;
   }
-  (void)strip;
 
   float dx = x2 - x1;
   float dy = y2 - y1;
   float length = sqrtf(dx * dx + dy * dy);
   float start_size = size1 > 1.0f ? size1 : 1.0f;
   float end_size = size2 > 1.0f ? size2 : 1.0f;
-  float min_size = start_size < end_size ? start_size : end_size;
-  float max_size = start_size > end_size ? start_size : end_size;
-  float spacing = min_size * 0.2f;
-  if (spacing < 0.75f) {
-    spacing = 0.75f;
+  float body_size = (start_size + end_size) * 0.5f;
+  float body_alpha = ((float)alpha1 + (float)alpha2) * 0.5f;
+  if (body_size < 1.0f) {
+    body_size = 1.0f;
   }
-  if (spacing > max_size * 0.35f) {
-    spacing = max_size * 0.35f;
-  }
-  if (spacing < 0.75f) {
-    spacing = 0.75f;
-  }
-  int steps = length > 0.0f ? (int)ceilf(length / spacing) : 0;
-  if (steps < 1) {
-    steps = 1;
-  }
-  if (steps > 256) {
-    steps = 256;
-  }
-
   SDL_SetTextureColorMod(brush, r, g, b);
-  for (int index = 0; index <= steps; ++index) {
-    float t = steps > 0 ? ((float)index / (float)steps) : 0.0f;
-    float stamp_x = x1 + (dx * t);
-    float stamp_y = y1 + (dy * t);
-    float stamp_size = start_size + ((end_size - start_size) * t);
-    int alpha_value = (int)roundf(((float)alpha1) + (((float)alpha2 - (float)alpha1) * t));
-    SDL_FRect rect;
-
-    if (stamp_size < 1.0f) {
-      stamp_size = 1.0f;
+  if (length > 0.01f && strip) {
+    SDL_FRect body_rect;
+    SDL_FPoint center;
+    float mid_x = (x1 + x2) * 0.5f;
+    float mid_y = (y1 + y2) * 0.5f;
+    double angle = atan2((double)dy, (double)dx) * (180.0 / M_PI);
+    int body_alpha_value = (int)roundf(body_alpha);
+    if (body_alpha_value < 0) {
+      body_alpha_value = 0;
     }
-    if (alpha_value < 0) {
-      alpha_value = 0;
+    if (body_alpha_value > 255) {
+      body_alpha_value = 255;
     }
-    if (alpha_value > 255) {
-      alpha_value = 255;
-    }
-
-    rect.x = stamp_x - (stamp_size * 0.5f);
-    rect.y = stamp_y - (stamp_size * 0.5f);
-    rect.w = stamp_size;
-    rect.h = stamp_size;
-
-    SDL_SetTextureAlphaMod(brush, (Uint8)alpha_value);
-    SDL_RenderTexture(renderer, brush, NULL, &rect);
+    SDL_SetTextureColorMod(strip, r, g, b);
+    SDL_SetTextureAlphaMod(strip, (Uint8)body_alpha_value);
+    body_rect.x = mid_x - ((length + body_size) * 0.5f);
+    body_rect.y = mid_y - (body_size * 0.5f);
+    body_rect.w = length + body_size;
+    body_rect.h = body_size;
+    center.x = body_rect.w * 0.5f;
+    center.y = body_rect.h * 0.5f;
+    SDL_RenderTextureRotated(renderer, strip, NULL, &body_rect, angle, &center, SDL_FLIP_NONE);
   }
 
   return true;
@@ -679,6 +1660,68 @@ static void cluck_destroy_texture(SDL_Texture *texture) {
 
 (define sdl-mod-ctrl-pressed?
   (foreign-lambda bool "cluck_mod_ctrl_pressed"))
+
+(define sdl-gl-bootstrap!
+  (foreign-lambda bool "cluck_gl_bootstrap"))
+
+(define sdl-gl-ready?
+  (foreign-lambda bool "cluck_gl_ready"))
+
+(define sdl-gl-last-error
+  (foreign-lambda c-string "cluck_gl_last_error"))
+
+(define sdl-gl-clear-window!
+  (foreign-lambda* bool ((c-pointer window)
+                         (float red)
+                         (float green)
+                         (float blue)
+                         (float alpha))
+    "C_return(cluck_gl_clear_window((SDL_Window *)window, red, green, blue, alpha));"))
+
+(define sdl-gl-draw-smoke-triangle!
+  (foreign-lambda* bool ((c-pointer window)
+                         (float red)
+                         (float green)
+                         (float blue)
+                         (float alpha))
+    "C_return(cluck_gl_draw_smoke_triangle((SDL_Window *)window, red, green, blue, alpha));"))
+
+(define sdl-gl-draw-segment!
+  (foreign-lambda* bool ((c-pointer window)
+                         (float ax)
+                         (float ay)
+                         (float pressure_a)
+                         (float bx)
+                         (float by)
+                         (float pressure_b)
+                         (float base_radius)
+                         (float hardness)
+                         (float view_x)
+                         (float view_y)
+                         (float anchor_x)
+                         (float anchor_y)
+                         (float zoom)
+                         (float red)
+                         (float green)
+                         (float blue)
+                         (float alpha))
+    "C_return(cluck_gl_draw_segment((SDL_Window *)window, ax, ay, pressure_a, bx, by, pressure_b, base_radius, hardness, view_x, view_y, anchor_x, anchor_y, zoom, red, green, blue, alpha));"))
+
+(define sdl-gl-draw-stroke!
+  (foreign-lambda* bool ((c-pointer window)
+                         (c-string spec)
+                         (float base_radius)
+                         (float hardness)
+                         (float view_x)
+                         (float view_y)
+                         (float anchor_x)
+                         (float anchor_y)
+                         (float zoom)
+                         (float red)
+                         (float green)
+                         (float blue)
+                         (float alpha))
+    "C_return(cluck_gl_draw_stroke((SDL_Window *)window, spec, base_radius, hardness, view_x, view_y, anchor_x, anchor_y, zoom, red, green, blue, alpha));"))
 
 (define sdl-create-system-cursor
   (foreign-lambda* c-pointer ((int id))

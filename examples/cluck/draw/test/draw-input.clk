@@ -116,6 +116,8 @@
 (let [lines (draw-debug-control-lines)]
   (draw-input-assert-true "debug panel lists wheel zoom"
                           (draw-input-has-line? lines "  wheel: zoom at pointer"))
+  (draw-input-assert-true "debug panel lists ctrl wheel brush size"
+                          (draw-input-has-line? lines "  ctrl+wheel: brush size"))
   (draw-input-assert-true "debug panel lists ctrl zoom"
                           (draw-input-has-line? lines "  ctrl +/-: zoom at pointer"))
   (draw-input-assert-true "debug panel lists space pan"
@@ -131,7 +133,7 @@
   (draw-input-assert-true "debug panel lists tools"
                           (draw-input-has-line? lines "  1: ink   2: select   3: rectangle   4: circle   5: line   6: eraser   7: picker"))
   (draw-input-assert-true "debug panel lists brush sizes"
-                          (draw-input-has-line? lines "  ctrl+1/2/3: brush sizes"))
+                          (draw-input-has-line? lines "  [ and ]: brush size"))
   (draw-input-assert-true "debug panel lists recent colors row"
                           (draw-input-has-line? lines "  recent colors row above brush swatches"))
   (draw-input-assert-true "debug panel lists color swatches"
@@ -142,6 +144,8 @@
                           (draw-input-has-line? lines "  mouse: pressure 1.00   pen: fixed or dynamic pressure"))
   (draw-input-assert-true "debug panel lists pressure toggle"
                           (draw-input-has-line? lines "  p: toggle pen pressure fixed/dynamic"))
+(draw-input-assert-true "debug panel lists ink renderer toggle"
+                        (draw-input-has-line? lines "  g: toggle ink renderer stamped/native"))
   (draw-input-assert-true "debug panel lists undo"
                           (draw-input-has-line? lines "  u: undo   c: clear   e: eraser"))
   (draw-input-assert-true "debug panel lists tool panel"
@@ -159,7 +163,9 @@
   (draw-input-assert-true "tool panel lists tool shortcuts"
                           (draw-input-has-line? lines "1 ink   2 select   3 rectangle   4 circle   5 line   6 eraser   7 picker"))
   (draw-input-assert-true "tool panel lists brush sizes"
-                          (draw-input-has-line? lines "ctrl+1/2/3 brush sizes"))
+                          (draw-input-has-line? lines "ctrl+wheel brush size"))
+  (draw-input-assert-true "tool panel lists reset zoom"
+                          (draw-input-has-line? lines "0 or reset button resets view"))
   (draw-input-assert-true "tool panel lists recent colors row"
                           (draw-input-has-line? lines "recent colors row above brush swatches"))
   (draw-input-assert-true "tool panel lists color swatches"
@@ -529,6 +535,20 @@
                                        :ctrl? true})]
   (draw-input-assert-true "ctrl plus zooms"
                           (> (draw-view-zoom zoomed) 1.0)))
+
+(let [changed (draw-apply-input-event! (assoc (default-state)
+                                              :ctrl-down? true
+                                              :brush-size 6)
+                                       {:kind :mouse-wheel
+                                        :wheel-y 1.0
+                                        :wheel-mouse-x 120.0
+                                        :wheel-mouse-y 80.0})]
+  (draw-input-assert-num= "ctrl wheel increases brush size"
+                          7
+                          (get changed :brush-size))
+  (draw-input-assert-num= "ctrl wheel leaves zoom unchanged"
+                          1.0
+                          (draw-view-zoom changed)))
 
 (let [base (assoc (default-state)
                   :mouse-screen-x 320.0
@@ -1525,6 +1545,33 @@
                           true)
   (set! sdl/render-debug-text! original-render-text)
   (set! sdl/set-draw-color! original-set-color))
+
+(let [original-render-text sdl/render-debug-text!
+      original-set-color sdl/set-draw-color!
+      original-fill-rect sdl/render-fill-rect!
+      original-render-line sdl/render-line!]
+  (set! sdl/render-debug-text!
+        (lambda (renderer x y text)
+          true))
+  (set! sdl/set-draw-color!
+        (lambda (renderer r g b a)
+          true))
+  (set! sdl/render-fill-rect!
+        (lambda (renderer x y w h)
+          true))
+  (set! sdl/render-line!
+        (lambda (renderer x1 y1 x2 y2)
+          true))
+  (draw-status/draw-render-tool-panel!
+    :dummy
+    (assoc (default-state)
+           :tool-panel? true))
+  (draw-input-assert-true "tool panel render path completes"
+                          true)
+  (set! sdl/render-debug-text! original-render-text)
+  (set! sdl/set-draw-color! original-set-color)
+  (set! sdl/render-fill-rect! original-fill-rect)
+  (set! sdl/render-line! original-render-line))
 
   (let [original-poll sdl/poll-event!
         original-current sdl/current-event

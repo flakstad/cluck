@@ -55,6 +55,16 @@
                  :state (state-snapshot next-state)})
     next-state))
 
+(defn draw-toggle-ink-renderer-core!
+  "Toggle ink renderer backend for STATE and record undo history."
+  [state push-history! state-snapshot log-entry!]
+  (let [state (push-history! state)
+        next-state (draw.state/draw-toggle-ink-renderer state)]
+    (log-entry! :ink-renderer
+                {:mode (get next-state :ink-renderer)
+                 :state (state-snapshot next-state)})
+    next-state))
+
 (defn draw-set-background-core!
   "Set the background color and record undo history."
   [state color push-history! state-snapshot log-entry!]

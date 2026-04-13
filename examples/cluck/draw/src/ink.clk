@@ -16,11 +16,17 @@
   [state]
   (draw.state/draw-kind=? (draw-ink-renderer-kind state) :native-gpu))
 
+(defn draw-ink-context-kind
+  "Return the native window/context kind required for STATE's ink backend."
+  [state]
+  (if (draw-native-ink-renderer? state)
+    :opengl
+    :renderer))
+
 (defn draw-render-ink-stroke!
   "Render STROKE using STATE's selected ink renderer.
 
-  For now, `:native-gpu` falls back to STAMPED-THUNK until the native backend
-  is implemented behind this boundary."
+  The native backend remains opt-in while the replacement renderer is under development."
   [renderer state stroke stamped-thunk native-thunk]
   (if (draw-native-ink-renderer? state)
     (if native-thunk
