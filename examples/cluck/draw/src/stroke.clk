@@ -24,12 +24,20 @@
 
 (defn draw-min-point-spacing
   "Return the minimum screen-space spacing between active stroke samples."
-  [state point size]
-  (let [stamp (draw.view/draw-point-screen-size state point size)
-        spacing (/ stamp 2.0)]
-    (if (> spacing 1.0)
+  [state previous point size]
+  (let [previous-stamp (draw.view/draw-point-screen-size state previous size)
+        current-stamp (draw.view/draw-point-screen-size state point size)
+        stamp (min previous-stamp current-stamp)
+        spacing (* stamp 0.4)]
+    (cond
+      (> spacing 2.0)
+      2.0
+
+      (> spacing 0.75)
       spacing
-      1.0)))
+
+      :else
+      0.75)))
 
 (defn draw-append-stroke-point
   "Append POINT on STROKE when it is far enough from the prior sample."
@@ -40,7 +48,7 @@
       [point]
       (let [previous (last points)
             distance (draw-point-screen-distance state previous point)
-            spacing (draw-min-point-spacing state point size)]
+            spacing (draw-min-point-spacing state previous point size)]
         (if (>= distance spacing)
           (conj points point)
           points)))))

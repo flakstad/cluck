@@ -1295,24 +1295,16 @@
 
   (let [original-segment sdl/render-soft-segment!
         original-brush-ready draw-brush-texture-ready?
-        original-strip-ready draw-strip-texture-ready?
         original-brush draw-brush-texture
-        original-strip draw-strip-texture
         calls []
         state (assoc (default-state)
                      :zoom 2.0)]
     (set! draw-brush-texture-ready?
           (fn []
             true))
-    (set! draw-strip-texture-ready?
-          (fn []
-            true))
     (set! draw-brush-texture
           (fn []
             'brush))
-    (set! draw-strip-texture
-          (fn []
-            'strip))
     (set! sdl/render-soft-segment!
           (fn [renderer strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]
             (set! calls (conj calls [strip brush x1 y1 size1 alpha1 x2 y2 size2 alpha2 r g b]))
@@ -1326,8 +1318,8 @@
     (draw-tools-assert-num= "stroke segment renderer call count"
                             2
                             (count calls))
-    (draw-tools-assert-str= "stroke segment renderer uses cached strip"
-                            "strip"
+    (draw-tools-assert-str= "stroke segment renderer no longer needs strip texture"
+                            "false"
                             (str (nth (first calls) 0)))
     (draw-tools-assert-num= "stroke segment renderer keeps fractional screen x"
                             20.5
@@ -1337,9 +1329,19 @@
                             (nth (last calls) 9))
     (set! sdl/render-soft-segment! original-segment)
     (set! draw-brush-texture-ready? original-brush-ready)
-    (set! draw-strip-texture-ready? original-strip-ready)
-    (set! draw-brush-texture original-brush)
-    (set! draw-strip-texture original-strip)))
+    (set! draw-brush-texture original-brush)))
+
+  (let [state (default-state)
+        low (draw-min-point-spacing state
+                                    [10.0 10.0 0.15]
+                                    [11.0 10.0 0.15]
+                                    6)
+        full (draw-min-point-spacing state
+                                     [10.0 10.0 1.0]
+                                     [11.0 10.0 1.0]
+                                     6)]
+    (draw-tools-assert-true "low pressure spacing stays tighter than full pressure"
+                            (< low full)))
 
 (let [original-ready draw-brush-texture-ready?
       original-brush draw-brush-texture

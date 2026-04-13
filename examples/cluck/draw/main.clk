@@ -1045,19 +1045,6 @@
   (and *draw-brush-ready?*
        (sdl/pointer-ready? (draw-brush-texture))))
 
-(defn draw-strip-texture
-  "Return the cached strip texture if one is available."
-  []
-  (if *draw-context*
-    (get *draw-context* :strip-texture)
-    false))
-
-(defn draw-strip-texture-ready?
-  "Return true when the cached strip texture is available."
-  []
-  (and *draw-strip-ready?*
-       (sdl/pointer-ready? (draw-strip-texture))))
-
 (defn draw-brush-texture-diameter
   "Return the canonical brush stamp diameter."
   []
@@ -1067,21 +1054,6 @@
   "Return the default brush hardness used by the stamp texture."
   []
   (draw-resources/draw-brush-hardness))
-
-(defn draw-strip-texture-width
-  "Return the canonical width for the soft strip texture."
-  []
-  (draw-resources/draw-strip-texture-width))
-
-(defn draw-strip-texture-height
-  "Return the canonical height for the soft strip texture."
-  []
-  (draw-resources/draw-strip-texture-height))
-
-(defn draw-strip-hardness
-  "Return the default strip hardness used by the segment body texture."
-  []
-  (draw-resources/draw-strip-hardness))
 
 (defn draw-ensure-brush-texture!
   "Create or refresh the brush stamp texture."
@@ -1099,24 +1071,6 @@
                                                            (draw-brush-texture-ready?))]
     (set! *draw-context* (get result :context))
     (set! *draw-brush-ready?* false)
-    nil))
-
-(defn draw-ensure-strip-texture!
-  "Create or refresh the strip texture used for stroke bodies."
-  [state]
-  (let [result (draw-resources/draw-ensure-strip-texture! *draw-context*
-                                                          (draw-strip-texture-ready?))]
-    (set! *draw-context* (get result :context))
-    (set! *draw-strip-ready?* (if (get result :ready?) true false))
-    *draw-context*))
-
-(defn draw-release-strip-texture!
-  "Destroy the cached strip texture and clear it from the draw context."
-  []
-  (let [result (draw-resources/draw-release-strip-texture! *draw-context*
-                                                           (draw-strip-texture-ready?))]
-    (set! *draw-context* (get result :context))
-    (set! *draw-strip-ready?* false)
     nil))
 
 (defn draw-release-cursors!
@@ -2365,7 +2319,6 @@
   "Render a smooth segment from A to B using the compiled SDL helper."
   [renderer state a b size opacity]
   (let [brush (draw-brush-texture)
-        strip (draw-strip-texture)
         color (draw-stroke-color-value)
         screen-a (draw-world-point->screen-fpoint state a)
         screen-b (draw-world-point->screen-fpoint state b)
@@ -2373,10 +2326,9 @@
         size-b (draw-point-screen-size state b size)
         alpha-a (draw-point-alpha a opacity)
         alpha-b (draw-point-alpha b opacity)]
-    (if (and (draw-brush-texture-ready?)
-             (draw-strip-texture-ready?))
+    (if (draw-brush-texture-ready?)
       (sdl/render-soft-segment! renderer
-                                strip
+                                false
                                 brush
                                 (nth screen-a 0)
                                 (nth screen-a 1)
@@ -2443,14 +2395,12 @@
   "Render a soft segment directly in screen coordinates."
   [renderer color size opacity x1 y1 x2 y2]
   (let [brush (draw-brush-texture)
-        strip (draw-strip-texture)
         alpha (draw-opacity-alpha opacity)]
     (draw-with-stroke-color color
       (lambda ()
-        (if (and (draw-brush-texture-ready?)
-                 (draw-strip-texture-ready?))
+        (if (draw-brush-texture-ready?)
           (sdl/render-soft-segment! renderer
-                                    strip
+                                    false
                                     brush
                                     x1
                                     y1
@@ -2831,7 +2781,6 @@
                   (draw-ensure-canvas! state)
                   (draw-ensure-preview! state)
                   (draw-ensure-brush-texture! state)
-                  (draw-ensure-strip-texture! state)
                   (if (draw-canvas-ready?)
                     (draw-rebuild-canvas! state)
                     nil)
@@ -2856,7 +2805,6 @@
       (draw-release-canvas!)
       (draw-release-preview!)
       (draw-release-brush-texture!)
-      (draw-release-strip-texture!)
       (draw-release-cursors!)
       (if *draw-context*
         (begin
