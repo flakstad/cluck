@@ -528,56 +528,62 @@ static bool cluck_render_soft_segment(SDL_Renderer *renderer,
                                       Uint8 r,
                                       Uint8 g,
                                       Uint8 b) {
-  if (!renderer || !strip || !brush) {
+  if (!renderer || !brush) {
     return false;
   }
+  (void)strip;
 
   float dx = x2 - x1;
   float dy = y2 - y1;
   float length = sqrtf(dx * dx + dy * dy);
   float start_size = size1 > 1.0f ? size1 : 1.0f;
   float end_size = size2 > 1.0f ? size2 : 1.0f;
-  float thickness = (start_size + end_size) * 0.5f;
-  if (thickness < 1.0f) {
-    thickness = 1.0f;
+  float min_size = start_size < end_size ? start_size : end_size;
+  float max_size = start_size > end_size ? start_size : end_size;
+  float spacing = min_size * 0.2f;
+  if (spacing < 0.75f) {
+    spacing = 0.75f;
+  }
+  if (spacing > max_size * 0.35f) {
+    spacing = max_size * 0.35f;
+  }
+  if (spacing < 0.75f) {
+    spacing = 0.75f;
+  }
+  int steps = length > 0.0f ? (int)ceilf(length / spacing) : 0;
+  if (steps < 1) {
+    steps = 1;
+  }
+  if (steps > 256) {
+    steps = 256;
   }
 
-  SDL_SetTextureColorMod(strip, r, g, b);
   SDL_SetTextureColorMod(brush, r, g, b);
-
-  if (length > 0.5f) {
+  for (int index = 0; index <= steps; ++index) {
+    float t = steps > 0 ? ((float)index / (float)steps) : 0.0f;
+    float stamp_x = x1 + (dx * t);
+    float stamp_y = y1 + (dy * t);
+    float stamp_size = start_size + ((end_size - start_size) * t);
+    int alpha_value = (int)roundf(((float)alpha1) + (((float)alpha2 - (float)alpha1) * t));
     SDL_FRect rect;
-    SDL_FPoint center;
-    double angle = atan2((double)dy, (double)dx) * (180.0 / M_PI);
-    Uint8 segment_alpha = (Uint8)(((int)alpha1 + (int)alpha2) / 2);
 
-    rect.x = x1;
-    rect.y = y1 - (thickness * 0.5f);
-    rect.w = length;
-    rect.h = thickness;
-    center.x = 0.0f;
-    center.y = thickness * 0.5f;
+    if (stamp_size < 1.0f) {
+      stamp_size = 1.0f;
+    }
+    if (alpha_value < 0) {
+      alpha_value = 0;
+    }
+    if (alpha_value > 255) {
+      alpha_value = 255;
+    }
 
-    SDL_SetTextureAlphaMod(strip, segment_alpha);
-    SDL_RenderTextureRotated(renderer, strip, NULL, &rect, angle, &center, SDL_FLIP_NONE);
-  }
+    rect.x = stamp_x - (stamp_size * 0.5f);
+    rect.y = stamp_y - (stamp_size * 0.5f);
+    rect.w = stamp_size;
+    rect.h = stamp_size;
 
-  SDL_FRect start_rect;
-  start_rect.x = x1 - (start_size * 0.5f);
-  start_rect.y = y1 - (start_size * 0.5f);
-  start_rect.w = start_size;
-  start_rect.h = start_size;
-  SDL_SetTextureAlphaMod(brush, alpha1);
-  SDL_RenderTexture(renderer, brush, NULL, &start_rect);
-
-  if (length > 0.5f) {
-    SDL_FRect end_rect;
-    end_rect.x = x2 - (end_size * 0.5f);
-    end_rect.y = y2 - (end_size * 0.5f);
-    end_rect.w = end_size;
-    end_rect.h = end_size;
-    SDL_SetTextureAlphaMod(brush, alpha2);
-    SDL_RenderTexture(renderer, brush, NULL, &end_rect);
+    SDL_SetTextureAlphaMod(brush, (Uint8)alpha_value);
+    SDL_RenderTexture(renderer, brush, NULL, &rect);
   }
 
   return true;
