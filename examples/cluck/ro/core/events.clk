@@ -436,27 +436,39 @@
     (cond
       (and (equal? (get result :status) :help)
            (string=? (get (get result :spec) :name) "events"))
-      (vector 'help '())
+      {:ok? true
+       :effects [[:events/help {}]]}
 
       (equal? (get result :status) :help)
-      (vector 'unsupported-flag '())
+      {:ok? true
+       :effects [[:events/unsupported-flag {}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-flag-value)
-        (vector 'error "ro events list expects a value after --limit" args)
+        {:ok? false
+         :error "ro events list expects a value after --limit"
+         :command args}
 
         (equal? (get result :reason) :invalid-flag-value)
-        (vector 'error "ro events list expects a non-negative --limit" (get result :value))
+        {:ok? false
+         :error "ro events list expects a non-negative --limit"
+         :command (get result :value)}
 
         (equal? (get result :reason) :unknown-command)
-        (vector 'error "unsupported events subcommand" args)
+        {:ok? false
+         :error "unsupported events subcommand"
+         :command args}
 
         :else
-        (vector 'unsupported-flag '()))
+        {:ok? true
+         :effects [[:events/unsupported-flag {}]]})
 
       :else
       (let [limit (get (get result :flags) :limit events-default-limit)]
         (if (< limit 0)
-            (vector 'error "ro events list expects a non-negative --limit" limit)
-            (vector 'list limit))))))
+            {:ok? false
+             :error "ro events list expects a non-negative --limit"
+             :command limit}
+            {:ok? true
+             :effects [[:events/list {:limit limit}]]})))))

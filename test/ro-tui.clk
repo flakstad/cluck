@@ -1,0 +1,105 @@
+;; Focused regression probe for the Ro TUI helpers.
+
+(ns cluck.test.ro-tui
+  (:require [cluck.string :as str]
+            [cluck.examples.ro.tui :as tui]
+            [cluck.test.support :refer [assert-str=
+                                        assert-num=
+                                        assert-true]]))
+
+(defn rec [pairs]
+  (list->vector pairs))
+
+(def sample-project
+  (rec (list (cons 'id "proj-1")
+             (cons 'name "Alpha"))))
+
+(def sample-outline
+  (rec (list (cons 'id "out-1")
+             (cons 'projectId "proj-1")
+             (cons 'name "Roadmap")
+             (cons 'statusDefs
+                   (list (rec (list (cons 'id "todo")
+                                    (cons 'label "TODO")
+                                    (cons 'isEndState false)))
+                         (rec (list (cons 'id "done")
+                                    (cons 'label "DONE")
+                                    (cons 'isEndState true))))))))
+
+(def sample-items
+  (list
+   (rec (list (cons 'id "item-1")
+              (cons 'parentId "")
+              (cons 'title "Parent task")
+              (cons 'status "todo")
+              (cons 'description "Parent description")
+              (cons 'tags (list "alpha" "beta"))
+              (cons 'archived false)))
+   (rec (list (cons 'id "item-2")
+              (cons 'parentId "item-1")
+              (cons 'title "Child task")
+              (cons 'status "done")
+              (cons 'description "Child description")
+              (cons 'archived false)))
+   (rec (list (cons 'id "item-3")
+              (cons 'parentId "")
+              (cons 'title "Standalone task")
+              (cons 'status "todo")
+              (cons 'description "")
+              (cons 'archived false)))))
+
+(def sample-project-rows
+  (tui/build-project-rows (list sample-project)))
+
+(def sample-outline-rows
+  (tui/build-outline-list-rows sample-project
+                               (list sample-outline)
+                               {"out-1" {:open 2 :done 1 :total 3}}))
+
+(def sample-tree-rows
+  (tui/build-item-tree-rows sample-items))
+
+(assert-str= "ro tui help starts with ro tui"
+             "ro tui"
+             (first tui/tui-help-lines))
+(assert-str= "ro tui project row kind"
+             "project"
+             (get (first sample-project-rows) :kind ""))
+(assert-str= "ro tui project row line"
+             "> Alpha"
+             (str/trimr (tui/project-row-line (first sample-project-rows) true 20)))
+(assert-str= "ro tui outline row kind"
+             "outline"
+             (get (first sample-outline-rows) :kind ""))
+(assert-str= "ro tui outline row line"
+             "> Roadmap  [2/3]"
+             (str/trimr (tui/outline-row-line (first sample-outline-rows) true 40)))
+(assert-num= "ro tui tree row count"
+             3
+             (length sample-tree-rows))
+(assert-str= "ro tui first tree row item id"
+             "item-1"
+             (get (first sample-tree-rows) :item-id ""))
+(assert-num= "ro tui child tree depth"
+             1
+             (get (list-ref sample-tree-rows 1) :depth 0))
+(assert-str= "ro tui child tree row line"
+             ">   [done] Child task"
+             (str/trimr (tui/item-tree-row-line (list-ref sample-tree-rows 1) true 60)))
+(assert-num= "ro tui finds row id index"
+             1
+             (tui/index-of-row-id sample-tree-rows "item-2"))
+(assert-str= "ro tui first row id"
+             "item-1"
+             (tui/first-row-id sample-tree-rows))
+
+(let [detail-lines (tui/item-detail-lines sample-project
+                                          sample-outline
+                                          (first sample-items)
+                                          80)
+      detail-text (str/join "\n" detail-lines)]
+  (assert-str= "ro tui detail first line"
+               "Item: Parent task"
+               (first detail-lines))
+  (assert-true "ro tui detail includes description"
+               (not (false? (str/includes? detail-text "Parent description")))))

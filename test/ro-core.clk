@@ -19,6 +19,7 @@
             [cluck.examples.ro.core.json :as ro-json]
             [cluck.examples.ro.core.workspace :as ro-workspace]
             [cluck.examples.ro.core.projects :as ro-projects]
+            [cluck.examples.ro.core.comments :as ro-comments]
             [cluck.examples.ro.core.worklog :as ro-worklog]
             [cluck.examples.ro.core.publish :as ro-publish]
             [cluck.examples.ro.core.agent :as ro-agent]
@@ -93,6 +94,7 @@
 (def ro-doctor-doctor-summary-from-issues ro-doctor/doctor-summary-from-issues)
 (def ro-doctor-doctor-dedupe-plan-from-issues ro-doctor/doctor-dedupe-plan-from-issues)
 (def ro-doctor-doctor-main-plan ro-doctor/doctor-main-plan)
+(def ro-doctor-doctor-runtime-plan ro-doctor/doctor-runtime-plan)
 (def ro-reindex-reindex-recognized-types ro-reindex/reindex-recognized-types)
 (def ro-reindex-reindex-type-recognized? ro-reindex/reindex-type-recognized?)
 (def ro-json-compact-json-text ro-json/compact-json-text)
@@ -116,6 +118,7 @@
 (def ro-projects-projects-list-output ro-projects/projects-list-output)
 (def ro-projects-projects-current-output ro-projects/projects-current-output)
 (def ro-projects-projects-main-plan ro-projects/projects-main-plan)
+(def ro-comments-comments-main-plan ro-comments/comments-main-plan)
 (def ro-worklog-worklog-help-output ro-worklog/worklog-help-output)
 (def ro-worklog-worklog-list-plan ro-worklog/worklog-list-plan)
 (def ro-worklog-worklog-add-plan ro-worklog/worklog-add-plan)
@@ -140,6 +143,29 @@
     (pair? value) (car (seq value))
     :else value))
 
+(defn assert-plan-pr-str=
+  [label expected plan]
+  (let [expected-value (read (open-input-string expected))
+        normalized-expected (normalize-json-value expected-value)
+        normalized-plan (normalize-json-value plan)
+        expected-text (pr-str normalized-expected)
+        actual-text (pr-str normalized-plan)]
+    (if (string=? expected-text actual-text)
+        (pass label)
+        (fail label expected-text actual-text))))
+
+(defn assert-plan-case-table
+  [prefix cases]
+  (let loop ((xs cases))
+    (if (empty? xs)
+        true
+        (let ((entry (first xs)))
+          (assert-plan-pr-str=
+           (string-append prefix " " (get entry :label ""))
+           (get entry :expected "")
+           ((get entry :plan-fn) (get entry :args '())))
+          (loop (rest xs))))))
+
 (defn json-key-text
   [key]
   (cond
@@ -151,6 +177,7 @@
 (defn json-object-like?
   [value]
   (let [items (cond
+                (map? value) (seq value)
                 (vector? value) (vector->list value)
                 (pair? value) (seq value)
                 :else '())]
@@ -162,6 +189,7 @@
   (cond
     (json-object-like? value)
     (let [items (cond
+                  (map? value) (seq value)
                   (vector? value) (vector->list value)
                   (pair? value) (seq value)
                   :else '())
@@ -987,111 +1015,71 @@
              "{\"data\":{\"projectId\":\"proj-1\",\"project\":null}}\n"
              sample-project-current-output-empty)
 
-(define sample-status-plan
-  (ro-workspace-status-main-plan '()))
-(define sample-status-help-plan
-  (ro-workspace-status-main-plan '("--help")))
-(define sample-workspace-plan
-  (ro-workspace-workspace-main-plan '("current")))
-(define sample-workspace-help-plan
-  (ro-workspace-workspace-main-plan '("help")))
-(define sample-workspace-add-plan
-  (ro-workspace-workspace-main-plan '("add" "alpha" "--dir" "/tmp/alpha" "--use")))
-(define sample-workspace-add-missing-dir-plan
-  (ro-workspace-workspace-main-plan '("add" "alpha")))
-(define sample-workspace-add-help-plan
-  (ro-workspace-workspace-add-plan '("--help")))
-(define sample-workspace-init-plan
-  (ro-workspace-workspace-main-plan '("init" "beta" "--dir" "/tmp/beta")))
-(define sample-workspace-init-help-plan
-  (ro-workspace-workspace-init-plan '("--help")))
-(define sample-workspace-use-plan
-  (ro-workspace-workspace-main-plan '("use" "gamma")))
-(define sample-workspace-use-help-plan
-  (ro-workspace-workspace-use-plan '("--help")))
-(define sample-init-main-plan
-  (ro-workspace-init-main-plan '()))
-(define sample-identity-plan
-  (ro-workspace-identity-main-plan '("list")))
-(define sample-identity-help-plan
-  (ro-workspace-identity-main-plan '("list" "--help")))
-
-(assert-str= "core status plan tag"
-             "status"
-             (symbol->string (vector-ref sample-status-plan 0)))
-(assert-str= "core status help plan tag"
-             "help"
-             (symbol->string (vector-ref sample-status-help-plan 0)))
-(assert-str= "core workspace plan tag"
-             "current"
-             (symbol->string (vector-ref sample-workspace-plan 0)))
-(assert-str= "core workspace help plan tag"
-             "help"
-             (symbol->string (vector-ref sample-workspace-help-plan 0)))
-(assert-str= "core workspace add plan tag"
-             "add"
-             (symbol->string (vector-ref sample-workspace-add-plan 0)))
-(assert-str= "core workspace add plan name"
-             "alpha"
-             (vector-ref sample-workspace-add-plan 1))
-(assert-str= "core workspace add plan dir"
-             "/tmp/alpha"
-             (vector-ref sample-workspace-add-plan 2))
-(assert-str= "core workspace add plan kind"
-             "git"
-             (vector-ref sample-workspace-add-plan 3))
-(assert-true "core workspace add plan use"
-             (vector-ref sample-workspace-add-plan 4))
-(assert-str= "core workspace add missing dir tag"
-             "error"
-             (symbol->string (vector-ref sample-workspace-add-missing-dir-plan 0)))
-(assert-str= "core workspace add missing dir message"
-             "missing --dir"
-             (vector-ref sample-workspace-add-missing-dir-plan 1))
-(assert-str= "core workspace add help plan tag"
-             "subhelp-root"
-             (symbol->string (vector-ref sample-workspace-add-help-plan 0)))
-(assert-str= "core workspace add help plan usage"
-             "usage: ro workspace add <name> --dir <path> [--kind git] [--use]\n"
-             (vector-ref sample-workspace-add-help-plan 1))
-(assert-str= "core workspace init plan tag"
-             "init"
-             (symbol->string (vector-ref sample-workspace-init-plan 0)))
-(assert-str= "core workspace init plan name"
-             "beta"
-             (vector-ref sample-workspace-init-plan 1))
-(assert-str= "core workspace init plan dir"
-             "/tmp/beta"
-             (vector-ref sample-workspace-init-plan 2))
-(assert-true "core workspace init plan use false"
-             (not (vector-ref sample-workspace-init-plan 3)))
-(assert-str= "core workspace init help plan tag"
-             "subhelp-root"
-             (symbol->string (vector-ref sample-workspace-init-help-plan 0)))
-(assert-str= "core workspace init help plan usage"
-             "usage: ro workspace init <name> [--dir <path>] [--use]\n"
-             (vector-ref sample-workspace-init-help-plan 1))
-(assert-str= "core workspace use plan tag"
-             "use"
-             (symbol->string (vector-ref sample-workspace-use-plan 0)))
-(assert-str= "core workspace use plan name"
-             "gamma"
-             (vector-ref sample-workspace-use-plan 1))
-(assert-str= "core workspace use help plan tag"
-             "subhelp"
-             (symbol->string (vector-ref sample-workspace-use-help-plan 0)))
-(assert-str= "core workspace use help plan usage"
-             "usage: ro workspace use <name>\n"
-             (vector-ref sample-workspace-use-help-plan 1))
-(assert-str= "core init main plan tag"
-             "init"
-             (symbol->string (vector-ref sample-init-main-plan 0)))
-(assert-str= "core identity plan tag"
-             "list"
-             (symbol->string (vector-ref sample-identity-plan 0)))
-(assert-str= "core identity help plan tag"
-             "help"
-             (symbol->string (vector-ref sample-identity-help-plan 0)))
+(assert-plan-case-table
+ "core workspace planner"
+ (list
+  {:label "status"
+   :plan-fn ro-workspace-status-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:status/show {}]]}"}
+  {:label "status help"
+   :plan-fn ro-workspace-status-main-plan
+   :args '("--help")
+   :expected "{:ok? true, :effects [[:status/help {}]]}"}
+  {:label "workspace current"
+   :plan-fn ro-workspace-workspace-main-plan
+   :args '("current")
+   :expected "{:ok? true, :effects [[:workspace/current {}]]}"}
+  {:label "workspace help"
+   :plan-fn ro-workspace-workspace-main-plan
+   :args '("help")
+   :expected "{:ok? true, :effects [[:workspace/help {}]]}"}
+  {:label "workspace add"
+   :plan-fn ro-workspace-workspace-main-plan
+   :args '("add" "alpha" "--dir" "/tmp/alpha" "--use")
+   :expected "{:ok? true, :effects [[:workspace/add {:name \"alpha\", :dir \"/tmp/alpha\", :kind \"git\", :use? true}]]}"}
+  {:label "workspace add missing dir"
+   :plan-fn ro-workspace-workspace-main-plan
+   :args '("add" "alpha")
+   :expected "{:ok? false, :error \"missing --dir\", :command (\"alpha\")}"}
+  {:label "workspace add help"
+   :plan-fn ro-workspace-workspace-add-plan
+   :args '("--help")
+   :expected (string-append "{:ok? true, :effects [[:workspace/subhelp {:usage "
+                            (pr-str ro-workspace/workspace-add-usage-output)
+                            ", :root? true}]]}")}
+  {:label "workspace init"
+   :plan-fn ro-workspace-workspace-main-plan
+   :args '("init" "beta" "--dir" "/tmp/beta")
+   :expected "{:ok? true, :effects [[:workspace/init {:name \"beta\", :dir \"/tmp/beta\", :use? false}]]}"}
+  {:label "workspace init help"
+   :plan-fn ro-workspace-workspace-init-plan
+   :args '("--help")
+   :expected (string-append "{:ok? true, :effects [[:workspace/subhelp {:usage "
+                            (pr-str ro-workspace/workspace-init-usage-output)
+                            ", :root? true}]]}")}
+  {:label "workspace use"
+   :plan-fn ro-workspace-workspace-main-plan
+   :args '("use" "gamma")
+   :expected "{:ok? true, :effects [[:workspace/use {:name \"gamma\"}]]}"}
+  {:label "workspace use help"
+   :plan-fn ro-workspace-workspace-use-plan
+   :args '("--help")
+   :expected (string-append "{:ok? true, :effects [[:workspace/subhelp {:usage "
+                            (pr-str ro-workspace/workspace-use-usage-output)
+                            ", :root? false}]]}")}
+  {:label "init"
+   :plan-fn ro-workspace-init-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:init/run {}]]}"}
+  {:label "identity list"
+   :plan-fn ro-workspace-identity-main-plan
+   :args '("list")
+   :expected "{:ok? true, :effects [[:identity/list {}]]}"}
+  {:label "identity help"
+   :plan-fn ro-workspace-identity-main-plan
+   :args '("list" "--help")
+   :expected "{:ok? true, :effects [[:identity/help {}]]}"}))
 
 (define sample-projects-help-plan
   (ro-projects-projects-main-plan '()))
@@ -1327,34 +1315,25 @@
              "# Output contract\n\nMost commands return a stable envelope with a `data` field.\n\n- Default format: JSON\n- Alternate format: EDN via `--format edn`\n- `--pretty` pretty-prints JSON for human inspection\n- Commands may add `_hints` with suggested next steps"
              (ro-json-json-field-value docs-topic-output-data "markdown" ""))
 
-(define docs-main-plan-output
-  (ro-docs-docs-main-plan '()))
-(define docs-topic-plan
-  (ro-docs-docs-main-plan '("getting-started")))
-(define docs-raw-plan
-  (ro-docs-docs-main-plan '("getting-started" "--raw")))
-(define docs-help-plan
-  (ro-docs-docs-main-plan '("getting-started" "--help")))
-
-(assert-str= "core docs main plan tag"
-             "output"
-             (symbol->string (vector-ref docs-main-plan-output 0)))
-(assert-str= "core docs topic plan tag"
-             "topic"
-             (symbol->string (vector-ref docs-topic-plan 0)))
-(assert-str= "core docs topic plan topic"
-             "getting-started"
-             (vector-ref docs-topic-plan 1))
-(assert-true "core docs topic plan raw false"
-             (not (vector-ref docs-topic-plan 2)))
-(assert-str= "core docs raw plan tag"
-             "topic"
-             (symbol->string (vector-ref docs-raw-plan 0)))
-(assert-true "core docs raw plan raw"
-             (vector-ref docs-raw-plan 2))
-(assert-str= "core docs help plan tag"
-             "help"
-             (symbol->string (vector-ref docs-help-plan 0)))
+(assert-plan-case-table
+ "core docs planner"
+ (list
+  {:label "output"
+   :plan-fn ro-docs-docs-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:docs/output {}]]}"}
+  {:label "topic"
+   :plan-fn ro-docs-docs-main-plan
+   :args '("getting-started")
+   :expected "{:ok? true, :effects [[:docs/topic {:topic \"getting-started\", :raw? false}]]}"}
+  {:label "topic raw"
+   :plan-fn ro-docs-docs-main-plan
+   :args '("getting-started" "--raw")
+   :expected "{:ok? true, :effects [[:docs/topic {:topic \"getting-started\", :raw? true}]]}"}
+  {:label "topic help"
+   :plan-fn ro-docs-docs-main-plan
+   :args '("getting-started" "--help")
+   :expected "{:ok? true, :effects [[:docs/help {}]]}"}))
 
 (define sample-items-main-help-plan
   (ro-items-items-main-plan '("help")))
@@ -1603,124 +1582,95 @@
              "ro projects list"
              (first-entry workspace-status-hints))
 
-(define events-main-plan-output
-  (ro-events-events-main-plan '()))
-(define events-list-plan
-  (ro-events-events-main-plan '("list")))
-(define events-list-help-plan
-  (ro-events-events-main-plan '("list" "--help")))
-(define events-list-limit-plan
-  (ro-events-events-main-plan '("list" "--limit" "5")))
-(define events-list-missing-limit-plan
-  (ro-events-events-main-plan '("list" "--limit")))
+(assert-plan-case-table
+ "core remaining planner"
+ (list
+  {:label "comments add help"
+   :plan-fn ro-comments-comments-main-plan
+   :args '("add" "--help")
+   :expected "{:ok? true, :effects [[:comments/help {}]]}"}
+  {:label "events help"
+   :plan-fn ro-events-events-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:events/help {}]]}"}
+  {:label "events list"
+   :plan-fn ro-events-events-main-plan
+   :args '("list")
+   :expected "{:ok? true, :effects [[:events/list {:limit 200}]]}"}
+  {:label "events list help"
+   :plan-fn ro-events-events-main-plan
+   :args '("list" "--help")
+   :expected "{:ok? true, :effects [[:events/unsupported-flag {}]]}"}
+  {:label "events list missing limit"
+   :plan-fn ro-events-events-main-plan
+   :args '("list" "--limit")
+   :expected "{:ok? false, :error \"ro events list expects a value after --limit\", :command (\"list\" \"--limit\")}"}
+  {:label "reindex run"
+   :plan-fn ro-reindex-reindex-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:reindex/run {}]]}"}
+  {:label "reindex help"
+   :plan-fn ro-reindex-reindex-main-plan
+   :args '("--help")
+   :expected "{:ok? true, :effects [[:reindex/help {}]]}"}
+  {:label "reindex error"
+   :plan-fn ro-reindex-reindex-main-plan
+   :args '("bogus")
+   :expected "{:ok? false, :error \"unexpected reindex argument\", :command (\"bogus\")}"}
+  {:label "sync help"
+   :plan-fn ro-sync-sync-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:sync/help {}]]}"}
+  {:label "sync status"
+   :plan-fn ro-sync-sync-main-plan
+   :args '("status")
+   :expected "{:ok? true, :effects [[:sync/status {}]]}"}
+  {:label "sync status help"
+   :plan-fn ro-sync-sync-main-plan
+   :args '("status" "--help")
+   :expected "{:ok? true, :effects [[:sync/status {}]]}"}
+  {:label "sync remotes"
+   :plan-fn ro-sync-sync-main-plan
+   :args '("remotes")
+   :expected "{:ok? true, :effects [[:sync/remotes {}]]}"}
+  {:label "sync remotes help"
+   :plan-fn ro-sync-sync-main-plan
+   :args '("remotes" "--help")
+   :expected "{:ok? true, :effects [[:sync/remotes {}]]}"}
+  {:label "sync reindex help"
+   :plan-fn ro-sync-sync-main-plan
+   :args '("reindex" "--help")
+   :expected "{:ok? true, :effects [[:sync/reindex {}]]}"}
+  {:label "sync unsupported"
+   :plan-fn ro-sync-sync-main-plan
+   :args '("pull")
+   :expected "{:ok? false, :error \"unsupported sync subcommand\", :command (\"pull\")}"}
+  {:label "doctor report"
+   :plan-fn ro-doctor-doctor-main-plan
+   :args '()
+   :expected "{:ok? true, :effects [[:doctor/run {:kind :report, :fail? false, :write? false, :force? false}]]}"}
+  {:label "doctor help"
+   :plan-fn ro-doctor-doctor-main-plan
+   :args '("--help")
+   :expected "{:ok? true, :effects [[:doctor/help {}]]}"}
+  {:label "doctor summary"
+   :plan-fn ro-doctor-doctor-main-plan
+   :args '("summary" "--fail")
+   :expected "{:ok? true, :effects [[:doctor/run {:kind :summary, :fail? true, :write? false, :force? false}]]}"}
+  {:label "doctor summary flag"
+   :plan-fn ro-doctor-doctor-main-plan
+   :args '("--summary" "--fail")
+   :expected "{:ok? true, :effects [[:doctor/run {:kind :summary, :fail? true, :write? false, :force? false}]]}"}
+  {:label "doctor dedupe"
+   :plan-fn ro-doctor-doctor-main-plan
+   :args '("dedupe" "--write" "--force")
+   :expected "{:ok? true, :effects [[:doctor/run {:kind :dedupe, :fail? false, :write? true, :force? true}]]}"}))
 
-(assert-str= "core events main plan tag"
-             "help"
-             (symbol->string (vector-ref events-main-plan-output 0)))
-(assert-str= "core events list plan tag"
-             "list"
-             (symbol->string (vector-ref events-list-plan 0)))
-(assert-num= "core events list default limit"
-             200
-             (vector-ref events-list-plan 1))
-(assert-num= "core events list parsed limit"
-             5
-             (vector-ref events-list-limit-plan 1))
-(assert-str= "core events list help plan tag"
-             "unsupported-flag"
-             (symbol->string (vector-ref events-list-help-plan 0)))
-(assert-str= "core events list missing limit tag"
-             "error"
-             (symbol->string (vector-ref events-list-missing-limit-plan 0)))
-(assert-str= "core events list missing limit message"
-             "ro events list expects a value after --limit"
-             (vector-ref events-list-missing-limit-plan 1))
-
-(define reindex-main-plan-output
-  (ro-reindex-reindex-main-plan '()))
-(define reindex-help-plan
-  (ro-reindex-reindex-main-plan '("--help")))
-(define reindex-error-plan
-  (ro-reindex-reindex-main-plan '("bogus")))
-
-(assert-str= "core reindex main plan tag"
-             "reindex"
-             (symbol->string (vector-ref reindex-main-plan-output 0)))
-(assert-str= "core reindex help plan tag"
-             "help"
-             (symbol->string (vector-ref reindex-help-plan 0)))
-(assert-str= "core reindex error plan tag"
-             "error"
-             (symbol->string (vector-ref reindex-error-plan 0)))
-
-(define sync-main-plan-output
-  (ro-sync-sync-main-plan '()))
-(define sync-status-plan
-  (ro-sync-sync-main-plan '("status")))
-(define sync-status-help-plan
-  (ro-sync-sync-main-plan '("status" "--help")))
-(define sync-remotes-plan
-  (ro-sync-sync-main-plan '("remotes")))
-(define sync-remotes-help-plan
-  (ro-sync-sync-main-plan '("remotes" "--help")))
-(define sync-pull-plan
-  (ro-sync-sync-main-plan '("pull")))
-(define sync-reindex-help-plan
-  (ro-sync-sync-main-plan '("reindex" "--help")))
-
-(assert-str= "core sync main plan tag"
-             "help"
-             (symbol->string (vector-ref sync-main-plan-output 0)))
-(assert-str= "core sync status plan tag"
-             "status"
-             (symbol->string (vector-ref sync-status-plan 0)))
-(assert-str= "core sync status help plan tag"
-             "status"
-             (symbol->string (vector-ref sync-status-help-plan 0)))
-(assert-str= "core sync remotes plan tag"
-             "remotes"
-             (symbol->string (vector-ref sync-remotes-plan 0)))
-(assert-str= "core sync remotes help plan tag"
-             "remotes"
-             (symbol->string (vector-ref sync-remotes-help-plan 0)))
-(assert-str= "core sync reindex help plan tag"
-             "reindex"
-             (symbol->string (vector-ref sync-reindex-help-plan 0)))
-(assert-str= "core sync unsupported plan tag"
-             "error"
-             (symbol->string (vector-ref sync-pull-plan 0)))
-
-(define doctor-report-plan
-  (ro-doctor-doctor-main-plan '()))
-(define doctor-help-plan
-  (ro-doctor-doctor-main-plan '("--help")))
-(define doctor-summary-plan
-  (ro-doctor-doctor-main-plan '("summary" "--fail")))
-(define doctor-summary-flag-plan
-  (ro-doctor-doctor-main-plan '("--summary" "--fail")))
-(define doctor-dedupe-plan-main
-  (ro-doctor-doctor-main-plan '("dedupe" "--write" "--force")))
-
-(assert-str= "core doctor report plan tag"
-             "report"
-             (symbol->string (vector-ref doctor-report-plan 0)))
-(assert-str= "core doctor help plan tag"
-             "help"
-             (symbol->string (vector-ref doctor-help-plan 0)))
-(assert-str= "core doctor summary plan tag"
-             "summary"
-             (symbol->string (vector-ref doctor-summary-plan 0)))
-(assert-true "core doctor summary plan fail flag"
-             (vector-ref doctor-summary-plan 1))
-(assert-str= "core doctor summary flag plan tag"
-             "summary"
-             (symbol->string (vector-ref doctor-summary-flag-plan 0)))
-(assert-true "core doctor summary flag plan fail"
-             (vector-ref doctor-summary-flag-plan 1))
-(assert-str= "core doctor dedupe plan tag"
-             "dedupe"
-             (symbol->string (vector-ref doctor-dedupe-plan-main 0)))
-(assert-true "core doctor dedupe plan write flag"
-             (vector-ref doctor-dedupe-plan-main 2))
-(assert-true "core doctor dedupe plan force flag"
-             (vector-ref doctor-dedupe-plan-main 3))
+(assert-plan-pr-str=
+ "core doctor runtime dry-run refusal"
+ "{:ok? false, :error \"refusing to rewrite canonical event logs without --force\"}"
+ (ro-doctor-doctor-runtime-plan {:kind :dedupe
+                                 :fail? false
+                                 :write? true
+                                 :force? false}
+                                '()))

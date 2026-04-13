@@ -83,22 +83,34 @@
         result (cli-dispatch (cli-top-level-command-spec "sync") args)]
     (cond
       passthrough-help?
-      (vector (string->symbol subcommand) '())
+      {:ok? true
+       :effects [(cond
+                   (string=? subcommand "status") [:sync/status {}]
+                   (string=? subcommand "remotes") [:sync/remotes {}]
+                   :else [:sync/reindex {}])]}
 
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:sync/help {}]]}
 
       (equal? (get result :status) :error)
-      (vector 'error "unsupported sync subcommand" args)
+      {:ok? false
+       :error "unsupported sync subcommand"
+       :command args}
 
       (string=? (get (get result :spec) :name) "status")
-      (vector 'status '())
+      {:ok? true
+       :effects [[:sync/status {}]]}
 
       (string=? (get (get result :spec) :name) "remotes")
-      (vector 'remotes '())
+      {:ok? true
+       :effects [[:sync/remotes {}]]}
 
       (string=? (get (get result :spec) :name) "reindex")
-      (vector 'reindex '())
+      {:ok? true
+       :effects [[:sync/reindex {}]]}
 
       :else
-      (vector 'error "unsupported sync subcommand" args))))
+      {:ok? false
+       :error "unsupported sync subcommand"
+       :command args})))

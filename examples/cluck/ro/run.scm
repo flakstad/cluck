@@ -48,6 +48,7 @@
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/core/route.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/bootstrap-core-aliases.scm")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/src/app.clk")
+       (cluck-bootstrap-load-app! project-root "examples/cluck/ro/src/tui.clk")
        (cluck-bootstrap-load-app! project-root "examples/cluck/ro/main.clk")
        (let ((args (command-line-arguments)))
          (let ((result ((ns-resolve 'cluck.examples.ro 'main) args)))

@@ -86,10 +86,14 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "reindex") args)]
     (cond
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:reindex/help {}]]}
 
       (equal? (get result :status) :error)
-      (vector 'error "unexpected reindex argument" args)
+      {:ok? false
+       :error "unexpected reindex argument"
+       :command args}
 
       :else
-      (vector 'reindex '()))))
+      {:ok? true
+       :effects [[:reindex/run {}]]})))

@@ -6275,71 +6275,93 @@
           (db/finalize! time-db)
           output))))
 
+(defn status-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))]
+    (cond
+      (string=? op ":status/help")
+      (print-status-help)
+
+      (string=? op ":status/show")
+      (print-status)
+
+      :else
+      (error "unsupported status effect" effect))))
+
 (defn status-main
   [args]
   (let ((plan (ro-workspace/status-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (run-effects-generic (get plan :effects '()) status-run-effect))))
+
+(defn init-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))]
     (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-status-help)
+      (string=? op ":init/help")
+      (print-init-help)
 
-      (eq? (vector-ref plan 0) 'status)
-      (print-status)
-
-      (eq? (vector-ref plan 0) 'error)
-      (error (vector-ref plan 1) (vector-ref plan 2))
+      (string=? op ":init/run")
+      (print-init-output)
 
       :else
-      (error "ro status expects no arguments" args))))
+      (error "unsupported init effect" effect))))
 
 (defn init-main
   [args]
   (let ((plan (ro-workspace/init-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (run-effects-generic (get plan :effects '()) init-run-effect))))
+
+(defn identity-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))
+        args (vector-ref effect 1)]
     (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-init-help)
+      (string=? op ":identity/help")
+      (print-identity-help)
 
-      (eq? (vector-ref plan 0) 'init)
-      (print-init-output)
+      (string=? op ":identity/list")
+      (print-identity-list)
 
-      (eq? (vector-ref plan 0) 'error)
-      (error (vector-ref plan 1) (vector-ref plan 2))
+      (string=? op ":identity/whoami")
+      (print-identity-whoami)
+
+      (string=? op ":identity/create")
+      (print-identity-create (or (get args :name) "")
+                             (or (get args :kind) "human")
+                             (or (get args :user) "")
+                             (or (get args :use?) false))
+
+      (string=? op ":identity/use")
+      (print-identity-use (or (get args :actor-id) ""))
+
+      (string=? op ":identity/agent-ensure")
+      (print-identity-agent-ensure (or (get args :session) "")
+                                   (or (get args :name) "")
+                                   (or (get args :user) "")
+                                   (or (get args :use?) false))
 
       :else
-      (error "ro init expects no arguments" args))))
+      (error "unsupported identity effect" effect))))
 
 (defn identity-main
   [args]
   (let ((plan (ro-workspace/identity-main-plan args)))
-    (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-identity-help)
-
-      (eq? (vector-ref plan 0) 'list)
-      (print-identity-list)
-
-      (eq? (vector-ref plan 0) 'whoami)
-      (print-identity-whoami)
-
-      (eq? (vector-ref plan 0) 'create)
-      (print-identity-create (vector-ref plan 1)
-                             (vector-ref plan 2)
-                             (vector-ref plan 3)
-                             (vector-ref plan 4))
-
-      (eq? (vector-ref plan 0) 'use)
-      (print-identity-use (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'agent-ensure)
-      (print-identity-agent-ensure (vector-ref plan 1)
-                                   (vector-ref plan 2)
-                                   (vector-ref plan 3)
-                                   (vector-ref plan 4))
-
-      (eq? (vector-ref plan 0) 'error)
-      (error (vector-ref plan 1) (vector-ref plan 2))
-
-      :else
-      (error "unsupported identity subcommand" args))))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (run-effects-generic (get plan :effects '()) identity-run-effect))))
 
 (defn agent-run-effect
   [effect]
@@ -6403,125 +6425,139 @@
           1)
         (projects-run-effects (get plan :effects '())))))
 
+(defn workspace-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))
+        args (vector-ref effect 1)]
+    (cond
+      (string=? op ":workspace/help")
+      (print-workspace-help)
+
+      (string=? op ":workspace/subhelp")
+      (print-workspace-subhelp (or (get args :usage) "")
+                               (or (get args :root?) false))
+
+      (string=? op ":workspace/current")
+      (print-workspace-current)
+
+      (string=? op ":workspace/list")
+      (print-workspace-list)
+
+      (string=? op ":workspace/add")
+      (print-workspace-add (or (get args :name) "")
+                           (or (get args :dir) "")
+                           (or (get args :kind) "git")
+                           (or (get args :use?) false))
+
+      (string=? op ":workspace/forget")
+      (print-workspace-forget (or (get args :name) ""))
+
+      (string=? op ":workspace/init")
+      (print-workspace-init (or (get args :name) "")
+                            (or (get args :dir) "")
+                            (or (get args :use?) false))
+
+      (string=? op ":workspace/use")
+      (print-workspace-use (or (get args :name) ""))
+
+      (string=? op ":workspace/archive")
+      (print-workspace-archive (or (get args :name) "") true)
+
+      (string=? op ":workspace/unarchive")
+      (print-workspace-archive (or (get args :name) "") false)
+
+      (string=? op ":workspace/rename")
+      (print-workspace-rename (or (get args :from) "")
+                              (or (get args :to) ""))
+
+      (string=? op ":workspace/delete")
+      (print-workspace-delete (or (get args :name) "")
+                              (or (get args :yes?) false)
+                              (or (get args :force-legacy?) false))
+
+      (string=? op ":workspace/export")
+      (print-workspace-export (or (get args :to) "")
+                              (or (get args :events?) false)
+                              (or (get args :force?) false))
+
+      (string=? op ":workspace/import")
+      (print-workspace-import (or (get args :name) "")
+                              (or (get args :from) "")
+                              (or (get args :force?) false)
+                              (or (get args :use?) false)
+                              (or (get args :events?) false))
+
+      (string=? op ":workspace/migrate")
+      (print-workspace-migrate)
+
+      :else
+      (error "unsupported workspace effect" effect))))
+
 (defn workspace-main
   [args]
   (let ((plan (ro-workspace/workspace-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (run-effects-generic (get plan :effects '()) workspace-run-effect))))
+
+(defn docs-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))
+        args (vector-ref effect 1)]
     (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-workspace-help)
+      (string=? op ":docs/output")
+      (print-docs)
 
-      (eq? (vector-ref plan 0) 'subhelp-root)
-      (print-workspace-subhelp (vector-ref plan 1) #t)
+      (string=? op ":docs/help")
+      (print-docs-help)
 
-      (eq? (vector-ref plan 0) 'subhelp)
-      (print-workspace-subhelp (vector-ref plan 1) #f)
-
-      (eq? (vector-ref plan 0) 'current)
-      (print-workspace-current)
-
-      (eq? (vector-ref plan 0) 'list)
-      (print-workspace-list)
-
-      (eq? (vector-ref plan 0) 'add)
-      (print-workspace-add (vector-ref plan 1)
-                           (vector-ref plan 2)
-                           (vector-ref plan 3)
-                           (vector-ref plan 4))
-
-      (eq? (vector-ref plan 0) 'forget)
-      (print-workspace-forget (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'init)
-      (print-workspace-init (vector-ref plan 1)
-                            (vector-ref plan 2)
-                            (vector-ref plan 3))
-
-      (eq? (vector-ref plan 0) 'use)
-      (print-workspace-use (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'archive)
-      (print-workspace-archive (vector-ref plan 1) true)
-
-      (eq? (vector-ref plan 0) 'unarchive)
-      (print-workspace-archive (vector-ref plan 1) false)
-
-      (eq? (vector-ref plan 0) 'rename)
-      (print-workspace-rename (vector-ref plan 1)
-                              (vector-ref plan 2))
-
-      (eq? (vector-ref plan 0) 'delete)
-      (print-workspace-delete (vector-ref plan 1)
-                              (vector-ref plan 2)
-                              (vector-ref plan 3))
-
-      (eq? (vector-ref plan 0) 'export)
-      (print-workspace-export (vector-ref plan 1)
-                              (vector-ref plan 2)
-                              (vector-ref plan 3))
-
-      (eq? (vector-ref plan 0) 'import)
-      (print-workspace-import (vector-ref plan 1)
-                              (vector-ref plan 2)
-                              (vector-ref plan 3)
-                              (vector-ref plan 4)
-                              (vector-ref plan 5))
-
-      (eq? (vector-ref plan 0) 'migrate)
-      (print-workspace-migrate)
-
-      (eq? (vector-ref plan 0) 'error)
-      (error (vector-ref plan 1) (vector-ref plan 2))
+      (string=? op ":docs/topic")
+      (print-docs-topic (or (get args :topic) "")
+                        (or (get args :raw?) false))
 
       :else
-      (error "ro workspace commands are not implemented yet" args))))
+      (error "unsupported docs effect" effect))))
 
 (defn docs-main
   [args]
   (let ((plan (ro-docs/docs-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          (print-docs-help)
+          1)
+        (run-effects-generic (get plan :effects '()) docs-run-effect))))
+
+(defn events-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))
+        args (vector-ref effect 1)]
     (cond
-      (eq? (vector-ref plan 0) 'output)
-      (print-docs)
+      (string=? op ":events/help")
+      (print-events-help)
 
-      (eq? (vector-ref plan 0) 'help)
-      (print-docs-help)
+      (string=? op ":events/list")
+      (print-events-list (or (get args :limit) 200))
 
-      (eq? (vector-ref plan 0) 'topic)
-      (print-docs-topic (vector-ref plan 1)
-                        (vector-ref plan 2))
-
-      (eq? (vector-ref plan 0) 'unsupported-flag)
-      (begin
-        (display "unsupported docs flag\n" (current-error-port))
-        (print-docs-help)
-        1)
-
-      (eq? (vector-ref plan 0) 'unexpected)
-      (begin
-        (display "unexpected docs argument\n" (current-error-port))
-        (print-docs-help)
-        1)
+      (string=? op ":events/unsupported-flag")
+      (print-unsupported-flag)
 
       :else
-      (error "ro docs commands are not implemented yet" args))))
+      (error "unsupported events effect" effect))))
 
 (defn events-main
   [args]
   (let ((plan (ro-events/events-main-plan args)))
-    (cond
-      (eq? (vector-ref plan 0) 'help)
-      (print-events-help)
-
-      (eq? (vector-ref plan 0) 'list)
-      (print-events-list (vector-ref plan 1))
-
-      (eq? (vector-ref plan 0) 'unsupported-flag)
-      (print-unsupported-flag)
-
-      (eq? (vector-ref plan 0) 'error)
-      (error (vector-ref plan 1) (vector-ref plan 2))
-
-      :else
-      (error "unsupported events subcommand" args))))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          1)
+        (run-effects-generic (get plan :effects '()) events-run-effect))))
 
 (defn item-main
   [args]
@@ -6841,130 +6877,155 @@
           (display output)
           output))))
 
+(defn reindex-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))]
+    (cond
+      (string=? op ":reindex/run")
+      (print-reindex-output)
+
+      (string=? op ":reindex/help")
+      (print-reindex-help)
+
+      :else
+      (error "unsupported reindex effect" effect))))
+
 (defn reindex-main
   [args]
   (let ((plan (ro-reindex/reindex-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          (print-reindex-help)
+          1)
+        (run-effects-generic (get plan :effects '()) reindex-run-effect))))
+
+(defn sync-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))]
     (cond
-      (eq? (vector-ref plan 0) 'reindex)
-      (print-reindex-output)
-
-      (eq? (vector-ref plan 0) 'help)
-      (print-reindex-help)
-
-      (eq? (vector-ref plan 0) 'error)
-      (begin
-        (display (vector-ref plan 1) (current-error-port))
-        (newline (current-error-port))
-        (print-reindex-help)
-        1)
-
-      :else
-      (error "ro reindex commands are not implemented yet" args))))
-
-(defn sync-main
-  [args]
-  (let ((plan (ro-sync/sync-main-plan args)))
-    (cond
-      (eq? (vector-ref plan 0) 'help)
+      (string=? op ":sync/help")
       (begin
         (print-sync-help)
         (flush-output (current-output-port))
         1)
 
-      (eq? (vector-ref plan 0) 'status)
+      (string=? op ":sync/status")
       (print-sync-status)
 
-      (eq? (vector-ref plan 0) 'remotes)
+      (string=? op ":sync/remotes")
       (print-sync-remotes)
 
-      (eq? (vector-ref plan 0) 'reindex)
+      (string=? op ":sync/reindex")
       (print-sync-reindex-output)
 
-      (eq? (vector-ref plan 0) 'error)
-      (begin
-        (print-sync-help)
-        (print-unsupported-sync-subcommand))
-
       :else
-      (error "ro sync commands are not implemented yet" args))))
+      (error "unsupported sync effect" effect))))
+
+(defn sync-main
+  [args]
+  (let ((plan (ro-sync/sync-main-plan args)))
+    (if (not (get plan :ok? false))
+        (begin
+          (print-sync-help)
+          (print-unsupported-sync-subcommand))
+        (run-effects-generic (get plan :effects '()) sync-run-effect))))
 
 (defn print-doctor-help
   []
   (display doctor-help-output)
   doctor-help-output)
 
-(defn doctor-main-run
-  [kind plan args]
-  (let [fail? (vector-ref plan 1)
-        write? (vector-ref plan 2)
-        force? (vector-ref plan 3)
-        workspace-root (or (workspace-current-path) "")
-        issues (doctor-scan-report workspace-root)
-        has-errors (ro-doctor/doctor-has-errors? issues)]
+(defn doctor-run-effect
+  [effect]
+  (let [op (pr-str (vector-ref effect 0))
+        args (vector-ref effect 1)]
     (cond
-      (eq? kind 'report)
-      (let ((output
-             (json-write-output
-              (vector
-               (cons 'data issues)
-               (cons 'meta
-                     (vector
-                      (cons 'issues (count issues))
-                      (cons 'hasErrors has-errors)))
-               (cons '_hints (list "ro doctor summary"
-                                   "ro doctor dedupe"
-                                   "ro reindex"))))))
+      (string=? op ":doctor/help")
+      (print-doctor-help)
+
+      (string=? op ":doctor/report")
+      (let [issues (or (get args :issues) '())
+            has-errors (or (get args :has-errors?) false)
+            fail? (or (get args :fail?) false)
+            output
+            (json-write-output
+             (vector
+              (cons 'data issues)
+              (cons 'meta
+                    (vector
+                     (cons 'issues (count issues))
+                     (cons 'hasErrors has-errors)))
+              (cons '_hints (list "ro doctor summary"
+                                  "ro doctor dedupe"
+                                  "ro reindex"))))]
         (display output)
         (if (and fail? has-errors) 2 0))
 
-      (eq? kind 'summary)
-      (let ((summary (ro-doctor/doctor-summary-from-issues issues))
-            (output
-             (json-write-output
-              (vector
-               (cons 'data summary)
-               (cons 'meta
-                     (vector
-                      (cons 'issues (count issues))
-                      (cons 'hasErrors has-errors)))
-               (cons '_hints (list "ro doctor"
-                                   "ro doctor --fail"
-                                   "ro status"))))))
+      (string=? op ":doctor/summary")
+      (let [issues (or (get args :issues) '())
+            summary (or (get args :summary) '())
+            has-errors (or (get args :has-errors?) false)
+            fail? (or (get args :fail?) false)
+            output
+            (json-write-output
+             (vector
+              (cons 'data summary)
+              (cons 'meta
+                    (vector
+                     (cons 'issues (count issues))
+                     (cons 'hasErrors has-errors)))
+              (cons '_hints (list "ro doctor"
+                                  "ro doctor --fail"
+                                  "ro status"))))]
         (display output)
         (if (and fail? has-errors) 2 0))
 
-      (eq? kind 'dedupe)
-      (if (and write? (not force?))
-          (begin
-            (display "refusing to rewrite canonical event logs without --force\n" (current-error-port))
-            (display "run dry-run first: ro doctor dedupe\n" (current-error-port))
-            1)
-          (let [dedupe-plan (ro-doctor/doctor-dedupe-plan-from-issues issues)
-                result (doctor-apply-dedupe dedupe-plan write?)
-                summary (ro-doctor/doctor-summary-from-issues issues)
-                output
-                (json-write-output
-                 (vector
-                  (cons 'data
-                        (vector
-                         (cons 'doctorSummary summary)
-                         (cons 'dedupe result)))
-                  (cons 'meta
-                        (vector
-                         (cons 'issues (count issues))
-                         (cons 'hasErrors has-errors)))
-                  (cons '_hints (if write?
-                                    (list "ro reindex"
-                                          "ro doctor --fail"
-                                          "ro status")
-                                    (list "ro doctor dedupe --write --force"
-                                          "ro doctor --fail"
-                                          "ro status")))))]
-            (display output)
-            (if (and fail? has-errors) 2 0)))
+      (string=? op ":doctor/dedupe")
+      (let [issues (or (get args :issues) '())
+            summary (or (get args :summary) '())
+            dedupe-plan (or (get args :dedupe-plan) '())
+            has-errors (or (get args :has-errors?) false)
+            fail? (or (get args :fail?) false)
+            write? (or (get args :write?) false)
+            result (doctor-apply-dedupe dedupe-plan write?)
+            output
+            (json-write-output
+             (vector
+              (cons 'data
+                    (vector
+                     (cons 'doctorSummary summary)
+                     (cons 'dedupe result)))
+              (cons 'meta
+                    (vector
+                     (cons 'issues (count issues))
+                     (cons 'hasErrors has-errors)))
+              (cons '_hints (if write?
+                                (list "ro reindex"
+                                      "ro doctor --fail"
+                                      "ro status")
+                                (list "ro doctor dedupe --write --force"
+                                      "ro doctor --fail"
+                                      "ro status")))))]
+        (display output)
+        (if (and fail? has-errors) 2 0))
 
       :else
-      (error "ro doctor commands are not implemented yet" args))))
+      (error "unsupported doctor effect" effect))))
+
+(defn doctor-main-run
+  [command]
+  (let [workspace-root (or (workspace-current-path) "")
+        issues (doctor-scan-report workspace-root)
+        runtime-plan (ro-doctor/doctor-runtime-plan command issues)]
+    (if (not (get runtime-plan :ok? false))
+        (begin
+          (display (get runtime-plan :error "") (current-error-port))
+          (newline (current-error-port))
+          (display "run dry-run first: ro doctor dedupe\n" (current-error-port))
+          1)
+        (run-effects-generic (get runtime-plan :effects '()) doctor-run-effect))))
 
 (defn doctor-dedupe-rewrite-file!
   [path remove-lines]
@@ -7163,28 +7224,22 @@
 
 (defn doctor-main
   [args]
-  (let [plan (ro-doctor/doctor-main-plan args)
-        kind (vector-ref plan 0)]
-    (cond
-      (eq? kind 'help)
-      (begin
-        (print-doctor-help)
-        0)
-
-      (or (eq? kind 'report)
-          (eq? kind 'summary)
-          (eq? kind 'dedupe))
-      (doctor-main-run kind plan args)
-
-      (eq? kind 'error)
-      (begin
-        (display (vector-ref plan 1) (current-error-port))
-        (newline (current-error-port))
-        (print-doctor-help)
-        1)
-
-      :else
-      (error "ro doctor commands are not implemented yet" args))))
+  (let [plan (ro-doctor/doctor-main-plan args)]
+    (if (not (get plan :ok? false))
+        (begin
+          (display (get plan :error "") (current-error-port))
+          (newline (current-error-port))
+          (print-doctor-help)
+          1)
+        (let [effect (if (empty? (get plan :effects '()))
+                         false
+                         (vector-ref (get plan :effects '()) 0))
+              op (if effect (pr-str (vector-ref effect 0)) "")]
+          (if (string=? op ":doctor/help")
+              (begin
+                (print-doctor-help)
+                0)
+              (doctor-main-run (vector-ref effect 1)))))))
 
 (defn main
   [args]

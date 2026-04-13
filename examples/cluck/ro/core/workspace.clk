@@ -232,13 +232,17 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "status") args)]
     (cond
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:status/help {}]]}
 
       (equal? (get result :status) :error)
-      (vector 'error "ro status expects no arguments" args)
+      {:ok? false
+       :error "ro status expects no arguments"
+       :command args}
 
       :else
-      (vector 'status '()))))
+      {:ok? true
+       :effects [[:status/show {}]]})))
 
 (def workspace-add-usage-output
   "usage: ro workspace add <name> --dir <path> [--kind git] [--use]\n")
@@ -279,34 +283,48 @@
                              (cons "add" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp-root workspace-add-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-add-usage-output
+                                      :root? true}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-required-flag)
-        (vector 'error "missing --dir" args)
+        {:ok? false
+         :error "missing --dir"
+         :command args}
 
         (equal? (get result :reason) :missing-flag-value)
         (if (and (not (empty? args))
                  (string=? (first args) "--kind"))
-            (vector 'error "missing workspace kind" args)
-            (vector 'error "missing workspace dir" args))
+            {:ok? false
+             :error "missing workspace kind"
+             :command args}
+            {:ok? false
+             :error "missing workspace dir"
+             :command args})
 
         (equal? (get result :reason) :missing-argument)
-        (vector 'error "ro workspace add expects <name>" args)
+        {:ok? false
+         :error "ro workspace add expects <name>"
+         :command args}
 
         (equal? (get result :reason) :unknown-flag)
-        (vector 'error "unsupported workspace add flag" args)
+        {:ok? false
+         :error "unsupported workspace add flag"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace add argument" args))
+        {:ok? false
+         :error "unexpected workspace add argument"
+         :command args})
 
       :else
-      (vector 'add
-              (get (get result :arguments) :name "")
-              (get (get result :flags) :dir "")
-              (get (get result :flags) :kind "git")
-              (get (get result :flags) :use false)))))
+      {:ok? true
+       :effects [[:workspace/add {:name (get (get result :arguments) :name "")
+                                  :dir (get (get result :flags) :dir "")
+                                  :kind (get (get result :flags) :kind "git")
+                                  :use? (get (get result :flags) :use false)}]]})))
 
 (defn workspace-init-plan
   [args]
@@ -314,27 +332,37 @@
                              (cons "init" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp-root workspace-init-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-init-usage-output
+                                      :root? true}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-flag-value)
-        (vector 'error "missing workspace dir" args)
+        {:ok? false
+         :error "missing workspace dir"
+         :command args}
 
         (equal? (get result :reason) :missing-argument)
-        (vector 'error "ro workspace init expects <name>" args)
+        {:ok? false
+         :error "ro workspace init expects <name>"
+         :command args}
 
         (equal? (get result :reason) :unknown-flag)
-        (vector 'error "unsupported workspace init flag" args)
+        {:ok? false
+         :error "unsupported workspace init flag"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace init argument" args))
+        {:ok? false
+         :error "unexpected workspace init argument"
+         :command args})
 
       :else
-      (vector 'init
-              (get (get result :arguments) :name "")
-              (get (get result :flags) :dir "")
-              (get (get result :flags) :use false)))))
+      {:ok? true
+       :effects [[:workspace/init {:name (get (get result :arguments) :name "")
+                                   :dir (get (get result :flags) :dir "")
+                                   :use? (get (get result :flags) :use false)}]]})))
 
 (defn workspace-use-plan
   [args]
@@ -342,18 +370,25 @@
                              (cons "use" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp workspace-use-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-use-usage-output
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-argument)
-        (vector 'error "ro workspace use expects <name>" args)
+        {:ok? false
+         :error "ro workspace use expects <name>"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace use argument" args))
+        {:ok? false
+         :error "unexpected workspace use argument"
+         :command args})
 
       :else
-      (vector 'use (get (get result :arguments) :name "")))))
+      {:ok? true
+       :effects [[:workspace/use {:name (get (get result :arguments) :name "")}]]})))
 
 (defn workspace-flagless-name-plan
   [subcommand args usage error-prefix tag]
@@ -361,18 +396,25 @@
                              (cons subcommand args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp usage)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage usage
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-argument)
-        (vector 'error error-prefix args)
+        {:ok? false
+         :error error-prefix
+         :command args}
 
         :else
-        (vector 'error (string-append "unexpected workspace " subcommand " argument") args))
+        {:ok? false
+         :error (string-append "unexpected workspace " subcommand " argument")
+         :command args})
 
       :else
-      (vector tag (get (get result :arguments) :name "")))))
+      {:ok? true
+       :effects [[tag {:name (get (get result :arguments) :name "")}]]})))
 
 (defn workspace-rename-plan
   [args]
@@ -380,20 +422,26 @@
                              (cons "rename" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp workspace-rename-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-rename-usage-output
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-argument)
-        (vector 'error "ro workspace rename expects <from> <to>" args)
+        {:ok? false
+         :error "ro workspace rename expects <from> <to>"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace rename argument" args))
+        {:ok? false
+         :error "unexpected workspace rename argument"
+         :command args})
 
       :else
-      (vector 'rename
-              (get (get result :arguments) :from "")
-              (get (get result :arguments) :to "")))))
+      {:ok? true
+       :effects [[:workspace/rename {:from (get (get result :arguments) :from "")
+                                     :to (get (get result :arguments) :to "")}]]})))
 
 (defn workspace-delete-plan
   [args]
@@ -401,24 +449,32 @@
                              (cons "delete" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp workspace-delete-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-delete-usage-output
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-argument)
-        (vector 'error "ro workspace delete expects <name>" args)
+        {:ok? false
+         :error "ro workspace delete expects <name>"
+         :command args}
 
         (equal? (get result :reason) :unknown-flag)
-        (vector 'error "unsupported workspace delete flag" args)
+        {:ok? false
+         :error "unsupported workspace delete flag"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace delete argument" args))
+        {:ok? false
+         :error "unexpected workspace delete argument"
+         :command args})
 
       :else
-      (vector 'delete
-              (get (get result :arguments) :name "")
-              (get (get result :flags) :yes false)
-              (get (get result :flags) :force-legacy false)))))
+      {:ok? true
+       :effects [[:workspace/delete {:name (get (get result :arguments) :name "")
+                                     :yes? (get (get result :flags) :yes false)
+                                     :force-legacy? (get (get result :flags) :force-legacy false)}]]})))
 
 (defn workspace-export-plan
   [args]
@@ -426,27 +482,37 @@
                              (cons "export" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp workspace-export-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-export-usage-output
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-required-flag)
-        (vector 'error "ro workspace export expects --to <dir>" args)
+        {:ok? false
+         :error "ro workspace export expects --to <dir>"
+         :command args}
 
         (equal? (get result :reason) :missing-flag-value)
-        (vector 'error "missing workspace export dir" args)
+        {:ok? false
+         :error "missing workspace export dir"
+         :command args}
 
         (equal? (get result :reason) :unknown-flag)
-        (vector 'error "unsupported workspace export flag" args)
+        {:ok? false
+         :error "unsupported workspace export flag"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace export argument" args))
+        {:ok? false
+         :error "unexpected workspace export argument"
+         :command args})
 
       :else
-      (vector 'export
-              (get (get result :flags) :to "")
-              (get (get result :flags) :events false)
-              (get (get result :flags) :force false)))))
+      {:ok? true
+       :effects [[:workspace/export {:to (get (get result :flags) :to "")
+                                     :events? (get (get result :flags) :events false)
+                                     :force? (get (get result :flags) :force false)}]]})))
 
 (defn workspace-import-plan
   [args]
@@ -454,32 +520,42 @@
                              (cons "import" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp workspace-import-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-import-usage-output
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :missing-required-flag)
-        (vector 'error "ro workspace import expects --from <dir>" args)
+        {:ok? false
+         :error "ro workspace import expects --from <dir>"
+         :command args}
 
         (equal? (get result :reason) :missing-flag-value)
-        (vector 'error "missing workspace import dir" args)
+        {:ok? false
+         :error "missing workspace import dir"
+         :command args}
 
         (equal? (get result :reason) :unknown-flag)
-        (vector 'error "unsupported workspace import flag" args)
+        {:ok? false
+         :error "unsupported workspace import flag"
+         :command args}
 
         :else
-        (vector 'error "unexpected workspace import argument" args))
+        {:ok? false
+         :error "unexpected workspace import argument"
+         :command args})
 
       :else
-      (vector 'import
-              (let [arg-name (get (get result :arguments) :name "")]
-                (if (string=? arg-name "")
-                    (get (get result :flags) :name "")
-                    arg-name))
-              (get (get result :flags) :from "")
-              (get (get result :flags) :force false)
-              (get (get result :flags) :use false)
-              (get (get result :flags) :events false)))))
+      {:ok? true
+       :effects [[:workspace/import {:name (let [arg-name (get (get result :arguments) :name "")]
+                                             (if (string=? arg-name "")
+                                                 (get (get result :flags) :name "")
+                                                 arg-name))
+                                     :from (get (get result :flags) :from "")
+                                     :force? (get (get result :flags) :force false)
+                                     :use? (get (get result :flags) :use false)
+                                     :events? (get (get result :flags) :events false)}]]})))
 
 (defn workspace-migrate-plan
   [args]
@@ -487,26 +563,35 @@
                              (cons "migrate" args))]
     (cond
       (equal? (get result :status) :help)
-      (vector 'subhelp workspace-migrate-usage-output)
+      {:ok? true
+       :effects [[:workspace/subhelp {:usage workspace-migrate-usage-output
+                                      :root? false}]]}
 
       (equal? (get result :status) :error)
-      (vector 'error "unexpected workspace migrate argument" args)
+      {:ok? false
+       :error "unexpected workspace migrate argument"
+       :command args}
 
       :else
-      (vector 'migrate '()))))
+      {:ok? true
+       :effects [[:workspace/migrate {}]]})))
 
 (defn init-main-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "init") args)]
     (cond
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:init/help {}]]}
 
       (equal? (get result :status) :error)
-      (vector 'error "ro init expects no arguments" args)
+      {:ok? false
+       :error "ro init expects no arguments"
+       :command args}
 
       :else
-      (vector 'init '()))))
+      {:ok? true
+       :effects [[:init/run {}]]})))
 
 (defn workspace-main-plan
   [args]
@@ -518,43 +603,67 @@
           (or (string=? name "workspace")
               (string=? name "current")
               (string=? name "list"))
-          (vector 'help '())
+          {:ok? true
+           :effects [[:workspace/help {}]]}
 
           (string=? name "add")
-          (vector 'subhelp-root workspace-add-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-add-usage-output
+                                          :root? true}]]}
 
           (string=? name "init")
-          (vector 'subhelp-root workspace-init-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-init-usage-output
+                                          :root? true}]]}
 
           (string=? name "use")
-          (vector 'subhelp workspace-use-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-use-usage-output
+                                          :root? false}]]}
 
           (string=? name "forget")
-          (vector 'subhelp workspace-forget-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-forget-usage-output
+                                          :root? false}]]}
 
           (string=? name "archive")
-          (vector 'subhelp workspace-archive-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-archive-usage-output
+                                          :root? false}]]}
 
           (string=? name "unarchive")
-          (vector 'subhelp workspace-unarchive-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-unarchive-usage-output
+                                          :root? false}]]}
 
           (string=? name "rename")
-          (vector 'subhelp workspace-rename-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-rename-usage-output
+                                          :root? false}]]}
 
           (string=? name "delete")
-          (vector 'subhelp workspace-delete-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-delete-usage-output
+                                          :root? false}]]}
 
           (string=? name "export")
-          (vector 'subhelp workspace-export-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-export-usage-output
+                                          :root? false}]]}
 
           (string=? name "import")
-          (vector 'subhelp workspace-import-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-import-usage-output
+                                          :root? false}]]}
 
           (string=? name "migrate")
-          (vector 'subhelp workspace-migrate-usage-output)
+          {:ok? true
+           :effects [[:workspace/subhelp {:usage workspace-migrate-usage-output
+                                          :root? false}]]}
 
           :else
-          (vector 'help '())))
+          {:ok? true
+           :effects [[:workspace/help {}]]}))
 
       (equal? (get result :status) :error)
       (let [name (get (get result :spec) :name)]
@@ -569,13 +678,13 @@
           (workspace-use-plan (rest args))
 
           (string=? name "forget")
-          (workspace-flagless-name-plan "forget" (rest args) workspace-forget-usage-output "ro workspace forget expects <name>" 'forget)
+          (workspace-flagless-name-plan "forget" (rest args) workspace-forget-usage-output "ro workspace forget expects <name>" :workspace/forget)
 
           (string=? name "archive")
-          (workspace-flagless-name-plan "archive" (rest args) workspace-archive-usage-output "ro workspace archive expects <name>" 'archive)
+          (workspace-flagless-name-plan "archive" (rest args) workspace-archive-usage-output "ro workspace archive expects <name>" :workspace/archive)
 
           (string=? name "unarchive")
-          (workspace-flagless-name-plan "unarchive" (rest args) workspace-unarchive-usage-output "ro workspace unarchive expects <name>" 'unarchive)
+          (workspace-flagless-name-plan "unarchive" (rest args) workspace-unarchive-usage-output "ro workspace unarchive expects <name>" :workspace/unarchive)
 
           (string=? name "rename")
           (workspace-rename-plan (rest args))
@@ -593,144 +702,185 @@
           (workspace-migrate-plan (rest args))
 
           :else
-          (vector 'error "ro workspace commands are not implemented yet" args)))
+          {:ok? false
+           :error "ro workspace commands are not implemented yet"
+           :command args}))
 
       (string=? (get (get result :spec) :name) "current")
-      (vector 'current '())
+      {:ok? true
+       :effects [[:workspace/current {}]]}
 
       (string=? (get (get result :spec) :name) "list")
-      (vector 'list '())
+      {:ok? true
+       :effects [[:workspace/list {}]]}
 
       (string=? (get (get result :spec) :name) "forget")
-      (vector 'forget (get (get result :arguments) :name ""))
+      {:ok? true
+       :effects [[:workspace/forget {:name (get (get result :arguments) :name "")}]]}
 
       (string=? (get (get result :spec) :name) "add")
-      (vector 'add
-              (get (get result :arguments) :name "")
-              (get (get result :flags) :dir "")
-              (get (get result :flags) :kind "git")
-              (get (get result :flags) :use false))
+      {:ok? true
+       :effects [[:workspace/add {:name (get (get result :arguments) :name "")
+                                  :dir (get (get result :flags) :dir "")
+                                  :kind (get (get result :flags) :kind "git")
+                                  :use? (get (get result :flags) :use false)}]]}
 
       (string=? (get (get result :spec) :name) "init")
-      (vector 'init
-              (get (get result :arguments) :name "")
-              (get (get result :flags) :dir "")
-              (get (get result :flags) :use false))
+      {:ok? true
+       :effects [[:workspace/init {:name (get (get result :arguments) :name "")
+                                   :dir (get (get result :flags) :dir "")
+                                   :use? (get (get result :flags) :use false)}]]}
 
       (string=? (get (get result :spec) :name) "use")
-      (vector 'use (get (get result :arguments) :name ""))
+      {:ok? true
+       :effects [[:workspace/use {:name (get (get result :arguments) :name "")}]]}
 
       (string=? (get (get result :spec) :name) "archive")
-      (vector 'archive (get (get result :arguments) :name ""))
+      {:ok? true
+       :effects [[:workspace/archive {:name (get (get result :arguments) :name "")}]]}
 
       (string=? (get (get result :spec) :name) "unarchive")
-      (vector 'unarchive (get (get result :arguments) :name ""))
+      {:ok? true
+       :effects [[:workspace/unarchive {:name (get (get result :arguments) :name "")}]]}
 
       (string=? (get (get result :spec) :name) "rename")
-      (vector 'rename
-              (get (get result :arguments) :from "")
-              (get (get result :arguments) :to ""))
+      {:ok? true
+       :effects [[:workspace/rename {:from (get (get result :arguments) :from "")
+                                     :to (get (get result :arguments) :to "")}]]}
 
       (string=? (get (get result :spec) :name) "delete")
-      (vector 'delete
-              (get (get result :arguments) :name "")
-              (get (get result :flags) :yes false)
-              (get (get result :flags) :force-legacy false))
+      {:ok? true
+       :effects [[:workspace/delete {:name (get (get result :arguments) :name "")
+                                     :yes? (get (get result :flags) :yes false)
+                                     :force-legacy? (get (get result :flags) :force-legacy false)}]]}
 
       (string=? (get (get result :spec) :name) "export")
-      (vector 'export
-              (get (get result :flags) :to "")
-              (get (get result :flags) :events false)
-              (get (get result :flags) :force false))
+      {:ok? true
+       :effects [[:workspace/export {:to (get (get result :flags) :to "")
+                                     :events? (get (get result :flags) :events false)
+                                     :force? (get (get result :flags) :force false)}]]}
 
       (string=? (get (get result :spec) :name) "import")
-      (vector 'import
-              (let [arg-name (get (get result :arguments) :name "")]
-                (if (string=? arg-name "")
-                    (get (get result :flags) :name "")
-                    arg-name))
-              (get (get result :flags) :from "")
-              (get (get result :flags) :force false)
-              (get (get result :flags) :use false)
-              (get (get result :flags) :events false))
+      {:ok? true
+       :effects [[:workspace/import {:name (let [arg-name (get (get result :arguments) :name "")]
+                                             (if (string=? arg-name "")
+                                                 (get (get result :flags) :name "")
+                                                 arg-name))
+                                     :from (get (get result :flags) :from "")
+                                     :force? (get (get result :flags) :force false)
+                                     :use? (get (get result :flags) :use false)
+                                     :events? (get (get result :flags) :events false)}]]}
 
       (string=? (get (get result :spec) :name) "migrate")
-      (vector 'migrate '())
+      {:ok? true
+       :effects [[:workspace/migrate {}]]}
 
       :else
-      (vector 'error "ro workspace commands are not implemented yet" args))))
+      {:ok? false
+       :error "ro workspace commands are not implemented yet"
+       :command args})))
 
 (defn identity-main-plan
   [args]
   (let [result (cli-dispatch (cli-top-level-command-spec "identity") args)]
     (cond
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:identity/help {}]]}
 
       (equal? (get result :status) :error)
       (let [name (get (get result :spec) :name)]
         (cond
           (string=? name "whoami")
-          (vector 'error "unexpected identity whoami argument" args)
+          {:ok? false
+           :error "unexpected identity whoami argument"
+           :command args}
 
           (string=? name "list")
-          (vector 'error "unexpected identity list argument" args)
+          {:ok? false
+           :error "unexpected identity list argument"
+           :command args}
 
           (string=? name "create")
           (cond
             (equal? (get result :reason) :missing-required-flag)
-            (vector 'error "ro identity create expects --name <name>" args)
+            {:ok? false
+             :error "ro identity create expects --name <name>"
+             :command args}
 
             (equal? (get result :reason) :missing-flag-value)
-            (vector 'error "ro identity create expects a value after the flag" args)
+            {:ok? false
+             :error "ro identity create expects a value after the flag"
+             :command args}
 
             (equal? (get result :reason) :unknown-flag)
-            (vector 'error "unsupported identity create flag" args)
+            {:ok? false
+             :error "unsupported identity create flag"
+             :command args}
 
             :else
-            (vector 'error "unexpected identity create argument" args))
+            {:ok? false
+             :error "unexpected identity create argument"
+             :command args})
 
           (string=? name "use")
           (if (equal? (get result :reason) :missing-argument)
-              (vector 'error "ro identity use expects <actor-id>" args)
-              (vector 'error "unexpected identity use argument" args))
+              {:ok? false
+               :error "ro identity use expects <actor-id>"
+               :command args}
+              {:ok? false
+               :error "unexpected identity use argument"
+               :command args})
 
           (string=? name "ensure")
           (cond
             (equal? (get result :reason) :missing-flag-value)
-            (vector 'error "ro identity agent ensure expects a value after the flag" args)
+            {:ok? false
+             :error "ro identity agent ensure expects a value after the flag"
+             :command args}
 
             (equal? (get result :reason) :unknown-flag)
-            (vector 'error "unsupported identity agent ensure flag" args)
+            {:ok? false
+             :error "unsupported identity agent ensure flag"
+             :command args}
 
             :else
-            (vector 'error "unexpected identity agent ensure argument" args))
+            {:ok? false
+             :error "unexpected identity agent ensure argument"
+             :command args})
 
           :else
-          (vector 'error "unsupported identity subcommand" args)))
+          {:ok? false
+           :error "unsupported identity subcommand"
+           :command args}))
 
       (string=? (get (get result :spec) :name) "whoami")
-      (vector 'whoami '())
+      {:ok? true
+       :effects [[:identity/whoami {}]]}
 
       (string=? (get (get result :spec) :name) "list")
-      (vector 'list '())
+      {:ok? true
+       :effects [[:identity/list {}]]}
 
       (string=? (get (get result :spec) :name) "create")
-      (vector 'create
-              (get (get result :flags) :name "")
-              (get (get result :flags) :kind "human")
-              (get (get result :flags) :user "")
-              (get (get result :flags) :use false))
+      {:ok? true
+       :effects [[:identity/create {:name (get (get result :flags) :name "")
+                                    :kind (get (get result :flags) :kind "human")
+                                    :user (get (get result :flags) :user "")
+                                    :use? (get (get result :flags) :use false)}]]}
 
       (string=? (get (get result :spec) :name) "use")
-      (vector 'use (get (get result :arguments) :actor-id ""))
+      {:ok? true
+       :effects [[:identity/use {:actor-id (get (get result :arguments) :actor-id "")}]]}
 
       (string=? (get (get result :spec) :name) "ensure")
-      (vector 'agent-ensure
-              (get (get result :flags) :session "")
-              (get (get result :flags) :name "")
-              (get (get result :flags) :user "")
-              (get (get result :flags) :use false))
+      {:ok? true
+       :effects [[:identity/agent-ensure {:session (get (get result :flags) :session "")
+                                          :name (get (get result :flags) :name "")
+                                          :user (get (get result :flags) :user "")
+                                          :use? (get (get result :flags) :use false)}]]}
 
       :else
-      (vector 'error "unsupported identity subcommand" args))))
+      {:ok? false
+       :error "unsupported identity subcommand"
+       :command args})))

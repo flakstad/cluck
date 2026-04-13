@@ -266,6 +266,7 @@
 (define ro-doctor/doctor-has-errors? (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-has-errors?))
 (define ro-doctor/doctor-summary-from-issues (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-summary-from-issues))
 (define ro-doctor/doctor-dedupe-plan-from-issues (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-dedupe-plan-from-issues))
+(define ro-doctor/doctor-runtime-plan (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-runtime-plan))
 (define ro-doctor/doctor-main-plan (ns-resolve 'cluck.examples.ro.core.doctor 'doctor-main-plan))
 
 (define ro-reindex/reindex-recognized-types (ns-resolve 'cluck.examples.ro.core.reindex 'reindex-recognized-types))

@@ -327,50 +327,97 @@
   (let [result (cli-dispatch (cli-top-level-command-spec "doctor") args)]
     (cond
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:doctor/help {}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :unknown-command)
-        (vector 'error "unsupported doctor subcommand" args)
+        {:ok? false
+         :error "unsupported doctor subcommand"
+         :command args}
 
         (equal? (get result :reason) :unknown-flag)
-        (vector 'error "unsupported doctor flag" args)
+        {:ok? false
+         :error "unsupported doctor flag"
+         :command args}
 
         :else
-        (vector 'error "unexpected doctor argument" args))
+        {:ok? false
+         :error "unexpected doctor argument"
+         :command args})
 
       (string=? (get (get result :spec) :name) "doctor")
-      (if (get (get result :flags) :summary false)
-          (vector 'summary
-                  (get (get result :flags) :fail false)
-                  false
-                  false)
-          (vector 'report
-                  (get (get result :flags) :fail false)
-                  false
-                  false))
+      {:ok? true
+       :effects [[:doctor/run {:kind (if (get (get result :flags) :summary false)
+                                         :summary
+                                         :report)
+                               :fail? (get (get result :flags) :fail false)
+                               :write? false
+                               :force? false}]]}
 
       (string=? (get (get result :spec) :name) "report")
-      (vector 'report
-              (get (get result :flags) :fail false)
-              false
-              false)
+      {:ok? true
+       :effects [[:doctor/run {:kind :report
+                               :fail? (get (get result :flags) :fail false)
+                               :write? false
+                               :force? false}]]}
 
       (string=? (get (get result :spec) :name) "summary")
-      (vector 'summary
-              (get (get result :flags) :fail false)
-              false
-              false)
+      {:ok? true
+       :effects [[:doctor/run {:kind :summary
+                               :fail? (get (get result :flags) :fail false)
+                               :write? false
+                               :force? false}]]}
 
       (string=? (get (get result :spec) :name) "dedupe")
-      (vector 'dedupe
-              (get (get result :flags) :fail false)
-              (get (get result :flags) :write false)
-              (get (get result :flags) :force false))
+      {:ok? true
+       :effects [[:doctor/run {:kind :dedupe
+                               :fail? (get (get result :flags) :fail false)
+                               :write? (get (get result :flags) :write false)
+                               :force? (get (get result :flags) :force false)}]]}
 
       :else
-      (vector 'error "unsupported doctor subcommand" args))))
+      {:ok? false
+       :error "unsupported doctor subcommand"
+       :command args})))
+
+(defn doctor-runtime-plan
+  [command issues]
+  (let [kind (get command :kind :report)
+        fail? (get command :fail? false)
+        write? (get command :write? false)
+        force? (get command :force? false)
+        has-errors (doctor-has-errors? issues)]
+    (cond
+      (equal? kind :report)
+      {:ok? true
+       :effects [[:doctor/report {:issues issues
+                                  :has-errors? has-errors
+                                  :fail? fail?}]]}
+
+      (equal? kind :summary)
+      {:ok? true
+       :effects [[:doctor/summary {:issues issues
+                                   :summary (doctor-summary-from-issues issues)
+                                   :has-errors? has-errors
+                                   :fail? fail?}]]}
+
+      (equal? kind :dedupe)
+      (if (and write? (not force?))
+          {:ok? false
+           :error "refusing to rewrite canonical event logs without --force"}
+          {:ok? true
+           :effects [[:doctor/dedupe {:issues issues
+                                      :summary (doctor-summary-from-issues issues)
+                                      :dedupe-plan (doctor-dedupe-plan-from-issues issues)
+                                      :has-errors? has-errors
+                                      :fail? fail?
+                                      :write? write?}]]})
+
+      :else
+      {:ok? false
+       :error "unsupported doctor subcommand"})))
 
 (defn doctor-dedupe-event-upsert
   [event-list event-id line]

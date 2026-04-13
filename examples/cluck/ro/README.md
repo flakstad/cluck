@@ -1,14 +1,14 @@
 # Cluck Ro Spike
 
-This is the CLI-only Ro recreation spike for Cluck.
+This is the Ro recreation spike for Cluck.
 
-The first built slice is the root help surface and command inventory. The
-example starts from the copied `tui-todos` scaffold, but the TUI pieces have
-been stripped out of the path.
+The first major slice was CLI parity. The app now also has an initial TUI
+slice for browsing outlines in a split view.
 
 What is in place:
 - `main.clk` as the thin entrypoint
 - `src/app.clk` as the shell entrypoint and command dispatcher
+- `src/tui.clk` as the first ncurses Ro browser, backed by the real workspace DB
 - `core/*.clk` as the pure helper split for the command registry, help,
   routing, event parsing, JSON shaping, and workspace formatting
 - `core/worklog.clk` as the first explicit inline-effect planner slice in the
@@ -65,6 +65,10 @@ Current implementation slice:
   `core.projects`
 - `ro worklog` routes through the new inline-effect planner shape in
   `core.worklog`
+- `ro tui` launches a split-pane outline browser:
+  - left pane shows project headers and outlines
+  - right pane shows the selected outline and its items
+  - `/` filters project/outline names, `r` reloads, and `j`/`k` or arrows move selection
 - the top-level help/completion/router surface is driven from `core.commands`
 - the help text mirrors the Odin `ro` binary on `PATH`
 - unknown commands still fail explicitly; the rest of the surface will be built
@@ -80,6 +84,7 @@ Run it from the repository root:
 ```bash
 csi -q -s examples/cluck/ro/run.scm
 csi -q -s examples/cluck/ro/run.scm help
+csi -q -s examples/cluck/ro/run.scm tui
 ```
 
 Build a native binary from the same app:
@@ -93,6 +98,7 @@ Then run the compiled binary:
 ```bash
 ./build/ro-standalone
 ./build/ro-standalone help
+./build/ro-standalone tui
 ```
 
 Run the CLI parity test:
@@ -100,6 +106,7 @@ Run the CLI parity test:
 ```bash
 csi -q -s test/run-ro-core.scm
 csi -q -s test/run-ro-cli.scm
+csi -q -s test/run-ro-tui.scm
 ```
 
 ## Architecture

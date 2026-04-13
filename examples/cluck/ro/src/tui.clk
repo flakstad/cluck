@@ -1,0 +1,739 @@
+;; Ncurses TUI entrypoint for the Ro spike.
+;;
+;; Navigation follows the existing Ro TUIs:
+;; - Projects and project pages are single-pane list views.
+;; - Enter descends into the focused entry.
+;; - Escape/Backspace navigates back.
+;; - Outline pages use a split view with the item tree on the left and the
+;;   selected item detail on the right.
+
+(ns cluck.examples.ro.tui
+  (:require [cluck.string :as str]
+            [ncurses :as nc]
+            [sqlite3 :as db]
+            [cluck.examples.ro.app :as app]))
+
+(def app-name "Cluck Ro TUI")
+
+(def key-j (char->integer #\j))
+(def key-k (char->integer #\k))
+(def key-q (char->integer #\q))
+(def key-enter-1 10)
+(def key-enter-2 13)
+(def key-esc 27)
+(def key-backspace-1 8)
+(def key-backspace-2 127)
+
+(def tui-help-lines
+  (list
+   "ro tui"
+   ""
+   "usage:"
+   "  ro tui"
+   ""
+   "navigation:"
+   "  j / k or arrows  move selection"
+   "  Enter            open focused entry"
+   "  Esc / Backspace  go back"
+   "  q                quit"
+   ""
+   "views:"
+   "  projects and project pages are single-pane lists"
+   "  outline pages show item tree left and selected item detail right"))
+
+(def tui-help-text
+  (str/join "\n" tui-help-lines))
+
+(def tui-help-output
+  (string-append tui-help-text "\n"))
+
+(defn help-flag?
+  [arg]
+  (or (string=? (or arg "") "help")
+      (string=? (or arg "") "--help")
+      (string=? (or arg "") "-h")))
+
+(defn blank? [text]
+  (str/blank? (or text "")))
+
+(defn repeat-char [ch count]
+  (cond
+    (<= count 0) ""
+    :else (make-string count ch)))
+
+(defn clamp [value low high]
+  (max low (min high value)))
+
+(defn safe-width [width]
+  (max 0 (- width 1)))
+
+(defn truncate-text [text width]
+  (let [limit width
+        value (or text "")
+        len (string-length value)]
+    (cond
+      (<= limit 0) ""
+      (<= len limit) value
+      (<= limit 3) (substring value 0 limit)
+      :else (str (substring value 0 (- limit 3)) "..."))))
+
+(defn pad-right [text width]
+  (let [limit width
+        trimmed (truncate-text text limit)
+        fill (- limit (string-length trimmed))]
+    (cond
+      (> fill 0) (str trimmed (repeat-char #\space fill))
+      :else trimmed)))
+
+(defn key-code [key]
+  (cond
+    (char? key) (char->integer key)
+    :else key))
+
+(defn safe-cursor! [visible?]
+  (handle-exceptions exn (void)
+    (nc/curs_set (if visible? 1 0))))
+
+(defn json-field-value [value key default]
+  (app/json-field-value value key default))
+
+(defn wrap-text-step [source limit len start acc]
+  (cond
+    (>= start len) (reverse acc)
+    :else
+    (let [end (min len (+ start limit))
+          chunk (substring source start end)]
+      (wrap-text-step source limit len end (cons chunk acc)))))
+
+(defn wrap-text [text width]
+  (let [source (cond
+                 (blank? text) "(empty)"
+                 :else text)
+        limit (max 1 width)
+        len (string-length source)]
+    (cond
+      (<= width 0) '()
+      :else (wrap-text-step source limit len 0 '()))))
+
+(defn index-of-row-id [rows row-id]
+  (let loop ((xs rows)
+             (index 0))
+    (cond
+      (empty? xs) false
+      (string=? (get (first xs) :row-id "") row-id) index
+      :else (loop (rest xs) (+ index 1)))))
+
+(defn first-row-id [rows]
+  (if (empty? rows)
+      ""
+      (get (first rows) :row-id "")))
+
+(defn project-name [project]
+  (or (json-field-value project "name" "") ""))
+
+(defn project-id [project]
+  (or (json-field-value project "id" "") ""))
+
+(defn outline-name [outline]
+  (or (json-field-value outline "name" "") ""))
+
+(defn outline-id [outline]
+  (or (json-field-value outline "id" "") ""))
+
+(defn item-id [item]
+  (or (json-field-value item "id" "") ""))
+
+(defn item-title [item]
+  (or (json-field-value item "title" "") ""))
+
+(defn item-parent-id [item]
+  (or (json-field-value item "parentId" "") ""))
+
+(defn item-description [item]
+  (or (json-field-value item "description" "") ""))
+
+(defn outline-status-defs [outline]
+  (or (json-field-value outline "statusDefs" '()) '()))
+
+(defn build-project-rows [projects]
+  (map (fn [project]
+         {:kind "project"
+          :row-id (project-id project)
+          :project-id (project-id project)
+          :project project})
+       projects))
+
+(defn build-outline-list-rows [project outlines counts-by-outline]
+  (map (fn [outline]
+         (let [oid (outline-id outline)
+               counts (get counts-by-outline oid {})
+               open-count (get counts :open 0)
+               done-count (get counts :done 0)
+               total-count (get counts :total 0)]
+           {:kind "outline"
+            :row-id oid
+            :project-id (project-id project)
+            :project-name (project-name project)
+            :outline-id oid
+            :outline outline
+            :open-count open-count
+            :done-count done-count
+            :total-count total-count}))
+       outlines))
+
+(defn outline-status-labels [outline]
+  (let loop ((xs (outline-status-defs outline))
+             (acc '()))
+    (cond
+      (empty? xs) (reverse acc)
+      :else
+      (let [status-def (first xs)
+            label (or (json-field-value status-def "label" "") "")
+            end-state? (or (json-field-value status-def "isEndState" false) false)
+            text (if end-state?
+                     (string-append label "*")
+                     label)]
+        (loop (rest xs) (cons text acc))))))
+
+(defn count-visible-items [items end-status-ids]
+  (let loop ((xs items)
+             (open 0)
+             (done 0)
+             (total 0))
+    (if (empty? xs)
+        {:open open :done done :total total}
+        (let [item (first xs)]
+          (if (app/workspace-item-archived? item)
+              (loop (rest xs) open done total)
+              (let [status (or (app/workspace-item-status item) "")
+                    done? (member status end-status-ids)]
+                (loop (rest xs)
+                      (if done? open (+ open 1))
+                      (if done? (+ done 1) done)
+                      (+ total 1))))))))
+
+(defn outline-end-status-ids [outline]
+  (let loop ((xs (outline-status-defs outline))
+             (acc '()))
+    (if (empty? xs)
+        (reverse acc)
+        (let [status-def (first xs)
+              status-id (or (json-field-value status-def "id" "") "")
+              end-state? (or (json-field-value status-def "isEndState" false) false)]
+          (if (and end-state? (not (string=? status-id "")))
+              (loop (rest xs) (cons status-id acc))
+              (loop (rest xs) acc))))))
+
+(defn build-outline-map [outlines]
+  (let loop ((xs outlines)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [outline (first xs)]
+          (loop (rest xs)
+                (assoc acc (outline-id outline) outline))))))
+
+(defn build-project-map [projects]
+  (let loop ((xs projects)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [project (first xs)]
+          (loop (rest xs)
+                (assoc acc (project-id project) project))))))
+
+(defn build-outlines-by-project-from-list [outlines]
+  (let loop ((xs outlines)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [outline (first xs)
+              pid (or (json-field-value outline "projectId" "") "")
+              existing (or (get acc pid '()) '())]
+          (loop (rest xs)
+                (assoc acc pid (append existing (list outline))))))))
+
+(defn build-items-by-outline [items]
+  (let loop ((xs items)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [item (first xs)
+              oid (or (json-field-value item "outlineId" "") "")
+              existing (or (get acc oid '()) '())]
+          (loop (rest xs)
+                (assoc acc oid (append existing (list item))))))))
+
+(defn build-counts-by-outline [outlines items-by-outline]
+  (let loop ((xs outlines)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [outline (first xs)
+              oid (outline-id outline)
+              items (or (get items-by-outline oid '()) '())
+              ordered-items (app/workspace-item-order-rows items)
+              end-status-ids (outline-end-status-ids outline)]
+          (loop (rest xs)
+                (assoc acc oid (count-visible-items ordered-items end-status-ids)))))))
+
+(defn item-children-map [items]
+  (let loop ((xs items)
+             (acc {}))
+    (if (empty? xs)
+        acc
+        (let [item (first xs)]
+          (if (app/workspace-item-archived? item)
+              (loop (rest xs) acc)
+              (let [parent-id (item-parent-id item)
+                    existing (or (get acc parent-id '()) '())]
+                (loop (rest xs) (assoc acc parent-id (append existing (list item))))))))))
+
+(defn build-item-tree-rows-step [children-map parent-id depth acc]
+  (let [children (or (get children-map parent-id '()) '())]
+    (if (empty? children)
+        acc
+        (let loop ((xs children)
+                   (rows acc))
+          (if (empty? xs)
+              rows
+              (let [item (first xs)
+                    iid (item-id item)
+                    row {:kind "item"
+                         :row-id iid
+                         :item-id iid
+                         :item item
+                         :depth depth}]
+                (loop (rest xs)
+                      (build-item-tree-rows-step children-map iid (+ depth 1) (append rows (list row))))))))))
+
+(defn build-item-tree-rows [items]
+  (build-item-tree-rows-step (item-children-map items) "" 0 '()))
+
+(defn project-row-line [row selected? width]
+  (let [marker (if selected? ">" " ")
+        raw (str marker " " (project-name (get row :project)))]
+    (pad-right raw width)))
+
+(defn outline-row-line [row selected? width]
+  (let [marker (if selected? ">" " ")
+        counts (str (get row :open-count 0) "/" (get row :total-count 0))
+        raw (str marker " " (outline-name (get row :outline)) "  [" counts "]")]
+    (pad-right raw width)))
+
+(defn item-tree-row-line [row selected? width]
+  (let [item (get row :item)
+        depth (get row :depth 0)
+        status (or (app/workspace-item-status item) "")
+        prefix (if (blank? status) "[ ]" (str "[" status "]"))
+        indent (repeat-char #\space (* depth 2))
+        marker (if selected? ">" " ")
+        raw (str marker " " indent prefix " " (item-title item))]
+    (pad-right raw width)))
+
+(defn item-detail-lines [project outline item width]
+  (cond
+    (not item)
+    '("No items in this outline.")
+
+    :else
+    (let [status-labels (outline-status-labels outline)
+          iid (item-id item)
+          tags (or (json-field-value item "tags" '()) '())
+          due-date (or (json-field-value item "dueDate" "") "")
+          schedule-date (or (json-field-value item "scheduleDate" "") "")
+          meta-lines
+          (list
+           (string-append "Item: " (item-title item))
+           (string-append "Project: " (project-name project))
+           (string-append "Outline: " (outline-name outline))
+           (string-append "Item ID: " iid)
+           (string-append "Status: " (or (app/workspace-item-status item) "-"))
+           (string-append "Statuses: " (if (empty? status-labels)
+                                          "-"
+                                          (str/join "  " status-labels)))
+           (string-append "Due: " (if (blank? due-date) "-" due-date))
+           (string-append "Scheduled: " (if (blank? schedule-date) "-" schedule-date))
+           (string-append "Tags: " (if (empty? tags) "-" (str/join ", " tags)))
+           "")
+          desc-lines
+          (append
+           (list "Description:")
+           (wrap-text (item-description item) width)
+           (list ""))]
+      (append
+       (map (fn [line] (truncate-text line width)) meta-lines)
+       (map (fn [line] (truncate-text line width)) desc-lines)))))
+
+(defn draw-list-rows! [draw-line! rows selected-index row index body-top body-height width row-line-fn]
+  (cond
+    (>= row body-height) nil
+    :else
+    (let [entry (if (and (>= index 0)
+                         (< index (length rows)))
+                  (list-ref rows index)
+                  false)
+          y (+ body-top row)]
+      (if entry
+          (let [line (row-line-fn entry (= index selected-index) width)]
+            (if (= index selected-index)
+                (begin
+                  (nc/attron nc/A_REVERSE)
+                  (draw-line! y 0 line)
+                  (nc/attroff nc/A_REVERSE))
+                (draw-line! y 0 line)))
+          (draw-line! y 0 (pad-right "" width)))
+      (draw-list-rows! draw-line! rows selected-index (+ row 1) (+ index 1) body-top body-height width row-line-fn))))
+
+(defn draw-browser-rows! [draw-line! rows selected-index row index body-top body-height split-col list-width]
+  (cond
+    (>= row body-height) nil
+    :else
+    (let [entry (if (and (>= index 0)
+                         (< index (length rows)))
+                  (list-ref rows index)
+                  false)
+          y (+ body-top row)]
+      (draw-line! y split-col "|")
+      (if entry
+          (let [line (item-tree-row-line entry (= index selected-index) list-width)]
+            (if (= index selected-index)
+                (begin
+                  (nc/attron nc/A_REVERSE)
+                  (draw-line! y 0 line)
+                  (nc/attroff nc/A_REVERSE))
+                (draw-line! y 0 line)))
+          (draw-line! y 0 (pad-right "" list-width)))
+      (draw-browser-rows! draw-line! rows selected-index (+ row 1) (+ index 1) body-top body-height split-col list-width))))
+
+(defn draw-detail-rows! [draw-line! lines row body-top body-height detail-col detail-width]
+  (cond
+    (>= row body-height) nil
+    :else
+    (let [y (+ body-top row)]
+      (draw-line! y detail-col
+                  (pad-right (if (empty? lines) "" (first lines))
+                             detail-width))
+      (draw-detail-rows! draw-line!
+                         (if (empty? lines) '() (rest lines))
+                         (+ row 1)
+                         body-top
+                         body-height
+                         detail-col
+                         detail-width))))
+
+(defn event-loop! [render! handle-key! running?]
+  (render!)
+  (if (not (running?))
+      nil
+      (let [key (key-code (nc/getch))]
+        (handle-key! key)
+        (render!)
+        (event-loop! render! handle-key! running?))))
+
+(defn main
+  [args]
+  (cond
+    (and (not (empty? args))
+         (help-flag? (first args)))
+    (begin
+      (display tui-help-output)
+      0)
+
+    (not (empty? args))
+    (begin
+      (display "ro tui expects no arguments\n" (current-error-port))
+      1)
+
+    :else
+    (let [workspace-root (or (app/workspace-current-path) "")]
+      (if (string=? workspace-root "")
+          (begin
+            (display "ro workspace current is unavailable\n" (current-error-port))
+            1)
+          (let [conn (app/open-workspace-db)
+                page {:kind "projects"}
+                page-stack '()
+                rows '()
+                selected-index 0
+                selected-row-id ""
+                list-offset 0
+                viewport-size 1
+                snapshot-projects '()
+                snapshot-project-by-id {}
+                snapshot-outlines '()
+                snapshot-outline-by-id {}
+                snapshot-outlines-by-project {}
+                snapshot-items '()
+                snapshot-items-by-outline {}
+                snapshot-counts-by-outline {}
+                current-project false
+                current-outline false
+                current-items '()
+                current-item false
+                running true
+                status-message "Ready"
+                draw-line! (fn [row col text]
+                             (nc/mvaddstr row col text))
+                current-kind (fn []
+                               (get page :kind "projects"))
+                selected-row (fn []
+                               (if (or (< selected-index 0)
+                                       (>= selected-index (length rows)))
+                                   false
+                                   (list-ref rows selected-index)))
+                ensure-scroll! (fn []
+                                 (let [count (length rows)
+                                       limit (max 1 viewport-size)
+                                       max-offset (max 0 (- count limit))]
+                                   (set! list-offset (clamp list-offset 0 max-offset))
+                                   (set! list-offset
+                                         (cond
+                                           (>= selected-index (+ list-offset limit))
+                                           (clamp (- selected-index (- limit 1))
+                                                  0
+                                                  max-offset)
+                                           (< selected-index list-offset)
+                                           (clamp selected-index 0 max-offset)
+                                           :else list-offset))))
+                sync-selection! (fn []
+                                  (if (empty? rows)
+                                      (begin
+                                        (set! selected-index 0)
+                                        (set! selected-row-id "")
+                                        (set! list-offset 0))
+                                      (let [found (and (not (string=? selected-row-id ""))
+                                                       (index-of-row-id rows selected-row-id))]
+                                        (set! selected-index
+                                              (if found
+                                                  found
+                                                  0))
+                                        (let [row (selected-row)]
+                                          (set! selected-row-id
+                                                (if row
+                                                    (get row :row-id "")
+                                                    "")))))
+                                  (ensure-scroll!))
+                reload-snapshot! (fn []
+                                   (let [projects (app/workspace-projects conn)
+                                         outlines (app/workspace-outlines conn)
+                                         items (app/workspace-items-all conn)]
+                                     (set! snapshot-projects projects)
+                                     (set! snapshot-project-by-id (build-project-map projects))
+                                     (set! snapshot-outlines outlines)
+                                     (set! snapshot-outline-by-id (build-outline-map outlines))
+                                     (set! snapshot-outlines-by-project
+                                           (build-outlines-by-project-from-list outlines))
+                                     (set! snapshot-items items)
+                                     (set! snapshot-items-by-outline
+                                           (build-items-by-outline items))
+                                     (set! snapshot-counts-by-outline
+                                           (build-counts-by-outline outlines snapshot-items-by-outline))))
+                reload-page! (fn [message]
+                               (let [kind (current-kind)]
+                                 (cond
+                                   (string=? kind "projects")
+                                   (begin
+                                     (set! current-project false)
+                                     (set! current-outline false)
+                                     (set! current-items '())
+                                     (set! current-item false)
+                                     (set! rows (build-project-rows snapshot-projects)))
+
+                                   (string=? kind "project")
+                                   (let [project-id (get page :project-id "")
+                                         project (or (get snapshot-project-by-id project-id false) false)
+                                         outlines (or (get snapshot-outlines-by-project project-id '()) '())]
+                                     (set! current-project project)
+                                     (set! current-outline false)
+                                     (set! current-items '())
+                                     (set! current-item false)
+                                     (set! rows (if project
+                                                    (build-outline-list-rows project outlines snapshot-counts-by-outline)
+                                                    '())))
+
+                                   :else
+                                   (let [project-id (get page :project-id "")
+                                         outline-id (get page :outline-id "")
+                                         project (or (get snapshot-project-by-id project-id false) false)
+                                         outline (or (get snapshot-outline-by-id outline-id false) false)
+                                         items (if outline
+                                                   (app/workspace-item-order-rows
+                                                    (or (get snapshot-items-by-outline outline-id '()) '()))
+                                                   '())
+                                         tree-rows (build-item-tree-rows items)]
+                                     (set! current-project project)
+                                     (set! current-outline outline)
+                                     (set! current-items items)
+                                     (set! rows tree-rows))))
+                               (sync-selection!)
+                               (if (string=? (current-kind) "outline")
+                                   (let [row (selected-row)]
+                                     (if row
+                                         (set! current-item (get row :item))
+                                         (begin
+                                           (set! current-item false))))
+                                   #t)
+                               (set! status-message message))
+                set-page! (fn [next-page row-id message]
+                            (set! page next-page)
+                            (set! selected-row-id (or row-id ""))
+                            (set! selected-index 0)
+                            (set! list-offset 0)
+                            (reload-page! message))
+                open-selection! (fn []
+                                  (let [row (selected-row)
+                                        kind (current-kind)]
+                                    (cond
+                                      (not row)
+                                      (set! status-message "Nothing to open")
+
+                                      (string=? kind "projects")
+                                      (begin
+                                        (set! page-stack (cons page page-stack))
+                                        (set-page! {:kind "project"
+                                                    :project-id (get row :project-id "")}
+                                                   ""
+                                                   (string-append "Opened project " (project-name (get row :project)))))
+
+                                      (string=? kind "project")
+                                      (begin
+                                        (set! page-stack (cons page page-stack))
+                                        (set-page! {:kind "outline"
+                                                    :project-id (get row :project-id "")
+                                                    :outline-id (get row :outline-id "")}
+                                                   ""
+                                                   (string-append "Opened outline " (outline-name (get row :outline)))))
+
+                                      :else
+                                      (set! status-message "Outline view has no deeper page yet"))))
+                back! (fn []
+                        (if (empty? page-stack)
+                            (set! status-message "Already at top level")
+                            (let [prev (first page-stack)]
+                              (set! page-stack (rest page-stack))
+                              (set-page! prev "" "Went back"))))
+                move-selection! (fn [delta]
+                                  (if (empty? rows)
+                                      (void)
+                                      (begin
+                                        (set! selected-index
+                                              (clamp (+ selected-index delta)
+                                                     0
+                                                     (- (length rows) 1)))
+                                        (let [row (selected-row)]
+                                          (set! selected-row-id (if row (get row :row-id "") ""))
+                                          (if (and row (string=? (current-kind) "outline"))
+                                              (set! current-item (get row :item))
+                                              #t))
+                                        (ensure-scroll!))))
+                draw-header! (fn [cols]
+                               (let [safe-cols (safe-width cols)
+                                     kind (current-kind)
+                                     title (cond
+                                             (string=? kind "projects") (str app-name "  " workspace-root)
+                                             (string=? kind "project") (str app-name "  Project: " (project-name current-project))
+                                             :else (str app-name "  Outline: " (outline-name current-outline)))
+                                     summary (cond
+                                               (string=? kind "projects") (format "projects %d" (length rows))
+                                               (string=? kind "project") (format "outlines %d" (length rows))
+                                               :else (format "items %d" (length rows)))
+                                     keys "j/k arrows move  Enter open  Esc/back back  q quit"]
+                                 (nc/attron nc/A_BOLD)
+                                 (draw-line! 0 0 (truncate-text title safe-cols))
+                                 (nc/attroff nc/A_BOLD)
+                                 (draw-line! 1 0 (truncate-text summary safe-cols))
+                                 (draw-line! 2 0 (truncate-text keys safe-cols))
+                                 (draw-line! 3 0 (repeat-char #\- safe-cols))))
+                render-list! (fn [rows-count cols row-line-fn]
+                               (let [safe-cols (safe-width cols)
+                                     body-top 4
+                                     body-height (max 1 (- rows-count 5))]
+                                 (set! viewport-size body-height)
+                                 (ensure-scroll!)
+                                 (nc/erase)
+                                 (draw-header! cols)
+                                 (draw-list-rows! draw-line! rows selected-index 0 list-offset body-top body-height safe-cols row-line-fn)
+                                 (draw-line! (max 0 (- rows-count 1))
+                                             0
+                                             (truncate-text status-message safe-cols))
+                                 (nc/refresh)))
+                render-outline! (fn [rows-count cols]
+                                  (let [safe-cols (safe-width cols)
+                                        body-top 4
+                                        body-height (max 1 (- rows-count 5))
+                                        split-col (clamp (quotient safe-cols 2) 28 52)
+                                        list-width split-col
+                                        detail-col (+ split-col 2)
+                                        detail-width (max 0 (- safe-cols detail-col))
+                                        detail-lines (item-detail-lines current-project
+                                                                        current-outline
+                                                                        current-item
+                                                                        detail-width)]
+                                    (set! viewport-size body-height)
+                                    (ensure-scroll!)
+                                    (nc/erase)
+                                    (draw-header! cols)
+                                    (draw-browser-rows! draw-line! rows selected-index 0 list-offset body-top body-height split-col list-width)
+                                    (draw-detail-rows! draw-line! detail-lines 0 body-top body-height detail-col detail-width)
+                                    (draw-line! (max 0 (- rows-count 1))
+                                                0
+                                                (truncate-text status-message safe-cols))
+                                    (nc/refresh)))
+                render! (fn []
+                          (call-with-values
+                           (fn [] (nc/getmaxyx (nc/stdscr)))
+                           (fn [rows-count cols]
+                             (cond
+                               (string=? (current-kind) "projects")
+                               (render-list! rows-count cols project-row-line)
+
+                               (string=? (current-kind) "project")
+                               (render-list! rows-count cols outline-row-line)
+
+                               :else
+                               (render-outline! rows-count cols)))))
+                handle-key! (fn [key]
+                              (cond
+                                (or (= key key-q)
+                                    (= key (char->integer #\Q)))
+                                (set! running false)
+
+                                (or (= key nc/KEY_UP) (= key key-k))
+                                (move-selection! -1)
+
+                                (or (= key nc/KEY_DOWN) (= key key-j))
+                                (move-selection! 1)
+
+                                (or (= key key-enter-1) (= key key-enter-2) (= key nc/KEY_ENTER))
+                                (open-selection!)
+
+                                (or (= key key-esc)
+                                    (= key key-backspace-1)
+                                    (= key key-backspace-2)
+                                    (= key nc/KEY_BACKSPACE))
+                                (back!)
+
+                                (= key nc/KEY_RESIZE)
+                                (void)
+
+                                :else
+                                (set! status-message (format "Unhandled key: %s" (nc/keyname key)))))
+                running? (fn [] running)]
+            (dynamic-wind
+              (fn []
+                (nc/initscr)
+                (nc/cbreak)
+                (nc/noecho)
+                (nc/keypad (nc/stdscr) true)
+                (safe-cursor! false)
+                (reload-snapshot!)
+                (reload-page! "Loaded projects"))
+              (fn []
+                (event-loop! render! handle-key! running?))
+              (fn []
+                (handle-exceptions exn (void)
+                  (begin
+                    (safe-cursor! true)
+                    (nc/endwin)))
+                (db/finalize! conn))))))))

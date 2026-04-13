@@ -170,24 +170,30 @@
         result (cli-dispatch spec args)]
     (cond
       (equal? (get result :status) :help)
-      (vector 'help '())
+      {:ok? true
+       :effects [[:docs/help {}]]}
 
       (equal? (get result :status) :error)
       (cond
         (equal? (get result :reason) :unknown-flag)
-        (vector 'unsupported-flag '())
+        {:ok? false
+         :error "unsupported docs flag"
+         :command args}
 
         :else
-        (vector 'unexpected '()))
+        {:ok? false
+         :error "unexpected docs argument"
+         :command args})
 
       (empty? (get result :positionals))
-      (vector 'output '())
+      {:ok? true
+       :effects [[:docs/output {}]]}
 
       :else
       (let [raw? (if (and (contains? (get result :flags) :raw)
                           (equal? (get (get result :flags) :raw) true))
                    true
                    #f)]
-        (vector 'topic
-                (first (get result :positionals))
-                raw?)))))
+        {:ok? true
+         :effects [[:docs/topic {:topic (first (get result :positionals))
+                                 :raw? raw?}]]}))))

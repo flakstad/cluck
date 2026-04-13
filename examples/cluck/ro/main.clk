@@ -7,4 +7,9 @@
   (:require [cluck.examples.ro.app :as app]))
 
 (defn main [args]
-  (app/main args))
+  (if (and (not (empty? args))
+           (string=? (first args) "tui"))
+      ;; Keep the regular CLI fast by resolving the ncurses entrypoint only
+      ;; when the user explicitly asks for the TUI.
+      ((ns-resolve 'cluck.examples.ro.tui 'main) (rest args))
+      (app/main args)))

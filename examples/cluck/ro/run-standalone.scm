@@ -158,6 +158,8 @@
 (define db/with-transaction db:with-transaction)
 
 (include "examples/cluck/ro/src/app.clk")
+(hash-table-set! *cluck-loaded-namespaces* 'cluck.examples.ro.tui #t)
+(include "examples/cluck/ro/src/tui.clk")
 (include "examples/cluck/ro/main.clk")
 
 (let ((args (command-line-arguments)))
